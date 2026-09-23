@@ -1,0 +1,72 @@
+Mods: {
+	ChainsawManMod: {
+		Items: {
+			PochitasHeart: {
+				DisplayName: Pochita's Heart
+				Tooltip:
+					'''
+					{0}% increased melee damage
+					Melee hits drink your enemies' blood, healing you
+					Pochita saves you from death once every {1} minutes
+					"Pochita... I'll be your heart."
+					'''
+			}
+
+			StarterCord: {
+				DisplayName: Starter Cord
+				Tooltip:
+					'''
+					Pull to become the Chainsaw Devil for {0} seconds
+					Requires Pochita's Heart to be equipped
+					{1} second cooldown
+					'''
+			}
+
+			ChainsawArm: {
+				DisplayName: Chainsaw Arm
+				Tooltip:
+					'''
+					Rip and tear
+					Revs harder while in Chainsaw Devil form
+					'''
+			}
+
+			PochitaDoll: {
+				DisplayName: Pochita Doll
+				Tooltip: Summons Pochita to follow you
+			}
+		}
+
+		Buffs: {
+			ChainsawDevilForm: {
+				DisplayName: Chainsaw Devil
+				Description:
+					'''
+					{0}% increased melee damage, {1}% increased melee speed
+					{2} defense, {3}% increased movement speed
+					Melee hits drink much more blood
+					'''
+			}
+
+			StarterCordCooldown: {
+				DisplayName: Engine Cooling
+				Description: You can't pull the Starter Cord yet
+			}
+
+			PochitasContractCooldown: {
+				DisplayName: Pochita's Contract
+				Description: Pochita already saved you. It will take time before it can happen again.
+			}
+
+			PochitaPetBuff: {
+				DisplayName: Pochita
+				Description: Woof!
+			}
+		}
+
+		Projectiles: {
+			ChainsawArmProjectile.DisplayName: Chainsaw Arm
+			PochitaPetProjectile.DisplayName: Pochita
+		}
+	}
+}
