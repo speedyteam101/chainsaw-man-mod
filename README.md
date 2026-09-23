@@ -44,6 +44,7 @@ If your inventory is full, you won't get the abilities until you free up slots.
 | **Eternity Fleshling** | Only spawned by the Eternity Devil. | Devil Flesh (33%) |
 | **Eternity Devil** (Hardmode boss, 40,000 HP) | Use a **Cursed Hotel Key** (20 Devil Flesh, 8 Soul of Night, Golden Key @ Mythril/Orichalcum Anvil). A giant drifting mass of flesh that fires rings of blood and spits out Eternity Fleshlings. **It regenerates while any Fleshlings are alive.** | 25-40 Devil Flesh, 10-20 Soul of Night, 10-20 Soul of Light |
 | **Gun Devil** (post-Plantera boss, 55,000 HP) | Use a **Gun Devil's Trigger** (15 Gun Devil Fragment, 10 Devil Flesh @ Mythril/Orichalcum Anvil). Circles you with rapid gunfire, stops to fire a bullet spiral, then charges 3 times. Below 50% HP it is faster and calls Gun Devil Spawn. | 20-35 Gun Devil Fragment, 30-50 Devil Flesh, 15-25 Chlorophyte Bar |
+| **Makima** (post-Moon Lord boss, 150,000 HP) | Use **Makima's Contract** (10 Luminite Bar, 10 Gun Devil Fragment, 20 Devil Flesh @ Ancient Manipulator). Walks toward you and cycles through: finger-gun **Bang** shots, white **hounds** that burst from the ground under you (watch for bubbling blood), floating **gun fiends** that spray bullets, a **contract** that calls other devils, and a blood-melt **teleport**. **She takes half damage while any of her devils are alive.** At half health she's knocked down, gets back up, and everything gets faster. | Hero of Hell's Cord (33%), 20-30 Luminite Bar, 40-60 Devil Flesh, 20-30 Gun Devil Fragment |
 
 ## Chainsaw Devil sprite
 
@@ -57,7 +58,7 @@ With the **Hero of Hell's Cord** (tier 3) you turn into the Hero of Hell form in
 - `Content/Players/ChainsawDevilSheet.png` / `HeroOfHellSheet.png`: the cleaned in-game sprite sheets
 - `art/ChainsawDevilSheet_preview_4x.png` / `art/HeroOfHellSheet_preview_4x.png`: big labelled previews of every frame
 - `art/chainsaw_devil_source.png` / `art/hero_of_hell_source.png`: the original sheets they were made from
-- `tools/clean_sprite_sheet.py`: regenerates both sheets (`pip install pillow numpy scipy`, then `python3 tools/clean_sprite_sheet.py`)
+- `tools/clean_sprite_sheet.py`: regenerates both sheets, plus Makima's boss sprites from `art/makima_source.png` (`pip install pillow numpy scipy`, then `python3 tools/clean_sprite_sheet.py`)
 
 To make the sprite bigger or smaller, change `SpriteScale` in `Content/Players/ChainsawDevilDrawLayer.cs`.
 
@@ -90,7 +91,7 @@ Replace any PNG with your own art at the same size.
 
 ## Disclaimer
 
-The Chainsaw Devil and Hero of Hell sprite sheets were supplied by the project owner; their original artists aren't recorded here. Get the artist's permission and credit them before publishing this mod (for example on the Steam Workshop).
+The Chainsaw Devil, Hero of Hell and Makima sprite sheets were supplied by the project owner; their original artists aren't recorded here. Get the artist's permission and credit them before publishing this mod (for example on the Steam Workshop).
 
 
 Chainsaw Man is created by Tatsuki Fujimoto. This is a non-commercial fan project and is not affiliated with or endorsed by the rights holders.

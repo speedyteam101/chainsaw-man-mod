@@ -17,6 +17,16 @@ namespace ChainsawManMod.Content.NPCs
 			return count;
 		}
 
+		public static int CountActiveAny(int[] types) {
+			int count = 0;
+			foreach (NPC other in Main.ActiveNPCs) {
+				if (System.Array.IndexOf(types, other.type) >= 0) {
+					count++;
+				}
+			}
+			return count;
+		}
+
 		// Smoothly steers a flying NPC toward a point.
 		public static void FlyToward(NPC npc, Vector2 target, float speed, float inertia) {
 			Vector2 desired = (target - npc.Center).SafeNormalize(Vector2.Zero) * speed;

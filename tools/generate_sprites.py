@@ -580,6 +580,14 @@ def ability_sprites():
 
     buff_icon("Content/Buffs/BloodDrinkCooldown.png", icon_blood_cooldown)
 
+    img, d = canvas(14, 14)                                               # Makima's Contract (paper with a blood seal)
+    d.polygon([(2, 1), (11, 0), (12, 12), (3, 13)], fill=(235, 225, 200, 255))
+    for y in (3, 5, 7):
+        d.line([4, y, 10, y - 1], fill=(120, 110, 100, 255))
+    d.ellipse([7, 8, 11, 12], fill=RED)
+    d.point((9, 10), fill=RED_L)
+    save(img, "Content/Items/Consumables/MakimasContract.png")
+
 
 def icon_blood_cooldown(d):
     d.rectangle([6, 2, 9, 3], fill=BROWN)

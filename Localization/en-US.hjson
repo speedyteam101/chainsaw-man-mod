@@ -108,6 +108,15 @@ Mods: {
 					'''
 			}
 
+			MakimasContract: {
+				DisplayName: Makima's Contract
+				Tooltip:
+					'''
+					Summons Makima
+					Only works after the Moon Lord has been defeated
+					'''
+			}
+
 			ChainsawSlash: {
 				DisplayName: Chainsaw Slash
 				Tooltip:
@@ -198,6 +207,7 @@ Mods: {
 			EternityFleshling.DisplayName: Eternity Fleshling
 			EternityDevil.DisplayName: Eternity Devil
 			GunDevil.DisplayName: Gun Devil
+			Makima.DisplayName: Makima
 		}
 
 		Bestiary: {
@@ -212,6 +222,7 @@ Mods: {
 			EternityFleshling: A lump of the Eternity Devil. As long as these live, their master keeps healing.
 			EternityDevil: A vast mass of flesh that traps its prey forever. Kill its Fleshlings, or it will never stop regenerating.
 			GunDevil: One of the most feared devils. It fills the air with bullets and charges without mercy.
+			Makima: A calm woman who treats devils like dogs on a leash. While her contracted devils live, the damage she takes is shared with them.
 		}
 
 		Projectiles: {
@@ -223,6 +234,8 @@ Mods: {
 			RevDashHitbox.DisplayName: Rev Dash
 			ChainHookProjectile.DisplayName: Chain Hook
 			StormBlade.DisplayName: Chainsaw Storm
+			MakimaHound.DisplayName: Makima's Hound
+			MakimaGunFiend.DisplayName: Gun Fiend
 		}
 	}
 }

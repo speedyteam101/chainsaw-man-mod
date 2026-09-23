@@ -7,7 +7,8 @@ Usage (from the repository root):
 Sheets:
   chainsaw   art/chainsaw_devil_source.png -> Content/Players/ChainsawDevilSheet.png  (tier 1-2 form)
   hero       art/hero_of_hell_source.png   -> Content/Players/HeroOfHellSheet.png    (tier 3 form)
-Each also writes a big labelled preview to art/<name>_preview_4x.png.
+  makima     art/makima_source.png         -> Content/NPCs/Makima.png (+ MakimaHound.png, MakimaGunFiend.png)
+Each Chainsaw Devil sheet also writes a big labelled preview to art/<name>_preview_4x.png.
 
 What "cleaning" does:
   * cuts every frame out and removes the flat background colour,
@@ -200,6 +201,100 @@ def build(name, cfg):
     preview.save(cfg["preview"])
 
 
+# ---------------------------------------------------------------- Makima boss (vertical NPC strip)
+# Frames picked from art/makima_source.png as (x, width, top, bottom). The source has no labels.
+MAKIMA_BG = (254, 175, 201)
+MAKIMA_ANIMS = [  # (name, frames) in strip order; must match the frame ranges in Content/NPCs/Makima.cs
+    ("idle", [(18, 13, 15, 45), (36, 13, 15, 45), (54, 13, 14, 45), (71, 13, 15, 46), (90, 13, 15, 46)]),
+    ("walk", [(15, 14, 58, 88), (35, 13, 58, 88), (54, 12, 58, 88), (74, 14, 58, 88), (98, 12, 58, 88), (117, 12, 58, 88)]),
+    ("bang", [(13, 18, 140, 171), (41, 23, 140, 171), (74, 22, 140, 171), (105, 26, 140, 171), (139, 15, 139, 171),
+              (162, 16, 139, 171), (185, 19, 140, 171)]),
+    ("summon", [(284, 21, 190, 218), (313, 13, 184, 218), (333, 13, 183, 218), (355, 13, 184, 218), (374, 26, 187, 218)]),
+    ("dissolve", [(76, 13, 101, 130), (97, 23, 106, 130), (130, 24, 112, 131), (164, 29, 121, 130), (203, 27, 121, 130),
+                  (237, 24, 112, 131), (265, 19, 103, 130), (286, 20, 96, 130)]),
+    ("knockdown", [(228, 17, 15, 44), (251, 20, 14, 44), (274, 28, 24, 43), (304, 32, 31, 45), (338, 30, 34, 45),
+                   (370, 33, 37, 46), (407, 22, 26, 45)]),
+]
+MAKIMA_HOUND = [(457, 43, 183, 218), (506, 41, 182, 218)]
+MAKIMA_GUN_FIEND = [(165, 53, 452, 485)]
+
+
+def build_makima():
+    src = Image.open("art/makima_source.png").convert("RGB")
+    orig = np.asarray(src).astype(int)
+    boosted = np.asarray(ImageEnhance.Contrast(ImageEnhance.Color(src).enhance(1.25)).enhance(1.1)).astype(int)
+    bg = np.array(MAKIMA_BG)
+
+    def grab(boxes):
+        out = []
+        for x, w, top, bottom in boxes:
+            f = cut(orig, boosted, bg, (x - 1, top - 1, x + w, bottom + 1), thr=80)
+            # The webp source bleeds pink into the outline; peel off pink-tinted edge pixels twice.
+            o = orig[top - 2:bottom + 3, x - 2:x + w + 2]
+            pinkish = (o[..., 0] > 190) & (o[..., 2] > 140) & (o[..., 1] < o[..., 0] - 25)
+            for _ in range(2):
+                m = f[..., 3] > 0
+                edge = m & ~ndimage.binary_erosion(m)
+                f[..., 3][edge & pinkish[:f.shape[0], :f.shape[1]]] = 0
+            keep_largest(f)
+            out.append(trim_vertical(f))
+        return out
+
+    anims = [(n, grab(b)) for n, b in MAKIMA_ANIMS]
+    hound, gun = grab(MAKIMA_HOUND), grab(MAKIMA_GUN_FIEND)
+    everything = [f for _, fs in anims for f in fs] + hound + gun
+    opaque = np.concatenate([f[f[..., 3] > 0][:, :3] for f in everything])
+    side = int(np.ceil(np.sqrt(len(opaque))))
+    palette = Image.fromarray(np.resize(opaque, (side * side, 3)).astype(np.uint8).reshape(side, side, 3)) \
+        .quantize(colors=48, method=Image.MEDIANCUT)
+
+    def finish(f):
+        q = np.asarray(Image.fromarray(f[..., :3]).quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")).copy()
+        m = f[..., 3] > 0
+        ring = ndimage.binary_dilation(m, structure=[[0, 1, 0], [1, 1, 1], [0, 1, 0]]) & ~m
+        q[ring] = OUTLINE
+        return np.dstack([q, (m | ring) * 255]).astype(np.uint8)
+
+    def strip(frames, anchor_feet, path):
+        """Stacks frames vertically in equal cells (Terraria NPC/projectile layout), then scales 2x."""
+        frames = [finish(f) for f in frames]
+        if anchor_feet:
+            half = max(max(foot_x(f), f.shape[1] - foot_x(f)) for f in frames)
+            cw = 2 * half + 2
+        else:
+            cw = max(f.shape[1] for f in frames) + 2
+        ch = max(f.shape[0] for f in frames) + 2
+        img = Image.new("RGBA", (cw, ch * len(frames)), (0, 0, 0, 0))
+        for i, f in enumerate(frames):
+            x = cw // 2 - foot_x(f) if anchor_feet else (cw - f.shape[1]) // 2
+            im = Image.fromarray(f)
+            img.paste(im, (x, i * ch + ch - f.shape[0]), im)
+        img = img.resize((img.width * 2, img.height * 2), Image.NEAREST)
+        img.save(path)
+        return img, cw * 2, ch * 2
+
+    all_frames = [f for _, fs in anims for f in fs]
+    img, cw, ch = strip(all_frames, True, "Content/NPCs/Makima.png")
+    ranges, i = [], 0
+    for n, fs in anims:
+        ranges.append(f"{n} {i}-{i + len(fs) - 1}")
+        i += len(fs)
+    print(f"makima: frame {cw} x {ch}, {len(all_frames)} frames | " + ", ".join(ranges))
+
+    # Boss map/health-bar icon: the head from the first idle frame, as 32x32.
+    first = img.crop((0, 0, cw, ch))
+    x0, y0, x1, _ = first.getbbox()
+    head = first.crop((x0 - 2, y0 - 2, x1 + 2, y0 + 22))
+    side = max(head.size)
+    icon = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    icon.paste(head, ((side - head.width) // 2, 0), head)
+    icon.resize((32, 32), Image.NEAREST).save("Content/NPCs/Makima_Head_Boss.png")
+    _, hw, hh = strip(hound, True, "Content/Projectiles/MakimaHound.png")
+    _, gw, gh = strip(gun, False, "Content/Projectiles/MakimaGunFiend.png")
+    print(f"hound: frame {hw} x {hh}, 2 frames | gun fiend: {gw} x {gh}")
+
+
 if __name__ == "__main__":
     for sheet_name, config in SHEETS.items():
         build(sheet_name, config)
+    build_makima()
