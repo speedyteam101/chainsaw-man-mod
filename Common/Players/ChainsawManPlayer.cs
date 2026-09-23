@@ -1,4 +1,5 @@
 using ChainsawManMod.Content.Buffs;
+using ChainsawManMod.Content.Players;
 using Terraria;
 using Terraria.Audio;
 using Terraria.DataStructures;
@@ -28,6 +29,14 @@ namespace ChainsawManMod.Common.Players
 
 		private int lifeStealTimer;
 
+		// Chainsaw Devil sprite animation (see ChainsawDevilDrawLayer).
+		public DevilAnim devilAnim = DevilAnim.Idle;
+		public int devilFrame;
+		private int devilFrameCounter;
+		private int hurtAnimTimer;
+		private int lastItemAnimation;
+		private const int HurtAnimTicks = 24;
+
 		public override void ResetEffects() {
 			hasPochitaHeart = false;
 			formTier = 0;
@@ -36,6 +45,116 @@ namespace ChainsawManMod.Common.Players
 		public override void PostUpdate() {
 			if (lifeStealTimer > 0) {
 				lifeStealTimer--;
+			}
+
+			UpdateDevilAnimation();
+		}
+
+		public override void OnHurt(Player.HurtInfo info) {
+			hurtAnimTimer = HurtAnimTicks;
+		}
+
+		// While transformed, hide the normal player body so only the Chainsaw Devil sprite is drawn.
+		// Held items, mounts, wings and debuff effects stay visible.
+		public override void HideDrawLayers(PlayerDrawSet drawInfo) {
+			if (!chainsawDevilForm || Player.dead) {
+				return;
+			}
+
+			PlayerDrawLayer devilLayer = ModContent.GetInstance<ChainsawDevilDrawLayer>();
+			foreach (PlayerDrawLayer layer in PlayerDrawLayerLoader.DrawOrder) {
+				if (layer == devilLayer
+					|| layer == PlayerDrawLayers.HeldItem
+					|| layer == PlayerDrawLayers.ProjectileOverArm
+					|| layer == PlayerDrawLayers.Wings
+					|| layer == PlayerDrawLayers.MountBack
+					|| layer == PlayerDrawLayers.MountFront
+					|| layer == PlayerDrawLayers.FrozenOrWebbedDebuff
+					|| layer == PlayerDrawLayers.WebbedDebuffBack
+					|| layer == PlayerDrawLayers.ElectrifiedDebuffBack
+					|| layer == PlayerDrawLayers.ElectrifiedDebuffFront
+					|| layer == PlayerDrawLayers.IceBarrier) {
+					continue;
+				}
+				layer.Hide();
+			}
+		}
+
+		// Picks which row and frame of the Chainsaw Devil sheet to show this tick.
+		private void UpdateDevilAnimation() {
+			bool newSwing = Player.itemAnimation > lastItemAnimation;
+			lastItemAnimation = Player.itemAnimation;
+
+			if (hurtAnimTimer > 0) {
+				hurtAnimTimer--;
+			}
+
+			if (!chainsawDevilForm) {
+				devilAnim = DevilAnim.Idle;
+				devilFrame = 0;
+				return;
+			}
+
+			bool airborne = Player.velocity.Y != 0f;
+			bool attacking = Player.itemAnimation > 0 && Player.HeldItem.damage > 0;
+
+			if (hurtAnimTimer > 0) {
+				// Only the first 4 damage frames: the rest of the row is a knock-down.
+				SetAnim(DevilAnim.Damage);
+				devilFrame = (HurtAnimTicks - hurtAnimTimer) * 4 / HurtAnimTicks;
+			}
+			else if (attacking) {
+				bool alreadyAttacking = devilAnim >= DevilAnim.Attack1 && devilAnim <= DevilAnim.AirAttack3;
+				if (newSwing || !alreadyAttacking) {
+					DevilAnim[] options = airborne ? ChainsawDevilAnimation.AirAttacks : ChainsawDevilAnimation.GroundAttacks;
+					SetAnim(options[Main.rand.Next(options.Length)]);
+				}
+
+				int count = ChainsawDevilAnimation.FrameCount(devilAnim);
+				if (Player.channel) {
+					// Held weapons like the Chainsaw Arm: loop the attack.
+					Loop(4);
+				}
+				else {
+					float progress = 1f - Player.itemAnimation / (float)System.Math.Max(Player.itemAnimationMax, 1);
+					devilFrame = System.Math.Clamp((int)(progress * count), 0, count - 1);
+				}
+			}
+			else if (airborne) {
+				SetAnim(DevilAnim.Jump);
+				float vy = Player.velocity.Y * Player.gravDir;
+				devilFrame = vy < -6f ? 2 : vy < -2f ? 3 : vy < 2f ? 4 : 5;
+			}
+			else if (Player.controlDown) {
+				SetAnim(DevilAnim.Crouch);
+				devilFrame = 1;
+			}
+			else if (System.Math.Abs(Player.velocity.X) > 3.5f) {
+				SetAnim(DevilAnim.Run);
+				Loop(5);
+			}
+			else if (System.Math.Abs(Player.velocity.X) > 0.2f) {
+				SetAnim(DevilAnim.Walk);
+				Loop(6);
+			}
+			else {
+				SetAnim(DevilAnim.Idle);
+				Loop(8);
+			}
+		}
+
+		private void SetAnim(DevilAnim anim) {
+			if (devilAnim != anim) {
+				devilAnim = anim;
+				devilFrame = 0;
+				devilFrameCounter = 0;
+			}
+		}
+
+		private void Loop(int ticksPerFrame) {
+			if (++devilFrameCounter >= ticksPerFrame) {
+				devilFrameCounter = 0;
+				devilFrame = (devilFrame + 1) % ChainsawDevilAnimation.FrameCount(devilAnim);
 			}
 		}
 
