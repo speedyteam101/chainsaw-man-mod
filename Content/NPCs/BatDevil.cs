@@ -46,7 +46,7 @@ namespace ChainsawManMod.Content.NPCs
 			NPC.defense = 30;
 			NPC.lifeMax = 28000;
 			NPC.HitSound = SoundID.NPCHit1;
-			NPC.DeathSound = SoundID.NPCDeath4;
+			NPC.DeathSound = SoundID.NPCDeath1;
 			NPC.knockBackResist = 0f;
 			NPC.noGravity = true;
 			NPC.noTileCollide = true;
@@ -108,7 +108,6 @@ namespace ChainsawManMod.Content.NPCs
 					float spread = MathHelper.ToRadians(12f) * (i - (bolts - 1) / 2f);
 					Projectile.NewProjectile(NPC.GetSource_FromAI(), NPC.Center, aim.RotatedBy(spread) * 9f, ModContent.ProjectileType<BloodBolt>(), NPC.damage / 2, 0f, Main.myPlayer);
 				}
-				SoundEngine.PlaySound(SoundID.Item17, NPC.Center);
 			}
 
 			if (Timer >= 300) {
@@ -152,7 +151,7 @@ namespace ChainsawManMod.Content.NPCs
 			}
 			BatTimer = 0f;
 
-			if (Main.netMode == NetmodeID.MultiplayerClient || CountActive(ModContent.NPCType<DevilBat>()) >= MaxBats) {
+			if (Main.netMode == NetmodeID.MultiplayerClient || DevilUtils.CountActive(ModContent.NPCType<DevilBat>()) >= MaxBats) {
 				return;
 			}
 
@@ -162,16 +161,6 @@ namespace ChainsawManMod.Content.NPCs
 					NetMessage.SendData(MessageID.SyncNPC, number: bat.whoAmI);
 				}
 			}
-		}
-
-		private static int CountActive(int type) {
-			int count = 0;
-			foreach (NPC other in Main.ActiveNPCs) {
-				if (other.type == type) {
-					count++;
-				}
-			}
-			return count;
 		}
 
 		public override void FindFrame(int frameHeight) {

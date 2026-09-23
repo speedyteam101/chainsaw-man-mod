@@ -334,6 +334,188 @@ def devil_items():
     save(img, "Content/Projectiles/BloodBolt.png")
 
 
+# ---------------------------------------------------------------- more devils
+GHOST = (215, 225, 240, 255)
+GHOST_D = (150, 165, 190, 255)
+SPIDER = (60, 45, 70, 255)
+SPIDER_L = (100, 80, 115, 255)
+FIRE = (255, 140, 30, 255)
+FIRE_L = (255, 220, 90, 255)
+FIRE_D = (200, 60, 20, 255)
+GUNMETAL = (70, 75, 85, 255)
+GUNMETAL_L = (130, 135, 150, 255)
+
+
+def ghost_devil():
+    # 4 frames of 16x22 -> 32x176
+    img, d = canvas(16, 22 * 4)
+    for f in range(4):
+        oy = f * 22 + (0, 1, 2, 1)[f]
+        d.ellipse([2, oy + 1, 13, oy + 12], fill=GHOST)
+        d.rectangle([2, oy + 7, 13, oy + 16], fill=GHOST)
+        for x in range(2, 14, 3):                                        # wavy tail
+            d.polygon([(x, oy + 16), (x + 3, oy + 16), (x + 1 + (f % 2), oy + 19)], fill=GHOST)
+        d.ellipse([4, oy + 5, 6, oy + 8], fill=BLACK); d.ellipse([9, oy + 5, 11, oy + 8], fill=BLACK)
+        d.ellipse([6, oy + 10, 9, oy + 13], fill=GHOST_D)                # open mouth
+        d.line([1, oy + 9, 0, oy + 13], fill=GHOST_D)                    # long arms
+        d.line([14, oy + 9, 15, oy + 13], fill=GHOST_D)
+    save(img, "Content/NPCs/GhostDevil.png")
+
+
+def spider_devil():
+    # 4 frames of 20x13 -> 40x104
+    img, d = canvas(20, 13 * 4)
+    for f in range(4):
+        oy = f * 13
+        for i, x in enumerate((5, 8, 11, 14)):                           # legs, alternating
+            up = ((i + f) % 2) * 2
+            d.line([x, oy + 6, x - 3, oy + 12 - up], fill=SPIDER)
+            d.line([x, oy + 6, x + 3, oy + 12 - (2 - up)], fill=SPIDER)
+        d.ellipse([7, oy + 2, 18, oy + 9], fill=SPIDER)                  # abdomen
+        d.ellipse([9, oy + 3, 13, oy + 5], fill=SPIDER_L)
+        d.ellipse([2, oy + 3, 8, oy + 8], fill=SPIDER_L)                 # head (facing left)
+        for x in (3, 5):
+            d.point((x, oy + 5), fill=RED)
+        d.point((4, oy + 4), fill=RED)
+        d.point((2, oy + 8), fill=WHITE)                                 # fang
+    save(img, "Content/NPCs/SpiderDevil.png")
+
+
+def fire_devil():
+    # 4 frames of 16x18 -> 32x144
+    img, d = canvas(16, 18 * 4)
+    for f in range(4):
+        oy = f * 18
+        flick = (0, 1, 0, -1)[f]
+        d.polygon([(8, oy + 0 + flick), (14, oy + 10), (12, oy + 17), (4, oy + 17), (2, oy + 10)], fill=FIRE_D)
+        d.polygon([(8, oy + 3 - flick), (12, oy + 10), (10, oy + 16), (6, oy + 16), (4, oy + 10)], fill=FIRE)
+        d.polygon([(8, oy + 7), (10, oy + 12), (8, oy + 15), (6, oy + 12)], fill=FIRE_L)
+        d.point((6, oy + 9), fill=BLACK); d.point((9, oy + 9), fill=BLACK)
+        d.polygon([(3, oy + 6), (1, oy + 1), (5, oy + 5)], fill=FIRE_D)  # horns
+        d.polygon([(13, oy + 6), (15, oy + 1), (11, oy + 5)], fill=FIRE_D)
+    save(img, "Content/NPCs/FireDevil.png")
+
+
+def gun_devil_spawn():
+    # 4 frames of 18x18 -> 36x144
+    img, d = canvas(18, 18 * 4)
+    for f in range(4):
+        oy = f * 18 + (0, 1, 0, -1)[f] + 1
+        d.ellipse([3, oy + 3, 14, oy + 14], fill=FLESH)
+        d.ellipse([5, oy + 5, 8, oy + 8], fill=FLESH_L)
+        for (x0, y0, x1, y1) in [(0, 6, 5, 7), (13, 4, 17, 5), (7, 0, 8, 4), (11, 13, 12, 16), (1, 11, 4, 12)]:
+            d.rectangle([x0, oy + y0, x1, oy + y1], fill=GUNMETAL)      # barrels sticking out
+        d.point((9, oy + 9), fill=YELLOW)
+    save(img, "Content/NPCs/GunDevilSpawn.png")
+
+
+def eternity_fleshling():
+    # 4 frames of 14x14 -> 28x112
+    img, d = canvas(14, 14 * 4)
+    for f in range(4):
+        oy = f * 14
+        squish = (0, 1, 0, -1)[f]
+        d.ellipse([1 - squish, oy + 2 + squish, 12 + squish, oy + 12 - squish], fill=FLESH)
+        d.ellipse([4, oy + 4, 9, oy + 9], fill=YELLOW)
+        d.ellipse([6, oy + 6, 7, oy + 7], fill=BLACK)
+        d.point((2, oy + 10), fill=FLESH_D); d.point((11, oy + 4), fill=FLESH_D)
+    save(img, "Content/NPCs/EternityFleshling.png")
+
+
+def eternity_devil():
+    # 4 frames of 90x90 -> 180x720
+    img, d = canvas(90, 90 * 4)
+    eyes = [(30, 28, 6), (58, 24, 5), (44, 46, 9), (24, 58, 4), (66, 54, 6), (48, 72, 4), (70, 36, 3), (16, 40, 3)]
+    for f in range(4):
+        oy = f * 90
+        pulse = (0, 2, 3, 2)[f]
+        d.ellipse([4 - pulse, oy + 6 - pulse, 86 + pulse, oy + 86 + pulse], fill=FLESH_D)
+        d.ellipse([8, oy + 10, 82, oy + 82], fill=FLESH)
+        for (x, y, r) in [(20, 22, 10), (64, 66, 12), (70, 20, 8)]:        # lumps
+            d.ellipse([x - r, oy + y - r, x + r, oy + y + r], fill=FLESH_L)
+        for i, (x, y, r) in enumerate(eyes):
+            blink = (i + f) % 5 == 0
+            if blink:
+                d.line([x - r, oy + y, x + r, oy + y], fill=BLACK)
+            else:
+                d.ellipse([x - r, oy + y - r, x + r, oy + y + r], fill=YELLOW)
+                d.ellipse([x - r // 2, oy + y - r // 2, x + r // 2, oy + y + r // 2], fill=BLACK)
+        d.ellipse([34, oy + 58, 56, oy + 70], fill=BLACK)                  # mouth
+        for x in range(36, 56, 4):
+            d.polygon([(x, oy + 59), (x + 2, oy + 59), (x + 1, oy + 63)], fill=WHITE)
+    save(img, "Content/NPCs/EternityDevil.png")
+    head, hd = canvas(16, 16)
+    hd.ellipse([0, 0, 15, 15], fill=FLESH)
+    for (x, y) in [(4, 5), (10, 4), (7, 9), (12, 10)]:
+        hd.point((x, y), fill=YELLOW)
+    hd.line([5, 12, 9, 12], fill=BLACK)
+    save(head, "Content/NPCs/EternityDevil_Head_Boss.png")
+
+
+def gun_devil():
+    # 4 frames of 70x70 -> 140x560
+    img, d = canvas(70, 70 * 4)
+    barrels = [(-1, -0.2), (-0.8, -0.8), (-0.2, -1), (0.6, -0.9), (1, -0.3), (0.9, 0.5), (0.3, 1), (-0.5, 0.9), (-1, 0.4)]
+    for f in range(4):
+        oy = f * 70
+        cx, cy = 35, oy + 35
+        for i, (bx, by) in enumerate(barrels):
+            recoil = 3 if (i + f) % 3 == 0 else 0
+            x1, y1 = cx + bx * (33 - recoil), cy + by * (33 - recoil)
+            d.line([cx, cy, x1, y1], fill=GUNMETAL, width=4)
+            d.line([cx, cy, x1, y1], fill=GUNMETAL_L, width=1)
+            d.ellipse([x1 - 2, y1 - 2, x1 + 2, y1 + 2], fill=BLACK)         # muzzle
+            if recoil:
+                d.ellipse([x1 - 3, y1 - 3, x1 + 3, y1 + 3], outline=FIRE_L)  # muzzle flash
+        d.ellipse([cx - 20, cy - 20, cx + 20, cy + 20], fill=FLESH)
+        d.ellipse([cx - 14, cy - 16, cx - 2, cy - 4], fill=FLESH_L)
+        d.ellipse([cx - 9, cy - 6, cx + 9, cy + 8], fill=BLACK)
+        for x in range(cx - 7, cx + 8, 3):
+            d.point((x, cy - 4), fill=WHITE); d.point((x + 1, cy + 6), fill=WHITE)
+        d.ellipse([cx + 6, cy - 16, cx + 12, cy - 10], fill=YELLOW); d.point((cx + 9, cy - 13), fill=BLACK)
+    save(img, "Content/NPCs/GunDevil.png")
+    head, hd = canvas(16, 16)
+    hd.line([8, 8, 0, 3], fill=GUNMETAL, width=2); hd.line([8, 8, 15, 4], fill=GUNMETAL, width=2)
+    hd.line([8, 8, 3, 15], fill=GUNMETAL, width=2); hd.line([8, 8, 14, 14], fill=GUNMETAL, width=2)
+    hd.ellipse([3, 3, 12, 12], fill=FLESH)
+    hd.line([6, 9, 10, 9], fill=BLACK); hd.point((10, 5), fill=YELLOW)
+    save(head, "Content/NPCs/GunDevil_Head_Boss.png")
+
+
+def more_devil_items():
+    img, d = canvas(11, 11)                                               # Gun Devil Fragment
+    d.ellipse([1, 2, 9, 10], fill=FLESH)
+    d.rectangle([6, 0, 7, 4], fill=GUNMETAL); d.rectangle([0, 6, 3, 7], fill=GUNMETAL)
+    d.point((4, 5), fill=FLESH_L)
+    save(img, "Content/Items/GunDevilFragment.png")
+
+    img, d = canvas(11, 14)                                               # Cursed Hotel Key
+    d.ellipse([2, 0, 8, 6], outline=GOLD)
+    d.ellipse([3, 1, 7, 5], outline=GOLD_D)
+    d.line([5, 6, 5, 13], fill=GOLD)
+    d.line([5, 10, 7, 10], fill=GOLD); d.line([5, 12, 8, 12], fill=GOLD)
+    d.point((4, 3), fill=RED); d.point((6, 8), fill=RED)
+    save(img, "Content/Items/Consumables/CursedHotelKey.png")
+
+    img, d = canvas(14, 14)                                               # Gun Devil's Trigger
+    d.rectangle([1, 3, 12, 6], fill=GUNMETAL)
+    d.line([1, 4, 12, 4], fill=GUNMETAL_L)
+    d.polygon([(8, 6), (12, 6), (11, 13), (8, 13)], fill=FLESH)           # fleshy grip
+    d.arc([4, 5, 9, 10], 0, 180, fill=GUNMETAL_L)                         # trigger guard
+    d.line([6, 6, 6, 8], fill=BLACK)
+    save(img, "Content/Items/Consumables/GunDevilsTrigger.png")
+
+    img, d = canvas(7, 7)                                                 # Fire Bolt
+    d.ellipse([0, 0, 6, 6], fill=FIRE)
+    d.ellipse([1, 1, 4, 4], fill=FIRE_L)
+    save(img, "Content/Projectiles/FireBolt.png")
+
+    img, d = canvas(4, 4)                                                 # Devil Bullet (points right)
+    d.rectangle([0, 1, 3, 2], fill=GUNMETAL_L)
+    d.point((3, 1), fill=FIRE_L); d.point((3, 2), fill=FIRE_L)
+    save(img, "Content/Projectiles/DevilBullet.png")
+
+
 if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
@@ -352,3 +534,11 @@ if __name__ == "__main__":
     zombie_devil()
     bat_devil()
     devil_items()
+    ghost_devil()
+    spider_devil()
+    fire_devil()
+    gun_devil_spawn()
+    eternity_fleshling()
+    eternity_devil()
+    gun_devil()
+    more_devil_items()

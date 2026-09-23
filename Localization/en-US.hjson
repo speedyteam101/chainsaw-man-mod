@@ -52,7 +52,9 @@ Mods: {
 				Tooltip:
 					'''
 					Rip and tear
-					Revs harder while in Chainsaw Devil form
+					Shreds enemies' defense with Ichor and sets them on fire
+					Grows stronger after defeating Skeletron, the Wall of Flesh, a mechanical boss, Plantera and the Moon Lord
+					Deals 1.5x / 2x / 2.5x damage in Chainsaw Devil form (by Starter Cord tier)
 					'''
 			}
 
@@ -77,6 +79,29 @@ Mods: {
 					'''
 					Summons the Bat Devil
 					Only works in Hardmode
+					'''
+			}
+
+			GunDevilFragment: {
+				DisplayName: Gun Devil Fragment
+				Tooltip: It's still warm, and it smells of gunpowder
+			}
+
+			CursedHotelKey: {
+				DisplayName: Cursed Hotel Key
+				Tooltip:
+					'''
+					Summons the Eternity Devil
+					Only works in Hardmode
+					'''
+			}
+
+			GunDevilsTrigger: {
+				DisplayName: Gun Devil's Trigger
+				Tooltip:
+					'''
+					Summons the Gun Devil
+					Only works after Plantera has been defeated
 					'''
 			}
 		}
@@ -109,6 +134,13 @@ Mods: {
 			DevilBat.DisplayName: Devil Bat
 			ZombieDevil.DisplayName: Zombie Devil
 			BatDevil.DisplayName: Bat Devil
+			GhostDevil.DisplayName: Ghost Devil
+			SpiderDevil.DisplayName: Spider Devil
+			FireDevil.DisplayName: Fire Devil
+			GunDevilSpawn.DisplayName: Gun Devil Spawn
+			EternityFleshling.DisplayName: Eternity Fleshling
+			EternityDevil.DisplayName: Eternity Devil
+			GunDevil.DisplayName: Gun Devil
 		}
 
 		Bestiary: {
@@ -116,12 +148,21 @@ Mods: {
 			DevilBat: A small devil that hunts in swarms at night. The Bat Devil calls them to its side.
 			ZombieDevil: A hulking devil that commands an army of the dead. Its leaps shake the ground and spray blood everywhere.
 			BatDevil: A giant devil that drinks blood to grow stronger. It rains blood from the sky and dives at its prey.
+			GhostDevil: A pale devil that drifts through solid rock. Easy to miss in the dark until it is right behind you.
+			SpiderDevil: A many-legged devil that skitters through caves. Its bite is venomous.
+			FireDevil: A devil born from the fear of fire. It lives among the flames of the Underworld.
+			GunDevilSpawn: A floating chunk of the Gun Devil's flesh, still bristling with barrels.
+			EternityFleshling: A lump of the Eternity Devil. As long as these live, their master keeps healing.
+			EternityDevil: A vast mass of flesh that traps its prey forever. Kill its Fleshlings, or it will never stop regenerating.
+			GunDevil: One of the most feared devils. It fills the air with bullets and charges without mercy.
 		}
 
 		Projectiles: {
 			ChainsawArmProjectile.DisplayName: Chainsaw Arm
 			PochitaPetProjectile.DisplayName: Pochita
 			BloodBolt.DisplayName: Blood Bolt
+			FireBolt.DisplayName: Fire Bolt
+			DevilBullet.DisplayName: Devil Bullet
 		}
 	}
 }

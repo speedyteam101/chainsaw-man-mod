@@ -25,7 +25,7 @@ namespace ChainsawManMod.Content.NPCs
 			NPC.defense = 14;
 			NPC.lifeMax = 220;
 			NPC.HitSound = SoundID.NPCHit1;
-			NPC.DeathSound = SoundID.NPCDeath4;
+			NPC.DeathSound = SoundID.NPCDeath1;
 			NPC.value = 300f;
 			NPC.knockBackResist = 0.6f;
 			NPC.noGravity = true;

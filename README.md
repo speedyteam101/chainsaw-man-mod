@@ -10,7 +10,7 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 | **Starter Cord** | Use while wearing Pochita's Heart to become the **Chainsaw Devil**; use again to turn back. The form never runs out and has no cooldown (it also ends if you right-click the buff or die). Tier 1 form: +25% melee damage, +15% melee speed, +10 defense, +20% move speed, much stronger blood healing. | 10 Rope, 3 Iron/Lead Bar @ Anvil |
 | **Revved Starter Cord** (upgrade) | Tier 2 form: +40% melee damage, +25% melee speed, +20 defense, +30% move speed, stronger healing. | Starter Cord, 10 Hallowed Bar, 5 each Soul of Might/Fright/Sight @ Mythril/Orichalcum Anvil |
 | **Hero of Hell's Cord** (upgrade) | Tier 3 form: +60% melee damage, +35% melee speed, +30 defense, +40% move speed, strongest healing. | Revved Starter Cord, 10 Luminite Bar, 15 Solar Fragment @ Ancient Manipulator |
-| **Chainsaw Arm** | Held chainsaw (100% axe power, 22 melee damage). Sprays blood on hit and revs harder in Chainsaw Devil form. | 12 Iron/Lead Bar, 10 Chain @ Anvil |
+| **Chainsaw Arm** | Held chainsaw: 45 base damage, 16% crit, hits each enemy up to 15 times a second, 175% axe power. Inflicts Ichor (lower defense) and On Fire. Gains +15 / +30 / +30 / +40 / +80 base damage after Skeletron / Wall of Flesh / any mechanical boss / Plantera / Moon Lord, and deals 1.5x / 2x / 2.5x damage in Chainsaw Devil form (by cord tier). | 12 Iron/Lead Bar, 10 Chain @ Anvil |
 | **Pochita Doll** | Summons Pochita as a flying pet. | 10 Silk, 2 Chain @ Loom |
 
 ## Devils
@@ -21,6 +21,13 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 | **Devil Bat** | Surface at night in Hardmode. Also called by the Bat Devil. | Devil Flesh (50%) |
 | **Zombie Devil** (pre-Hardmode boss, 3,500 HP) | Use a **Rotting Offering** (8 Devil Flesh @ Demon/Crimson Altar). Walks at you, leaps and slams the ground to spray blood bolts, and raises Zombie Devil Minions. Faster below 50% HP. | 15-25 Devil Flesh, Chainsaw Arm (33%), Pochita's Heart (25%) |
 | **Bat Devil** (Hardmode boss, 28,000 HP) | Use a **Bloody Bat Fang** (15 Devil Flesh, 5 Soul of Night @ Mythril/Orichalcum Anvil). Flies above you firing spreads of blood bolts, then winds up and dashes. Below 50% HP: wider spreads, double dashes and Devil Bat swarms. | 20-30 Devil Flesh, 15-25 Soul of Flight, Revved Starter Cord (25%) |
+| **Ghost Devil** | Caverns. Drifts through walls and fades in and out. | Devil Flesh (50%) |
+| **Spider Devil** | Caverns. Scuttles along the ground; its bite poisons. | Devil Flesh (50%), Cobwebs |
+| **Fire Devil** | Underworld. Hovers nearby and throws fireballs that set you on fire. | Devil Flesh (50%), Hellstone (50%) |
+| **Gun Devil Spawn** | Surface in Hardmode. Keeps its distance and fires 3-bullet bursts. Also called by the Gun Devil. | Gun Devil Fragment (33%), Devil Flesh (50%) |
+| **Eternity Fleshling** | Only spawned by the Eternity Devil. | Devil Flesh (33%) |
+| **Eternity Devil** (Hardmode boss, 40,000 HP) | Use a **Cursed Hotel Key** (20 Devil Flesh, 8 Soul of Night, Golden Key @ Mythril/Orichalcum Anvil). A giant drifting mass of flesh that fires rings of blood and spits out Eternity Fleshlings. **It regenerates while any Fleshlings are alive.** | 25-40 Devil Flesh, 10-20 Soul of Night, 10-20 Soul of Light |
+| **Gun Devil** (post-Plantera boss, 55,000 HP) | Use a **Gun Devil's Trigger** (15 Gun Devil Fragment, 10 Devil Flesh @ Mythril/Orichalcum Anvil). Circles you with rapid gunfire, stops to fire a bullet spiral, then charges 3 times. Below 50% HP it is faster and calls Gun Devil Spawn. | 20-35 Gun Devil Fragment, 30-50 Devil Flesh, 15-25 Chlorophyte Bar |
 
 ## Chainsaw Devil sprite
 

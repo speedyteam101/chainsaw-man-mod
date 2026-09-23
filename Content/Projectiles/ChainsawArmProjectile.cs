@@ -25,7 +25,7 @@ namespace ChainsawManMod.Content.Projectiles
 			Projectile.aiStyle = -1;
 			Projectile.hide = true;
 			Projectile.usesLocalNPCImmunity = true;
-			Projectile.localNPCHitCooldown = 8;
+			Projectile.localNPCHitCooldown = 4; // hits each enemy up to 15 times a second
 		}
 
 		public override void AI() {
@@ -84,6 +84,10 @@ namespace ChainsawManMod.Content.Projectiles
 		}
 
 		public override void OnHitNPC(NPC target, NPC.HitInfo hit, int damageDone) {
+			// Ichor lowers the target's defense; On Fire adds damage over time.
+			target.AddBuff(BuffID.Ichor, 180);
+			target.AddBuff(BuffID.OnFire, 180);
+
 			for (int i = 0; i < 3; i++) {
 				Dust.NewDust(target.position, target.width, target.height, DustID.Blood, Projectile.velocity.X * 0.05f, -1f);
 			}

@@ -43,7 +43,7 @@ namespace ChainsawManMod.Content.NPCs
 			NPC.defense = 12;
 			NPC.lifeMax = 3500;
 			NPC.HitSound = SoundID.NPCHit1;
-			NPC.DeathSound = SoundID.NPCDeath10;
+			NPC.DeathSound = SoundID.NPCDeath2;
 			NPC.knockBackResist = 0f;
 			NPC.value = Item.buyPrice(gold: 5);
 			NPC.SpawnWithHigherTime(30);
@@ -130,7 +130,7 @@ namespace ChainsawManMod.Content.NPCs
 			}
 			MinionTimer = 0f;
 
-			if (Main.netMode == NetmodeID.MultiplayerClient || CountActive(ModContent.NPCType<ZombieDevilMinion>()) >= MaxMinions) {
+			if (Main.netMode == NetmodeID.MultiplayerClient || DevilUtils.CountActive(ModContent.NPCType<ZombieDevilMinion>()) >= MaxMinions) {
 				return;
 			}
 
@@ -157,16 +157,6 @@ namespace ChainsawManMod.Content.NPCs
 				NPC.velocity = Vector2.Zero;
 				NPC.netUpdate = true;
 			}
-		}
-
-		private static int CountActive(int type) {
-			int count = 0;
-			foreach (NPC other in Main.ActiveNPCs) {
-				if (other.type == type) {
-					count++;
-				}
-			}
-			return count;
 		}
 
 		public override void FindFrame(int frameHeight) {
