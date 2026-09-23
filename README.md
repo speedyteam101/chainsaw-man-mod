@@ -51,10 +51,13 @@ While transformed, your character is drawn as an animated Chainsaw Devil sprite 
 It switches between idle, walk, run, jump, crouch, hurt and 8 different attack animations (5 on the ground, 3 in the air),
 picking a random attack each swing. Held items, wings, mounts and debuff effects are still drawn on top.
 
-- `Content/Players/ChainsawDevilSheet.png`: the cleaned in-game sprite sheet
-- `art/ChainsawDevilSheet_preview_4x.png`: a big labelled preview of every frame
-- `art/chainsaw_devil_source.png`: the original sheet it was made from
-- `tools/clean_sprite_sheet.py`: regenerates the sheet (`pip install pillow numpy scipy`, then `python3 tools/clean_sprite_sheet.py`)
+With the **Hero of Hell's Cord** (tier 3) you turn into the Hero of Hell form instead, which has its own sprite sheet
+(including an extra chain attack animation).
+
+- `Content/Players/ChainsawDevilSheet.png` / `HeroOfHellSheet.png`: the cleaned in-game sprite sheets
+- `art/ChainsawDevilSheet_preview_4x.png` / `art/HeroOfHellSheet_preview_4x.png`: big labelled previews of every frame
+- `art/chainsaw_devil_source.png` / `art/hero_of_hell_source.png`: the original sheets they were made from
+- `tools/clean_sprite_sheet.py`: regenerates both sheets (`pip install pillow numpy scipy`, then `python3 tools/clean_sprite_sheet.py`)
 
 To make the sprite bigger or smaller, change `SpriteScale` in `Content/Players/ChainsawDevilDrawLayer.cs`.
 
@@ -87,7 +90,7 @@ Replace any PNG with your own art at the same size.
 
 ## Disclaimer
 
-The Chainsaw Devil sprite sheet was supplied by the project owner; its original artist isn't recorded here. Get the artist's permission and credit them before publishing this mod (for example on the Steam Workshop).
+The Chainsaw Devil and Hero of Hell sprite sheets were supplied by the project owner; their original artists aren't recorded here. Get the artist's permission and credit them before publishing this mod (for example on the Steam Workshop).
 
 
 Chainsaw Man is created by Tatsuki Fujimoto. This is a non-commercial fan project and is not affiliated with or endorsed by the rights holders.

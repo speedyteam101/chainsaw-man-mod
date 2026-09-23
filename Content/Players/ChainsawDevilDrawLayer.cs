@@ -24,7 +24,9 @@ namespace ChainsawManMod.Content.Players
 		protected override void Draw(ref PlayerDrawSet drawInfo) {
 			Player player = drawInfo.drawPlayer;
 			ChainsawManPlayer modPlayer = player.GetModPlayer<ChainsawManPlayer>();
-			Texture2D texture = ModContent.Request<Texture2D>(ChainsawDevilAnimation.TexturePath).Value;
+			// The Hero of Hell's Cord (tier 3) uses the Hero of Hell sheet; lower tiers use the Chainsaw Devil sheet.
+			DevilSheet sheet = ChainsawDevilAnimation.ForTier(modPlayer.formTier);
+			Texture2D texture = ModContent.Request<Texture2D>(sheet.TexturePath).Value;
 
 			// Anchor the bottom centre of the frame to the player's feet.
 			Vector2 feet = drawInfo.Center + new Vector2(0f, player.height / 2f) - Main.screenPosition;
@@ -38,10 +40,10 @@ namespace ChainsawManMod.Content.Players
 			drawInfo.DrawDataCache.Add(new DrawData(
 				texture,
 				feet,
-				ChainsawDevilAnimation.GetFrame(modPlayer.devilAnim, modPlayer.devilFrame),
+				sheet.GetFrame(modPlayer.devilAnim, modPlayer.devilFrame),
 				color,
 				0f,
-				new Vector2(ChainsawDevilAnimation.CellWidth / 2f, ChainsawDevilAnimation.CellHeight),
+				new Vector2(sheet.CellWidth / 2f, sheet.CellHeight),
 				SpriteScale,
 				effects,
 				0

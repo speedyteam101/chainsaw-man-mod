@@ -145,25 +145,33 @@ namespace ChainsawManMod.Common.Players
 				return;
 			}
 
+			DevilSheet sheet = ChainsawDevilAnimation.ForTier(formTier);
+			if (!sheet.Has(devilAnim)) {
+				SetAnim(DevilAnim.Idle); // switched to a sheet that doesn't have the current row
+			}
 			bool airborne = Player.velocity.Y != 0f;
 			bool attacking = Player.itemAnimation > 0 && Player.HeldItem.damage > 0;
 
 			if (hurtAnimTimer > 0) {
-				// Only the first 4 damage frames: the rest of the row is a knock-down.
+				// Only the first few damage frames (the "hit" reaction); the rest of the row is a knock-down.
 				SetAnim(DevilAnim.Damage);
-				devilFrame = (HurtAnimTicks - hurtAnimTimer) * 4 / HurtAnimTicks;
+				devilFrame = (HurtAnimTicks - hurtAnimTimer) * sheet.HurtFrames / HurtAnimTicks;
 			}
 			else if (attacking) {
-				bool alreadyAttacking = devilAnim >= DevilAnim.Attack1 && devilAnim <= DevilAnim.AirAttack3;
+				bool alreadyAttacking = System.Array.IndexOf(ChainsawDevilAnimation.GroundAttacks, devilAnim) >= 0 || System.Array.IndexOf(ChainsawDevilAnimation.AirAttacks, devilAnim) >= 0;
 				if (newSwing || !alreadyAttacking) {
 					DevilAnim[] options = airborne ? ChainsawDevilAnimation.AirAttacks : ChainsawDevilAnimation.GroundAttacks;
-					SetAnim(options[Main.rand.Next(options.Length)]);
+					DevilAnim pick;
+					do {
+						pick = options[Main.rand.Next(options.Length)];
+					} while (!sheet.Has(pick)); // skip rows this sheet doesn't have
+					SetAnim(pick);
 				}
 
-				int count = ChainsawDevilAnimation.FrameCount(devilAnim);
+				int count = sheet.FrameCount(devilAnim);
 				if (Player.channel) {
 					// Held weapons like the Chainsaw Arm: loop the attack.
-					Loop(4);
+					Loop(4, sheet);
 				}
 				else {
 					float progress = 1f - Player.itemAnimation / (float)System.Math.Max(Player.itemAnimationMax, 1);
@@ -173,23 +181,23 @@ namespace ChainsawManMod.Common.Players
 			else if (airborne) {
 				SetAnim(DevilAnim.Jump);
 				float vy = Player.velocity.Y * Player.gravDir;
-				devilFrame = vy < -6f ? 2 : vy < -2f ? 3 : vy < 2f ? 4 : 5;
+				devilFrame = sheet.JumpFrames[vy < -6f ? 0 : vy < -2f ? 1 : vy < 2f ? 2 : 3];
 			}
 			else if (Player.controlDown) {
 				SetAnim(DevilAnim.Crouch);
-				devilFrame = 1;
+				devilFrame = sheet.CrouchFrame;
 			}
 			else if (System.Math.Abs(Player.velocity.X) > 3.5f) {
 				SetAnim(DevilAnim.Run);
-				Loop(5);
+				Loop(5, sheet);
 			}
 			else if (System.Math.Abs(Player.velocity.X) > 0.2f) {
 				SetAnim(DevilAnim.Walk);
-				Loop(6);
+				Loop(6, sheet);
 			}
 			else {
 				SetAnim(DevilAnim.Idle);
-				Loop(8);
+				Loop(8, sheet);
 			}
 		}
 
@@ -201,10 +209,10 @@ namespace ChainsawManMod.Common.Players
 			}
 		}
 
-		private void Loop(int ticksPerFrame) {
+		private void Loop(int ticksPerFrame, DevilSheet sheet) {
 			if (++devilFrameCounter >= ticksPerFrame) {
 				devilFrameCounter = 0;
-				devilFrame = (devilFrame + 1) % ChainsawDevilAnimation.FrameCount(devilAnim);
+				devilFrame = (devilFrame + 1) % sheet.FrameCount(devilAnim);
 			}
 		}
 
