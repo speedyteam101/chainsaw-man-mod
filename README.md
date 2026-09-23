@@ -7,7 +7,9 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 | Item | What it does | Recipe |
 | --- | --- | --- |
 | **Pochita's Heart** (accessory) | +8% melee damage. Melee hits heal you a little (drinking blood). Once every 5 minutes, Pochita saves you from a lethal hit and brings you back at half health. | Life Crystal, 5 Chain, Shackle @ Demon/Crimson Altar |
-| **Starter Cord** | Pull it while wearing Pochita's Heart to become the **Chainsaw Devil** for 30 s: +25% melee damage, +15% melee speed, +10 defense, +20% move speed, and much stronger blood healing. 90 s cooldown. | 10 Rope, 3 Iron/Lead Bar @ Anvil |
+| **Starter Cord** | Use while wearing Pochita's Heart to become the **Chainsaw Devil**; use again to turn back. The form never runs out and has no cooldown (it also ends if you right-click the buff or die). Tier 1 form: +25% melee damage, +15% melee speed, +10 defense, +20% move speed, much stronger blood healing. | 10 Rope, 3 Iron/Lead Bar @ Anvil |
+| **Revved Starter Cord** (upgrade) | Tier 2 form: +40% melee damage, +25% melee speed, +20 defense, +30% move speed, stronger healing. | Starter Cord, 10 Hallowed Bar, 5 each Soul of Might/Fright/Sight @ Mythril/Orichalcum Anvil |
+| **Hero of Hell's Cord** (upgrade) | Tier 3 form: +60% melee damage, +35% melee speed, +30 defense, +40% move speed, strongest healing. | Revved Starter Cord, 10 Luminite Bar, 15 Solar Fragment @ Ancient Manipulator |
 | **Chainsaw Arm** | Held chainsaw (100% axe power, 22 melee damage). Sprays blood on hit and revs harder in Chainsaw Devil form. | 12 Iron/Lead Bar, 10 Chain @ Anvil |
 | **Pochita Doll** | Summons Pochita as a flying pet. | 10 Silk, 2 Chain @ Loom |
 

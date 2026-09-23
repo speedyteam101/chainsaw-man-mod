@@ -16,9 +16,34 @@ Mods: {
 				DisplayName: Starter Cord
 				Tooltip:
 					'''
-					Pull to become the Chainsaw Devil for {0} seconds
+					Use to transform into the Chainsaw Devil; use again to turn back
+					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
+					The form lasts until you turn it off, with no cooldown
 					Requires Pochita's Heart to be equipped
-					{1} second cooldown
+					'''
+			}
+
+			RevvedStarterCord: {
+				DisplayName: Revved Starter Cord
+				Tooltip:
+					'''
+					An upgraded Starter Cord
+					Use to transform into the Chainsaw Devil; use again to turn back
+					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
+					The form lasts until you turn it off, with no cooldown
+					Requires Pochita's Heart to be equipped
+					'''
+			}
+
+			HeroOfHellsCord: {
+				DisplayName: Hero of Hell's Cord
+				Tooltip:
+					'''
+					The fully upgraded Starter Cord
+					Use to transform into the Chainsaw Devil; use again to turn back
+					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
+					The form lasts until you turn it off, with no cooldown
+					Requires Pochita's Heart to be equipped
 					'''
 			}
 
@@ -45,12 +70,8 @@ Mods: {
 					{0}% increased melee damage, {1}% increased melee speed
 					{2} defense, {3}% increased movement speed
 					Melee hits drink much more blood
+					Pull the cord again to turn back
 					'''
-			}
-
-			StarterCordCooldown: {
-				DisplayName: Engine Cooling
-				Description: You can't pull the Starter Cord yet
 			}
 
 			PochitasContractCooldown: {

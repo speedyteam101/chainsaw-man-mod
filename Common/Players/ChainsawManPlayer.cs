@@ -17,13 +17,20 @@ namespace ChainsawManMod.Common.Players
 		private const int LifeStealDelay = 10;
 
 		public bool hasPochitaHeart;
-		public bool chainsawDevilForm;
+
+		// Tier of the active Chainsaw Devil form this frame (0 = not transformed). Set by the ChainsawDevilForm buff.
+		public int formTier;
+
+		// Tier of the last Starter Cord used. Kept between frames so the endless form remembers its strength.
+		public int selectedFormTier = 1;
+
+		public bool chainsawDevilForm => formTier > 0;
 
 		private int lifeStealTimer;
 
 		public override void ResetEffects() {
 			hasPochitaHeart = false;
-			chainsawDevilForm = false;
+			formTier = 0;
 		}
 
 		public override void PostUpdate() {
@@ -59,12 +66,13 @@ namespace ChainsawManMod.Common.Players
 				return;
 			}
 
-			float fraction = chainsawDevilForm ? 0.08f : 0.02f;
+			// Healing per hit: hybrid / tier 1 / tier 2 / tier 3 form.
+			float fraction = formTier switch { 3 => 0.12f, 2 => 0.10f, 1 => 0.08f, _ => 0.02f };
 			int heal = (int)(damageDone * fraction);
 			if (heal < 1) {
 				heal = 1;
 			}
-			int cap = chainsawDevilForm ? 12 : 3;
+			int cap = formTier switch { 3 => 30, 2 => 20, 1 => 12, _ => 3 };
 			if (heal > cap) {
 				heal = cap;
 			}

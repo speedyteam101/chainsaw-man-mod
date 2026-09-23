@@ -19,6 +19,8 @@ RED_D = (120, 10, 20, 255)
 RED_L = (240, 80, 80, 255)
 WHITE = (250, 250, 250, 255)
 BROWN = (120, 80, 45, 255)
+GOLD = (240, 200, 60, 255)
+GOLD_D = (170, 130, 30, 255)
 CLEAR = (0, 0, 0, 0)
 
 
@@ -86,14 +88,17 @@ def pochitas_heart():
     save(img, "Content/Items/PochitasHeart.png")
 
 
-def starter_cord():
+def starter_cord(path, handle, handle_d, cord, spark=None):
     # 11x14 -> 22x28
     img, d = canvas(11, 14)
-    d.rectangle([2, 0, 8, 2], fill=ORANGE)           # T-handle
-    d.line([2, 2, 8, 2], fill=ORANGE_D)
+    d.rectangle([2, 0, 8, 2], fill=handle)           # T-handle
+    d.line([2, 2, 8, 2], fill=handle_d)
     pts = [(5, 3), (5, 5), (4, 7), (6, 9), (5, 11), (5, 13)]
-    d.line(pts, fill=BLACK)
-    save(img, "Content/Items/StarterCord.png")
+    d.line(pts, fill=cord)
+    if spark:
+        for p in [(1, 5), (9, 6), (2, 10), (8, 11), (0, 1), (10, 1)]:
+            d.point(p, fill=spark)
+    save(img, path)
 
 
 def pochita(d, ox, oy, frame):
@@ -151,12 +156,6 @@ def icon_devil(d):
     d.line([5, 12, 10, 12], fill=RED)
 
 
-def icon_cord_cooldown(d):
-    d.rectangle([4, 2, 11, 4], fill=ORANGE_D)
-    d.line([7, 5, 7, 13], fill=STEEL_D)
-    d.line([3, 13, 12, 3], fill=RED)
-
-
 def icon_contract(d):
     d.ellipse([3, 4, 8, 9], fill=RED_D)
     d.ellipse([7, 4, 12, 9], fill=RED_D)
@@ -190,11 +189,12 @@ if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
     pochitas_heart()
-    starter_cord()
+    starter_cord("Content/Items/StarterCord.png", ORANGE, ORANGE_D, BLACK)
+    starter_cord("Content/Items/RevvedStarterCord.png", GOLD, GOLD_D, STEEL_D, spark=STEEL_L)
+    starter_cord("Content/Items/HeroOfHellsCord.png", RED, RED_D, BLACK, spark=ORANGE_L)
     pochita_pet()
     pochita_doll()
     buff_icon("Content/Buffs/ChainsawDevilForm.png", icon_devil)
-    buff_icon("Content/Buffs/StarterCordCooldown.png", icon_cord_cooldown)
     buff_icon("Content/Buffs/PochitasContractCooldown.png", icon_contract)
     buff_icon("Content/Pets/PochitaPetBuff.png", icon_pet)
     mod_icon()
