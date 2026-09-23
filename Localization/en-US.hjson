@@ -60,6 +60,25 @@ Mods: {
 				DisplayName: Pochita Doll
 				Tooltip: Summons Pochita to follow you
 			}
+
+			DevilFlesh: {
+				DisplayName: Devil Flesh
+				Tooltip: Still twitching...
+			}
+
+			RottingOffering: {
+				DisplayName: Rotting Offering
+				Tooltip: Summons the Zombie Devil
+			}
+
+			BloodyBatFang: {
+				DisplayName: Bloody Bat Fang
+				Tooltip:
+					'''
+					Summons the Bat Devil
+					Only works in Hardmode
+					'''
+			}
 		}
 
 		Buffs: {
@@ -85,9 +104,24 @@ Mods: {
 			}
 		}
 
+		NPCs: {
+			ZombieDevilMinion.DisplayName: Zombie Devil Minion
+			DevilBat.DisplayName: Devil Bat
+			ZombieDevil.DisplayName: Zombie Devil
+			BatDevil.DisplayName: Bat Devil
+		}
+
+		Bestiary: {
+			ZombieDevilMinion: A human who made a contract with the Zombie Devil, now nothing more than its puppet.
+			DevilBat: A small devil that hunts in swarms at night. The Bat Devil calls them to its side.
+			ZombieDevil: A hulking devil that commands an army of the dead. Its leaps shake the ground and spray blood everywhere.
+			BatDevil: A giant devil that drinks blood to grow stronger. It rains blood from the sky and dives at its prey.
+		}
+
 		Projectiles: {
 			ChainsawArmProjectile.DisplayName: Chainsaw Arm
 			PochitaPetProjectile.DisplayName: Pochita
+			BloodBolt.DisplayName: Blood Bolt
 		}
 	}
 }

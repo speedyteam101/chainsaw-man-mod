@@ -13,6 +13,15 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 | **Chainsaw Arm** | Held chainsaw (100% axe power, 22 melee damage). Sprays blood on hit and revs harder in Chainsaw Devil form. | 12 Iron/Lead Bar, 10 Chain @ Anvil |
 | **Pochita Doll** | Summons Pochita as a flying pet. | 10 Silk, 2 Chain @ Loom |
 
+## Devils
+
+| Enemy / Boss | Where / how | Drops |
+| --- | --- | --- |
+| **Zombie Devil Minion** | Surface at night, any time. Also raised by the Zombie Devil. | Devil Flesh (50%) |
+| **Devil Bat** | Surface at night in Hardmode. Also called by the Bat Devil. | Devil Flesh (50%) |
+| **Zombie Devil** (pre-Hardmode boss, 3,500 HP) | Use a **Rotting Offering** (8 Devil Flesh @ Demon/Crimson Altar). Walks at you, leaps and slams the ground to spray blood bolts, and raises Zombie Devil Minions. Faster below 50% HP. | 15-25 Devil Flesh, Chainsaw Arm (33%), Pochita's Heart (25%) |
+| **Bat Devil** (Hardmode boss, 28,000 HP) | Use a **Bloody Bat Fang** (15 Devil Flesh, 5 Soul of Night @ Mythril/Orichalcum Anvil). Flies above you firing spreads of blood bolts, then winds up and dashes. Below 50% HP: wider spreads, double dashes and Devil Bat swarms. | 20-30 Devil Flesh, 15-25 Soul of Flight, Revved Starter Cord (25%) |
+
 ## Chainsaw Devil sprite
 
 While transformed, your character is drawn as an animated Chainsaw Devil sprite instead of the normal player body.

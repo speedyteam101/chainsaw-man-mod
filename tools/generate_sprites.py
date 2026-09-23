@@ -185,6 +185,155 @@ def mod_icon():
     save(img, "icon.png")
 
 
+# ---------------------------------------------------------------- devils
+# NPC sprites face LEFT (Terraria flips them when they turn right).
+SKIN_Z = (150, 160, 130, 255)
+SKIN_ZD = (100, 110, 85, 255)
+FLESH = (150, 40, 55, 255)
+FLESH_D = (95, 20, 35, 255)
+FLESH_L = (200, 80, 90, 255)
+BAT = (70, 25, 35, 255)
+BAT_D = (40, 12, 20, 255)
+BAT_L = (120, 45, 55, 255)
+YELLOW = (250, 220, 90, 255)
+
+
+def zombie_minion():
+    # 3 frames of 17x24 -> 34x144 (frame 34x48), same layout as a vanilla zombie
+    img, d = canvas(17, 24 * 3)
+    for f in range(3):
+        oy = f * 24
+        leg = (0, 2, -2)[f]
+        d.rectangle([6, oy + 3, 11, 8 + oy], fill=SKIN_Z)                 # head
+        d.point((6, oy + 5), fill=RED); d.point((8, oy + 5), fill=RED)      # eyes
+        d.line([5, oy + 8, 8, oy + 8], fill=RED_D)                          # mouth
+        d.rectangle([6, oy + 9, 11, 16 + oy], fill=(90, 90, 110, 255))     # torn shirt
+        d.point((8, oy + 12), fill=RED); d.point((10, oy + 14), fill=RED)   # blood
+        d.line([6, oy + 10, 1, oy + 11], fill=SKIN_Z)                       # arms reaching left
+        d.line([6, oy + 12, 1, oy + 13], fill=SKIN_ZD)
+        d.line([8, oy + 17, 8 + leg // 2, oy + 23], fill=(50, 45, 55, 255))  # legs
+        d.line([10, oy + 17, 10 - leg // 2, oy + 23], fill=(35, 30, 40, 255))
+    save(img, "Content/NPCs/ZombieDevilMinion.png")
+
+
+def devil_bat():
+    # 4 frames of 20x16 -> 40x128
+    img, d = canvas(20, 16 * 4)
+    for f in range(4):
+        oy = f * 16
+        wing = (0, 3, 6, 3)[f]
+        d.polygon([(9, oy + 7), (1, oy + 2 + wing), (4, oy + 9), (8, oy + 10)], fill=BAT)
+        d.polygon([(11, oy + 7), (19, oy + 2 + wing), (16, oy + 9), (12, oy + 10)], fill=BAT)
+        d.ellipse([7, oy + 5, 13, oy + 12], fill=BAT_L)
+        d.polygon([(7, oy + 6), (7, oy + 3), (9, oy + 5)], fill=BAT_D)      # ears
+        d.polygon([(13, oy + 6), (13, oy + 3), (11, oy + 5)], fill=BAT_D)
+        d.point((8, oy + 8), fill=YELLOW); d.point((11, oy + 8), fill=YELLOW)
+        d.point((9, oy + 10), fill=WHITE); d.point((10, oy + 10), fill=WHITE)  # fangs
+    save(img, "Content/NPCs/DevilBat.png")
+
+
+def zombie_devil_frame(d, oy, f):
+    """Hulking rotten devil, 60x80, facing left."""
+    step = (0, 3, 0, -3)[f]
+    # legs
+    d.rectangle([20 + step, oy + 60, 28 + step, oy + 78], fill=FLESH_D)
+    d.rectangle([34 - step, oy + 60, 42 - step, oy + 78], fill=FLESH_D)
+    d.rectangle([17 + step, oy + 76, 29 + step, oy + 79], fill=BLACK)
+    d.rectangle([33 - step, oy + 76, 45 - step, oy + 79], fill=BLACK)
+    # body
+    d.ellipse([10, oy + 22, 52, oy + 66], fill=FLESH)
+    d.ellipse([14, oy + 26, 30, oy + 44], fill=FLESH_L)
+    for (x, y) in [(38, 40), (24, 52), (44, 56), (18, 34)]:              # extra eyes on the body
+        d.ellipse([x - 2, oy + y - 2, x + 2, oy + y + 2], fill=YELLOW)
+        d.point((x, oy + y), fill=BLACK)
+    # head with a huge mouth
+    d.ellipse([4, oy + 2, 36, oy + 30], fill=FLESH)
+    d.ellipse([4, oy + 14, 26, oy + 28], fill=BLACK)                    # mouth
+    for x in range(6, 26, 4):
+        d.polygon([(x, oy + 15), (x + 2, oy + 15), (x + 1, oy + 19)], fill=WHITE)
+        d.polygon([(x, oy + 27), (x + 2, oy + 27), (x + 1, oy + 23)], fill=WHITE)
+    d.ellipse([12, oy + 5, 18, oy + 11], fill=YELLOW); d.point((14, oy + 8), fill=BLACK)
+    d.ellipse([24, oy + 4, 30, oy + 10], fill=YELLOW); d.point((26, oy + 7), fill=BLACK)
+    # arms reaching forward (left)
+    arm = (0, 2, 0, -2)[f]
+    d.polygon([(12, oy + 34), (0, oy + 44 + arm), (4, oy + 48 + arm), (16, oy + 40)], fill=FLESH_D)
+    d.polygon([(48, oy + 34), (58, oy + 50 - arm), (54, oy + 54 - arm), (44, oy + 42)], fill=FLESH_D)
+    d.point((1, oy + 47 + arm), fill=WHITE); d.point((3, oy + 49 + arm), fill=WHITE)  # claws
+
+
+def zombie_devil():
+    img, d = canvas(60, 80 * 4)
+    for f in range(4):
+        zombie_devil_frame(d, f * 80, f)
+    save(img, "Content/NPCs/ZombieDevil.png")
+    head, hd = canvas(16, 16)
+    hd.ellipse([0, 0, 15, 15], fill=FLESH)
+    hd.ellipse([2, 8, 11, 14], fill=BLACK)
+    for x in (3, 6, 9):
+        hd.point((x, 9), fill=WHITE); hd.point((x, 13), fill=WHITE)
+    hd.point((5, 4), fill=YELLOW); hd.point((10, 3), fill=YELLOW)
+    save(head, "Content/NPCs/ZombieDevil_Head_Boss.png")
+
+
+def bat_devil():
+    # 4 frames of 80x56 -> 160x448
+    img, d = canvas(80, 56 * 4)
+    for f in range(4):
+        oy = f * 56
+        wing = (0, 8, 16, 8)[f]
+        for side in (-1, 1):
+            cx = 40
+            tip = (cx + side * 39, oy + 6 + wing)
+            d.polygon([(cx + side * 10, oy + 22), tip, (cx + side * 30, oy + 30 + wing // 2),
+                       (cx + side * 24, oy + 26 + wing // 3), (cx + side * 16, oy + 34)], fill=BAT)
+            d.line([(cx + side * 10, oy + 22), tip], fill=BAT_D, width=1)
+        d.ellipse([26, oy + 14, 54, oy + 46], fill=BAT_L)                   # body
+        d.ellipse([29, oy + 10, 51, oy + 30], fill=BAT)                     # head
+        d.polygon([(30, oy + 14), (27, oy + 1), (36, oy + 11)], fill=BAT_D)  # ears
+        d.polygon([(50, oy + 14), (53, oy + 1), (44, oy + 11)], fill=BAT_D)
+        d.ellipse([33, oy + 16, 37, oy + 20], fill=YELLOW); d.point((35, oy + 18), fill=RED_D)
+        d.ellipse([43, oy + 16, 47, oy + 20], fill=YELLOW); d.point((45, oy + 18), fill=RED_D)
+        d.rectangle([35, oy + 24, 45, oy + 27], fill=BLACK)                # mouth
+        for x in (36, 39, 42, 44):
+            d.point((x, oy + 25), fill=WHITE)
+        d.line([38, oy + 28, 38, oy + 31], fill=RED); d.line([42, oy + 28, 42, oy + 33], fill=RED)  # dripping blood
+        d.line([34, oy + 46, 32, oy + 53], fill=BAT_D); d.line([46, oy + 46, 48, oy + 53], fill=BAT_D)  # feet
+    save(img, "Content/NPCs/BatDevil.png")
+    head, hd = canvas(16, 16)
+    hd.polygon([(0, 6), (5, 4), (4, 10)], fill=BAT); hd.polygon([(15, 6), (10, 4), (11, 10)], fill=BAT)
+    hd.ellipse([3, 3, 12, 13], fill=BAT_L)
+    hd.polygon([(4, 5), (3, 0), (7, 4)], fill=BAT_D); hd.polygon([(11, 5), (12, 0), (8, 4)], fill=BAT_D)
+    hd.point((5, 7), fill=YELLOW); hd.point((10, 7), fill=YELLOW)
+    hd.line([6, 10, 9, 10], fill=BLACK)
+    save(head, "Content/NPCs/BatDevil_Head_Boss.png")
+
+
+def devil_items():
+    img, d = canvas(12, 12)                                               # Devil Flesh
+    d.ellipse([1, 2, 11, 11], fill=FLESH)
+    d.ellipse([3, 3, 7, 6], fill=FLESH_L)
+    d.point((8, 7), fill=YELLOW); d.point((5, 9), fill=FLESH_D)
+    save(img, "Content/Items/DevilFlesh.png")
+
+    img, d = canvas(14, 14)                                               # Rotting Offering
+    d.rectangle([1, 9, 12, 13], fill=BROWN)                               # plate
+    d.ellipse([3, 3, 11, 11], fill=FLESH)
+    d.ellipse([5, 5, 7, 7], fill=YELLOW); d.point((6, 6), fill=BLACK)
+    d.point((9, 4), fill=SKIN_ZD); d.point((4, 10), fill=RED)
+    save(img, "Content/Items/Consumables/RottingOffering.png")
+
+    img, d = canvas(10, 14)                                               # Bloody Bat Fang
+    d.polygon([(2, 0), (8, 0), (5, 13)], fill=WHITE)
+    d.line([3, 1, 5, 11], fill=(210, 210, 200, 255))
+    d.polygon([(4, 7), (6, 7), (5, 13)], fill=RED)
+    save(img, "Content/Items/Consumables/BloodyBatFang.png")
+
+    img, d = canvas(7, 7)                                                 # Blood Bolt
+    d.ellipse([0, 0, 6, 6], fill=RED)
+    d.ellipse([1, 1, 3, 3], fill=RED_L)
+    save(img, "Content/Projectiles/BloodBolt.png")
+
+
 if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
@@ -198,3 +347,8 @@ if __name__ == "__main__":
     buff_icon("Content/Buffs/PochitasContractCooldown.png", icon_contract)
     buff_icon("Content/Pets/PochitaPetBuff.png", icon_pet)
     mod_icon()
+    zombie_minion()
+    devil_bat()
+    zombie_devil()
+    bat_devil()
+    devil_items()
