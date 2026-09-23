@@ -19,6 +19,7 @@ Mods: {
 					Use to transform into the Chainsaw Devil; use again to turn back
 					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
 					The form lasts until you turn it off, with no cooldown
+					While transformed you get ability items; higher tiers unlock more
 					Requires Pochita's Heart to be equipped
 					'''
 			}
@@ -31,6 +32,7 @@ Mods: {
 					Use to transform into the Chainsaw Devil; use again to turn back
 					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
 					The form lasts until you turn it off, with no cooldown
+					While transformed you get ability items; higher tiers unlock more
 					Requires Pochita's Heart to be equipped
 					'''
 			}
@@ -43,6 +45,7 @@ Mods: {
 					Use to transform into the Chainsaw Devil; use again to turn back
 					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
 					The form lasts until you turn it off, with no cooldown
+					While transformed you get ability items; higher tiers unlock more
 					Requires Pochita's Heart to be equipped
 					'''
 			}
@@ -104,6 +107,54 @@ Mods: {
 					Only works after Plantera has been defeated
 					'''
 			}
+
+			ChainsawSlash: {
+				DisplayName: Chainsaw Slash
+				Tooltip:
+					'''
+					Chainsaw Devil ability
+					Huge, fast swings with your arm chainsaws
+					Lowers enemy defense
+					'''
+			}
+
+			RevDash: {
+				DisplayName: Rev Dash
+				Tooltip:
+					'''
+					Chainsaw Devil ability
+					Dash toward the cursor, shredding everything in your path
+					You can't be hurt during the dash
+					'''
+			}
+
+			BloodDrink: {
+				DisplayName: Blood Drink
+				Tooltip:
+					'''
+					Chainsaw Devil ability
+					Heals {0}% of your max health
+					{1} second cooldown
+					'''
+			}
+
+			ChainHook: {
+				DisplayName: Chain Hook
+				Tooltip:
+					'''
+					Chainsaw Devil ability (tier 2 cord or higher)
+					Fire a chain that pulls you to whatever it hits
+					'''
+			}
+
+			ChainsawStorm: {
+				DisplayName: Chainsaw Storm
+				Tooltip:
+					'''
+					Chainsaw Devil ability (tier 3 cord)
+					Surround yourself with spinning chainsaw blades for 6 seconds
+					'''
+			}
 		}
 
 		Buffs: {
@@ -115,12 +166,18 @@ Mods: {
 					{2} defense, {3}% increased movement speed
 					Melee hits drink much more blood
 					Pull the cord again to turn back
+					Ability items appear in your inventory while transformed
 					'''
 			}
 
 			PochitasContractCooldown: {
 				DisplayName: Pochita's Contract
 				Description: Pochita already saved you. It will take time before it can happen again.
+			}
+
+			BloodDrinkCooldown: {
+				DisplayName: Full Stomach
+				Description: You can't drink blood again yet
 			}
 
 			PochitaPetBuff: {
@@ -163,6 +220,9 @@ Mods: {
 			BloodBolt.DisplayName: Blood Bolt
 			FireBolt.DisplayName: Fire Bolt
 			DevilBullet.DisplayName: Devil Bullet
+			RevDashHitbox.DisplayName: Rev Dash
+			ChainHookProjectile.DisplayName: Chain Hook
+			StormBlade.DisplayName: Chainsaw Storm
 		}
 	}
 }

@@ -1,3 +1,4 @@
+using ChainsawManMod.Content.Abilities;
 using ChainsawManMod.Content.Buffs;
 using ChainsawManMod.Content.Players;
 using Terraria;
@@ -27,6 +28,9 @@ namespace ChainsawManMod.Common.Players
 
 		public bool chainsawDevilForm => formTier > 0;
 
+		// Form tier based on the buff itself, so it's correct at any point in the update (0 = not transformed).
+		public int ActiveFormTier => Player.HasBuff(ModContent.BuffType<ChainsawDevilForm>()) ? System.Math.Max(1, selectedFormTier) : 0;
+
 		private int lifeStealTimer;
 
 		// Chainsaw Devil sprite animation (see ChainsawDevilDrawLayer).
@@ -48,6 +52,52 @@ namespace ChainsawManMod.Common.Players
 			}
 
 			UpdateDevilAnimation();
+
+			if (Player.whoAmI == Main.myPlayer) {
+				UpdateAbilityItems();
+			}
+		}
+
+		// While transformed, the player is given the ability items their Starter Cord tier unlocks.
+		// When the form ends (or the tier drops) they are taken away again.
+		private void UpdateAbilityItems() {
+			int tier = ActiveFormTier;
+
+			// Remove abilities that are no longer allowed, including one held on the cursor.
+			for (int i = 0; i < Player.inventory.Length; i++) {
+				if (Player.inventory[i].ModItem is DevilAbility ability && !ability.IsAllowed(Player)) {
+					Player.inventory[i].TurnToAir();
+				}
+			}
+			if (Main.mouseItem.ModItem is DevilAbility heldAbility && !heldAbility.IsAllowed(Player)) {
+				Main.mouseItem.TurnToAir();
+			}
+
+			if (tier <= 0) {
+				return;
+			}
+
+			GiveAbility<ChainsawSlash>();
+			GiveAbility<RevDash>();
+			GiveAbility<BloodDrink>();
+			GiveAbility<ChainHook>();
+			GiveAbility<ChainsawStorm>();
+		}
+
+		private void GiveAbility<T>() where T : DevilAbility {
+			int type = ModContent.ItemType<T>();
+			T ability = ModContent.GetInstance<T>();
+			if (!ability.IsAllowed(Player) || Player.HasItem(type) || Main.mouseItem.type == type) {
+				return;
+			}
+
+			// First empty slot of the main inventory (hotbar first). Coins/ammo slots start at 50.
+			for (int i = 0; i < 50; i++) {
+				if (Player.inventory[i].IsAir) {
+					Player.inventory[i].SetDefaults(type);
+					return;
+				}
+			}
 		}
 
 		public override void OnHurt(Player.HurtInfo info) {

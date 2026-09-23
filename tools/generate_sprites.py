@@ -516,6 +516,78 @@ def more_devil_items():
     save(img, "Content/Projectiles/DevilBullet.png")
 
 
+# ---------------------------------------------------------------- Chainsaw Devil abilities
+def ability_sprites():
+    img, d = canvas(24, 24)                                               # Chainsaw Slash (diagonal blade)
+    d.polygon([(3, 21), (19, 3), (22, 6), (6, 24)], fill=STEEL)
+    d.line([(4, 20), (19, 4)], fill=STEEL_L)
+    for i in range(0, 17, 2):
+        d.point((5 + i, 22 - i), fill=STEEL_D)
+        d.point((2 + i, 19 - i + 1), fill=STEEL_D)
+    d.rectangle([0, 19, 5, 23], fill=ORANGE)
+    d.point((20, 5), fill=RED); d.point((14, 10), fill=RED)
+    save(img, "Content/Abilities/ChainsawSlash.png")
+
+    img, d = canvas(14, 14)                                               # Rev Dash (speed lines + saw)
+    for y in (3, 7, 11):
+        d.line([0, y, 6, y], fill=ORANGE_L)
+    d.rectangle([6, 5, 13, 9], fill=STEEL)
+    d.line([6, 6, 13, 6], fill=STEEL_L)
+    for x in range(6, 14, 2):
+        d.point((x, 4), fill=STEEL_D); d.point((x + 1, 10), fill=STEEL_D)
+    save(img, "Content/Abilities/RevDash.png")
+
+    img, d = canvas(10, 14)                                               # Blood Drink (vial)
+    d.rectangle([3, 0, 6, 2], fill=BROWN)
+    d.rectangle([2, 3, 7, 13], fill=(200, 220, 230, 255))
+    d.rectangle([3, 6, 6, 12], fill=RED)
+    d.point((4, 7), fill=RED_L)
+    save(img, "Content/Abilities/BloodDrink.png")
+
+    img, d = canvas(14, 14)                                               # Chain Hook
+    for i in range(4):
+        d.ellipse([i * 3, 10 - i * 3, i * 3 + 3, 13 - i * 3], outline=STEEL)
+    d.polygon([(10, 0), (13, 3), (10, 5), (9, 2)], fill=STEEL_L)
+    save(img, "Content/Abilities/ChainHook.png")
+
+    img, d = canvas(14, 14)                                               # Chainsaw Storm (ring of saws)
+    d.ellipse([1, 1, 12, 12], outline=ORANGE)
+    for (x, y) in [(6, 0), (12, 6), (6, 12), (0, 6)]:
+        d.ellipse([x - 1, y - 1, x + 2, y + 2], fill=STEEL)
+    d.ellipse([4, 4, 9, 9], fill=RED)
+    save(img, "Content/Abilities/ChainsawStorm.png")
+
+    img, d = canvas(1, 1)                                                 # Rev Dash hitbox (never drawn)
+    save(img, "Content/Projectiles/RevDashHitbox.png")
+
+    img, d = canvas(7, 7)                                                 # Chain Hook head (points right)
+    d.polygon([(0, 1), (6, 3), (0, 5)], fill=STEEL)
+    d.line([0, 3, 5, 3], fill=STEEL_L)
+    save(img, "Content/Projectiles/ChainHookProjectile.png")
+
+    img, d = canvas(3, 5)                                                 # one chain link (vertical)
+    d.rectangle([0, 0, 2, 4], outline=STEEL)
+    d.point((1, 2), fill=STEEL_D)
+    save(img, "Content/Projectiles/ChainHookChain.png")
+
+    img, d = canvas(20, 20)                                               # Storm Blade (circular saw)
+    d.ellipse([1, 1, 18, 18], fill=STEEL)
+    d.ellipse([5, 5, 14, 14], fill=STEEL_L)
+    d.ellipse([8, 8, 11, 11], fill=ORANGE)
+    for (x, y) in [(9, 0), (19, 9), (10, 19), (0, 10), (3, 3), (16, 3), (16, 16), (3, 16)]:
+        d.point((x, y), fill=STEEL_D)
+    save(img, "Content/Projectiles/StormBlade.png")
+
+    buff_icon("Content/Buffs/BloodDrinkCooldown.png", icon_blood_cooldown)
+
+
+def icon_blood_cooldown(d):
+    d.rectangle([6, 2, 9, 3], fill=BROWN)
+    d.rectangle([5, 4, 10, 13], fill=(200, 220, 230, 255))
+    d.rectangle([6, 10, 9, 12], fill=RED)
+    d.line([3, 13, 12, 3], fill=RED)
+
+
 if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
@@ -542,3 +614,4 @@ if __name__ == "__main__":
     eternity_devil()
     gun_devil()
     more_devil_items()
+    ability_sprites()

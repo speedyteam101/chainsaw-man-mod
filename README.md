@@ -13,6 +13,22 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 | **Chainsaw Arm** | Held chainsaw: 45 base damage, 16% crit, hits each enemy up to 15 times a second, 175% axe power. Inflicts Ichor (lower defense) and On Fire. Gains +15 / +30 / +30 / +40 / +80 base damage after Skeletron / Wall of Flesh / any mechanical boss / Plantera / Moon Lord, and deals 1.5x / 2x / 2.5x damage in Chainsaw Devil form (by cord tier). | 12 Iron/Lead Bar, 10 Chain @ Anvil |
 | **Pochita Doll** | Summons Pochita as a flying pet. | 10 Silk, 2 Chain @ Loom |
 
+## Chainsaw Devil abilities
+
+While you're transformed, ability items are put into your inventory automatically (first empty slots, hotbar first).
+They disappear when you turn back, if you switch to a lower-tier cord, or if you drop them.
+Damaging abilities scale like the Chainsaw Arm (progression bonus x form multiplier).
+
+| Ability | Cord tier | What it does |
+| --- | --- | --- |
+| **Chainsaw Slash** | 1+ | Huge, fast melee swings (55 base damage). Lowers enemy defense. |
+| **Rev Dash** | 1+ | Dash toward the cursor, damaging everything you pass through (70 base damage). Brief invincibility, no fall damage. |
+| **Blood Drink** | 1+ | Heal 30% of max health. 20 second cooldown. |
+| **Chain Hook** | 2+ | Fire a chain (60 base damage) that pulls you to the enemy or block it hits. |
+| **Chainsaw Storm** | 3 | 4 chainsaw blades orbit you for 6 seconds (50 base damage each). |
+
+If your inventory is full, you won't get the abilities until you free up slots.
+
 ## Devils
 
 | Enemy / Boss | Where / how | Drops |
