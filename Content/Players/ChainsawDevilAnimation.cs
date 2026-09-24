@@ -1,3 +1,4 @@
+using ChainsawManMod.Content.Hybrids;
 using Microsoft.Xna.Framework;
 
 namespace ChainsawManMod.Content.Players
@@ -82,6 +83,37 @@ namespace ChainsawManMod.Content.Players
 		};
 
 		public static DevilSheet ForTier(int formTier) => formTier >= 3 ? HeroOfHell : ChainsawDevil;
+
+		// Hybrid forms: placeholder sheets drawn by tools/generate_sprites.py, all with the same layout.
+		// Replace a PNG with real art using the same cells and rows (or give it its own DevilSheet here).
+		private static DevilSheet Placeholder(string name) => new() {
+			TexturePath = $"ChainsawManMod/Content/Players/Hybrid{name}Sheet",
+			CellWidth = 48,
+			CellHeight = 52,
+			FrameCounts = new[] { 4, 6, 6, 4, 2, 4, 4, 0, 0, 0, 4, 0, 0, 3, 0 },
+			JumpFrames = new[] { 0, 1, 2, 3 },
+			CrouchFrame = 1,
+			HurtFrames = 3
+		};
+
+		private static readonly DevilSheet Bomb = Placeholder("Bomb");
+		private static readonly DevilSheet Katana = Placeholder("Katana");
+		private static readonly DevilSheet Bow = Placeholder("Bow");
+		private static readonly DevilSheet Flamethrower = Placeholder("Flamethrower");
+		private static readonly DevilSheet Sword = Placeholder("Sword");
+		private static readonly DevilSheet Spear = Placeholder("Spear");
+		private static readonly DevilSheet Whip = Placeholder("Whip");
+
+		public static DevilSheet ForHybrid(HybridType hybrid) => hybrid switch {
+			HybridType.Bomb => Bomb,
+			HybridType.Katana => Katana,
+			HybridType.Bow => Bow,
+			HybridType.Flamethrower => Flamethrower,
+			HybridType.Sword => Sword,
+			HybridType.Spear => Spear,
+			HybridType.Whip => Whip,
+			_ => ChainsawDevil
+		};
 
 		public static readonly DevilAnim[] GroundAttacks = { DevilAnim.Attack1, DevilAnim.Attack2, DevilAnim.Attack3, DevilAnim.Attack4, DevilAnim.Attack5, DevilAnim.Attack6 };
 		public static readonly DevilAnim[] AirAttacks = { DevilAnim.AirAttack1, DevilAnim.AirAttack2, DevilAnim.AirAttack3 };

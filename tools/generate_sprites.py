@@ -597,6 +597,260 @@ def icon_blood_cooldown(d):
     d.line([3, 13, 12, 3], fill=RED)
 
 
+# ---------------------------------------------------------------- hybrid forms (placeholder sheets)
+# Same row layout as the Chainsaw Devil sheets (DevilAnim order); cells are 48x52 with the feet at bottom centre.
+# Sprites face RIGHT, like the real sheets. Frame counts must match ChainsawDevilAnimation.Placeholder().
+import math
+
+HYB_CELL_W, HYB_CELL_H = 48, 52
+HYB_ROWS = [("idle", 4), ("walk", 6), ("run", 6), ("jump", 4), ("crouch", 2), ("attack1", 4), ("attack2", 4),
+            ("attack3", 0), ("attack4", 0), ("attack5", 0), ("airattack1", 4), ("airattack2", 0), ("airattack3", 0),
+            ("damage", 3), ("attack6", 0)]
+SHIRT = (235, 235, 240, 255)
+SHIRT_D = (180, 180, 195, 255)
+PANTS = (35, 32, 40, 255)
+SKIN = (235, 190, 160, 255)
+DARK = (45, 40, 50, 255)
+
+
+def limb(d, x0, y0, length, angle_deg, color, width=2):
+    a = math.radians(angle_deg)
+    x1, y1 = x0 + math.cos(a) * length, y0 + math.sin(a) * length
+    d.line([x0, y0, x1, y1], fill=color, width=width)
+    return x1, y1
+
+
+def pose_for(row, f, n):
+    """Returns (front_leg, back_leg, front_arm, back_arm, crouch, lean, attack) angles in degrees (0 = right, 90 = down)."""
+    t = f / max(n, 1) * 2 * math.pi
+    if row == "idle":
+        return 95, 85, 100 + 4 * math.sin(t), 80, 1 if f % 2 else 0, 0, 0
+    if row in ("walk", "run"):
+        swing = 25 if row == "walk" else 40
+        return 90 + swing * math.sin(t), 90 - swing * math.sin(t), 90 - swing * math.sin(t), 90 + swing * math.sin(t), 0, (8 if row == "run" else 0), 0
+    if row == "jump":
+        return [(70, 110, -60, -120, 0, 0, 0), (60, 120, -40, -140, 0, 0, 0), (45, 135, 0, 180, 3, 0, 0), (80, 100, 120, 60, 0, 0, 0)][f]
+    if row == "crouch":
+        return 45, 135, 60, 110, 7 + f * 2, 10, 0
+    if row in ("attack1", "airattack1"):
+        return 75, 110, [-60, -20, 10, 30][f], 120, 0, [0, 4, 10, 6][f], [0, 1, 2, 1][f]
+    if row == "attack2":
+        return 70, 115, [150, 60, 0, -10][f], 100, 0, [-4, 6, 12, 8][f], [0, 1, 2, 2][f]
+    if row == "damage":
+        return 100, 80, [200, 220, 230][f], [-30, -40, -45][f], 0, [-12, -18, -22][f], 0
+    return 90, 90, 90, 90, 0, 0, 0
+
+
+def draw_hybrid_figure(d, ox, oy, row, f, n, head_fn, weapon_fn, accent):
+    front_leg, back_leg, front_arm, back_arm, crouch, lean, attack = pose_for(row, f, n)
+    fx = ox + HYB_CELL_W // 2
+    feet_y = oy + HYB_CELL_H - 4  # room for line thickness + outline
+    hip = (fx, feet_y - 12 + crouch)
+    if row == "jump":
+        hip = (fx, feet_y - 14)
+    # legs (back first). On the ground, each leg's length is chosen so the foot lands exactly on the floor.
+    def leg_length(angle):
+        if row == "jump":
+            return 12
+        down = math.sin(math.radians(angle))
+        return max(6, min(14, (feet_y - hip[1]) / down)) if down > 0.2 else 12
+    limb(d, hip[0], hip[1], leg_length(back_leg), back_leg, DARK, 3)
+    limb(d, hip[0], hip[1], leg_length(front_leg), front_leg, PANTS, 3)
+    # torso, leaning
+    shoulder = (hip[0] + lean * 0.4, hip[1] - 11)
+    d.polygon([(hip[0] - 3, hip[1]), (hip[0] + 3, hip[1]), (shoulder[0] + 4, shoulder[1]), (shoulder[0] - 4, shoulder[1])], fill=SHIRT)
+    d.line([hip[0] - 3, hip[1] - 1, hip[0] + 3, hip[1] - 1], fill=PANTS, width=2)  # belt
+    d.line([shoulder[0], shoulder[1] + 1, hip[0], hip[1] - 3], fill=accent)          # tie
+    # back arm, head, front arm (+ weapon)
+    limb(d, shoulder[0] - 1, shoulder[1] + 1, 9, back_arm, SHIRT_D, 2)
+    head_fn(d, shoulder[0] + 1, shoulder[1] - 1, f)
+    hx, hy = limb(d, shoulder[0] + 1, shoulder[1] + 1, 9, front_arm, SHIRT, 2)
+    weapon_fn(d, hx, hy, front_arm, attack)
+
+
+def head_round(color, detail):
+    def fn(d, x, y, f):
+        d.ellipse([x - 5, y - 10, x + 5, y], fill=color)
+        detail(d, x, y, f)
+    return fn
+
+
+def bomb_detail(d, x, y, f):
+    d.line([x, y - 10, x + 2, y - 14], fill=DARK)                      # fuse
+    d.point((x + 2 + f % 2, y - 15), fill=(255, 220, 90, 255))        # spark
+    d.ellipse([x - 1, y - 8, x + 3, y - 4], outline=(200, 200, 60, 255))  # pin ring
+    d.point((x + 3, y - 6), fill=(255, 80, 40, 255))
+
+
+def katana_detail(d, x, y, f):
+    d.polygon([(x - 1, y - 10), (x + 1, y - 10), (x + 3, y - 20), (x + 1, y - 19)], fill=(210, 215, 225, 255))
+    d.point((x + 2, y - 5), fill=(255, 60, 60, 255))
+
+
+def bow_detail(d, x, y, f):
+    d.arc([x - 7, y - 18, x + 7, y - 4], 180, 360, fill=(150, 100, 60, 255), width=2)
+    d.line([x - 7, y - 11, x + 7, y - 11], fill=(230, 230, 230, 255))
+    d.point((x + 2, y - 5), fill=(255, 60, 60, 255))
+
+
+def flame_detail(d, x, y, f):
+    d.rectangle([x - 2, y - 14, x + 2, y - 9], fill=(110, 110, 120, 255))  # nozzle
+    flick = f % 2
+    d.polygon([(x - 3, y - 14), (x + 3, y - 14), (x + flick, y - 20)], fill=(255, 140, 30, 255))
+    d.point((x, y - 16), fill=(255, 230, 100, 255))
+
+
+def sword_detail(d, x, y, f):
+    d.polygon([(x - 3, y - 9), (x + 3, y - 9), (x + 1, y - 21), (x - 1, y - 21)], fill=(200, 205, 215, 255))
+    d.line([x - 4, y - 9, x + 4, y - 9], fill=(170, 140, 60, 255))    # guard
+    d.point((x + 2, y - 5), fill=(255, 60, 60, 255))
+
+
+def spear_detail(d, x, y, f):
+    d.line([x, y - 10, x, y - 17], fill=(150, 110, 70, 255))
+    d.polygon([(x - 2, y - 17), (x + 2, y - 17), (x, y - 21)], fill=(210, 215, 225, 255))
+    d.point((x + 2, y - 5), fill=(255, 60, 60, 255))
+
+
+def whip_detail(d, x, y, f):
+    for i in range(4):
+        d.arc([x - 4 - i, y - 14 - i, x + 4 + i, y - 6 + i], 200 + f * 20, 340 + f * 20, fill=(120, 40, 40, 255))
+    d.point((x + 2, y - 5), fill=(255, 60, 60, 255))
+
+
+def weapon_blade(color, length):
+    def fn(d, x, y, angle, attack):
+        a = math.radians(angle - 90 + attack * 20)
+        d.line([x, y, x + math.cos(a) * length, y + math.sin(a) * length], fill=color, width=2)
+    return fn
+
+
+def weapon_none(d, x, y, angle, attack):
+    d.point((x, y), fill=SKIN)
+    if attack:
+        d.ellipse([x - 2, y - 2, x + 2, y + 2], fill=(255, 150, 40, 255))  # blast / flame
+
+
+def weapon_bow(d, x, y, angle, attack):
+    d.arc([x - 4, y - 7, x + 4, y + 7], 270, 90, fill=(150, 100, 60, 255), width=2)
+    if attack:
+        d.line([x - 2, y, x + 8, y], fill=(230, 230, 230, 255))
+
+
+def weapon_whip(d, x, y, angle, attack):
+    length = 5 + attack * 4
+    pts = [(x + i * length / 4, y + math.sin(i + attack) * 2) for i in range(5)]
+    d.line(pts, fill=(120, 40, 40, 255), width=1)
+
+
+HYBRID_LOOKS = {
+    # name: (head colour, head detail, weapon, accent)
+    "Bomb": ((60, 55, 65, 255), bomb_detail, weapon_none, (230, 120, 40, 255)),
+    "Katana": ((70, 70, 80, 255), katana_detail, weapon_blade((210, 215, 225, 255), 10), (40, 40, 60, 255)),
+    "Bow": ((80, 60, 55, 255), bow_detail, weapon_bow, (120, 40, 40, 255)),
+    "Flamethrower": ((90, 90, 100, 255), flame_detail, weapon_none, (230, 90, 30, 255)),
+    "Sword": ((75, 75, 85, 255), sword_detail, weapon_blade((200, 205, 215, 255), 11), (60, 60, 100, 255)),
+    "Spear": ((70, 65, 60, 255), spear_detail, weapon_blade((170, 130, 80, 255), 12), (60, 90, 60, 255)),
+    "Whip": ((85, 45, 50, 255), whip_detail, weapon_whip, (150, 40, 40, 255)),
+}
+
+
+def outline(img, color=(22, 14, 20, 255)):
+    """1px dark outline around everything opaque (same style as the cleaned sheets)."""
+    src = img.load()
+    out = img.copy()
+    dst = out.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            if src[x, y][3] == 0:
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < w and 0 <= ny < h and src[nx, ny][3] > 0:
+                        dst[x, y] = color
+                        break
+    return out
+
+
+def hybrid_sheets():
+    cols = max(n for _, n in HYB_ROWS)
+    for name, (head_col, detail, weapon, accent) in HYBRID_LOOKS.items():
+        img = Image.new("RGBA", (cols * HYB_CELL_W, len(HYB_ROWS) * HYB_CELL_H), CLEAR)
+        for r, (row, n) in enumerate(HYB_ROWS):
+            for f in range(n):
+                # Each frame is drawn on its own canvas, so nothing can spill into a neighbouring cell.
+                cell = Image.new("RGBA", (HYB_CELL_W, HYB_CELL_H), CLEAR)
+                draw_hybrid_figure(ImageDraw.Draw(cell), 0, 0, row, f, n, head_round(head_col, detail), weapon, accent)
+                cell = outline(cell)
+                img.paste(cell, (f * HYB_CELL_W, r * HYB_CELL_H), cell)
+        img.save(f"Content/Players/Hybrid{name}Sheet.png")  # 1x: drawn scaled up in game like the real sheets
+        print("wrote", f"Content/Players/Hybrid{name}Sheet.png", img.size)
+
+
+def hybrid_icons():
+    """Transform items (a heart / pin per form), ability icons, projectiles and the form buff icon."""
+    def heart(path, blade):
+        img, d = canvas(12, 12)
+        d.ellipse([1, 3, 6, 8], fill=RED); d.ellipse([5, 3, 10, 8], fill=RED)
+        d.polygon([(1, 6), (10, 6), (5, 11)], fill=RED)
+        blade(d)
+        save(img, path)
+
+    img, d = canvas(12, 12)                                               # Grenade Pin
+    d.ellipse([1, 4, 8, 11], outline=GOLD, width=2)
+    d.line([7, 5, 11, 1], fill=STEEL, width=2)
+    save(img, "Content/Hybrids/GrenadePin.png")
+    heart("Content/Hybrids/KatanaHeart.png", lambda d: d.line([5, 0, 5, 5], fill=STEEL_L, width=1))
+    heart("Content/Hybrids/BowHeart.png", lambda d: d.arc([2, 0, 9, 7], 180, 360, fill=BROWN))
+    heart("Content/Hybrids/FlamethrowerHeart.png", lambda d: d.polygon([(4, 3), (7, 3), (5, 0)], fill=ORANGE))
+    heart("Content/Hybrids/SwordHeart.png", lambda d: d.polygon([(4, 4), (6, 4), (5, 0)], fill=STEEL_L))
+    heart("Content/Hybrids/SpearHeart.png", lambda d: (d.line([5, 1, 5, 5], fill=BROWN), d.point((5, 0), fill=STEEL_L)))
+    heart("Content/Hybrids/WhipHeart.png", lambda d: d.arc([2, 0, 9, 6], 200, 340, fill=RED_D))
+
+    def icon(path, draw):
+        img, d = canvas(14, 14)
+        draw(d)
+        save(img, "Content/Abilities/Hybrids/" + path)
+
+    icon("BombBlast.png", lambda d: (d.ellipse([2, 2, 11, 11], fill=ORANGE), d.ellipse([4, 4, 9, 9], fill=GOLD)))
+    icon("ExplosivePunch.png", lambda d: (d.rectangle([2, 5, 7, 9], fill=SKIN), d.ellipse([7, 3, 13, 11], fill=ORANGE)))
+    icon("TorpedoDash.png", lambda d: (d.polygon([(1, 7), (9, 4), (13, 7), (9, 10)], fill=DARK), d.line([0, 5, 3, 5], fill=ORANGE)))
+    icon("KatanaSlash.png", lambda d: (d.line([1, 12, 12, 1], fill=STEEL_L, width=2), d.line([1, 12, 3, 10], fill=DARK, width=2)))
+    icon("QuickDraw.png", lambda d: (d.line([0, 7, 13, 7], fill=STEEL_L, width=2), d.line([0, 4, 6, 4], fill=STEEL_D)))
+    icon("SlashWave.png", lambda d: d.arc([1, 1, 12, 12], 290, 70, fill=STEEL_L, width=2))
+    icon("ArrowBarrage.png", lambda d: [d.line([1, 12 - i * 3, 12, 6 - i], fill=STEEL_L) for i in range(3)])
+    icon("PiercingShot.png", lambda d: (d.line([0, 7, 12, 7], fill=BROWN, width=1), d.polygon([(10, 5), (13, 7), (10, 9)], fill=STEEL_L)))
+    icon("FlameBreath.png", lambda d: (d.polygon([(1, 7), (12, 2), (12, 12)], fill=ORANGE), d.polygon([(4, 7), (12, 5), (12, 9)], fill=GOLD)))
+    icon("FireWall.png", lambda d: [d.polygon([(x, 13), (x + 3, 13), (x + 1, 3 + x % 3)], fill=ORANGE) for x in (1, 5, 9)])
+    icon("SwordSlash.png", lambda d: (d.polygon([(2, 11), (11, 2), (13, 3), (4, 12)], fill=STEEL_L), d.line([1, 10, 4, 13], fill=GOLD)))
+    icon("BladeEruption.png", lambda d: [d.polygon([(x, 13), (x + 2, 13), (x + 1, 2 + (x % 4))], fill=STEEL_L) for x in (1, 5, 9)])
+    icon("SpearThrust.png", lambda d: (d.line([0, 12, 10, 2], fill=BROWN, width=1), d.polygon([(9, 1), (13, 0), (12, 4)], fill=STEEL_L)))
+    icon("SpearRain.png", lambda d: [d.line([x, 0, x, 9], fill=STEEL_L) for x in (2, 6, 10)])
+    icon("WhipCrack.png", lambda d: d.line([(1, 12), (4, 6), (8, 8), (12, 2)], fill=RED_D, width=1))
+    icon("WhipGrab.png", lambda d: (d.line([(1, 12), (5, 5), (10, 7)], fill=RED_D), d.ellipse([9, 5, 13, 9], outline=GOLD)))
+
+    def proj(path, w, h, draw):
+        img, d = canvas(w, h)
+        draw(d)
+        save(img, "Content/Projectiles/Hybrids/" + path)
+
+    proj("DevilArrow.png", 8, 3, lambda d: (d.line([0, 1, 5, 1], fill=BROWN), d.polygon([(5, 0), (7, 1), (5, 2)], fill=STEEL_L)))
+    proj("PiercingArrow.png", 12, 4, lambda d: (d.line([0, 1, 8, 1], fill=STEEL_L, width=2), d.polygon([(8, 0), (11, 2), (8, 3)], fill=WHITE)))
+    proj("FlameBolt.png", 1, 1, lambda d: None)
+    proj("KatanaWave.png", 10, 20, lambda d: (d.arc([-10, 0, 9, 19], 300, 60, fill=STEEL_L, width=2), d.arc([-8, 2, 7, 17], 300, 60, fill=WHITE)))
+    proj("DevilSpear.png", 20, 4, lambda d: (d.line([0, 1, 15, 1], fill=BROWN, width=2), d.polygon([(15, 0), (19, 2), (15, 3)], fill=STEEL_L)))
+    proj("ExplosiveFist.png", 8, 8, lambda d: (d.ellipse([0, 0, 7, 7], fill=ORANGE), d.ellipse([2, 2, 5, 5], fill=GOLD)))
+    proj("BombExplosion.png", 1, 1, lambda d: None)
+    proj("HybridDashHitbox.png", 1, 1, lambda d: None)
+    proj("FlamePillar.png", 1, 1, lambda d: None)
+    proj("SwordEruption.png", 30, 50, lambda d: [d.polygon([(x, 49), (x + 5, 49), (x + 2, 6 + (x * 7) % 18)], fill=STEEL_L) for x in (1, 8, 15, 22)])
+    proj("WhipLash.png", 5, 5, lambda d: d.polygon([(0, 4), (2, 0), (4, 4)], fill=RED_D))
+    proj("WhipSegment.png", 2, 4, lambda d: d.rectangle([0, 0, 1, 3], fill=(120, 40, 40, 255)))
+
+    buff_icon("Content/Buffs/HybridFormBuff.png", lambda d: (d.ellipse([4, 3, 11, 10], fill=(80, 70, 90, 255)),
+                                                           d.line([7, 3, 9, 0], fill=STEEL_L), d.rectangle([5, 10, 10, 14], fill=SHIRT)))
+
+
 if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
@@ -624,3 +878,5 @@ if __name__ == "__main__":
     gun_devil()
     more_devil_items()
     ability_sprites()
+    hybrid_sheets()
+    hybrid_icons()

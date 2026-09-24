@@ -7,7 +7,7 @@ using Terraria.ModLoader;
 
 namespace ChainsawManMod.Content.Players
 {
-	// Draws the Chainsaw Devil sprite in place of the normal player body while transformed.
+	// Draws the form's sprite (Chainsaw Man or a hybrid) in place of the normal player body while transformed.
 	// ChainsawManPlayer.HideDrawLayers hides the vanilla body layers at the same time.
 	public class ChainsawDevilDrawLayer : PlayerDrawLayer
 	{
@@ -16,7 +16,7 @@ namespace ChainsawManMod.Content.Players
 
 		public override bool GetDefaultVisibility(PlayerDrawSet drawInfo) {
 			Player player = drawInfo.drawPlayer;
-			return !player.dead && player.GetModPlayer<ChainsawManPlayer>().chainsawDevilForm;
+			return !player.dead && player.GetModPlayer<ChainsawManPlayer>().AnyForm;
 		}
 
 		public override Position GetDefaultPosition() => new Between(PlayerDrawLayers.Torso, PlayerDrawLayers.OffhandAcc);
@@ -24,8 +24,8 @@ namespace ChainsawManMod.Content.Players
 		protected override void Draw(ref PlayerDrawSet drawInfo) {
 			Player player = drawInfo.drawPlayer;
 			ChainsawManPlayer modPlayer = player.GetModPlayer<ChainsawManPlayer>();
-			// The Hero of Hell's Cord (tier 3) uses the Hero of Hell sheet; lower tiers use the Chainsaw Devil sheet.
-			DevilSheet sheet = ChainsawDevilAnimation.ForTier(modPlayer.formTier);
+			// Chainsaw Man: tier 3 uses the Hero of Hell sheet, lower tiers the Chainsaw Devil sheet. Hybrids have their own.
+			DevilSheet sheet = modPlayer.CurrentSheet;
 			Texture2D texture = ModContent.Request<Texture2D>(sheet.TexturePath).Value;
 
 			// Anchor the bottom centre of the frame to the player's feet.

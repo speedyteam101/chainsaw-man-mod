@@ -13,6 +13,24 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 | **Chainsaw Arm** | Held chainsaw: 45 base damage, 16% crit, hits each enemy up to 15 times a second, 175% axe power. Inflicts Ichor (lower defense) and On Fire. Gains +15 / +30 / +30 / +40 / +80 base damage after Skeletron / Wall of Flesh / any mechanical boss / Plantera / Moon Lord, and deals 2x / 3.5x / 5x damage in Chainsaw Devil form (by cord tier). | 12 Iron/Lead Bar, 10 Chain @ Anvil |
 | **Pochita Doll** | Summons Pochita as a flying pet. | 10 Silk, 2 Chain @ Loom |
 
+## Hybrid forms
+
+Seven more devil hybrid forms, each with its own transform item (use to transform, use again to turn back; no time limit or cooldown).
+Transforming into one ends any other form, Chainsaw Man included. Each has a single form that grows stronger as you beat bosses
+(Skeletron, Wall of Flesh, any mechanical boss, Plantera, Moon Lord): **+40% to +140% damage, +10 to +60 defense, 5-25% damage
+reduction, 2-17 HP/s regen, +20-60% move speed**, plus knockback and fall damage immunity and a perk of its own.
+Their sprites are script-drawn placeholders (`Content/Players/Hybrid<Name>Sheet.png`), ready to be replaced with real sheets.
+
+| Form | Transform item (all @ Anvil) | Perk | Abilities |
+| --- | --- | --- | --- |
+| **Reze** (Bomb) | Grenade Pin: 15 Devil Flesh, 10 Grenades | Immune to fire, much higher jumps | Bomb Blast, Explosive Punch, Torpedo Dash |
+| **Katana Man** | Katana Devil's Heart: 15 Devil Flesh, 12 Iron/Lead Bar, 5 Silk | +25% melee speed, +15% crit | Katana Slash, Quick Draw, Slash Wave |
+| **Quanxi** (Bow) | Bow Devil's Heart: 15 Devil Flesh, 100 Wooden Arrows, 5 Iron/Lead Bar | +25% crit | Arrow Barrage, Piercing Shot |
+| **Barem Bridge** (Flamethrower) | Flamethrower Devil's Heart: 15 Devil Flesh, 10 Hellstone | Immune to fire and lava | Flame Breath, Fire Wall |
+| **Miri Sugo** (Sword) | Sword Devil's Heart: 15 Devil Flesh, 15 Iron/Lead Bar | +15 defense, +15% melee speed | Sword Slash, Blade Eruption |
+| **Spear Hybrid** | Spear Devil's Heart: 15 Devil Flesh, 10 Iron/Lead Bar, 20 Wood | +15% crit, +20 armor penetration | Spear Thrust, Spear Rain |
+| **Whip Hybrid** | Whip Devil's Heart: 15 Devil Flesh, 10 Chain, 5 Leather | +25% move speed, +15% attack speed | Whip Crack, Whip Grab |
+
 ## Chainsaw Devil abilities
 
 While you're transformed, ability items are put into your inventory automatically (first empty slots, hotbar first).

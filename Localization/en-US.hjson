@@ -117,6 +117,232 @@ Mods: {
 					'''
 			}
 
+			GrenadePin: {
+				DisplayName: Grenade Pin
+				Tooltip:
+					'''
+					Use to transform into Reze, the Bomb Hybrid; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			KatanaHeart: {
+				DisplayName: Katana Devil's Heart
+				Tooltip:
+					'''
+					Use to transform into Katana Man; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			BowHeart: {
+				DisplayName: Bow Devil's Heart
+				Tooltip:
+					'''
+					Use to transform into Quanxi, the Bow Hybrid; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			FlamethrowerHeart: {
+				DisplayName: Flamethrower Devil's Heart
+				Tooltip:
+					'''
+					Use to transform into Barem Bridge, the Flamethrower Hybrid; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			SwordHeart: {
+				DisplayName: Sword Devil's Heart
+				Tooltip:
+					'''
+					Use to transform into Miri Sugo, the Sword Hybrid; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			SpearHeart: {
+				DisplayName: Spear Devil's Heart
+				Tooltip:
+					'''
+					Use to transform into the Spear Hybrid; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			WhipHeart: {
+				DisplayName: Whip Devil's Heart
+				Tooltip:
+					'''
+					Use to transform into the Whip Hybrid; use again to turn back
+					No time limit and no cooldown. Ends any other form
+					Grows stronger as you defeat bosses
+					While transformed you get this form's ability items
+					'''
+			}
+
+			BombBlast: {
+				DisplayName: Bomb Blast
+				Tooltip:
+					'''
+					Bomb form ability
+					Explode around yourself
+					Can't hurt you
+					'''
+			}
+
+			ExplosivePunch: {
+				DisplayName: Explosive Punch
+				Tooltip:
+					'''
+					Bomb form ability
+					Punch a blast of force that explodes on contact
+					'''
+			}
+
+			TorpedoDash: {
+				DisplayName: Torpedo Dash
+				Tooltip:
+					'''
+					Bomb form ability
+					Blast yourself toward the cursor and explode at the end
+					You can't be hurt during the dash
+					'''
+			}
+
+			KatanaSlash: {
+				DisplayName: Katana Slash
+				Tooltip:
+					'''
+					Katana form ability
+					Very fast swings with your arm blades
+					'''
+			}
+
+			QuickDraw: {
+				DisplayName: Quick Draw
+				Tooltip:
+					'''
+					Katana form ability
+					Dash through enemies toward the cursor, cutting everything in your path
+					You can't be hurt during the dash
+					'''
+			}
+
+			SlashWave: {
+				DisplayName: Slash Wave
+				Tooltip:
+					'''
+					Katana form ability
+					Throw a crescent-shaped cut that flies through enemies
+					'''
+			}
+
+			ArrowBarrage: {
+				DisplayName: Arrow Barrage
+				Tooltip:
+					'''
+					Bow form ability
+					Fire a fan of five arrows
+					'''
+			}
+
+			PiercingShot: {
+				DisplayName: Piercing Shot
+				Tooltip:
+					'''
+					Bow form ability
+					A heavy arrow that goes through walls and up to 10 enemies
+					'''
+			}
+
+			FlameBreath: {
+				DisplayName: Flame Breath
+				Tooltip:
+					'''
+					Flamethrower form ability
+					Hold to breathe a stream of fire
+					Sets enemies on fire
+					'''
+			}
+
+			FireWall: {
+				DisplayName: Fire Wall
+				Tooltip:
+					'''
+					Flamethrower form ability
+					Raise a wall of fire pillars in front of you
+					'''
+			}
+
+			SwordSlash: {
+				DisplayName: Sword Slash
+				Tooltip:
+					'''
+					Sword form ability
+					Heavy, wide sword swings
+					'''
+			}
+
+			BladeEruption: {
+				DisplayName: Blade Eruption
+				Tooltip:
+					'''
+					Sword form ability
+					Blades burst out of the ground at the cursor
+					'''
+			}
+
+			SpearThrust: {
+				DisplayName: Spear Thrust
+				Tooltip:
+					'''
+					Spear form ability
+					Launch a spear through a line of enemies
+					'''
+			}
+
+			SpearRain: {
+				DisplayName: Spear Rain
+				Tooltip:
+					'''
+					Spear form ability
+					Spears rain down around the cursor
+					'''
+			}
+
+			WhipCrack: {
+				DisplayName: Whip Crack
+				Tooltip:
+					'''
+					Whip form ability
+					Crack the whip toward the cursor, hitting everything along it
+					'''
+			}
+
+			WhipGrab: {
+				DisplayName: Whip Grab
+				Tooltip:
+					'''
+					Whip form ability
+					A shorter crack that drags ordinary enemies toward you
+					Doesn't move bosses
+					'''
+			}
+
 			ChainsawSlash: {
 				DisplayName: Chainsaw Slash
 				Tooltip:
@@ -185,6 +411,16 @@ Mods: {
 				Description: Pochita already saved you. It will take time before it can happen again.
 			}
 
+			HybridFormBuff: {
+				DisplayName: Hybrid Form
+				Description:
+					'''
+					+{0}% damage, +{1} defense, {2}% damage reduction
+					+{3} health regenerated per second, +{4}% movement speed
+					Immune to knockback and fall damage
+					'''
+			}
+
 			BloodDrinkCooldown: {
 				DisplayName: Full Stomach
 				Description: You can't drink blood again yet
@@ -193,6 +429,42 @@ Mods: {
 			PochitaPetBuff: {
 				DisplayName: Pochita
 				Description: Woof!
+			}
+		}
+
+		# Names and perks shown on the hybrid form buff (HybridFormBuff.ModifyBuffText).
+		Hybrids: {
+			Bomb: {
+				FormName: Bomb Devil (Reze)
+				Perk: "Perk: immune to fire, much higher jumps"
+			}
+			Katana: {
+				FormName: Katana Devil
+				Perk: "Perk: +25% melee speed, +15% crit chance"
+			}
+			Bow: {
+				FormName: Bow Devil (Quanxi)
+				Perk: "Perk: +25% crit chance"
+			}
+			Flamethrower: {
+				FormName: Flamethrower Devil (Barem)
+				Perk: "Perk: immune to fire and lava, safe on hot blocks"
+			}
+			Sword: {
+				FormName: Sword Devil (Miri Sugo)
+				Perk: "Perk: +15 defense, +15% melee speed"
+			}
+			Spear: {
+				FormName: Spear Devil
+				Perk: "Perk: +15% crit chance, +20 armor penetration"
+			}
+			Whip: {
+				FormName: Whip Devil
+				Perk: "Perk: +25% movement speed, +15% attack speed"
+			}
+			None: {
+				FormName: Hybrid Form
+				Perk: ""
 			}
 		}
 
@@ -237,6 +509,18 @@ Mods: {
 			StormBlade.DisplayName: Chainsaw Storm
 			MakimaHound.DisplayName: Makima's Hound
 			MakimaGunFiend.DisplayName: Gun Fiend
+			MakimaKickHitbox.DisplayName: Makima's Kick
+			DevilArrow.DisplayName: Devil Arrow
+			PiercingArrow.DisplayName: Piercing Arrow
+			FlameBolt.DisplayName: Flame
+			KatanaWave.DisplayName: Slash Wave
+			DevilSpear.DisplayName: Devil Spear
+			ExplosiveFist.DisplayName: Explosive Punch
+			BombExplosion.DisplayName: Explosion
+			HybridDashHitbox.DisplayName: Dash
+			SwordEruption.DisplayName: Blade Eruption
+			FlamePillar.DisplayName: Fire Pillar
+			WhipLash.DisplayName: Whip
 		}
 	}
 }

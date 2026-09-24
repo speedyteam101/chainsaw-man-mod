@@ -4,6 +4,7 @@ A fan-made Chainsaw Man mod.
 - Starter Cord: pull it to turn into the Chainsaw Devil, and pull again to turn back. No time limit, no cooldown. Upgrade it twice (Hardmode and post-Moon Lord) for a stronger form.
 - Chainsaw Arm: a chainsaw weapon that cuts trees and enemies.
 - Pochita Doll: summons Pochita as a pet.
+- Seven hybrid forms: Reze (Bomb), Katana Man, Quanxi (Bow), Barem Bridge (Flamethrower), Miri Sugo (Sword), the Spear Hybrid and the Whip Hybrid, each with its own abilities.
 - Devils: Zombie Devil Minions, Devil Bats, Ghost Devils, Spider Devils, Fire Devils and Gun Devil Spawn, plus five bosses: the Zombie Devil, Bat Devil, Eternity Devil, Gun Devil and, after the Moon Lord, Makima.
 
 This is an unofficial fan project and is not affiliated with Tatsuki Fujimoto, Shueisha or MAPPA.

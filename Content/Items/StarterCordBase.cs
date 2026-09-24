@@ -47,7 +47,8 @@ namespace ChainsawManMod.Content.Items
 					player.ClearBuff(formBuff);
 				}
 				else {
-					// Transform, or switch to this cord's tier if already transformed.
+					// Transform, or switch to this cord's tier if already transformed. Ends any hybrid form.
+					player.ClearBuff(ModContent.BuffType<HybridFormBuff>());
 					modPlayer.selectedFormTier = Tier;
 					player.AddBuff(formBuff, 2);
 				}

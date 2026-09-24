@@ -1,5 +1,6 @@
 using ChainsawManMod.Content.Abilities;
 using ChainsawManMod.Content.Buffs;
+using ChainsawManMod.Content.Hybrids;
 using ChainsawManMod.Content.Players;
 using Terraria;
 using Terraria.Audio;
@@ -31,6 +32,23 @@ namespace ChainsawManMod.Common.Players
 		// Form tier based on the buff itself, so it's correct at any point in the update (0 = not transformed).
 		public int ActiveFormTier => Player.HasBuff(ModContent.BuffType<ChainsawDevilForm>()) ? System.Math.Max(1, selectedFormTier) : 0;
 
+		// Hybrid form active this frame (None = not in a hybrid form). Set by HybridFormBuff.
+		public HybridType activeHybrid;
+
+		// Hybrid form chosen by the last transform item used.
+		public HybridType selectedHybrid = HybridType.None;
+
+		// Hybrid form based on the buff itself, so it's correct at any point in the update.
+		public HybridType ActiveHybrid => Player.HasBuff(ModContent.BuffType<HybridFormBuff>()) ? selectedHybrid : HybridType.None;
+
+		// True in any form: Chainsaw Man (any tier) or a hybrid.
+		public bool AnyForm => chainsawDevilForm || activeHybrid != HybridType.None;
+
+		// Sprite sheet for the current form.
+		public DevilSheet CurrentSheet => activeHybrid != HybridType.None
+			? ChainsawDevilAnimation.ForHybrid(activeHybrid)
+			: ChainsawDevilAnimation.ForTier(formTier);
+
 		private int lifeStealTimer;
 
 		// Chainsaw Devil sprite animation (see ChainsawDevilDrawLayer).
@@ -44,6 +62,7 @@ namespace ChainsawManMod.Common.Players
 		public override void ResetEffects() {
 			hasPochitaHeart = false;
 			formTier = 0;
+			activeHybrid = HybridType.None;
 		}
 
 		public override void PostUpdate() {
@@ -61,8 +80,6 @@ namespace ChainsawManMod.Common.Players
 		// While transformed, the player is given the ability items their Starter Cord tier unlocks.
 		// When the form ends (or the tier drops) they are taken away again.
 		private void UpdateAbilityItems() {
-			int tier = ActiveFormTier;
-
 			// Remove abilities that are no longer allowed, including one held on the cursor.
 			for (int i = 0; i < Player.inventory.Length; i++) {
 				if (Player.inventory[i].ModItem is DevilAbility ability && !ability.IsAllowed(Player)) {
@@ -73,20 +90,17 @@ namespace ChainsawManMod.Common.Players
 				Main.mouseItem.TurnToAir();
 			}
 
-			if (tier <= 0) {
+			if (ActiveFormTier <= 0 && ActiveHybrid == HybridType.None) {
 				return;
 			}
 
-			GiveAbility<ChainsawSlash>();
-			GiveAbility<RevDash>();
-			GiveAbility<BloodDrink>();
-			GiveAbility<ChainHook>();
-			GiveAbility<ChainsawStorm>();
+			foreach (DevilAbility ability in DevilAbility.All) {
+				GiveAbility(ability);
+			}
 		}
 
-		private void GiveAbility<T>() where T : DevilAbility {
-			int type = ModContent.ItemType<T>();
-			T ability = ModContent.GetInstance<T>();
+		private void GiveAbility(DevilAbility ability) {
+			int type = ability.Type;
 			if (!ability.IsAllowed(Player) || Player.HasItem(type) || Main.mouseItem.type == type) {
 				return;
 			}
@@ -107,7 +121,7 @@ namespace ChainsawManMod.Common.Players
 		// While transformed, hide the normal player body so only the Chainsaw Devil sprite is drawn.
 		// Held items, mounts, wings and debuff effects stay visible.
 		public override void HideDrawLayers(PlayerDrawSet drawInfo) {
-			if (!chainsawDevilForm || Player.dead) {
+			if (!AnyForm || Player.dead) {
 				return;
 			}
 
@@ -139,13 +153,13 @@ namespace ChainsawManMod.Common.Players
 				hurtAnimTimer--;
 			}
 
-			if (!chainsawDevilForm) {
+			if (!AnyForm) {
 				devilAnim = DevilAnim.Idle;
 				devilFrame = 0;
 				return;
 			}
 
-			DevilSheet sheet = ChainsawDevilAnimation.ForTier(formTier);
+			DevilSheet sheet = CurrentSheet;
 			if (!sheet.Has(devilAnim)) {
 				SetAnim(DevilAnim.Idle); // switched to a sheet that doesn't have the current row
 			}
