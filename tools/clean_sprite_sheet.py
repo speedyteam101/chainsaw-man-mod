@@ -7,7 +7,7 @@ Usage (from the repository root):
 Sheets:
   chainsaw   art/chainsaw_devil_source.png -> Content/Players/ChainsawDevilSheet.png  (tier 1-2 form)
   hero       art/hero_of_hell_source.png   -> Content/Players/HeroOfHellSheet.png    (tier 3 form)
-  makima     art/makima_source.png         -> Content/NPCs/Makima.png (+ MakimaHound.png, MakimaGunFiend.png)
+  makima     art/makima_source.png         -> Content/NPCs/Makima.png, MakimaKicks.png (+ MakimaHound.png, MakimaGunFiend.png)
 Each Chainsaw Devil sheet also writes a big labelled preview to art/<name>_preview_4x.png.
 
 What "cleaning" does:
@@ -133,6 +133,18 @@ def keep_largest(f):
     f[..., 3][lab != keep] = 0
 
 
+def drop_specks(f, fraction=0.12):
+    """Removes pieces smaller than `fraction` of the biggest one (keeps detached heads, drops noise)."""
+    m = f[..., 3] > 0
+    lab, n = ndimage.label(m, structure=np.ones((3, 3)))
+    if n == 0:
+        return
+    sizes = ndimage.sum(m, lab, range(1, n + 1))
+    for i, size in enumerate(sizes):
+        if size < sizes.max() * fraction:
+            f[..., 3][lab == i + 1] = 0
+
+
 def foot_x(f):
     m = f[..., 3] > 0
     bottom = np.where(m.any(1))[0].max()
@@ -215,6 +227,15 @@ MAKIMA_ANIMS = [  # (name, frames) in strip order; must match the frame ranges i
     ("knockdown", [(228, 17, 15, 44), (251, 20, 14, 44), (274, 28, 24, 43), (304, 32, 31, 45), (338, 30, 34, 45),
                    (370, 33, 37, 46), (407, 22, 26, 45)]),
 ]
+# Melee combos, drawn from a separate texture (MakimaKicks.png) so Makima.png stays under 4096 px tall.
+MAKIMA_KICKS = [
+    ("kick1", [(17, 13, 253, 283), (34, 17, 253, 283), (52, 23, 253, 283), (77, 18, 254, 283), (96, 19, 254, 283), (116, 19, 254, 283),
+               (137, 15, 254, 283), (154, 29, 253, 283), (186, 23, 252, 283), (218, 22, 254, 283), (245, 26, 252, 283),
+               (278, 26, 252, 283), (312, 18, 256, 283), (339, 20, 256, 283)]),
+    ("kick2", [(37, 12, 341, 371), (53, 18, 342, 371), (76, 28, 343, 371), (109, 18, 342, 371), (135, 16, 342, 371),
+               (155, 16, 342, 371), (177, 23, 342, 371), (203, 16, 341, 371), (227, 15, 341, 371), (248, 12, 342, 371),
+               (268, 27, 342, 371), (297, 19, 342, 371), (320, 18, 342, 371)]),
+]
 MAKIMA_HOUND = [(457, 43, 183, 218), (506, 41, 182, 218)]
 MAKIMA_GUN_FIEND = [(165, 53, 452, 485)]
 
@@ -236,13 +257,14 @@ def build_makima():
                 m = f[..., 3] > 0
                 edge = m & ~ndimage.binary_erosion(m)
                 f[..., 3][edge & pinkish[:f.shape[0], :f.shape[1]]] = 0
-            keep_largest(f)
+            drop_specks(f)
             out.append(trim_vertical(f))
         return out
 
     anims = [(n, grab(b)) for n, b in MAKIMA_ANIMS]
+    kicks = [(n, grab(b)) for n, b in MAKIMA_KICKS]
     hound, gun = grab(MAKIMA_HOUND), grab(MAKIMA_GUN_FIEND)
-    everything = [f for _, fs in anims for f in fs] + hound + gun
+    everything = [f for _, fs in anims + kicks for f in fs] + hound + gun
     opaque = np.concatenate([f[f[..., 3] > 0][:, :3] for f in everything])
     side = int(np.ceil(np.sqrt(len(opaque))))
     palette = Image.fromarray(np.resize(opaque, (side * side, 3)).astype(np.uint8).reshape(side, side, 3)) \
@@ -255,15 +277,17 @@ def build_makima():
         q[ring] = OUTLINE
         return np.dstack([q, (m | ring) * 255]).astype(np.uint8)
 
-    def strip(frames, anchor_feet, path):
-        """Stacks frames vertically in equal cells (Terraria NPC/projectile layout), then scales 2x."""
-        frames = [finish(f) for f in frames]
+    def cell_size(frames, anchor_feet):
         if anchor_feet:
-            half = max(max(foot_x(f), f.shape[1] - foot_x(f)) for f in frames)
-            cw = 2 * half + 2
+            cw = 2 * max(max(foot_x(f), f.shape[1] - foot_x(f)) for f in frames) + 2
         else:
             cw = max(f.shape[1] for f in frames) + 2
-        ch = max(f.shape[0] for f in frames) + 2
+        return cw, max(f.shape[0] for f in frames) + 2
+
+    def strip(frames, anchor_feet, path, size=None):
+        """Stacks frames vertically in equal cells (Terraria NPC/projectile layout), then scales 2x."""
+        frames = [finish(f) for f in frames]
+        cw, ch = size or cell_size(frames, anchor_feet)
         img = Image.new("RGBA", (cw, ch * len(frames)), (0, 0, 0, 0))
         for i, f in enumerate(frames):
             x = cw // 2 - foot_x(f) if anchor_feet else (cw - f.shape[1]) // 2
@@ -274,12 +298,16 @@ def build_makima():
         return img, cw * 2, ch * 2
 
     all_frames = [f for _, fs in anims for f in fs]
-    img, cw, ch = strip(all_frames, True, "Content/NPCs/Makima.png")
+    kick_frames = [f for _, fs in kicks for f in fs]
+    shared = cell_size(all_frames + kick_frames, True)  # same cell size so both textures line up
+    img, cw, ch = strip(all_frames, True, "Content/NPCs/Makima.png", shared)
+    strip(kick_frames, True, "Content/NPCs/MakimaKicks.png", shared)
     ranges, i = [], 0
     for n, fs in anims:
         ranges.append(f"{n} {i}-{i + len(fs) - 1}")
         i += len(fs)
     print(f"makima: frame {cw} x {ch}, {len(all_frames)} frames | " + ", ".join(ranges))
+    print(f"makima kicks: {len(kick_frames)} frames | " + ", ".join(f"{n} {len(fs)}" for n, fs in kicks))
 
     # Boss map/health-bar icon: the head from the first idle frame, as 32x32.
     first = img.crop((0, 0, cw, ch))

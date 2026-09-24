@@ -17,7 +17,7 @@ Mods: {
 				Tooltip:
 					'''
 					Use to transform into the Chainsaw Devil; use again to turn back
-					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
+					Form: +{0}% melee damage, +{1}% melee speed, +{4}% melee crit, +{2} defense, {5}% damage reduction, +{6} HP/s regen, +{3}% movement speed
 					The form lasts until you turn it off, with no cooldown
 					While transformed you get ability items; higher tiers unlock more
 					Requires Pochita's Heart to be equipped
@@ -30,7 +30,7 @@ Mods: {
 					'''
 					An upgraded Starter Cord
 					Use to transform into the Chainsaw Devil; use again to turn back
-					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
+					Form: +{0}% melee damage, +{1}% melee speed, +{4}% melee crit, +{2} defense, {5}% damage reduction, +{6} HP/s regen, +{3}% movement speed
 					The form lasts until you turn it off, with no cooldown
 					While transformed you get ability items; higher tiers unlock more
 					Requires Pochita's Heart to be equipped
@@ -43,7 +43,7 @@ Mods: {
 					'''
 					The fully upgraded Starter Cord
 					Use to transform into the Chainsaw Devil; use again to turn back
-					Form: +{0}% melee damage, +{1}% melee speed, +{2} defense, +{3}% movement speed
+					Form: +{0}% melee damage, +{1}% melee speed, +{4}% melee crit, +{2} defense, {5}% damage reduction, +{6} HP/s regen, +{3}% movement speed
 					The form lasts until you turn it off, with no cooldown
 					While transformed you get ability items; higher tiers unlock more
 					Requires Pochita's Heart to be equipped
@@ -57,7 +57,7 @@ Mods: {
 					Rip and tear
 					Shreds enemies' defense with Ichor and sets them on fire
 					Grows stronger after defeating Skeletron, the Wall of Flesh, a mechanical boss, Plantera and the Moon Lord
-					Deals 1.5x / 2x / 2.5x damage in Chainsaw Devil form (by Starter Cord tier)
+					Deals 2x / 3.5x / 5x damage in Chainsaw Devil form (by Starter Cord tier)
 					'''
 			}
 
@@ -171,8 +171,9 @@ Mods: {
 				DisplayName: Chainsaw Devil
 				Description:
 					'''
-					{0}% increased melee damage, {1}% increased melee speed
-					{2} defense, {3}% increased movement speed
+					{0}% increased melee damage, {1}% increased melee speed, {4}% increased melee crit chance
+					{2} defense, {5}% damage reduction, {6} health regenerated per second
+					{3}% increased movement speed, higher jumps, immune to knockback and fall damage
 					Melee hits drink much more blood
 					Pull the cord again to turn back
 					Ability items appear in your inventory while transformed

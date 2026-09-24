@@ -559,6 +559,7 @@ def ability_sprites():
 
     img, d = canvas(1, 1)                                                 # Rev Dash hitbox (never drawn)
     save(img, "Content/Projectiles/RevDashHitbox.png")
+    save(img, "Content/Projectiles/MakimaKickHitbox.png")              # Makima kick hitbox (never drawn)
 
     img, d = canvas(7, 7)                                                 # Chain Hook head (points right)
     d.polygon([(0, 1), (6, 3), (0, 5)], fill=STEEL)

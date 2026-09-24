@@ -19,7 +19,10 @@ namespace ChainsawManMod.Content.Items
 			ChainsawDevilForm.MeleeDamageBonus(Tier),
 			ChainsawDevilForm.MeleeSpeedBonus(Tier),
 			ChainsawDevilForm.DefenseBonus(Tier),
-			ChainsawDevilForm.MoveSpeedBonus(Tier));
+			ChainsawDevilForm.MoveSpeedBonus(Tier),
+			ChainsawDevilForm.CritBonus(Tier),
+			ChainsawDevilForm.DamageReduction(Tier),
+			ChainsawDevilForm.LifeRegen(Tier));
 
 		public override void SetDefaults() {
 			Item.width = 22;

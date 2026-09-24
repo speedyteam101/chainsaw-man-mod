@@ -2,6 +2,7 @@ using ChainsawManMod.Common.Systems;
 using ChainsawManMod.Content.Items;
 using ChainsawManMod.Content.Projectiles;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.Audio;
 using Terraria.GameContent.Bestiary;
@@ -17,6 +18,7 @@ namespace ChainsawManMod.Content.NPCs
 	//   Gun Fiends   - summons floating gun fiends that spray bullets
 	//   Contract     - calls other devils to fight for her; she takes half damage while any of them live
 	//   Teleport     - melts into blood and reappears next to the player
+	//   Kicks        - when the player is close, she lunges in with one of two kick combos
 	// At half health she is knocked down, gets back up, and everything becomes faster and stronger.
 	[AutoloadBossHead]
 	public class Makima : ModNPC
@@ -30,6 +32,14 @@ namespace ChainsawManMod.Content.NPCs
 		private const int KnockdownStart = 31, KnockdownCount = 7;
 		private const int TotalFrames = 38;
 
+		// The kick combos live in a separate texture (same cell size as Makima.png).
+		private const string KickTexturePath = "ChainsawManMod/Content/NPCs/MakimaKicks";
+		private const int Kick1Count = 14, Kick2Count = 13, KickTotalFrames = Kick1Count + Kick2Count;
+		private const int KickTicksPerFrame = 4;
+		// First frame where the leg is out (the kick then hits for 3 frames).
+		private const int Kick1HitStart = 6;
+		private const int Kick2HitStart = 9;
+
 		private const int StateWalk = 0;
 		private const int StateBang = 1;
 		private const int StateHounds = 2;
@@ -38,6 +48,8 @@ namespace ChainsawManMod.Content.NPCs
 		private const int StateTeleportOut = 5;
 		private const int StateTeleportIn = 6;
 		private const int StateKnockdown = 7;
+		private const int StateKick1 = 8;
+		private const int StateKick2 = 9;
 
 		private const int MaxContractDevils = 6;
 
@@ -141,6 +153,12 @@ namespace ChainsawManMod.Content.NPCs
 				case StateKnockdown:
 					Knockdown();
 					break;
+				case StateKick1:
+					Kick(Kick1Count, Kick1HitStart);
+					break;
+				case StateKick2:
+					Kick(Kick2Count, Kick2HitStart);
+					break;
 			}
 		}
 
@@ -149,6 +167,13 @@ namespace ChainsawManMod.Content.NPCs
 			NPC.velocity.X = MathHelper.Lerp(NPC.velocity.X, NPC.direction * speed, 0.1f);
 			if (NPC.velocity.Y == 0f && (NPC.collideX || player.Bottom.Y < NPC.Top.Y - 64f)) {
 				NPC.velocity.Y = -9f; // hop over walls and up to the player
+			}
+
+			// Player in reach: kick. Alternates between the two combos.
+			if (Timer > 25 && Vector2.Distance(NPC.Center, player.Center) < 140f && NPC.velocity.Y == 0f) {
+				SetState((int)NextAttack % 2 == 0 ? StateKick1 : StateKick2);
+				NextAttack++;
+				return;
 			}
 
 			if (Timer >= (PhaseTwo ? 70 : 110)) {
@@ -264,6 +289,24 @@ namespace ChainsawManMod.Content.NPCs
 			}
 		}
 
+		private void Kick(int frameCount, int hitStart) {
+			if (Timer == 1) {
+				// Lunge toward the player.
+				NPC.velocity.X = NPC.direction * (PhaseTwo ? 11f : 8f);
+				SoundEngine.PlaySound(SoundID.Item1, NPC.Center);
+			}
+			NPC.velocity.X *= 0.93f;
+
+			// The leg is out: spawn a hitbox in front of her (it lasts for the 3 kick frames).
+			if (Timer == hitStart * KickTicksPerFrame) {
+				DevilUtils.Shoot(NPC, NPC.Center, Vector2.Zero, ModContent.ProjectileType<MakimaKickHitbox>(), NPC.damage / 2, NPC.whoAmI);
+			}
+
+			if (Timer >= frameCount * KickTicksPerFrame) {
+				SetState(StateWalk);
+			}
+		}
+
 		private void SetState(int state) {
 			State = state;
 			Timer = 0f;
@@ -296,6 +339,10 @@ namespace ChainsawManMod.Content.NPCs
 				case StateTeleportIn:
 					frame = DissolveStart + DissolveCount - 1 - System.Math.Min(DissolveCount - 1, (int)Timer / 5);
 					break;
+				case StateKick1:
+				case StateKick2:
+					frame = 0; // drawn from the kick texture in PreDraw
+					break;
 				case StateKnockdown:
 					// Fall over, lie there, then sit up.
 					int k = Timer < 20 ? (int)Timer / 7 : Timer < 120 ? 3 + ((int)Timer / 20) % 3 : KnockdownCount - 1;
@@ -313,6 +360,26 @@ namespace ChainsawManMod.Content.NPCs
 					break;
 			}
 			NPC.frame.Y = frame * frameHeight;
+		}
+
+		public override bool PreDraw(SpriteBatch spriteBatch, Vector2 screenPos, Color drawColor) {
+			bool kicking = State == StateKick1 || State == StateKick2;
+			if (!kicking || NPC.IsABestiaryIconDummy) {
+				return true; // normal frames are drawn by the game from Makima.png
+			}
+
+			Texture2D texture = ModContent.Request<Texture2D>(KickTexturePath).Value;
+			int frameWidth = texture.Width;
+			int frameHeight = texture.Height / KickTotalFrames;
+			int count = State == StateKick1 ? Kick1Count : Kick2Count;
+			int first = State == StateKick1 ? 0 : Kick1Count;
+			int frame = first + System.Math.Min(count - 1, (int)Timer / KickTicksPerFrame);
+
+			Rectangle source = new Rectangle(0, frame * frameHeight, frameWidth, frameHeight);
+			Vector2 feet = NPC.Bottom - screenPos + new Vector2(0f, 4f + NPC.gfxOffY);
+			SpriteEffects effects = NPC.spriteDirection == 1 ? SpriteEffects.FlipHorizontally : SpriteEffects.None;
+			spriteBatch.Draw(texture, feet, source, drawColor * NPC.Opacity, 0f, new Vector2(frameWidth / 2f, frameHeight), 1f, effects, 0f);
+			return false;
 		}
 
 		public override bool CanHitPlayer(Player target, ref int cooldownSlot) {

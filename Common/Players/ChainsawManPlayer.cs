@@ -244,12 +244,12 @@ namespace ChainsawManMod.Common.Players
 			}
 
 			// Healing per hit: hybrid / tier 1 / tier 2 / tier 3 form.
-			float fraction = formTier switch { 3 => 0.12f, 2 => 0.10f, 1 => 0.08f, _ => 0.02f };
+			float fraction = formTier switch { 3 => 0.25f, 2 => 0.18f, 1 => 0.12f, _ => 0.02f };
 			int heal = (int)(damageDone * fraction);
 			if (heal < 1) {
 				heal = 1;
 			}
-			int cap = formTier switch { 3 => 30, 2 => 20, 1 => 12, _ => 3 };
+			int cap = formTier switch { 3 => 80, 2 => 45, 1 => 25, _ => 3 };
 			if (heal > cap) {
 				heal = cap;
 			}

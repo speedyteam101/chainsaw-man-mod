@@ -22,7 +22,7 @@ namespace ChainsawManMod.Content.Items
 		}
 
 		// Damage multiplier while transformed, by Starter Cord tier (0 = not transformed).
-		public static float FormMultiplier(int formTier) => formTier switch { 3 => 2.5f, 2 => 2f, 1 => 1.5f, _ => 1f };
+		public static float FormMultiplier(int formTier) => formTier switch { 3 => 5f, 2 => 3.5f, 1 => 2f, _ => 1f };
 
 		public override void SetStaticDefaults() {
 			// Only informs other mods; tModLoader does not apply vanilla chainsaw adjustments to modded items.
