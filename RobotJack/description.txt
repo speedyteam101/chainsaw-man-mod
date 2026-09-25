@@ -1,0 +1,11 @@
+Robot Jack
+
+Find the Robot Trigger and transform into a sci-fi combat robot.
+
+- Robot Trigger: found in underground Gold Chests, or rarely dropped by enemies underground. Use it to become Robot Jack; use it again to turn back.
+- While transformed you get ability items:
+  - Orbital Cannon Strike: click anywhere on screen to call down a massive laser from a satellite in orbit.
+  - Plasma Cannon: rapid-fire arm cannon.
+  - Missile Barrage: a volley of homing micro-missiles.
+  - Thruster Dash: rocket toward the cursor, burning everything in the way.
+- Abilities grow stronger as you beat bosses.

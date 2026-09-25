@@ -1,0 +1,65 @@
+Mods: {
+	RobotJack: {
+		Items: {
+			RobotTrigger: {
+				DisplayName: Robot Trigger
+				Tooltip:
+					'''
+					Use to transform into Robot Jack; use again to turn back
+					Form: +{0}% damage, +{1} defense, {2}% damage reduction, +{3}% movement speed
+					Higher jumps, no knockback or fall damage, hold jump to hover down
+					While transformed you get ability items
+					"Some assembly required."
+					'''
+			}
+
+			OrbitalCannonStrike: {
+				DisplayName: Orbital Cannon Strike
+				Tooltip:
+					'''
+					Click anywhere on screen to call down a massive laser from a satellite in orbit
+					The satellite needs a moment to lock on before it fires
+					8 second cooldown
+					'''
+			}
+
+			PlasmaCannon: {
+				DisplayName: Plasma Cannon
+				Tooltip: Rapid-fire plasma bolts from your arm cannon
+			}
+
+			MissileBarrage: {
+				DisplayName: Missile Barrage
+				Tooltip: Launches a volley of homing micro-missiles that explode on impact
+			}
+
+			ThrusterDash: {
+				DisplayName: Thruster Dash
+				Tooltip: Rocket toward the cursor, burning everything in your path
+			}
+		}
+
+		Buffs: {
+			RobotForm: {
+				DisplayName: Robot Jack
+				Description: You are a combat robot
+			}
+
+			OrbitalCannonCooldown: {
+				DisplayName: Satellite Recharging
+				Description: You can't call another Orbital Cannon Strike yet
+			}
+		}
+
+		Projectiles: {
+			OrbitalStrike.DisplayName: Orbital Strike
+			PlasmaBolt.DisplayName: Plasma Bolt
+			HomingMissile.DisplayName: Micro-Missile
+			ThrusterHitbox.DisplayName: Thruster Flames
+		}
+
+		DropConditions: {
+			Underground: Dropped by enemies underground
+		}
+	}
+}
