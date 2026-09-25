@@ -2,6 +2,8 @@
 
 An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 
+The wiki site lives in [`docs/`](docs/index.html) (plain HTML, ready for GitHub Pages).
+
 ## Content
 
 | Item | What it does | Recipe |
