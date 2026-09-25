@@ -745,8 +745,7 @@ def weapon_whip(d, x, y, angle, attack):
 
 HYBRID_LOOKS = {
     # name: (head colour, head detail, weapon, accent)
-    "Bomb": ((60, 55, 65, 255), bomb_detail, weapon_none, (230, 120, 40, 255)),
-    "Katana": ((70, 70, 80, 255), katana_detail, weapon_blade((210, 215, 225, 255), 10), (40, 40, 60, 255)),
+    # Bomb (Reze) and Katana now use real sheets built by tools/clean_sprite_sheet.py, so they aren't drawn here.
     "Bow": ((80, 60, 55, 255), bow_detail, weapon_bow, (120, 40, 40, 255)),
     "Flamethrower": ((90, 90, 100, 255), flame_detail, weapon_none, (230, 90, 30, 255)),
     "Sword": ((75, 75, 85, 255), sword_detail, weapon_blade((200, 205, 215, 255), 11), (60, 60, 100, 255)),

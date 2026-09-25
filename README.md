@@ -19,7 +19,7 @@ Seven more devil hybrid forms, each with its own transform item (use to transfor
 Transforming into one ends any other form, Chainsaw Man included. Each has a single form that grows stronger as you beat bosses
 (Skeletron, Wall of Flesh, any mechanical boss, Plantera, Moon Lord): **+40% to +140% damage, +10 to +60 defense, 5-25% damage
 reduction, 2-17 HP/s regen, +20-60% move speed**, plus knockback and fall damage immunity and a perk of its own.
-Their sprites are script-drawn placeholders (`Content/Players/Hybrid<Name>Sheet.png`), ready to be replaced with real sheets.
+Reze and Katana Man use real sprite sheets (cleaned from `art/reze_source.png` and `art/katana_man_source.png` by `tools/clean_sprite_sheet.py`). The other five still use script-drawn placeholders (`Content/Players/Hybrid<Name>Sheet.png`), ready to be replaced.
 
 | Form | Transform item (all @ Anvil) | Perk | Abilities |
 | --- | --- | --- | --- |
@@ -109,7 +109,7 @@ Replace any PNG with your own art at the same size.
 
 ## Disclaimer
 
-The Chainsaw Devil, Hero of Hell and Makima sprite sheets were supplied by the project owner; their original artists aren't recorded here. Get the artist's permission and credit them before publishing this mod (for example on the Steam Workshop).
+The Chainsaw Devil, Hero of Hell, Makima, Katana Man and Reze sprite sheets were supplied by the project owner; their original artists aren't recorded here. Get the artist's permission and credit them before publishing this mod (for example on the Steam Workshop).
 
 
 Chainsaw Man is created by Tatsuki Fujimoto. This is a non-commercial fan project and is not affiliated with or endorsed by the rights holders.

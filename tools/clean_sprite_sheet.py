@@ -7,6 +7,8 @@ Usage (from the repository root):
 Sheets:
   chainsaw   art/chainsaw_devil_source.png -> Content/Players/ChainsawDevilSheet.png  (tier 1-2 form)
   hero       art/hero_of_hell_source.png   -> Content/Players/HeroOfHellSheet.png    (tier 3 form)
+  katana     art/katana_man_source.png     -> Content/Players/HybridKatanaSheet.png  (Katana Man form)
+  reze       art/reze_source.png           -> Content/Players/HybridBombSheet.png    (Reze / Bomb form)
   makima     art/makima_source.png         -> Content/NPCs/Makima.png, MakimaKicks.png (+ MakimaHound.png, MakimaGunFiend.png)
 Each Chainsaw Devil sheet also writes a big labelled preview to art/<name>_preview_4x.png.
 
@@ -322,7 +324,118 @@ def build_makima():
     print(f"hound: frame {hw} x {hh}, 2 frames | gun fiend: {gw} x {gh}")
 
 
+# ---------------------------------------------------------------- hybrid form sheets with hand-picked frames
+# These sources have no labels, so every animation lists its frames as (x, width, top, bottom) in the source.
+# Rows are written in DevilAnim order like the Chainsaw Devil sheets; a missing animation leaves its row empty.
+# Frame counts and jump/crouch/hurt choices must match the sheet's entry in ChainsawDevilAnimation.cs.
+
+def band(top, bottom, *frames):
+    return [(x, w, top, bottom) for x, w in frames]
+
+
+KATANA = dict(
+    source="art/katana_man_source.png", bg=(2, 63, 130), out="Content/Players/HybridKatanaSheet.png",
+    preview="art/HybridKatanaSheet_preview_4x.png",
+    blank=[(262, 0, 393, 122)],  # the portrait in the top-right corner
+    anims={
+        "idle": band(43, 65, (10, 34), (55, 33), (102, 34), (148, 34), (191, 33), (233, 29)),
+        "walk": band(81, 104, (8, 35), (50, 35), (91, 35), (131, 37), (171, 34), (219, 37)),
+        "run": band(81, 104, (8, 35), (50, 35), (91, 35), (131, 37), (171, 34), (219, 37)),
+        "jump": band(246, 283, (5, 27), (43, 25), (80, 24), (112, 31), (154, 32), (192, 30)),
+        "crouch": band(587, 614, (8, 21), (39, 26)),
+        "attack1": band(200, 235, (6, 34), (58, 38), (112, 32), (152, 32), (192, 34), (240, 37), (280, 40), (322, 36)),
+        "attack2": band(432, 472, (4, 25), (40, 29), (80, 19), (115, 24), (194, 36), (235, 35), (278, 34), (320, 32)),
+        "attack3": band(538, 573, (6, 19), (45, 29), (91, 39), (149, 24)),
+        "attack4": band(691, 723, (5, 28), (38, 18), (69, 33), (108, 32), (151, 27), (192, 34), (237, 35), (280, 41)),
+        "attack5": band(746, 778, (3, 28), (44, 26), (74, 35), (118, 41), (168, 24), (200, 36), (240, 32), (280, 38), (323, 35)),
+        "airattack1": band(339, 379, (8, 23), (43, 23), (80, 32), (123, 30), (165, 18), (195, 19), (224, 24), (253, 32), (293, 29), (326, 29)),
+        "airattack2": band(396, 424, (8, 32), (46, 26)),
+        # Knocked down and getting up, played backwards so it starts with the hit.
+        "damage": band(118, 148, (211, 29), (179, 27), (145, 23), (98, 28), (57, 31), (20, 28)),
+        # The dash-cut with speed lines (frames that are only speed lines are skipped).
+        "attack6": band(306, 334, (2, 14), (22, 23), (49, 28), (162, 43), (213, 36), (252, 36), (296, 25), (325, 32)),
+    },
+)
+
+REZE = dict(
+    source="art/reze_source.png", bg=(255, 127, 38), out="Content/Players/HybridBombSheet.png",
+    preview="art/HybridBombSheet_preview_4x.png",
+    anims={
+        "idle": band(93, 125, (9, 11), (34, 11), (63, 11)),
+        "walk": band(133, 175, (19, 14), (47, 14), (78, 16), (104, 17), (127, 18)),
+        "run": band(201, 227, (12, 15), (28, 23), (54, 25), (88, 14), (104, 20), (127, 23)),
+        "jump": band(245, 272, (42, 11), (72, 11)) + band(808, 839, (59, 19), (89, 20), (120, 18)),
+        "crouch": band(504, 525, (70, 15), (96, 23)),
+        "attack1": band(353, 381, (28, 17), (49, 27), (79, 23), (114, 15), (135, 17), (161, 23), (190, 22)),
+        "attack2": band(404, 439, (31, 25), (66, 15), (94, 22), (130, 21), (157, 13), (175, 17), (196, 25), (225, 17)),
+        "attack3": band(404, 439, (259, 23), (290, 22), (356, 21), (383, 21), (415, 24)),
+        "attack4": band(1104, 1135, (33, 11), (54, 16), (78, 18), (104, 21), (133, 26), (169, 29)),
+        "attack5": band(1063, 1091, (41, 20), (72, 24), (110, 35), (155, 25)),
+        "airattack1": band(762, 794, (67, 24), (97, 25), (127, 18), (148, 25), (180, 22), (211, 23)),
+        "airattack2": band(587, 607, (82, 17), (109, 23), (143, 19), (177, 19), (202, 19)),
+        "airattack3": band(709, 737, (65, 17), (103, 28), (143, 27)),
+        "damage": band(295, 328, (7, 26), (39, 25), (72, 11), (101, 19), (128, 32), (168, 29)),
+        "attack6": band(451, 481, (30, 23), (64, 23), (100, 23), (131, 24), (163, 21), (194, 18)),
+    },
+)
+
+
+def build_explicit(name, cfg):
+    src = Image.open(cfg["source"]).convert("RGB")
+    for rect in cfg.get("blank", []):
+        ImageDraw.Draw(src).rectangle(rect, fill=cfg["bg"])
+    orig = np.asarray(src).astype(int)
+    boosted = np.asarray(ImageEnhance.Contrast(ImageEnhance.Color(src).enhance(1.3)).enhance(1.1)).astype(int)
+    bg = np.array(cfg["bg"])
+
+    frames = {}
+    for anim, boxes in cfg["anims"].items():
+        out = []
+        for x, w, top, bottom in boxes:
+            f = cut(orig, boosted, bg, (x - 1, top - 1, x + w, bottom + 1), thr=90)
+            drop_specks(f)
+            out.append(trim_vertical(f))
+        frames[anim] = out
+
+    opaque = np.concatenate([f[f[..., 3] > 0][:, :3] for fs in frames.values() for f in fs])
+    side = int(np.ceil(np.sqrt(len(opaque))))
+    palette = Image.fromarray(np.resize(opaque, (side * side, 3)).astype(np.uint8).reshape(side, side, 3)) \
+        .quantize(colors=48, method=Image.MEDIANCUT)
+
+    def finish(f):
+        q = np.asarray(Image.fromarray(f[..., :3]).quantize(palette=palette, dither=Image.Dither.NONE).convert("RGB")).copy()
+        m = f[..., 3] > 0
+        ring = ndimage.binary_dilation(m, structure=[[0, 1, 0], [1, 1, 1], [0, 1, 0]]) & ~m
+        q[ring] = OUTLINE
+        return np.dstack([q, (m | ring) * 255]).astype(np.uint8)
+
+    frames = {n: [finish(f) for f in fs] for n, fs in frames.items()}
+    everything = [f for fs in frames.values() for f in fs]
+    half = max(max(foot_x(f), f.shape[1] - foot_x(f)) for f in everything)
+    cw, ch = 2 * half + 2, max(f.shape[0] for f in everything) + 1
+    cols = max(len(fs) for fs in frames.values())
+    sheet = Image.new("RGBA", (cols * cw, len(ANIM_ORDER) * ch), (0, 0, 0, 0))
+    for r, row in enumerate(ANIM_ORDER):
+        for c, f in enumerate(frames.get(row, [])):
+            im = Image.fromarray(f)
+            sheet.paste(im, (c * cw + cw // 2 - foot_x(f), r * ch + ch - f.shape[0]), im)
+    sheet.save(cfg["out"])
+    print(f"{name}: cell {cw} x {ch} | sheet {sheet.size} | frames {[len(frames.get(r, [])) for r in ANIM_ORDER]}")
+
+    s = 4
+    preview = Image.new("RGBA", (sheet.width * s + 140, sheet.height * s), (48, 52, 64, 255))
+    big = sheet.resize((sheet.width * s, sheet.height * s), Image.NEAREST)
+    preview.paste(big, (140, 0), big)
+    draw = ImageDraw.Draw(preview)
+    for r, row in enumerate(ANIM_ORDER):
+        draw.text((8, r * ch * s + ch * s // 2 - 6), row.upper(), fill=(240, 240, 240, 255))
+        draw.line([(0, (r + 1) * ch * s - 1), (preview.width, (r + 1) * ch * s - 1)], fill=(70, 75, 90, 255))
+    preview.save(cfg["preview"])
+
+
 if __name__ == "__main__":
     for sheet_name, config in SHEETS.items():
         build(sheet_name, config)
     build_makima()
+    build_explicit("katana", KATANA)
+    build_explicit("reze", REZE)

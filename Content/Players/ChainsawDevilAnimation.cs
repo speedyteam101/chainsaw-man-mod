@@ -84,7 +84,7 @@ namespace ChainsawManMod.Content.Players
 
 		public static DevilSheet ForTier(int formTier) => formTier >= 3 ? HeroOfHell : ChainsawDevil;
 
-		// Hybrid forms: placeholder sheets drawn by tools/generate_sprites.py, all with the same layout.
+		// Hybrid forms without real art yet: placeholder sheets drawn by tools/generate_sprites.py, all with the same layout.
 		// Replace a PNG with real art using the same cells and rows (or give it its own DevilSheet here).
 		private static DevilSheet Placeholder(string name) => new() {
 			TexturePath = $"ChainsawManMod/Content/Players/Hybrid{name}Sheet",
@@ -96,8 +96,27 @@ namespace ChainsawManMod.Content.Players
 			HurtFrames = 3
 		};
 
-		private static readonly DevilSheet Bomb = Placeholder("Bomb");
-		private static readonly DevilSheet Katana = Placeholder("Katana");
+		// Reze (Bomb form): cleaned from art/reze_source.png by tools/clean_sprite_sheet.py.
+		private static readonly DevilSheet Bomb = new() {
+			TexturePath = "ChainsawManMod/Content/Players/HybridBombSheet",
+			CellWidth = 64,
+			CellHeight = 46,
+			FrameCounts = new[] { 3, 5, 6, 5, 2, 7, 8, 5, 6, 4, 6, 5, 3, 6, 6 },
+			JumpFrames = new[] { 0, 1, 2, 3 },
+			CrouchFrame = 0,
+			HurtFrames = 3
+		};
+
+		// Katana Man: cleaned from art/katana_man_source.png by tools/clean_sprite_sheet.py.
+		private static readonly DevilSheet Katana = new() {
+			TexturePath = "ChainsawManMod/Content/Players/HybridKatanaSheet",
+			CellWidth = 62,
+			CellHeight = 43,
+			FrameCounts = new[] { 6, 6, 6, 6, 2, 8, 8, 4, 8, 9, 10, 2, 0, 6, 8 },
+			JumpFrames = new[] { 1, 2, 3, 4 },
+			CrouchFrame = 0,
+			HurtFrames = 3
+		};
 		private static readonly DevilSheet Bow = Placeholder("Bow");
 		private static readonly DevilSheet Flamethrower = Placeholder("Flamethrower");
 		private static readonly DevilSheet Sword = Placeholder("Sword");
