@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Terraria;
 using Terraria.ModLoader;
 using Terraria.ModLoader.IO;
@@ -16,6 +18,16 @@ namespace ChainsawManMod.Common.Systems
 		public static bool downedTyphoonDevil = false;
 		public static bool downedDarknessDevil = false;
 
+		// Bosses added later (DevilBossBase) are tracked by name instead of one field each.
+		public static readonly HashSet<string> downedBosses = new();
+
+		public static bool IsDowned(string key) => downedBosses.Contains(key);
+
+		// Call from a boss's OnKill. The game syncs world data to clients after a boss dies.
+		public static void MarkDowned(string key) {
+			downedBosses.Add(key);
+		}
+
 		public override void ClearWorld() {
 			downedZombieDevil = false;
 			downedBatDevil = false;
@@ -24,6 +36,7 @@ namespace ChainsawManMod.Common.Systems
 			downedMakima = false;
 			downedTyphoonDevil = false;
 			downedDarknessDevil = false;
+			downedBosses.Clear();
 		}
 
 		public override void SaveWorldData(TagCompound tag) {
@@ -48,6 +61,9 @@ namespace ChainsawManMod.Common.Systems
 			if (downedDarknessDevil) {
 				tag["downedDarknessDevil"] = true;
 			}
+			if (downedBosses.Count > 0) {
+				tag["downedBosses"] = downedBosses.ToList();
+			}
 		}
 
 		public override void LoadWorldData(TagCompound tag) {
@@ -58,14 +74,29 @@ namespace ChainsawManMod.Common.Systems
 			downedMakima = tag.ContainsKey("downedMakima");
 			downedTyphoonDevil = tag.ContainsKey("downedTyphoonDevil");
 			downedDarknessDevil = tag.ContainsKey("downedDarknessDevil");
+			downedBosses.Clear();
+			if (tag.ContainsKey("downedBosses")) {
+				foreach (string key in tag.GetList<string>("downedBosses")) {
+					downedBosses.Add(key);
+				}
+			}
 		}
 
 		public override void NetSend(BinaryWriter writer) {
 			writer.WriteFlags(downedZombieDevil, downedBatDevil, downedEternityDevil, downedGunDevil, downedMakima, downedTyphoonDevil, downedDarknessDevil);
+			writer.Write(downedBosses.Count);
+			foreach (string key in downedBosses) {
+				writer.Write(key);
+			}
 		}
 
 		public override void NetReceive(BinaryReader reader) {
 			reader.ReadFlags(out downedZombieDevil, out downedBatDevil, out downedEternityDevil, out downedGunDevil, out downedMakima, out downedTyphoonDevil, out downedDarknessDevil);
+			downedBosses.Clear();
+			int count = reader.ReadInt32();
+			for (int i = 0; i < count; i++) {
+				downedBosses.Add(reader.ReadString());
+			}
 		}
 	}
 }

@@ -999,6 +999,341 @@ def batch3_sprites():
     save(img, "Content/Items/Consumables/DarknessShard.png")
 
 
+# ---------------------------------------------------------------- devils, batch 4 (templates; NPC art faces LEFT)
+def _eyes(d, x, y, col=None, gap=3):
+    col = col or YELLOW
+    d.point((x, y), fill=col); d.point((x + gap, y), fill=col)
+
+
+def tpl_quadruped(body, accent):
+    def fn(d, f, w, h):
+        leg = (0, 2, 0, -2)[f]
+        d.ellipse([w // 5, h // 3, w - 2, h - 5], fill=body)
+        d.ellipse([0, h // 4, w // 3 + 2, h // 2 + 3], fill=body)                  # head (left)
+        _eyes(d, 2, h // 3 + 1, RED, 2)
+        d.line([w - 2, h // 2, w, h // 3], fill=accent)                             # tail
+        for x, o in ((w // 3, leg), (w - 6, -leg)):
+            d.line([x, h - 5, x + o, h - 1], fill=accent, width=2)
+    return fn
+
+
+def tpl_humanoid(body, accent, head=None):
+    head = head or body
+    def fn(d, f, w, h):
+        step = (0, 2, 0, -2)[f]
+        cx = w // 2
+        head_h = max(6, h * 2 // 5)          # proportions scale with the sprite's height
+        hip = h - max(4, h // 3)
+        d.ellipse([cx - 4, 0, cx + 4, head_h], fill=head)
+        _eyes(d, cx - 2, head_h // 2, RED, 3)
+        d.rectangle([cx - 4, head_h + 1, cx + 4, max(head_h + 2, hip)], fill=body)
+        d.line([cx - 4, head_h + 2, cx - 7, hip - 1 + step], fill=body, width=2)   # arms
+        d.line([cx + 4, head_h + 2, cx + 7, hip - 1 - step], fill=body, width=2)
+        d.line([cx - 2, hip, cx - 3 + step, h - 1], fill=accent, width=2)
+        d.line([cx + 2, hip, cx + 3 - step, h - 1], fill=accent, width=2)
+    return fn
+
+
+def tpl_blob(body, accent):
+    def fn(d, f, w, h):
+        sq = (0, 1, 0, -1)[f]
+        d.ellipse([1 - sq, 3 + sq, w - 2 + sq, h - 1], fill=body)
+        d.ellipse([3, h // 3, w // 2, h // 2 + 2], fill=accent)
+        _eyes(d, 3, h // 2 - 2, YELLOW, 3)
+        d.line([2, h - 2, w - 3, h - 2], fill=accent)
+    return fn
+
+
+def tpl_bug(body, accent):
+    def fn(d, f, w, h):
+        leg = (0, 1, 0, -1)[f]
+        d.ellipse([3, 2, w - 1, h - 4], fill=body)
+        d.line([w // 2, 3, w // 2, h - 5], fill=accent)                             # wing seam
+        d.ellipse([0, h // 3, 6, h // 3 + 5], fill=accent)                          # head
+        d.line([0, h // 3, -1, 0], fill=accent); d.line([2, h // 3, 1, 0], fill=accent)  # antennae
+        for x in (6, w // 2, w - 5):
+            d.line([x, h - 4, x + leg, h - 1], fill=accent)
+    return fn
+
+
+def tpl_winged(body, accent):
+    def fn(d, f, w, h):
+        flap = (0, 3, 6, 3)[f]
+        d.polygon([(w // 2, h // 2), (0, flap), (w // 3, h - 4)], fill=accent)
+        d.polygon([(w // 2, h // 2), (w - 1, flap), (2 * w // 3, h - 4)], fill=accent)
+        d.ellipse([w // 3, h // 4, 2 * w // 3, 3 * h // 4], fill=body)
+        _eyes(d, w // 3 + 2, h // 2 - 1, RED, 3)
+    return fn
+
+
+def tpl_orb(body, accent):
+    def fn(d, f, w, h):
+        d.ellipse([2, 2, w - 3, h - 3], fill=body)
+        for i in range(6):
+            a = math.radians(i * 60 + f * 15)
+            d.line([w / 2 + math.cos(a) * (w / 2 - 3), h / 2 + math.sin(a) * (h / 2 - 3),
+                    w / 2 + math.cos(a) * (w / 2), h / 2 + math.sin(a) * (h / 2)], fill=accent, width=2)
+        _eyes(d, w // 2 - 3, h // 2 - 1, RED, 5)
+    return fn
+
+
+def tpl_fish(body, accent):
+    def fn(d, f, w, h):
+        tail = (0, 1, 0, -1)[f]
+        d.polygon([(0, h // 2), (w // 4, 1), (3 * w // 4, 2), (w - 1, 0 + tail), (w - 1, h - 1 + tail), (3 * w // 4, h - 3), (w // 4, h - 2)], fill=body)
+        d.line([2, h // 2 + 1, w // 4, h // 2 + 1], fill=BLACK)
+        d.point((w // 5, h // 2 - 2), fill=YELLOW)
+        d.line([w // 3, h // 2, 2 * w // 3, h // 2], fill=accent)
+    return fn
+
+
+def tpl_octopus(body, accent):
+    def fn(d, f, w, h):
+        d.ellipse([w // 4, 0, 3 * w // 4, h // 2 + 2], fill=body)
+        _eyes(d, w // 2 - 3, h // 4, YELLOW, 5)
+        for i in range(5):
+            x = w // 4 + i * (w // 8)
+            d.line([x, h // 2, x + ((i + f) % 3 - 1) * 3, h - 1], fill=accent, width=2)
+    return fn
+
+
+def big_eyes_mass(body, accent, eyes=6):
+    def fn(d, f, w, h):
+        p = (0, 1, 2, 1)[f]
+        d.ellipse([2 - p, 4 - p, w - 3 + p, h - 2 + p], fill=body)
+        rnd = [(0.3, 0.3), (0.65, 0.25), (0.5, 0.5), (0.25, 0.65), (0.75, 0.6), (0.5, 0.8), (0.35, 0.45), (0.7, 0.42)]
+        for i in range(eyes):
+            ex, ey = int(w * rnd[i][0]), int(h * rnd[i][1])
+            r = 2 + (i % 3)
+            if (i + f) % 5:
+                d.ellipse([ex - r, ey - r, ex + r, ey + r], fill=YELLOW); d.point((ex, ey), fill=BLACK)
+        d.arc([w // 4, h // 2, 3 * w // 4, h - 6], 20, 160, fill=accent, width=2)
+    return fn
+
+
+def boss_spider(body, accent):
+    def fn(d, f, w, h):
+        for i in range(4):
+            y = h // 2 + i * 3 - 4
+            k = ((i + f) % 2) * 4
+            d.line([w // 2, y, 2, h - 2 - k], fill=accent, width=2)
+            d.line([w // 2, y, w - 3, h - 2 - (4 - k)], fill=accent, width=2)
+        d.ellipse([w // 3, h // 5, w - 4, 3 * h // 4], fill=body)
+        d.ellipse([w // 6, h // 3, w // 2, 2 * h // 3], fill=body)
+        for x in range(w // 6 + 2, w // 2 - 2, 3):
+            d.point((x, h // 2 - 2), fill=RED)
+    return fn
+
+
+def boss_snowflake(body, accent):
+    def fn(d, f, w, h):
+        cx, cy = w // 2, h // 2
+        for i in range(6):
+            a = math.radians(i * 60 + f * 8)
+            x1, y1 = cx + math.cos(a) * (w // 2 - 2), cy + math.sin(a) * (h // 2 - 2)
+            d.line([cx, cy, x1, y1], fill=accent, width=3)
+            d.line([cx + math.cos(a) * w / 4, cy + math.sin(a) * h / 4, cx + math.cos(a + 0.5) * w / 3, cy + math.sin(a + 0.5) * h / 3], fill=accent)
+        d.ellipse([cx - w // 5, cy - h // 5, cx + w // 5, cy + h // 5], fill=body)
+        _eyes(d, cx - 4, cy - 1, (40, 60, 120, 255), 8)
+    return fn
+
+
+def boss_golem(body, accent):
+    def fn(d, f, w, h):
+        step = (0, 3, 0, -3)[f]
+        d.rectangle([w // 4, h // 4, 3 * w // 4, 3 * h // 4], fill=body)
+        d.rectangle([w // 3, 2, 2 * w // 3, h // 4 + 2], fill=body)                 # head
+        _eyes(d, w // 3 + 3, h // 8 + 2, (255, 120, 40, 255), w // 3 - 6)
+        d.rectangle([2, h // 4 + 4, w // 4, h // 2 + 6 + step], fill=accent)        # arms
+        d.rectangle([3 * w // 4, h // 4 + 4, w - 3, h // 2 + 6 - step], fill=accent)
+        d.rectangle([w // 4 + 2, 3 * h // 4, w // 2 - 2, h - 1], fill=accent)
+        d.rectangle([w // 2 + 2, 3 * h // 4, 3 * w // 4 - 2, h - 1], fill=accent)
+    return fn
+
+
+def boss_kraken(body, accent):
+    def fn(d, f, w, h):
+        d.ellipse([w // 5, 2, 4 * w // 5, h // 2 + 4], fill=body)
+        _eyes(d, w // 2 - 6, h // 4, YELLOW, 12)
+        for i in range(8):
+            x = w // 6 + i * (w // 10)
+            wave = math.sin(i + f) * 4
+            d.line([x, h // 2, x + wave, 3 * h // 4, x - wave, h - 2], fill=accent, width=3)
+    return fn
+
+
+def boss_future(body, accent):
+    def fn(d, f, w, h):
+        cx, cy = w // 2, h // 2
+        d.ellipse([4, 4, w - 5, h - 5], fill=body)
+        d.ellipse([10, 10, w - 11, h - 11], outline=accent, width=2)
+        for i in range(12):
+            a = math.radians(i * 30)
+            d.point((cx + math.cos(a) * (w / 2 - 14), cy + math.sin(a) * (h / 2 - 14)), fill=accent)
+        a1, a2 = math.radians(f * 90 - 90), math.radians(f * 30 - 90)
+        d.line([cx, cy, cx + math.cos(a1) * w / 3, cy + math.sin(a1) * h / 3], fill=WHITE, width=2)   # clock hands
+        d.line([cx, cy, cx + math.cos(a2) * w / 5, cy + math.sin(a2) * h / 5], fill=WHITE, width=2)
+        d.ellipse([cx - 6, cy - 6, cx + 6, cy + 6], fill=YELLOW); d.ellipse([cx - 2, cy - 2, cx + 2, cy + 2], fill=BLACK)
+    return fn
+
+
+def boss_knight(body, accent, weapon):
+    def fn(d, f, w, h):
+        step = (0, 2, 0, -2)[f]
+        cx = w // 2
+        d.rectangle([cx - 10, h // 5, cx + 10, 2 * h // 3], fill=body)
+        d.ellipse([cx - 8, 2, cx + 8, h // 5 + 4], fill=accent)
+        d.line([cx - 5, h // 10 + 2, cx + 5, h // 10 + 2], fill=RED, width=2)       # visor slit
+        d.line([cx - 10, h // 4, cx - 18, h // 2 + step], fill=body, width=4)
+        d.line([cx + 10, h // 4, cx + 18, h // 2 - step], fill=body, width=4)
+        d.line([cx - 18, h // 2 + step, cx - 20, 2], fill=weapon, width=2)          # raised weapons
+        d.line([cx + 18, h // 2 - step, cx + 22, h // 5], fill=weapon, width=2)
+        d.line([cx - 5, 2 * h // 3, cx - 6 + step, h - 1], fill=accent, width=4)
+        d.line([cx + 5, 2 * h // 3, cx + 6 - step, h - 1], fill=accent, width=4)
+    return fn
+
+
+def boss_reaper(body, accent):
+    def fn(d, f, w, h):
+        sway = (0, 1, 0, -1)[f]
+        d.polygon([(w // 2, 2), (w - 6, h // 3), (w - 2 + sway, h - 1), (2 + sway, h - 1), (6, h // 3)], fill=body)
+        d.ellipse([w // 2 - 9, h // 8, w // 2 + 9, h // 8 + 18], fill=(220, 215, 200, 255))  # skull
+        d.ellipse([w // 2 - 6, h // 8 + 5, w // 2 - 2, h // 8 + 9], fill=BLACK)
+        d.ellipse([w // 2 + 2, h // 8 + 5, w // 2 + 6, h // 8 + 9], fill=BLACK)
+        d.line([w - 8, 6, w - 8, h - 4], fill=(140, 110, 70, 255), width=2)          # scythe
+        d.arc([w - 30, 2, w - 6, 22], 180, 270, fill=STEEL_L, width=3)
+        d.point((w // 2 - 4, h // 8 + 7), fill=accent); d.point((w // 2 + 4, h // 8 + 7), fill=accent)
+    return fn
+
+
+def boss_falling(body, accent):
+    def fn(d, f, w, h):
+        cx = w // 2
+        for i in range(5):
+            x = 6 + i * (w - 12) // 4
+            d.line([x, 0, x - 4, h // 3 + (i + f) % 3 * 3], fill=accent, width=2)   # streaks falling
+        d.polygon([(cx, h // 4), (cx + 14, h // 2), (cx + 6, h // 2 + 4), (cx + 10, h - 2), (cx, 3 * h // 4),
+                   (cx - 10, h - 2), (cx - 6, h // 2 + 4), (cx - 14, h // 2)], fill=body)
+        _eyes(d, cx - 4, h // 2 - 2, WHITE, 8)
+    return fn
+
+
+HORDE_ENEMIES = {
+    # name: (template, 1x width, 1x height)   colours chosen per devil
+    "LeechDevil": (tpl_blob((90, 40, 50, 255), (140, 60, 70, 255)), 14, 11),
+    "RatDevil": (tpl_quadruped((110, 100, 95, 255), (70, 60, 60, 255)), 13, 9),
+    "CrowDevil": (tpl_winged((30, 30, 40, 255), (55, 55, 70, 255)), 14, 11),
+    "MosquitoDevil": (tpl_winged((80, 60, 40, 255), (200, 210, 220, 255)), 12, 11),
+    "CockroachDevil": (tpl_bug((90, 55, 30, 255), (50, 30, 20, 255)), 16, 10),
+    "SandDevil": (tpl_fish((210, 180, 110, 255), (170, 140, 80, 255)), 21, 12),
+    "IceDevil": (tpl_orb((170, 220, 255, 255), (230, 245, 255, 255)), 14, 15),
+    "MudDevil": (tpl_fish((110, 80, 55, 255), (80, 55, 35, 255)), 19, 12),
+    "BoneDevil": (tpl_humanoid((215, 210, 190, 255), (170, 165, 150, 255)), 14, 21),
+    "MoldDevil": (tpl_blob((100, 120, 60, 255), (140, 90, 140, 255)), 15, 14),
+    "LavaDevil": (tpl_humanoid((200, 70, 20, 255), (90, 40, 30, 255), (255, 150, 40, 255)), 15, 18),
+    "OctopusDevil": (tpl_octopus((150, 60, 120, 255), (190, 90, 150, 255)), 18, 16),
+    "MushroomDevil": (tpl_humanoid((80, 90, 200, 255), (50, 60, 150, 255), (120, 170, 255, 255)), 14, 16),
+    "GraveDevil": (tpl_humanoid((80, 85, 90, 255), (50, 50, 55, 255), (150, 160, 150, 255)), 13, 21),
+    "LightningDevil": (tpl_orb((250, 230, 90, 255), (255, 255, 200, 255)), 16, 16),
+    "NeedleDevil": (tpl_orb((110, 110, 120, 255), (200, 205, 215, 255)), 15, 15),
+    "PlagueDevil": (tpl_humanoid((110, 130, 60, 255), (70, 80, 40, 255), (160, 170, 90, 255)), 15, 22),
+    "MirrorDevil": (tpl_winged((200, 230, 255, 255), (240, 250, 255, 255)), 15, 18),
+    "ToothDevil": (tpl_blob((235, 225, 200, 255), (160, 40, 50, 255)), 17, 17),
+    "WindDevil": (tpl_winged((200, 215, 235, 255), (150, 170, 200, 255)), 16, 16),
+}
+
+HORDE_BOSSES = {
+    # name: (template, 1x width, 1x height)
+    "LeechQueen": (big_eyes_mass((110, 35, 50, 255), (170, 60, 80, 255), 3), 54, 38),
+    "SpiderQueen": (boss_spider((50, 35, 60, 255), (80, 60, 95, 255)), 62, 42),
+    "FrostDevil": (boss_snowflake((200, 235, 255, 255), (160, 210, 255, 255)), 56, 56),
+    "SandColossus": (boss_golem((200, 170, 100, 255), (160, 130, 70, 255)), 70, 70),
+    "KrakenDevil": (boss_kraken((130, 50, 110, 255), (170, 80, 140, 255)), 76, 66),
+    "FutureDevil": (boss_future((50, 40, 80, 255), (230, 200, 90, 255)), 58, 62),
+    "WarDevil": (boss_knight((90, 30, 30, 255), (50, 20, 20, 255), (200, 205, 215, 255)), 56, 66),
+    "FamineDevil": (big_eyes_mass((70, 80, 50, 255), (40, 45, 30, 255), 8), 58, 66),
+    "FallingDevil": (boss_falling((230, 200, 120, 255), (255, 170, 60, 255)), 60, 66),
+    "DeathDevil": (boss_reaper((20, 18, 26, 255), (255, 60, 60, 255)), 66, 76),
+}
+
+
+def batch4_sprites():
+    for name, (tpl, w, h) in HORDE_ENEMIES.items():
+        img = Image.new("RGBA", (w, h * 4), CLEAR)
+        for f in range(4):
+            cell = Image.new("RGBA", (w, h), CLEAR)
+            tpl(ImageDraw.Draw(cell), f, w, h)
+            cell = outline(cell)
+            img.paste(cell, (0, f * h), cell)
+        save(img, f"Content/NPCs/Horde/{name}.png")
+
+    for name, (tpl, w, h) in HORDE_BOSSES.items():
+        img = Image.new("RGBA", (w, h * 4), CLEAR)
+        first = None
+        for f in range(4):
+            cell = Image.new("RGBA", (w, h), CLEAR)
+            tpl(ImageDraw.Draw(cell), f, w, h)
+            cell = outline(cell)
+            first = first or cell
+            img.paste(cell, (0, f * h), cell)
+        save(img, f"Content/NPCs/Bosses/{name}.png")
+        # map / health bar icon: the first frame squeezed into 16x16 (32x32 after scaling)
+        head = first.crop(first.getbbox())
+        side = max(head.size)
+        sq = Image.new("RGBA", (side, side), CLEAR)
+        sq.paste(head, ((side - head.width) // 2, (side - head.height) // 2), head)
+        save(sq.resize((16, 16), Image.NEAREST), f"Content/NPCs/Bosses/{name}_Head_Boss.png")
+
+    shots = {
+        # name: (w, h, colour, shape)
+        "IceShard": (6, 3, (180, 230, 255, 255), "dart"), "VenomBolt": (7, 7, (120, 200, 60, 255), "ball"),
+        "SandBolt": (8, 8, (220, 190, 120, 255), "ball"), "InkBolt": (7, 7, (40, 30, 50, 255), "ball"),
+        "LightningBolt": (7, 3, (255, 240, 120, 255), "dart"), "NeedleShot": (6, 2, (210, 215, 225, 255), "dart"),
+        "ShardBolt": (6, 6, (220, 240, 255, 255), "diamond"), "FutureBolt": (7, 3, (200, 170, 255, 255), "dart"),
+        "WeaponShard": (8, 8, (200, 205, 215, 255), "diamond"), "FamineBolt": (7, 7, (110, 120, 70, 255), "ball"),
+        "FallingStar": (9, 9, (255, 190, 70, 255), "star"), "DeathBolt": (8, 8, (60, 20, 40, 255), "ball"),
+    }
+    for name, (w, h, col, shape) in shots.items():
+        img, d = canvas(w, h)
+        if shape == "ball":
+            d.ellipse([0, 0, w - 1, h - 1], fill=col); d.point((w // 3, h // 3), fill=WHITE)
+        elif shape == "dart":
+            d.polygon([(0, 0), (w - 1, h // 2), (0, h - 1)], fill=col)
+        elif shape == "diamond":
+            d.polygon([(w // 2, 0), (w - 1, h // 2), (w // 2, h - 1), (0, h // 2)], fill=col)
+        else:
+            d.polygon([(w // 2, 0), (w * 0.62, h * 0.38), (w - 1, h // 2), (w * 0.62, h * 0.62), (w // 2, h - 1),
+                       (w * 0.38, h * 0.62), (0, h // 2), (w * 0.38, h * 0.38)], fill=col)
+        save(img, f"Content/Projectiles/{name}.png")
+
+    img, d = canvas(15, 40)                                          # Ground Spike
+    d.polygon([(2, 39), (12, 39), (7, 0)], fill=(150, 145, 140, 255))
+    d.line([7, 4, 7, 38], fill=(190, 185, 180, 255))
+    save(img, "Content/Projectiles/GroundSpike.png")
+
+    summons = {
+        "LeechBait": (RED, "blob"), "SilkCocoon": (WHITE, "blob"), "FrozenHeart": ((170, 220, 255, 255), "heart"),
+        "DesertSeal": ((210, 180, 110, 255), "ring"), "KrakenInk": ((60, 40, 80, 255), "drop"),
+        "FutureClock": (GOLD, "ring"), "WarBanner": (RED_D, "flag"), "EmptyBowl": ((150, 120, 90, 255), "bowl"),
+        "FallingStarShard": ((255, 190, 70, 255), "drop"), "DeathsContract": ((30, 25, 35, 255), "flag"),
+    }
+    for name, (col, shape) in summons.items():
+        img, d = canvas(14, 14)
+        if shape == "blob":
+            d.ellipse([2, 3, 11, 12], fill=col); d.point((5, 6), fill=BLACK)
+        elif shape == "heart":
+            d.ellipse([1, 3, 6, 8], fill=col); d.ellipse([6, 3, 11, 8], fill=col); d.polygon([(1, 6), (11, 6), (6, 12)], fill=col)
+        elif shape == "ring":
+            d.ellipse([1, 1, 12, 12], outline=col, width=2); d.line([6, 6, 6, 3], fill=col); d.line([6, 6, 9, 6], fill=col)
+        elif shape == "drop":
+            d.polygon([(7, 0), (11, 8), (3, 8)], fill=col); d.ellipse([3, 5, 11, 12], fill=col)
+        elif shape == "flag":
+            d.line([2, 0, 2, 13], fill=BROWN, width=1); d.polygon([(3, 1), (12, 3), (3, 7)], fill=col)
+        elif shape == "bowl":
+            d.chord([1, 2, 12, 12], 0, 180, fill=col)
+        save(img, f"Content/Items/Consumables/{name}.png")
+
+
 if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
@@ -1029,3 +1364,4 @@ if __name__ == "__main__":
     hybrid_sheets()
     hybrid_icons()
     batch3_sprites()
+    batch4_sprites()

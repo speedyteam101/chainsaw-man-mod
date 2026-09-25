@@ -74,6 +74,51 @@ If your inventory is full, you won't get the abilities until you free up slots.
 | **Darkness Devil** (post-Moon Lord boss, 120,000 HP) | Use a **Darkness Shard** (10 Luminite Bar, 30 Devil Flesh, 10 Soul of Night @ Ancient Manipulator). Keeps you in darkness while it's near. Hands of darkness rise under you (watch for black smoke), rings of shadow bolts, and it vanishes to reappear behind you and lunge. Faster below 50% HP. | 15-25 Luminite Bar, 40-60 Devil Flesh, 20-30 Soul of Night |
 | **Makima** (post-Moon Lord boss, 150,000 HP) | Use **Makima's Contract** (10 Luminite Bar, 10 Gun Devil Fragment, 20 Devil Flesh @ Ancient Manipulator). Walks toward you and cycles through: finger-gun **Bang** shots, white **hounds** that burst from the ground under you (watch for bubbling blood), floating **gun fiends** that spray bullets, a **contract** that calls other devils, and a blood-melt **teleport**. If you get close she lunges in with one of two **kick combos**. **She takes half damage while any of her devils are alive.** At half health she's knocked down, gets back up, and everything gets faster. | Hero of Hell's Cord (33%), 20-30 Luminite Bar, 40-60 Devil Flesh, 20-30 Gun Devil Fragment |
 
+## More devils
+
+A second wave built on shared templates (`DevilEnemyBase`, `DevilBossBase`), so each one is a short list of numbers.
+All art is script-drawn placeholders.
+
+**Enemies**
+
+| Enemy | Where / behaviour |
+| --- | --- |
+| Leech Devil | Caverns. A fat leech that clings and poisons. |
+| Rat Devil | Surface, daytime. A mangy rat the size of a dog. |
+| Crow Devil | Surface, daytime. Circles overhead and dives at you. |
+| Mosquito Devil | Jungle. A fast, bloodsucking pest. |
+| Cockroach Devil | Underground desert. Armoured and very hard to squash. |
+| Sand Devil | Desert. Swims through sand and bursts out to bite. |
+| Ice Devil | Snow. A floating chunk of ice that throws frozen shards. |
+| Mud Devil | Underground. Swims through the dirt beneath your feet. |
+| Bone Devil | Dungeon. Rattling bones held together by fear alone. |
+| Mold Devil | Corruption and Crimson. A walking heap of rot. |
+| Lava Devil | Underworld. Molten rock in the shape of a man. |
+| Octopus Devil | Beach. Squirts blinding ink from below. |
+| Mushroom Devil | Glowing mushroom caves. Its spores leave you confused. |
+| Grave Devil | Graveyards. Climbs out of old graves after dark thoughts. |
+| Lightning Devil | Surface during rain, Hardmode. Strikes with fast bolts of lightning. |
+| Needle Devil | Caverns, Hardmode. A ball of needles that fires them in bursts. |
+| Plague Devil | Hardmode Corruption and Crimson. Its touch rots your armour. |
+| Mirror Devil | Hardmode Hallow. Throws shards of glass that leave you confused. |
+| Tooth Devil | Caverns, Hardmode. A mouth full of teeth on legs. |
+| Wind Devil | Sky, Hardmode. Rides the high winds and blasts you with gusts. |
+
+**Bosses** (each summoned by its own item; all drop Devil Flesh)
+
+| Boss | HP | Summon | Unlocks | Moves | Attacks |
+| --- | --- | --- | --- | --- | --- |
+| Leech Devil Queen | 2,800 | Leech Bait | any time | Walk | Spread, Summon, Charge, Spread |
+| Spider Devil Queen | 4,500 | Silk Cocoon | after Eater of Worlds / Brain of Cthulhu | Walk | Spikes, Spread, Summon, Charge |
+| Frost Devil | 6,000 | Frozen Heart | after Skeletron | Hover | Ring, Spiral, Summon, Rain |
+| Sand Devil Colossus | 25,000 | Desert Seal | Hardmode | Walk | Spikes, Rain, Charge, Summon |
+| Kraken Devil | 30,000 | Kraken Ink | Hardmode | Hover | Spread, Ring, Summon, Charge |
+| Future Devil | 40,000 | Future Clock | after a mechanical boss | Circle | Teleport, Spread, Spiral, Charge |
+| War Devil | 60,000 | War Banner | after Plantera | Walk | Rain, Spikes, Charge, Summon, Spread |
+| Famine Devil | 70,000 | Empty Bowl | after Golem | Hover | Ring, Summon, Spiral, Teleport |
+| Falling Devil | 110,000 | Falling Star Shard | after Moon Lord | Hover | Rain, Spiral, Ring, Teleport, Rain |
+| Death Devil | 200,000 | Deaths Contract | after Makima | Circle | Spread, Ring, Spiral, Rain, Spikes, Summon, Teleport, Charge |
+
 ## Chainsaw Devil sprite
 
 While transformed, your character is drawn as an animated Chainsaw Devil sprite instead of the normal player body.

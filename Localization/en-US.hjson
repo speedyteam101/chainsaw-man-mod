@@ -135,6 +135,95 @@ Mods: {
 					'''
 			}
 
+			LeechBait: {
+				DisplayName: Bloody Leech Bait
+				Tooltip:
+					'''
+					Summons the Leech Devil Queen
+					'''
+			}
+
+			SilkCocoon: {
+				DisplayName: Silk Cocoon
+				Tooltip:
+					'''
+					Summons the Spider Devil Queen
+					Only works after the Eater of Worlds or Brain of Cthulhu is defeated
+					'''
+			}
+
+			FrozenHeart: {
+				DisplayName: Frozen Devil Heart
+				Tooltip:
+					'''
+					Summons the Frost Devil
+					Only works after Skeletron is defeated
+					'''
+			}
+
+			DesertSeal: {
+				DisplayName: Desert Seal
+				Tooltip:
+					'''
+					Summons the Sand Devil Colossus
+					Only works in Hardmode
+					'''
+			}
+
+			KrakenInk: {
+				DisplayName: Kraken Ink
+				Tooltip:
+					'''
+					Summons the Kraken Devil
+					Only works in Hardmode
+					'''
+			}
+
+			FutureClock: {
+				DisplayName: Future Clock
+				Tooltip:
+					'''
+					Summons the Future Devil
+					Only works after a mechanical boss is defeated
+					'''
+			}
+
+			WarBanner: {
+				DisplayName: War Banner
+				Tooltip:
+					'''
+					Summons the War Devil
+					Only works after Plantera is defeated
+					'''
+			}
+
+			EmptyBowl: {
+				DisplayName: Empty Bowl
+				Tooltip:
+					'''
+					Summons the Famine Devil
+					Only works after Golem is defeated
+					'''
+			}
+
+			FallingStarShard: {
+				DisplayName: Falling Star Shard
+				Tooltip:
+					'''
+					Summons the Falling Devil
+					Only works after the Moon Lord is defeated
+					'''
+			}
+
+			DeathsContract: {
+				DisplayName: Death's Contract
+				Tooltip:
+					'''
+					Summons the Death Devil
+					Only works after Makima is defeated
+					'''
+			}
+
 			GrenadePin: {
 				DisplayName: Grenade Pin
 				Tooltip:
@@ -507,6 +596,36 @@ Mods: {
 			CurseDevil.DisplayName: Curse Devil
 			TyphoonDevil.DisplayName: Typhoon Devil
 			DarknessDevil.DisplayName: Darkness Devil
+			LeechDevil.DisplayName: Leech Devil
+			RatDevil.DisplayName: Rat Devil
+			CrowDevil.DisplayName: Crow Devil
+			MosquitoDevil.DisplayName: Mosquito Devil
+			CockroachDevil.DisplayName: Cockroach Devil
+			SandDevil.DisplayName: Sand Devil
+			IceDevil.DisplayName: Ice Devil
+			MudDevil.DisplayName: Mud Devil
+			BoneDevil.DisplayName: Bone Devil
+			MoldDevil.DisplayName: Mold Devil
+			LavaDevil.DisplayName: Lava Devil
+			OctopusDevil.DisplayName: Octopus Devil
+			MushroomDevil.DisplayName: Mushroom Devil
+			GraveDevil.DisplayName: Grave Devil
+			LightningDevil.DisplayName: Lightning Devil
+			NeedleDevil.DisplayName: Needle Devil
+			PlagueDevil.DisplayName: Plague Devil
+			MirrorDevil.DisplayName: Mirror Devil
+			ToothDevil.DisplayName: Tooth Devil
+			WindDevil.DisplayName: Wind Devil
+			LeechQueen.DisplayName: Leech Devil Queen
+			SpiderQueen.DisplayName: Spider Devil Queen
+			FrostDevil.DisplayName: Frost Devil
+			SandColossus.DisplayName: Sand Devil Colossus
+			KrakenDevil.DisplayName: Kraken Devil
+			FutureDevil.DisplayName: Future Devil
+			WarDevil.DisplayName: War Devil
+			FamineDevil.DisplayName: Famine Devil
+			FallingDevil.DisplayName: Falling Devil
+			DeathDevil.DisplayName: Death Devil
 		}
 
 		Bestiary: {
@@ -529,6 +648,36 @@ Mods: {
 			CurseDevil: A devil that haunts the Dungeon. Its nails curse whoever they strike, so they can't use their items.
 			TyphoonDevil: A living storm. It spins around its prey firing wind, then drags everything toward its centre.
 			DarknessDevil: One of the Primal Fears. Wherever it goes, the light goes out, and hands reach up from the dark.
+			LeechDevil: "Caverns. A fat leech that clings and poisons."
+			RatDevil: "Surface, daytime. A mangy rat the size of a dog."
+			CrowDevil: "Surface, daytime. Circles overhead and dives at you."
+			MosquitoDevil: "Jungle. A fast, bloodsucking pest."
+			CockroachDevil: "Underground desert. Armoured and very hard to squash."
+			SandDevil: "Desert. Swims through sand and bursts out to bite."
+			IceDevil: "Snow. A floating chunk of ice that throws frozen shards."
+			MudDevil: "Underground. Swims through the dirt beneath your feet."
+			BoneDevil: "Dungeon. Rattling bones held together by fear alone."
+			MoldDevil: "Corruption and Crimson. A walking heap of rot."
+			LavaDevil: "Underworld. Molten rock in the shape of a man."
+			OctopusDevil: "Beach. Squirts blinding ink from below."
+			MushroomDevil: "Glowing mushroom caves. Its spores leave you confused."
+			GraveDevil: "Graveyards. Climbs out of old graves after dark thoughts."
+			LightningDevil: "Surface during rain, Hardmode. Strikes with fast bolts of lightning."
+			NeedleDevil: "Caverns, Hardmode. A ball of needles that fires them in bursts."
+			PlagueDevil: "Hardmode Corruption and Crimson. Its touch rots your armour."
+			MirrorDevil: "Hardmode Hallow. Throws shards of glass that leave you confused."
+			ToothDevil: "Caverns, Hardmode. A mouth full of teeth on legs."
+			WindDevil: "Sky, Hardmode. Rides the high winds and blasts you with gusts."
+			LeechQueen: "A bloated leech the size of a house. It spits blood and births more leeches."
+			SpiderQueen: "Mother of the Spider Devils. Its venom burns and its brood never stops coming."
+			FrostDevil: "A blizzard given a body. Everything it touches freezes."
+			SandColossus: "A walking dune. The ground itself stabs upward wherever it looks."
+			KrakenDevil: "A colossal octopus that fills the air with blinding ink."
+			FutureDevil: "It has already seen how this fight ends. It appears wherever you were about to go."
+			WarDevil: "One of the Four Horsemen. It turns anything it owns into a weapon and rains them down."
+			FamineDevil: "One of the Four Horsemen. Hunger follows it, slowing everything to a crawl."
+			FallingDevil: "The fear of falling. The sky itself comes down around you."
+			DeathDevil: "The last of the Four Horsemen. It uses every attack at once, and it only appears once Makima has fallen."
 			Makima: A calm woman who treats devils like dogs on a leash. While her contracted devils live, the damage she takes is shared with them.
 		}
 
@@ -549,6 +698,19 @@ Mods: {
 			WindBolt.DisplayName: Wind
 			DarkBolt.DisplayName: Shadow Bolt
 			DarkHand.DisplayName: Hand of Darkness
+			IceShard.DisplayName: Ice Shard
+			VenomBolt.DisplayName: Venom Bolt
+			SandBolt.DisplayName: Sand Bolt
+			InkBolt.DisplayName: Ink Bolt
+			LightningBolt.DisplayName: Lightning Bolt
+			NeedleShot.DisplayName: Needle Shot
+			ShardBolt.DisplayName: Shard Bolt
+			FutureBolt.DisplayName: Future Bolt
+			WeaponShard.DisplayName: Weapon Shard
+			FamineBolt.DisplayName: Famine Bolt
+			FallingStar.DisplayName: Falling Star
+			DeathBolt.DisplayName: Death Bolt
+			GroundSpike.DisplayName: Ground Spike
 			DevilArrow.DisplayName: Devil Arrow
 			PiercingArrow.DisplayName: Piercing Arrow
 			FlameBolt.DisplayName: Flame
