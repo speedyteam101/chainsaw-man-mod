@@ -5,4 +5,4 @@ homepage = https://github.com/speedyteam101/chainsaw-man-mod
 hideCode = false
 hideResources = false
 includeSource = true
-buildIgnore = *.csproj, *.user, obj\*, bin\*, .vs\*, tools\*, art\*, *.md, docs\*, RobotJack\*
+buildIgnore = *.csproj, *.user, obj\*, bin\*, .vs\*, tools\*, art\*, *.md, docs\*

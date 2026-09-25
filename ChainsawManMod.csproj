@@ -13,9 +13,6 @@
   <ItemGroup>
     <Compile Remove="tools\**" />
     <None Remove="tools\**" />
-    <!-- Robot Jack is a separate mod that lives in this repo; don't build it into Chainsaw Man. -->
-    <Compile Remove="RobotJack\**" />
-    <None Remove="RobotJack\**" />
   </ItemGroup>
 
 </Project>

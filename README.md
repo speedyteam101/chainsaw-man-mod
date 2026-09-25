@@ -168,7 +168,3 @@ The Chainsaw Devil, Hero of Hell, Makima, Katana Man and Reze sprite sheets were
 
 
 Chainsaw Man is created by Tatsuki Fujimoto. This is a non-commercial fan project and is not affiliated with or endorsed by the rights holders.
-
-## Robot Jack (separate mod)
-
-The [`RobotJack/`](RobotJack/README.md) folder is a second, standalone mod: find the Robot Trigger, become a combat robot, and call down orbital laser strikes. See its README for install steps and content. The Chainsaw Man build ignores that folder.
