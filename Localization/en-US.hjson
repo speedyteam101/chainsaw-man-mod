@@ -117,6 +117,24 @@ Mods: {
 					'''
 			}
 
+			TyphoonCharm: {
+				DisplayName: Typhoon Charm
+				Tooltip:
+					'''
+					Summons the Typhoon Devil
+					Only works in Hardmode
+					'''
+			}
+
+			DarknessShard: {
+				DisplayName: Darkness Shard
+				Tooltip:
+					'''
+					Summons the Darkness Devil
+					Only works after the Moon Lord has been defeated
+					'''
+			}
+
 			GrenadePin: {
 				DisplayName: Grenade Pin
 				Tooltip:
@@ -481,6 +499,14 @@ Mods: {
 			EternityDevil.DisplayName: Eternity Devil
 			GunDevil.DisplayName: Gun Devil
 			Makima.DisplayName: Makima
+			SnakeDevil.DisplayName: Snake Devil
+			SharkDevil.DisplayName: Shark Devil
+			FoxDevil.DisplayName: Fox Devil
+			ViolenceFiend.DisplayName: Violence Fiend
+			AngelDevil.DisplayName: Angel Devil
+			CurseDevil.DisplayName: Curse Devil
+			TyphoonDevil.DisplayName: Typhoon Devil
+			DarknessDevil.DisplayName: Darkness Devil
 		}
 
 		Bestiary: {
@@ -495,6 +521,14 @@ Mods: {
 			EternityFleshling: A lump of the Eternity Devil. As long as these live, their master keeps healing.
 			EternityDevil: A vast mass of flesh that traps its prey forever. Kill its Fleshlings, or it will never stop regenerating.
 			GunDevil: One of the most feared devils. It fills the air with bullets and charges without mercy.
+			SnakeDevil: A long devil that hides in the jungle undergrowth. Its bite is poisonous.
+			SharkDevil: A devil that swims through sand as easily as water, circling its prey before it lunges.
+			FoxDevil: A quick, low-running devil from the snowfields. Its bite leaves frostbite behind.
+			ViolenceFiend: A fiend built for fighting. Slow, but every hit lands like a truck.
+			AngelDevil: A gentle-looking devil from the Hallow. Its touch and its feathers leave you sluggish.
+			CurseDevil: A devil that haunts the Dungeon. Its nails curse whoever they strike, so they can't use their items.
+			TyphoonDevil: A living storm. It spins around its prey firing wind, then drags everything toward its centre.
+			DarknessDevil: One of the Primal Fears. Wherever it goes, the light goes out, and hands reach up from the dark.
 			Makima: A calm woman who treats devils like dogs on a leash. While her contracted devils live, the damage she takes is shared with them.
 		}
 
@@ -510,6 +544,11 @@ Mods: {
 			MakimaHound.DisplayName: Makima's Hound
 			MakimaGunFiend.DisplayName: Gun Fiend
 			MakimaKickHitbox.DisplayName: Makima's Kick
+			FeatherBolt.DisplayName: Feather
+			CurseNail.DisplayName: Curse Nail
+			WindBolt.DisplayName: Wind
+			DarkBolt.DisplayName: Shadow Bolt
+			DarkHand.DisplayName: Hand of Darkness
 			DevilArrow.DisplayName: Devil Arrow
 			PiercingArrow.DisplayName: Piercing Arrow
 			FlameBolt.DisplayName: Flame

@@ -850,6 +850,155 @@ def hybrid_icons():
                                                            d.line([7, 3, 9, 0], fill=STEEL_L), d.rectangle([5, 10, 10, 14], fill=SHIRT)))
 
 
+# ---------------------------------------------------------------- devils, batch 3 (NPC art faces LEFT)
+def frames_strip(path, w, h, n, draw_frame):
+    img = Image.new("RGBA", (w, h * n), CLEAR)
+    for f in range(n):
+        cell = Image.new("RGBA", (w, h), CLEAR)
+        draw_frame(ImageDraw.Draw(cell), f)
+        img.paste(cell, (0, f * h), cell)
+    save(img, path)
+
+
+def snake_devil(d, f):
+    col, dark = (70, 120, 60, 255), (40, 80, 35, 255)
+    wave = (0, 1, 0, -1)[f]
+    pts = [(3, 7), (8, 5 + wave), (13, 8 - wave), (18, 6 + wave), (23, 8)]
+    d.line(pts, fill=col, width=4)
+    d.line(pts, fill=dark, width=1)
+    d.ellipse([0, 4, 6, 10], fill=col)                  # head (left)
+    d.point((2, 6), fill=YELLOW); d.point((1, 9), fill=RED)
+
+
+def shark_devil(d, f):
+    body, belly = (90, 110, 130, 255), (200, 205, 210, 255)
+    tail = (0, 1, 0, -1)[f]
+    d.polygon([(0, 7), (8, 2), (22, 4), (27, 1 + tail), (27, 12 + tail), (22, 9), (8, 12)], fill=body)
+    d.polygon([(2, 8), (20, 8), (8, 12)], fill=belly)
+    d.polygon([(12, 3), (15, 0), (17, 4)], fill=body)    # dorsal fin
+    d.line([2, 9, 7, 9], fill=BLACK)
+    for x in (3, 5):
+        d.point((x, 8), fill=WHITE)
+    d.point((5, 5), fill=RED)
+
+
+def fox_devil(d, f):
+    fur, dark = (220, 120, 40, 255), (160, 80, 25, 255)
+    leg = (0, 2, 0, -2)[f]
+    d.ellipse([5, 5, 20, 11], fill=fur)
+    d.polygon([(20, 7), (23, 3), (23, 9)], fill=WHITE)   # tail tip (right)
+    d.ellipse([0, 3, 7, 9], fill=fur)                    # head (left)
+    d.polygon([(1, 4), (1, 0), (3, 3)], fill=dark); d.polygon([(5, 3), (6, 0), (7, 4)], fill=dark)
+    d.point((2, 5), fill=BLACK); d.point((0, 7), fill=BLACK)
+    d.line([7, 11, 6 + leg, 14], fill=dark); d.line([17, 11, 18 - leg, 14], fill=dark)
+
+
+def violence_fiend(d, f):
+    step = (0, 2, 0, -2)[f]
+    d.rectangle([5, 9, 15, 20], fill=(90, 60, 60, 255))             # big torso
+    d.rectangle([3, 9, 17, 12], fill=(110, 75, 75, 255))            # shoulders
+    d.ellipse([6, 1, 14, 9], fill=(120, 120, 130, 255))             # mask
+    d.point((8, 4), fill=BLACK); d.point((11, 4), fill=BLACK)
+    d.line([9, 6, 10, 6], fill=BLACK)
+    d.line([3, 12, 1, 18 + step], fill=(110, 75, 75, 255), width=3) # arms
+    d.line([17, 12, 19, 18 - step], fill=(110, 75, 75, 255), width=3)
+    d.line([8, 20, 7 + step, 27], fill=DARK, width=3); d.line([12, 20, 13 - step, 27], fill=DARK, width=3)
+
+
+def angel_devil(d, f):
+    flap = (0, 2, 4, 2)[f]
+    wing = (240, 240, 245, 255)
+    d.polygon([(10, 10), (0, 2 + flap), (3, 14)], fill=wing)
+    d.polygon([(12, 10), (21, 2 + flap), (19, 14)], fill=wing)
+    d.ellipse([6, 1, 15, 5], outline=GOLD)                          # halo
+    d.ellipse([7, 4, 14, 11], fill=SKIN)
+    d.rectangle([8, 11, 13, 21], fill=WHITE)
+    d.point((9, 7), fill=BLACK); d.point((12, 7), fill=BLACK)
+    d.line([8, 4, 13, 4], fill=(230, 200, 130, 255))                # hair
+
+
+def curse_devil(d, f):
+    bob = (0, 1, 2, 1)[f]
+    body = (70, 40, 80, 255)
+    d.polygon([(3, 6 + bob), (15, 6 + bob), (13, 20 + bob), (9, 22), (5, 20 + bob)], fill=body)
+    d.ellipse([3, 0 + bob, 15, 10 + bob], fill=(200, 190, 170, 255))  # skull-like head
+    d.ellipse([5, 3 + bob, 8, 6 + bob], fill=BLACK); d.ellipse([10, 3 + bob, 13, 6 + bob], fill=BLACK)
+    d.point((6, 4 + bob), fill=(180, 60, 255, 255)); d.point((11, 4 + bob), fill=(180, 60, 255, 255))
+    for y in (12, 15):
+        d.line([0, y + bob, 4, y + bob], fill=STEEL_L)              # nails
+        d.line([14, y + bob, 17, y + bob], fill=STEEL_L)
+
+
+def typhoon_devil(d, f):
+    c1, c2, c3 = (150, 30, 40, 255), (200, 60, 70, 255), (110, 20, 30, 255)
+    cx = cy = 32
+    for i in range(3):
+        start = f * 30 + i * 120
+        for r, col in ((30, c3), (24, c1), (17, c2)):
+            d.arc([cx - r, cy - r, cx + r, cy + r], start, start + 90, fill=col, width=5)
+    d.ellipse([cx - 10, cy - 10, cx + 10, cy + 10], fill=c1)
+    d.ellipse([cx - 7, cy - 6, cx - 2, cy - 1], fill=YELLOW); d.ellipse([cx + 2, cy - 6, cx + 7, cy - 1], fill=YELLOW)
+    d.rectangle([cx - 5, cy + 2, cx + 5, cy + 5], fill=BLACK)
+    for x in range(cx - 4, cx + 5, 2):
+        d.point((x, cy + 3), fill=WHITE)
+
+
+def darkness_devil(d, f):
+    dark, mid = (18, 14, 24, 255), (45, 38, 60, 255)
+    sway = (0, 1, 0, -1)[f]
+    d.polygon([(28, 0), (40, 12), (44, 40), (52, 70), (4, 70), (12, 40), (16, 12)], fill=dark)  # hooded mass
+    d.ellipse([18, 8, 38, 30], fill=mid)
+    d.ellipse([22, 16, 26, 20], fill=(230, 230, 240, 255)); d.ellipse([30, 16, 34, 20], fill=(230, 230, 240, 255))
+    for i, x in enumerate((6, 14, 42, 50)):                         # many arms
+        d.line([x, 40, x - 6 + sway * (1 if i % 2 else -1), 62], fill=mid, width=2)
+        d.line([x - 6, 62, x - 9, 66], fill=mid)
+
+
+def batch3_sprites():
+    frames_strip("Content/NPCs/SnakeDevil.png", 24, 12, 4, snake_devil)
+    frames_strip("Content/NPCs/SharkDevil.png", 28, 14, 4, shark_devil)
+    frames_strip("Content/NPCs/FoxDevil.png", 24, 15, 4, fox_devil)
+    frames_strip("Content/NPCs/ViolenceFiend.png", 20, 28, 4, violence_fiend)
+    frames_strip("Content/NPCs/AngelDevil.png", 22, 24, 4, angel_devil)
+    frames_strip("Content/NPCs/CurseDevil.png", 18, 24, 4, curse_devil)
+    frames_strip("Content/NPCs/TyphoonDevil.png", 64, 64, 4, typhoon_devil)
+    frames_strip("Content/NPCs/DarknessDevil.png", 56, 72, 4, darkness_devil)
+
+    head, hd = canvas(16, 16)                                        # boss icons
+    hd.arc([1, 1, 14, 14], 0, 270, fill=(150, 30, 40, 255), width=3)
+    hd.ellipse([5, 5, 10, 10], fill=(200, 60, 70, 255))
+    save(head, "Content/NPCs/TyphoonDevil_Head_Boss.png")
+    head, hd = canvas(16, 16)
+    hd.polygon([(8, 0), (14, 6), (15, 15), (1, 15), (2, 6)], fill=(18, 14, 24, 255))
+    hd.point((6, 7), fill=WHITE); hd.point((10, 7), fill=WHITE)
+    save(head, "Content/NPCs/DarknessDevil_Head_Boss.png")
+
+    img, d = canvas(5, 3)
+    d.polygon([(0, 1), (4, 0), (4, 2)], fill=WHITE); save(img, "Content/Projectiles/FeatherBolt.png")
+    img, d = canvas(6, 2)
+    d.line([0, 0, 4, 0], fill=STEEL_L); d.point((5, 0), fill=(180, 60, 255, 255)); d.line([0, 1, 4, 1], fill=STEEL_D)
+    save(img, "Content/Projectiles/CurseNail.png")
+    img, d = canvas(9, 9)
+    d.arc([0, 0, 8, 8], 0, 270, fill=(230, 235, 245, 255), width=2); save(img, "Content/Projectiles/WindBolt.png")
+    img, d = canvas(8, 8)
+    d.ellipse([0, 0, 7, 7], fill=(35, 25, 50, 255)); d.ellipse([2, 2, 5, 5], fill=(90, 60, 130, 255))
+    save(img, "Content/Projectiles/DarkBolt.png")
+    img, d = canvas(20, 45)                                          # hand of darkness rising
+    d.polygon([(6, 44), (14, 44), (13, 14), (7, 14)], fill=(18, 14, 24, 255))
+    for x in (4, 8, 12, 16):
+        d.line([10, 16, x, 2], fill=(18, 14, 24, 255), width=2)
+    save(img, "Content/Projectiles/DarkHand.png")
+
+    img, d = canvas(14, 14)                                          # Typhoon Charm
+    d.ellipse([1, 1, 12, 12], outline=(150, 30, 40, 255), width=2)
+    d.arc([4, 4, 9, 9], 0, 270, fill=(230, 235, 245, 255))
+    save(img, "Content/Items/Consumables/TyphoonCharm.png")
+    img, d = canvas(14, 14)                                          # Darkness Shard
+    d.polygon([(7, 0), (12, 7), (7, 13), (2, 7)], fill=(30, 22, 45, 255))
+    d.line([7, 2, 7, 11], fill=(90, 60, 130, 255))
+    save(img, "Content/Items/Consumables/DarknessShard.png")
+
+
 if __name__ == "__main__":
     chainsaw_arm_item()
     chainsaw_arm_projectile()
@@ -879,3 +1028,4 @@ if __name__ == "__main__":
     ability_sprites()
     hybrid_sheets()
     hybrid_icons()
+    batch3_sprites()

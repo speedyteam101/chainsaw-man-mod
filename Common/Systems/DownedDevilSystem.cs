@@ -13,6 +13,8 @@ namespace ChainsawManMod.Common.Systems
 		public static bool downedEternityDevil = false;
 		public static bool downedGunDevil = false;
 		public static bool downedMakima = false;
+		public static bool downedTyphoonDevil = false;
+		public static bool downedDarknessDevil = false;
 
 		public override void ClearWorld() {
 			downedZombieDevil = false;
@@ -20,6 +22,8 @@ namespace ChainsawManMod.Common.Systems
 			downedEternityDevil = false;
 			downedGunDevil = false;
 			downedMakima = false;
+			downedTyphoonDevil = false;
+			downedDarknessDevil = false;
 		}
 
 		public override void SaveWorldData(TagCompound tag) {
@@ -38,6 +42,12 @@ namespace ChainsawManMod.Common.Systems
 			if (downedMakima) {
 				tag["downedMakima"] = true;
 			}
+			if (downedTyphoonDevil) {
+				tag["downedTyphoonDevil"] = true;
+			}
+			if (downedDarknessDevil) {
+				tag["downedDarknessDevil"] = true;
+			}
 		}
 
 		public override void LoadWorldData(TagCompound tag) {
@@ -46,14 +56,16 @@ namespace ChainsawManMod.Common.Systems
 			downedEternityDevil = tag.ContainsKey("downedEternityDevil");
 			downedGunDevil = tag.ContainsKey("downedGunDevil");
 			downedMakima = tag.ContainsKey("downedMakima");
+			downedTyphoonDevil = tag.ContainsKey("downedTyphoonDevil");
+			downedDarknessDevil = tag.ContainsKey("downedDarknessDevil");
 		}
 
 		public override void NetSend(BinaryWriter writer) {
-			writer.WriteFlags(downedZombieDevil, downedBatDevil, downedEternityDevil, downedGunDevil, downedMakima);
+			writer.WriteFlags(downedZombieDevil, downedBatDevil, downedEternityDevil, downedGunDevil, downedMakima, downedTyphoonDevil, downedDarknessDevil);
 		}
 
 		public override void NetReceive(BinaryReader reader) {
-			reader.ReadFlags(out downedZombieDevil, out downedBatDevil, out downedEternityDevil, out downedGunDevil, out downedMakima);
+			reader.ReadFlags(out downedZombieDevil, out downedBatDevil, out downedEternityDevil, out downedGunDevil, out downedMakima, out downedTyphoonDevil, out downedDarknessDevil);
 		}
 	}
 }
