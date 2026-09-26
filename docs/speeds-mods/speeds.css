@@ -1,0 +1,103 @@
+/* Speed's Mods wiki: builds on ../assets/site.css and swaps in its own colours. */
+
+:root {
+  --bg: #0f1218;
+  --surface: #171c25;
+  --surface-2: #1f2632;
+  --border: #2d3646;
+  --text: #e8edf5;
+  --muted: #9ba8bb;
+  --accent: #2f8cff;
+  --accent-2: #3fd0e0;
+  --blood: #2f8cff;
+  --link: #6cb2ff;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f3f6fb;
+    --surface: #ffffff;
+    --surface-2: #e9eef6;
+    --border: #d3dbe7;
+    --text: #141a24;
+    --muted: #556173;
+    --accent: #1766d6;
+    --accent-2: #0b8796;
+    --blood: #1766d6;
+    --link: #1459bd;
+  }
+}
+
+/* Per-mod accent, set on <body> or on a card */
+.mod-chainsaw { --accent: #e8531f; --accent-2: #f29a2e; --blood: #b3172a; --link: #ff8a4c; }
+.mod-doors    { --accent: #c9a04a; --accent-2: #e2c27a; --blood: #8a6a2c; --link: #e2c27a; }
+.mod-robot    { --accent: #22b8cf; --accent-2: #6ee7f5; --blood: #1a8ea0; --link: #6ee7f5; }
+.mod-shinobi  { --accent: #f07d1a; --accent-2: #ffb454; --blood: #c9570a; --link: #ffa24c; }
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .mod-chainsaw { --accent: #c23d0f; --accent-2: #b8650a; --blood: #a3121f; --link: #b33a0c; }
+  :root:not([data-theme="dark"]) .mod-doors    { --accent: #8a6a1f; --accent-2: #7a5c14; --blood: #8a6a2c; --link: #7a5c14; }
+  :root:not([data-theme="dark"]) .mod-robot    { --accent: #0e7f91; --accent-2: #0b6c7b; --blood: #0e7f91; --link: #0b6c7b; }
+  :root:not([data-theme="dark"]) .mod-shinobi  { --accent: #b85a0c; --accent-2: #9c4c08; --blood: #b85a0c; --link: #9c4c08; }
+}
+
+/* Mod cards on the home page */
+.mod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.mod-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 18px;
+  color: var(--text);
+  text-decoration: none;
+}
+a.mod-card:hover { border-color: var(--accent); color: var(--text); }
+.mod-card header { display: flex; align-items: center; gap: 12px; }
+.mod-card header img { width: 56px; height: 56px; border-radius: 10px; flex: none; }
+.mod-card h3 { margin: 0; }
+.mod-card .tagline { margin: 2px 0 0; color: var(--accent-2); font-size: 0.85rem; font-weight: 600; }
+.mod-card p { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.mod-card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.92rem; }
+.mod-card .go { margin-top: auto; color: var(--link); font-weight: 700; font-size: 0.92rem; }
+
+.hero-icon { width: 120px; height: 120px; border-radius: 18px; }
+@media (max-width: 640px) { .hero-icon { display: none; } }
+
+/* A single frame from a vertical sprite sheet.
+   Set --w, --h (frame size in px), --frames and --s (scale) inline. */
+.frame {
+  width: calc(var(--w) * var(--s, 2) * 1px);
+  height: calc(var(--h) * var(--s, 2) * 1px);
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: calc(var(--w) * var(--s, 2) * 1px) calc(var(--h) * var(--frames) * var(--s, 2) * 1px);
+  image-rendering: pixelated;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 12px 0 4px;
+}
+
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.pill-row li {
+  font-size: 0.8rem;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
