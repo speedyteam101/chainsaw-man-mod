@@ -47,18 +47,21 @@
 .mod-doors    { --accent: #c9a04a; --accent-2: #e2c27a; --blood: #8a6a2c; --link: #e2c27a; }
 .mod-robot    { --accent: #22b8cf; --accent-2: #6ee7f5; --blood: #1a8ea0; --link: #6ee7f5; }
 .mod-shinobi  { --accent: #f07d1a; --accent-2: #ffb454; --blood: #c9570a; --link: #ffa24c; }
+.mod-ironman  { --accent: #d4283a; --accent-2: #f2c14e; --blood: #b01f2e; --link: #ff7a85; }
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) .mod-chainsaw { --accent: #c23d0f; --accent-2: #b8650a; --blood: #a3121f; --link: #b33a0c; }
   :root:not([data-theme="dark"]) .mod-doors    { --accent: #8a6a1f; --accent-2: #7a5c14; --blood: #8a6a2c; --link: #7a5c14; }
   :root:not([data-theme="dark"]) .mod-robot    { --accent: #0e7f91; --accent-2: #0b6c7b; --blood: #0e7f91; --link: #0b6c7b; }
   :root:not([data-theme="dark"]) .mod-shinobi  { --accent: #b85a0c; --accent-2: #9c4c08; --blood: #b85a0c; --link: #9c4c08; }
+  :root:not([data-theme="dark"]) .mod-ironman  { --accent: #b3172a; --accent-2: #8a6410; --blood: #b3172a; --link: #a3121f; }
 }
 
 :root[data-theme="light"] .mod-chainsaw { --accent: #c23d0f; --accent-2: #b8650a; --blood: #a3121f; --link: #b33a0c; }
 :root[data-theme="light"] .mod-doors    { --accent: #8a6a1f; --accent-2: #7a5c14; --blood: #8a6a2c; --link: #7a5c14; }
 :root[data-theme="light"] .mod-robot    { --accent: #0e7f91; --accent-2: #0b6c7b; --blood: #0e7f91; --link: #0b6c7b; }
 :root[data-theme="light"] .mod-shinobi  { --accent: #b85a0c; --accent-2: #9c4c08; --blood: #b85a0c; --link: #9c4c08; }
+:root[data-theme="light"] .mod-ironman  { --accent: #b3172a; --accent-2: #8a6410; --blood: #b3172a; --link: #a3121f; }
 
 
 /* Mod cards on the home page */

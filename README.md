@@ -3,7 +3,7 @@
 An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 
 The wiki site lives in [`docs/`](docs/index.html) (plain HTML, ready for GitHub Pages).
-The Speed's Mods wiki, covering all of speedyteam101's mods, is in [`docs/speeds-mods/`](docs/speeds-mods/index.html). `python3 tools/build_website.py OUT_DIR` bundles both into one self-contained website folder.
+The Speed's Mods wiki, covering all of speedyteam101's mods (Chainsaw Man, DOORS, Robot Jack, Shinobi and Marvel: Iron Man), is in [`docs/speeds-mods/`](docs/speeds-mods/index.html). `python3 tools/build_website.py OUT_DIR` bundles both into one self-contained website folder.
 
 ## Content
 

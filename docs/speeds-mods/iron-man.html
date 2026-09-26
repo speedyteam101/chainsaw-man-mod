@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iron Man · Speed's Mods</title>
+  <meta name="description" content="Wiki page for speedyteam101's Marvel: Iron Man mod for Terraria (tModLoader 1.4.4): Arc Reactors, the Suit Workshop, the Parts Store, attached weapons and the giant suit.">
+  <link rel="icon" href="img/iron-man-icon.png">
+  <link rel="stylesheet" href="../assets/site.css">
+  <link rel="stylesheet" href="speeds.css">
+</head>
+<body class="mod-ironman">
+  <header class="site-header">
+    <div class="inner">
+      <a class="brand" href="index.html"><img src="img/robot-jack-icon.png" alt=""> Speed's <span>Mods</span></a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="index.html">Home</a>
+        <a href="chainsaw-man.html">Chainsaw Man</a>
+        <a href="doors.html">DOORS</a>
+        <a href="robot-jack.html">Robot Jack</a>
+        <a href="shinobi.html">Shinobi</a>
+        <a href="iron-man.html" aria-current="page">Iron Man</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div>
+        <div class="badge">Fan-made · Marvel</div>
+        <h1>Marvel: Iron Man</h1>
+        <p class="lede">Become Iron Man and design your own suit. Power it with an Arc Reactor, fly, fire Repulsors and the Unibeam, customise every part in the Suit Workshop, buy premium sets and weapons in the Parts Store, and turn giant.</p>
+        <ul class="toc">
+          <li><a href="#start">Getting started</a></li>
+          <li><a href="#suit">The suit</a></li>
+          <li><a href="#workshop">Suit Workshop</a></li>
+          <li><a href="#weapons">Weapons</a></li>
+          <li><a href="#giant">Giant suit</a></li>
+          <li><a href="#store">Parts Store</a></li>
+          <li><a href="#install">Install</a></li>
+        </ul>
+      </div>
+      <img class="hero-icon" src="img/iron-man-icon.png" alt="Iron Man mod icon">
+    </section>
+
+    <img class="preview" src="img/ironman-suits.png" alt="The ten standard preset suits standing, walking, aiming and flying">
+    <p class="caption">The ten standard preset suits, drawn by the mod's own suit renderer.</p>
+
+    <h2 id="start">Getting started</h2>
+    <ol class="timeline">
+      <li><h3>Craft the basics</h3><p>A <b>Stark Tablet</b> and an <b>Arc Reactor Mk I</b> (recipes below).</p></li>
+      <li><h3>Equip the Arc Reactor</h3><p>Wear it as an accessory. Only one Arc Reactor can be worn at a time.</p></li>
+      <li><h3>Suit up</h3><p>Press <code>I</code> or right-click with the Stark Tablet. Press it again to suit down.</p></li>
+      <li><h3>Design your suit</h3><p>Press <code>O</code> or left-click with the Stark Tablet to open the Suit Workshop.</p></li>
+      <li><h3>Shop for parts</h3><p>Press <code>P</code> to open the Parts Store and buy more parts with coins.</p></li>
+      <li><h3>Go giant</h3><p>Once you've bought the Giant Suit, press <code>G</code> while suited up.</p></li>
+    </ol>
+    <p>All four keys can be rebound in <b>Settings → Controls → Mod Controls</b>.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Item</th><th>What it does</th><th>Recipe</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><b>Stark Tablet</b></td><td>Left click: open the Suit Workshop. Right click: suit up or down.</td><td>5 Iron/Lead Bar, 10 Glass, 1 Fallen Star @ Anvil</td></tr>
+          <tr><td class="nowrap"><b>Arc Reactor Mk I</b></td><td>Lets you suit up. Grants Repulsors and the Shoulder Weapon.</td><td>12 Iron/Lead Bar, 3 Fallen Star, 5 Glass @ Anvil</td></tr>
+          <tr><td class="nowrap"><b>Arc Reactor Mk II</b></td><td>Stronger suit, no knockback, adds the Unibeam.</td><td>Arc Reactor Mk I, 10 Hallowed Bar, 5 Soul of Light, 5 Soul of Might @ Mythril/Orichalcum Anvil</td></tr>
+          <tr><td class="nowrap"><b>Arc Reactor Mk III</b></td><td>Strongest suit, and immune to lava.</td><td>Arc Reactor Mk II, 10 Luminite Bar, 10 Vortex Fragment @ Ancient Manipulator</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="suit">The suit</h2>
+    <p>While suited up you can fly (hold Jump in the air, hold Down to dive), breathe underwater and take no fall damage.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Reactor</th><th class="num">Defense</th><th class="num">Damage reduction</th><th class="num">Damage</th><th class="num">Crit</th><th class="num">Move speed</th><th class="num">Regen</th><th class="num">Flight speed</th></tr></thead>
+        <tbody>
+          <tr><td><b>Mk I</b></td><td class="num">+10</td><td class="num">4%</td><td class="num">+10%</td><td class="num">+4%</td><td class="num">+10%</td><td class="num">1 HP/s</td><td class="num">7</td></tr>
+          <tr><td><b>Mk II</b></td><td class="num">+28</td><td class="num">10%</td><td class="num">+25%</td><td class="num">+8%</td><td class="num">+20%</td><td class="num">3 HP/s</td><td class="num">10</td></tr>
+          <tr><td><b>Mk III</b></td><td class="num">+50</td><td class="num">16%</td><td class="num">+45%</td><td class="num">+12%</td><td class="num">+30%</td><td class="num">6 HP/s</td><td class="num">13</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ability</th><th>Reactor</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><b>Repulsors</b></td><td>Mk I+</td><td>Palm blasts (28 base damage). Changes with Repulsor Mode.</td></tr>
+          <tr><td class="nowrap"><b>Shoulder Weapon</b></td><td>Mk I+</td><td>Fires the weapon chosen in the workshop: micro-missiles, minigun, flares, laser, heavy rocket or cluster bombs.</td></tr>
+          <tr><td class="nowrap"><b>Unibeam</b></td><td>Mk II+</td><td>Hold to fire a chest beam that stops at walls. It overheats after a few seconds, then cools down.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Ability damage grows after Skeletron, the Wall of Flesh, any mechanical boss, Plantera and the Moon Lord, then is multiplied by 1× / 1.6× / 2.4× for the Mk I / II / III reactor.</p>
+
+    <h2 id="workshop">Suit Workshop</h2>
+    <div class="stats">
+      <div class="stat"><b>1,520</b><span>Options</span></div>
+      <div class="stat"><b>37</b><span>Categories</span></div>
+      <div class="stat"><b>22</b><span>Presets</span></div>
+      <div class="stat"><b>5</b><span>Save slots</span></div>
+    </div>
+    <p>Every category is independent, so the options combine into about 5.2 × 10<sup>50</sup> different suits. You start with the classic red-and-gold parts; other parts are bought in the Parts Store. Colours, Glow Strength and Glow Pulse are always free.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th>Categories</th></tr></thead>
+        <tbody>
+          <tr><td><b>Armour</b></td><td>Helmet, Faceplate, Eyes, Chest, Arc Reactor, Shoulders, Gauntlets, Belt, Legs, Boots, Back Module</td></tr>
+          <tr><td><b>Paint Job</b></td><td>Pattern, Emblem, Finish (Metallic, Matte, Chrome, Gloss, Stealth, Battle-Damaged, Obsidian, Radiant)</td></tr>
+          <tr><td><b>Colours</b></td><td>11 colour slots with 96 colours each, from Primary and Secondary to Eye Glow, Repulsor Glow and Thrusters</td></tr>
+          <tr><td><b>Effects</b></td><td>Glow Strength, Glow Pulse, Thruster Trail</td></tr>
+          <tr><td><b>Systems</b></td><td>Repulsor Mode, Shoulder Weapon, Unibeam Mode, Armour Plating, Thrusters, Power Core</td></tr>
+          <tr><td><b>Weapons</b></td><td>Weapon Slot I, Weapon Slot II, Weapon Colour</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The <b>Systems</b> options change how the suit plays. For example, Repulsor Mode can be Rapid, Spread, Heavy, Piercing or Twin, and Hover thrusters hold your altitude when you let go. The workshop also has a live animated preview and Random Armour, Random Colours and Random Everything buttons.</p>
+
+    <h2 id="weapons">Attached weapons</h2>
+    <p>The suit has two weapon slots. Buy weapons in the Parts Store's Weapons tab and attach them in the workshop. While suited up, the Weapon I and Weapon II ability items use whatever is in each slot.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Weapon</th><th>Type</th><th class="num">Damage</th><th class="num">Price</th><th>Unlocks after</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><b>Energy Sword</b></td><td>melee</td><td class="num">48</td><td class="num">5g</td><td>-</td><td>Glowing blade, wide swings</td></tr>
+          <tr><td class="nowrap"><b>Riot Shield</b></td><td>melee</td><td class="num">30</td><td class="num">5g</td><td>-</td><td>Hold to block: +20 defense, 35% less damage, reflects projectiles</td></tr>
+          <tr><td class="nowrap"><b>Battle Axe</b></td><td>melee</td><td class="num">70</td><td class="num">6g</td><td>-</td><td>Slow heavy chops that ignore 20 defense</td></tr>
+          <tr><td class="nowrap"><b>Throwing Spear</b></td><td>ranged</td><td class="num">55</td><td class="num">4g</td><td>-</td><td>Thrown, arcs down, pierces 3 enemies</td></tr>
+          <tr><td class="nowrap"><b>Reaper Scythe</b></td><td>melee</td><td class="num">60</td><td class="num">12g</td><td>Wall of Flesh</td><td>Full 360° spin; hits heal you a little</td></tr>
+          <tr><td class="nowrap"><b>Katana</b></td><td>melee</td><td class="num">40</td><td class="num">8g</td><td>-</td><td>Very fast slashes, +20% crit chance</td></tr>
+          <tr><td class="nowrap"><b>Anti-Tank Railgun</b></td><td>ranged</td><td class="num">400</td><td class="num">40g</td><td>a mechanical boss</td><td>Instant beam through every enemy up to the first wall</td></tr>
+          <tr><td class="nowrap"><b>Warhammer</b></td><td>melee</td><td class="num">90</td><td class="num">10g</td><td>Wall of Flesh</td><td>Crushing swings that make a shockwave</td></tr>
+          <tr><td class="nowrap"><b>Energy Whip</b></td><td>melee</td><td class="num">42</td><td class="num">8g</td><td>-</td><td>Long energy lash</td></tr>
+          <tr><td class="nowrap"><b>Chakram</b></td><td>ranged</td><td class="num">45</td><td class="num">6g</td><td>-</td><td>Bladed disc that flies out and comes back</td></tr>
+          <tr><td class="nowrap"><b>Flamethrower</b></td><td>ranged</td><td class="num">14</td><td class="num">10g</td><td>Wall of Flesh</td><td>Short-range fire stream that burns</td></tr>
+          <tr><td class="nowrap"><b>Plasma Cannon</b></td><td>ranged</td><td class="num">120</td><td class="num">20g</td><td>Plantera</td><td>Slow plasma orb with a huge explosion</td></tr>
+          <tr><td class="nowrap"><b>Wrist Blades</b></td><td>melee</td><td class="num">34</td><td class="num">4g</td><td>-</td><td>Rapid stabs from the gauntlets</td></tr>
+          <tr><td class="nowrap"><b>Grenade Launcher</b></td><td>ranged</td><td class="num">65</td><td class="num">6g</td><td>-</td><td>Grenades that bounce twice, then explode</td></tr>
+          <tr><td class="nowrap"><b>Energy Lance</b></td><td>melee</td><td class="num">75</td><td class="num">15g</td><td>a mechanical boss</td><td>Charge forward thrusting a long lance</td></tr>
+          <tr><td class="nowrap"><b>Arc Caster</b></td><td>ranged</td><td class="num">50</td><td class="num">18g</td><td>Plantera</td><td>Lightning that chains to 3 more enemies</td></tr>
+          <tr><td class="nowrap"><b>Buzzsaw Launcher</b></td><td>ranged</td><td class="num">40</td><td class="num">10g</td><td>Wall of Flesh</td><td>Saw blades that ricochet off walls up to 4 times</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="giant">Giant suit</h2>
+    <img class="preview" src="img/ironman-giant.png" alt="The normal suit next to the giant suit at in-game scale" style="max-width:480px">
+    <p>Buy the <b>Giant Suit</b> for <b>50 platinum</b> in the Parts Store's Premium Sets tab, then press <code>G</code> while suited up to become a giant version of your own design, drawn twice as big.</p>
+    <div class="stats">
+      <div class="stat"><b>+80</b><span>Defense</span></div>
+      <div class="stat"><b>+25%</b><span>Damage reduction</span></div>
+      <div class="stat"><b>+50%</b><span>Damage</span></div>
+      <div class="stat"><b>−20%</b><span>Move speed</span></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ability</th><th class="num">Damage</th><th class="num">Cooldown</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><b>Titan Punch</b></td><td class="num">150</td><td class="num">-</td><td>Huge punch, massive knockback</td></tr>
+          <tr><td class="nowrap"><b>Ground Pound</b></td><td class="num">200</td><td class="num">4 s</td><td>Slam the ground for a big shockwave</td></tr>
+          <tr><td class="nowrap"><b>Mega Repulsor</b></td><td class="num">120</td><td class="num">-</td><td>Enormous repulsor blast with a huge explosion</td></tr>
+          <tr><td class="nowrap"><b>Missile Barrage</b></td><td class="num">60 × 12</td><td class="num">8 s</td><td>Twelve homing missiles from the shoulders</td></tr>
+          <tr><td class="nowrap"><b>Giant Unibeam</b></td><td class="num">90</td><td class="num">overheat</td><td>A Unibeam three times as wide</td></tr>
+          <tr><td class="nowrap"><b>Shockwave Clap</b></td><td class="num">110</td><td class="num">3 s</td><td>A shockwave that rolls along the ground</td></tr>
+          <tr><td class="nowrap"><b>Rocket Charge</b></td><td class="num">130</td><td class="num">5 s</td><td>Rocket toward the cursor, briefly invincible</td></tr>
+          <tr><td class="nowrap"><b>Shield Dome</b></td><td class="num">-</td><td class="num">30 s</td><td>6 seconds of 40% less damage; projectiles bounce off</td></tr>
+          <tr><td class="nowrap"><b>Orbital Strike</b></td><td class="num">350</td><td class="num">20 s</td><td>A beam from orbit hits the marked spot</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="store">Parts Store</h2>
+    <p>Press <code>P</code> to open it. Pay with coins from your inventory, piggy bank, safe, Defender's Forge or Void Vault, and try anything on in the preview before you buy.</p>
+    <img class="preview" src="img/ironman-sets.png" alt="The twelve premium suit sets">
+    <p class="caption">Vampiric, Infernal, Titan, Cryo, Storm, Void, Godly, Dragon, Samurai, Shinobi, Pharaoh and Cyber.</p>
+    <p>Each of the <b>12 premium sets</b> has 10 pieces. Wear all 10 while suited up for the set bonus.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Set</th><th>Unlocks after</th><th class="num">Whole set</th><th>Set bonus</th></tr></thead>
+        <tbody>
+          <tr><td><b>Vampiric</b></td><td>Wall of Flesh</td><td class="num">51g</td><td>+10% damage (+20% at night), life steal</td></tr>
+          <tr><td><b>Infernal</b></td><td>Wall of Flesh</td><td class="num">51g</td><td>+15% damage, fire and lava immunity, Hellfire hits</td></tr>
+          <tr><td><b>Shinobi</b></td><td>Wall of Flesh</td><td class="num">51g</td><td>+20% move speed, +15% crit, 8% dodge</td></tr>
+          <tr><td><b>Titan</b></td><td>Any mechanical boss</td><td class="num">1p 2g</td><td>+40 defense, +8% DR, no knockback, thorns</td></tr>
+          <tr><td><b>Samurai</b></td><td>Any mechanical boss</td><td class="num">1p 2g</td><td>+20% melee damage and speed; stronger Katana</td></tr>
+          <tr><td><b>Cryo</b></td><td>Plantera</td><td class="num">1p 27g 50s</td><td>+15% crit, cold immunity, Frostbite hits</td></tr>
+          <tr><td><b>Pharaoh</b></td><td>Plantera</td><td class="num">1p 27g 50s</td><td>+12% damage, +20 defense, Venom and Ichor hits</td></tr>
+          <tr><td><b>Dragon</b></td><td>Plantera</td><td class="num">1p 53g</td><td>+20% damage and flight speed, breathes fire</td></tr>
+          <tr><td><b>Storm</b></td><td>Golem</td><td class="num">1p 70g</td><td>+25% speed, chain lightning</td></tr>
+          <tr><td><b>Void</b></td><td>Lunatic Cultist</td><td class="num">2p 55g</td><td>+20% damage, 12% chance to phase through attacks</td></tr>
+          <tr><td><b>Cyber</b></td><td>Lunatic Cultist</td><td class="num">2p 55g</td><td>+15% damage and attack speed, homing missiles</td></tr>
+          <tr><td><b>Godly</b></td><td>Moon Lord</td><td class="num">4p 25g</td><td>+30% damage, +30 defense, regen, holy light blasts</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="install">Install</h2>
+    <ol>
+      <li>Copy the repository into your <code>ModSources</code> folder <b>as <code>MarvelMod</code></b>. Rename it if you cloned it as <code>marvel-mod</code>.</li>
+      <li>In tModLoader open <b>Workshop → Develop Mods</b> and click <b>Build + Reload</b> next to Marvel: Iron Man.</li>
+    </ol>
+    <p>Source: <a href="https://github.com/speedyteam101/marvel-mod">github.com/speedyteam101/marvel-mod</a></p>
+  </main>
+  <footer class="site-footer">
+    <div class="inner">
+      <p><a href="index.html">← All of Speed's Mods</a></p>
+      <p>Iron Man is a Marvel character. This is a non-commercial fan project and is not affiliated with or endorsed by Marvel or Disney.</p>
+    </div>
+  </footer>
+</body>
+</html>
