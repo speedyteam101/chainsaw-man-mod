@@ -32,6 +32,22 @@
   }
 }
 
+:root[data-theme="light"] {
+  --bg: #f7f1ea;
+  --surface: #fffaf5;
+  --surface-2: #f1e7dc;
+  --border: #dfd0c1;
+  --text: #231a15;
+  --muted: #6d5d52;
+  --accent: #c23d0f;
+  --accent-2: #b8650a;
+  --blood: #a3121f;
+  --link: #b33a0c;
+  --good: #2f7d35;
+  color-scheme: light;
+}
+
+
 * { box-sizing: border-box; }
 
 html { -webkit-text-size-adjust: 100%; }
@@ -69,7 +85,7 @@ pre code { background: none; border: 0; padding: 0; }
 
 .site-header {
   position: sticky;
-  top: 0;
+  top: env(safe-area-inset-top, 0px);
   z-index: 10;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px);
