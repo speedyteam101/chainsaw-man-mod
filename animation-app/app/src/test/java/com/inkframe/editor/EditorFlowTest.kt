@@ -55,9 +55,9 @@ fun countInk(b: Bitmap?): Int {
 class EditorFlowTest {
     private var t0 = 0L
 
-    private fun ev(v: View, action: Int, xs: FloatArray, ys: FloatArray, time: Long, actionIndex: Int = 0, toolType: Int = MotionEvent.TOOL_TYPE_FINGER, pressure: Float = 1f): Boolean {
+    private fun ev(v: View, action: Int, xs: FloatArray, ys: FloatArray, time: Long, actionIndex: Int = 0, toolType: Int = MotionEvent.TOOL_TYPE_FINGER, pressure: Float = 1f, toolTypes: IntArray? = null): Boolean {
         val n = xs.size
-        val props = Array(n) { MotionEvent.PointerProperties().apply { id = it; this.toolType = toolType } }
+        val props = Array(n) { MotionEvent.PointerProperties().apply { id = it; this.toolType = toolTypes?.get(it) ?: toolType } }
         val coords = Array(n) { MotionEvent.PointerCoords().apply { x = xs[it]; y = ys[it]; this.pressure = pressure; size = 0.1f } }
         val a = if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP) action or (actionIndex shl MotionEvent.ACTION_POINTER_INDEX_SHIFT) else action
         val e = MotionEvent.obtain(t0, t0 + time, a, n, props, coords, 0, 0, 1f, 1f, 0, 0, 0, 0)
@@ -146,6 +146,23 @@ class EditorFlowTest {
         val before = countInk(doc.store.get(doc.activeCellKey))
         stroke(cv, (0..20).map { Pair(400f + it * 5f, 300f) })
         assertEquals(before, countInk(doc.store.get(doc.activeCellKey)))
+
+        // Palm rests first, then the pen draws: the pen stroke still lands, and commits when the pen lifts.
+        val palmAndPen = intArrayOf(MotionEvent.TOOL_TYPE_FINGER, MotionEvent.TOOL_TYPE_STYLUS)
+        val beforePalm = countInk(doc.store.get(doc.activeCellKey))
+        t0 = SystemClock.uptimeMillis()
+        ev(cv, MotionEvent.ACTION_DOWN, floatArrayOf(900f), floatArrayOf(900f), 0)
+        ev(cv, MotionEvent.ACTION_POINTER_DOWN, floatArrayOf(900f, 300f), floatArrayOf(900f, 450f), 40, actionIndex = 1, toolTypes = palmAndPen)
+        for (i in 1..30) {
+            ev(cv, MotionEvent.ACTION_MOVE, floatArrayOf(900f, 300f + i * 10f), floatArrayOf(900f, 450f), 40L + i * 8, toolTypes = palmAndPen)
+        }
+        ev(cv, MotionEvent.ACTION_POINTER_UP, floatArrayOf(900f, 600f), floatArrayOf(900f, 450f), 400, actionIndex = 1, toolTypes = palmAndPen)
+        idle()
+        val afterPen = countInk(doc.store.get(doc.activeCellKey))
+        assertTrue("pen stroke with a resting palm was committed", afterPen > beforePalm + 100)
+        ev(cv, MotionEvent.ACTION_UP, floatArrayOf(900f), floatArrayOf(900f), 500)
+        idle()
+        assertEquals("lifting the palm adds nothing", afterPen, countInk(doc.store.get(doc.activeCellKey)))
         app.prefs.fingerDrawing = true
 
         // Layers: add, draw, merge down, undo merge.

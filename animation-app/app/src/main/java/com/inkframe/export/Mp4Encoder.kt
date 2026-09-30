@@ -65,10 +65,12 @@ class Mp4Encoder(private val file: File, width: Int, height: Int, private val fp
             if (index >= 0) break
             drain(false)
         }
+        // Read the buffer size first: getInputImage invalidates the ByteBuffer view of this index.
+        val capacity = codec.getInputBuffer(index)?.capacity() ?: Int.MAX_VALUE
         val image = codec.getInputImage(index) ?: throw IOException("Encoder has no input image")
         frame.writeTo(image)
         val pts = frameIndex * 1_000_000L / fps
-        codec.queueInputBuffer(index, 0, width * height * 3 / 2, pts, 0)
+        codec.queueInputBuffer(index, 0, minOf(width * height * 3 / 2, capacity), pts, 0)
         frameIndex++
         drain(false)
     }

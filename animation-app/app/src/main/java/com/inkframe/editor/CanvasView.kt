@@ -459,7 +459,18 @@ class CanvasView(context: Context, private val host: CanvasHost) : View(context)
             MotionEvent.ACTION_DOWN -> onDown(e)
             MotionEvent.ACTION_POINTER_DOWN -> onPointerDown(e)
             MotionEvent.ACTION_MOVE -> onMove(e)
-            MotionEvent.ACTION_POINTER_UP -> needsBaseline = true
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (mode == Mode.DRAW && e.getPointerId(e.actionIndex) == drawPointerId) {
+                    // The pen lifted while a palm still rests on the screen: finish now.
+                    removeCallbacks(holdRunnable)
+                    removeCallbacks(shapeRunnable)
+                    finishStroke()
+                    mode = Mode.NONE
+                    drawPointerId = -1
+                } else {
+                    needsBaseline = true
+                }
+            }
             MotionEvent.ACTION_UP -> onUp(e)
             MotionEvent.ACTION_CANCEL -> {
                 if (mode == Mode.DRAW) cancelStroke()
@@ -507,28 +518,33 @@ class CanvasView(context: Context, private val host: CanvasHost) : View(context)
                 mode = Mode.PAN
                 setBaseline(e)
             }
-            else -> {
-                val blocked = host.drawBlockedReason()
-                if (blocked != null) {
-                    host.showHint(blocked)
-                    mode = Mode.PAN
-                    setBaseline(e)
-                    return
-                }
-                val eraser = host.tool == Tool.ERASER || e.getToolType(0) == MotionEvent.TOOL_TYPE_ERASER
-                val style = host.strokeStyle(eraser)
-                strokeStyle = style
-                drawPointerId = e.getPointerId(0)
-                drawIsStylus = stylus
-                val p = toCanvas(e.x, e.y)
-                engine.begin(style.brush, style.color, style.size, p[0], p[1], pressure(e, 0, -1))
-                mode = Mode.DRAW
-                lastShapeX = e.x
-                lastShapeY = e.y
-                if (host.holdToPick) postDelayed(holdRunnable, 550)
-                invalidate()
-            }
+            else -> startStroke(e, 0)
         }
+    }
+
+    /** Starts drawing with pointer [index]; falls back to panning when the layer can't be drawn on. */
+    private fun startStroke(e: MotionEvent, index: Int) {
+        val blocked = host.drawBlockedReason()
+        if (blocked != null) {
+            host.showHint(blocked)
+            mode = Mode.PAN
+            setBaseline(e)
+            return
+        }
+        val eraser = host.tool == Tool.ERASER || e.getToolType(index) == MotionEvent.TOOL_TYPE_ERASER
+        val style = host.strokeStyle(eraser)
+        strokeStyle = style
+        drawPointerId = e.getPointerId(index)
+        drawIsStylus = isStylus(e, index)
+        downX = e.getX(index)
+        downY = e.getY(index)
+        val p = toCanvas(e.getX(index), e.getY(index))
+        engine.begin(style.brush, style.color, style.size, p[0], p[1], pressure(e, index, -1))
+        mode = Mode.DRAW
+        lastShapeX = e.getX(index)
+        lastShapeY = e.getY(index)
+        if (host.holdToPick) postDelayed(holdRunnable, 550)
+        invalidate()
     }
 
     private fun pressure(e: MotionEvent, index: Int, historical: Int): Float {
@@ -539,6 +555,18 @@ class CanvasView(context: Context, private val host: CanvasHost) : View(context)
 
     private fun onPointerDown(e: MotionEvent) {
         maxPointers = max(maxPointers, e.pointerCount)
+        // A pen touching down while a palm or finger rests on the screen always draws.
+        val index = e.actionIndex
+        if (isStylus(e, index) && mode != Mode.DRAW && mode != Mode.TRANSFORM && mode != Mode.IGNORE &&
+            host.tool != Tool.FILL && host.tool != Tool.TRANSFORM
+        ) {
+            host.onStylusDetected()
+            removeCallbacks(holdRunnable)
+            maxPointers = 1
+            downTime = e.eventTime
+            startStroke(e, index)
+            return
+        }
         when (mode) {
             Mode.DRAW -> {
                 if (drawIsStylus && !isStylus(e, e.actionIndex)) return // resting hand while using a pen
