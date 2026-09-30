@@ -1,0 +1,54 @@
+name: Inkframe (Android)
+
+on:
+  push:
+    paths:
+      - "animation-app/**"
+      - ".github/workflows/animation-app.yml"
+  pull_request:
+    paths:
+      - "animation-app/**"
+      - ".github/workflows/animation-app.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: animation-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew --no-daemon lintDebug
+
+      - name: Build APKs
+        run: ./gradlew --no-daemon assembleDebug assembleRelease
+
+      - name: Upload APKs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkframe-apk
+          path: animation-app/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkframe-reports
+          path: |
+            animation-app/app/build/reports/**
+          if-no-files-found: ignore
