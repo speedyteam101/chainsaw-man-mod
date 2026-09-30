@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Inkframe" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/workspace</item>
+        <item name="android:colorPrimary">@color/workspace</item>
+        <item name="android:colorPrimaryDark">@color/workspace</item>
+        <item name="android:colorAccent">@color/accent</item>
+        <item name="android:statusBarColor">@color/workspace</item>
+        <item name="android:navigationBarColor">@color/workspace</item>
+    </style>
+
+    <!-- The editor draws edge to edge and handles display cutouts itself. -->
+    <style name="Theme.Inkframe.Editor">
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+</resources>

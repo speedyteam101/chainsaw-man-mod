@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Three stacked frames (a flipbook) with a pen stroke on the front one. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M45,30 H73 A4,4 0 0 1 77,34 V58 A4,4 0 0 1 73,62 H45 A4,4 0 0 1 41,58 V34 A4,4 0 0 1 45,30 Z"
+        android:strokeWidth="3"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeAlpha="0.35" />
+    <path
+        android:pathData="M40,37 H68 A4,4 0 0 1 72,41 V65 A4,4 0 0 1 68,69 H40 A4,4 0 0 1 36,65 V41 A4,4 0 0 1 40,37 Z"
+        android:strokeWidth="3"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeAlpha="0.6" />
+    <path
+        android:pathData="M35,44 H63 A4,4 0 0 1 67,48 V72 A4,4 0 0 1 63,76 H35 A4,4 0 0 1 31,72 V48 A4,4 0 0 1 35,44 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M37,66 C41,52 46,70 50,58 C53,50 57,56 61,52"
+        android:strokeWidth="3.5"
+        android:strokeColor="#FF2F8BFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
