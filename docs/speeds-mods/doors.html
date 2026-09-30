@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DOORS · Speed's Mods</title>
+  <meta name="description" content="Wiki page for speedyteam101's fan-made DOORS mod for Terraria (tModLoader 1.4.4): the Hotel, entities, bosses and items.">
+  <link rel="icon" href="img/doors-icon.png">
+  <link rel="stylesheet" href="../assets/site.css">
+  <link rel="stylesheet" href="speeds.css">
+</head>
+<body class="mod-doors">
+  <header class="site-header">
+    <div class="inner">
+      <a class="brand" href="index.html"><img src="img/robot-jack-icon.png" alt=""> Speed's <span>Mods</span></a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="index.html">Home</a>
+        <a href="chainsaw-man.html">Chainsaw Man</a>
+        <a href="doors.html" aria-current="page">DOORS</a>
+        <a href="robot-jack.html">Robot Jack</a>
+        <a href="shinobi.html">Shinobi</a>
+        <a href="iron-man.html">Iron Man</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div>
+        <div class="badge">Fan-made · Roblox DOORS</div>
+        <h1>DOORS</h1>
+        <p class="lede">A horror mod inspired by the Roblox game DOORS. Build the Hotel, open door after door, hide from Rush and Ambush, and survive Seek at door 30 and Figure in the Library at door 50.</p>
+        <ul class="toc">
+          <li><a href="#hotel">The Hotel</a></li>
+          <li><a href="#entities">Entities</a></li>
+          <li><a href="#bosses">Bosses</a></li>
+          <li><a href="#items">Items</a></li>
+          <li><a href="#install">Install</a></li>
+        </ul>
+      </div>
+      <img class="hero-icon" src="img/doors-icon.png" alt="DOORS mod icon">
+    </section>
+
+    <div class="note warn">
+      <p><b>Not yet compiled.</b> The first version was written without a .NET SDK or tModLoader, so it may need a round of compile fixes. Multiplayer is supported in the code but hasn't been tested. All sprites are placeholders.</p>
+    </div>
+
+    <h2 id="hotel">The Hotel</h2>
+    <p>Craft a <b>Hotel Key</b> (20 Wood, 3 Iron/Lead Bar @ Work Bench) and use it where you want the Hotel to go.</p>
+    <ul>
+      <li>It builds a 51-room corridor (about 1,230 tiles wide) to your right: the lobby (room 0), 49 rooms, and the Library behind door 50.</li>
+      <li><b>Everything in its way is wiped out</b>, so build it somewhere you don't mind losing.</li>
+      <li>Using the key again rebuilds the Hotel in the same place (fresh doors and loot) and takes you back to the lobby.</li>
+      <li>Doors open when you walk into them, and every door you open might wake something up. The room number pops up as you enter each room.</li>
+      <li>Some doors are <b>locked</b>. The Room Key is in that room's drawer (chest); Lockpicks or the Skeleton Key work too. Right-click the door to unlock it.</li>
+      <li>Rooms have wardrobes to hide in and chests with gold and DOORS items. Some rooms are dark.</li>
+    </ul>
+
+    <h2 id="entities">Entities</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Entity</th><th>Where</th><th>What it does</th><th>How to survive</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><div class="frame" style="--w:56;--h:56;--frames:3;--s:1;background-image:url(img/Rush.png)"></div><b>Rush</b></td><td>Hotel (door 5+); caves, rarely, after the Eye of Cthulhu</td><td>The lights flicker, then it roars through the whole area (150 damage). Can't be hurt.</td><td>Hide in a wardrobe, or use a Crucifix</td></tr>
+          <tr><td class="nowrap"><div class="frame" style="--w:56;--h:56;--frames:3;--s:1;background-image:url(img/Ambush.png)"></div><b>Ambush</b></td><td>Hotel (door 15+)</td><td>Like Rush, but faster (190 damage), and it passes 2 to 5 times.</td><td>Stay hidden until it's really gone</td></tr>
+          <tr><td class="nowrap"><div class="frame" style="--w:26;--h:26;--frames:2;--s:2;background-image:url(img/Screech.png)"></div><b>Screech</b></td><td>Anywhere dark, underground or in the Hotel</td><td>Appears next to you ("Psst!") and bites after about 2.5 seconds (35 damage). 1 HP.</td><td>Point your cursor at it, or carry a light</td></tr>
+          <tr><td class="nowrap"><div class="frame" style="--w:44;--h:44;--frames:2;--s:1;background-image:url(img/Eyes.png)"></div><b>Eyes</b></td><td>Hotel (door 3+); caves, rarely</td><td>Hurts you while you face it with a clear line of sight. Leaves after a minute.</td><td>Face away, or carry a Crucifix</td></tr>
+          <tr><td class="nowrap"><div class="frame" style="--w:36;--h:56;--frames:2;--s:1;background-image:url(img/Halt.png)"></div><b>Halt</b></td><td>Hotel (door 20+)</td><td>Creeps toward you, then shouts TURN AROUND and jumps to your other side. Leaves after 20 seconds.</td><td>Keep turning around</td></tr>
+          <tr><td class="nowrap"><b>Hide</b></td><td>Wardrobes</td><td>Warns you after 15 seconds of hiding and throws you out after 20 (30 damage).</td><td>Don't hide for too long</td></tr>
+          <tr><td class="nowrap"><b>Jack</b></td><td>Wardrobes</td><td>Sometimes a wardrobe is already taken.</td><td>Pick another wardrobe</td></tr>
+          <tr><td class="nowrap"><b>Timothy</b></td><td>Hotel drawers</td><td>Sometimes jumps out when you open a chest (10 damage).</td><td>Nothing, it's just a spider</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="bosses">Bosses</h2>
+    <article class="entry" id="seek">
+      <div class="art"><div class="frame" style="--w:36;--h:76;--frames:4;--s:2;background-image:url(img/Seek.png)"></div></div>
+      <div>
+        <h3><img class="icon" src="img/Seek_Head_Boss.png" alt="">Seek <span class="badge">Pre-Hardmode</span></h3>
+        <div class="stats"><div class="stat"><b>4,500</b><span>Life</span></div></div>
+        <p><b>How to meet it:</b> open door 30, or use <b>Black Goo</b> (30 Gel, 3 Lens @ Work Bench).</p>
+        <p>Chases you through walls, throwing black goo that slows you and darkens your screen. Faster below half health.</p>
+        <p class="meta">Drops: Crucifix, Vitamins, Lockpicks</p>
+      </div>
+    </article>
+    <article class="entry" id="figure">
+      <div class="art"><div class="frame" style="--w:50;--h:100;--frames:4;--s:1.6;background-image:url(img/Figure.png)"></div></div>
+      <div>
+        <h3><img class="icon" src="img/Figure_Head_Boss.png" alt="">Figure <span class="badge">Hardmode strength</span></h3>
+        <div class="stats"><div class="stat"><b>16,000</b><span>Life</span></div></div>
+        <p><b>How to meet it:</b> open door 50 (the Library), or use a <b>Library Book</b> in Hardmode (3 Book, 5 Soul of Night, 5 Soul of Light @ Bookcase).</p>
+        <p>It's blind: it only hunts players who move or use items. Stand still or hide in a wardrobe and it wanders. It lunges when it's close.</p>
+        <p class="meta">Drops: Skeleton Key, Crucifix, Flashlight, Books</p>
+      </div>
+    </article>
+    <div class="note"><p>A Crucifix stuns Seek and Figure for 4 seconds and takes off 10% of their life.</p></div>
+
+    <h2 id="items">Items</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Item</th><th>What it does</th><th>Recipe</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><b>Hotel Key</b></td><td>Builds or rebuilds the Hotel</td><td>20 Wood, 3 Iron/Lead Bar @ Work Bench</td></tr>
+          <tr><td class="nowrap"><b>Lighter</b></td><td>Hold for a small light</td><td>1 Iron/Lead Bar, 5 Torch, 5 Gel @ Anvil</td></tr>
+          <tr><td class="nowrap"><b>Flashlight</b></td><td>Hold for a long beam toward your cursor</td><td>5 Iron/Lead Bar, 1 Lens, 10 Torch @ Anvil</td></tr>
+          <tr><td class="nowrap"><b>Crucifix</b></td><td>Banishes Rush, Ambush, Screech, Eyes and Halt nearby, or stuns Seek and Figure. Carrying one blocks Eyes. Used up.</td><td>8 Wood, 3 Fallen Star, 10 Bone @ Anvil</td></tr>
+          <tr><td class="nowrap"><b>Vitamins</b></td><td>+50% move speed for 15 seconds</td><td>2 Mushroom, 1 Bottled Water @ Placed Bottle (makes 3)</td></tr>
+          <tr><td class="nowrap"><b>Lockpicks</b></td><td>Opens a locked Hotel door. Used up.</td><td>1 Iron/Lead Bar @ Anvil (makes 3)</td></tr>
+          <tr><td class="nowrap"><b>Room Key</b></td><td>Opens a locked Hotel door. Used up.</td><td>Found in Hotel drawers</td></tr>
+          <tr><td class="nowrap"><b>Skeleton Key</b></td><td>Opens every locked Hotel door and never breaks</td><td>Dropped by Figure</td></tr>
+          <tr><td class="nowrap"><b>Wardrobe</b></td><td>Placeable hiding spot. Right-click to hide, jump to get out.</td><td>20 Wood @ Sawmill</td></tr>
+          <tr><td class="nowrap"><b>Black Goo</b></td><td>Summons Seek</td><td>30 Gel, 3 Lens @ Work Bench</td></tr>
+          <tr><td class="nowrap"><b>Library Book</b></td><td>Summons Figure (Hardmode)</td><td>3 Book, 5 Soul of Night, 5 Soul of Light @ Bookcase</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="install">Install</h2>
+    <ol>
+      <li>Copy the repository to your <code>ModSources</code> folder as <code>DoorsMod</code>.</li>
+      <li>In tModLoader open <b>Workshop → Develop Mods</b> and click <b>Build + Reload</b> next to DOORS.</li>
+    </ol>
+    <p>Source: <a href="https://github.com/speedyteam101/doors-mod">github.com/speedyteam101/doors-mod</a></p>
+  </main>
+  <footer class="site-footer">
+    <div class="inner">
+      <p><a href="index.html">← All of Speed's Mods</a></p>
+      <p>DOORS is made by LSPLASH on Roblox. This is a non-commercial fan project and is not affiliated with or endorsed by LSPLASH or Roblox.</p>
+    </div>
+  </footer>
+</body>
+</html>

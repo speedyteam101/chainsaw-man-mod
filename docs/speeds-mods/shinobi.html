@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shinobi · Speed's Mods</title>
+  <meta name="description" content="Wiki page for speedyteam101's Shinobi: Naruto Mod for Terraria (tModLoader 1.4.4): chakra, clans, jutsu, dojutsu, Kurama and town NPCs.">
+  <link rel="icon" href="img/shinobi-icon.png">
+  <link rel="stylesheet" href="../assets/site.css">
+  <link rel="stylesheet" href="speeds.css">
+</head>
+<body class="mod-shinobi">
+  <header class="site-header">
+    <div class="inner">
+      <a class="brand" href="index.html"><img src="img/robot-jack-icon.png" alt=""> Speed's <span>Mods</span></a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="index.html">Home</a>
+        <a href="chainsaw-man.html">Chainsaw Man</a>
+        <a href="doors.html">DOORS</a>
+        <a href="robot-jack.html">Robot Jack</a>
+        <a href="shinobi.html" aria-current="page">Shinobi</a>
+        <a href="iron-man.html">Iron Man</a>
+      </nav>
+    </div>
+  </header>
+  <main>
+    <section class="hero">
+      <div>
+        <div class="badge">Fan-made · Naruto</div>
+        <h1>Shinobi: Naruto Mod</h1>
+        <p class="lede">A full ninja progression layer on top of Terraria: a chakra resource, clan bloodlines, 28 jutsu, seven dojutsu with Mangekyō paths, Kurama the Nine-Tails as a two-form boss, and Naruto and Sasuke as town NPCs.</p>
+        <ul class="toc">
+          <li><a href="#chakra">Chakra</a></li>
+          <li><a href="#clans">Clans</a></li>
+          <li><a href="#jutsu">Jutsu</a></li>
+          <li><a href="#dojutsu">Dojutsu</a></li>
+          <li><a href="#kurama">Kurama</a></li>
+          <li><a href="#npcs">Town NPCs</a></li>
+          <li><a href="#progression">Progression</a></li>
+          <li><a href="#install">Install</a></li>
+        </ul>
+      </div>
+      <img class="hero-icon" src="img/shinobi-icon.png" alt="Shinobi mod icon">
+    </section>
+
+    <div class="note warn">
+      <p><b>Not yet compiled.</b> This mod was written without a .NET SDK or tModLoader, so it hasn't been built or run yet and will likely need a build-and-fix pass. All sprites are placeholders.</p>
+    </div>
+
+    <h2 id="chakra">Chakra</h2>
+    <p>A third resource alongside life and mana, shown as a bar in the bottom-left of the HUD.</p>
+    <ul>
+      <li>Base pool of 100, plus clan bonuses, accessories and up to 10 <b>Chakra Crystals</b> (+20 each).</li>
+      <li>Regenerates at 2 per second while moving and 5 per second while standing still.</li>
+      <li>Every jutsu spends it. Running dry shuts off an active dojutsu.</li>
+    </ul>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Key</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>V</code></td><td>Toggle the equipped dojutsu on or off</td></tr>
+          <tr><td><code>C</code></td><td><b>Chakra Surge</b>: burn a quarter of your life for triple that in chakra (30 s cooldown)</td></tr>
+          <tr><td><code>X</code></td><td><b>Body Flicker</b>: a 15-chakra dash toward the cursor with brief invulnerability</td></tr>
+          <tr><td><code>Z</code> <code>G</code> <code>H</code></td><td>Dojutsu abilities 1, 2 and 3</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>All keys can be rebound under <b>Settings → Controls → Mod Controls</b>.</p>
+
+    <h2 id="clans">Clans</h2>
+    <p>Pick one clan per character by using a <b>Clan Scroll</b>. Scrolls are used up, so switching always costs something.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Clan</th><th>Identity</th></tr></thead>
+        <tbody>
+          <tr><td><b>Civilian</b></td><td>Balanced default; small bonus to everything</td></tr>
+          <tr><td><b>Uchiha</b></td><td>Fire ninjutsu and crit; glass cannon (−20 max life)</td></tr>
+          <tr><td><b>Hyuga</b></td><td>Melee damage and attack speed; sees creatures and danger</td></tr>
+          <tr><td><b>Uzumaki</b></td><td>+80 chakra, +40 life, strong regen; jutsu cost 10% more</td></tr>
+          <tr><td><b>Senju</b></td><td>+60 life, +6 defence, life regen, summon damage</td></tr>
+          <tr><td><b>Nara</b></td><td>Jutsu cost 25% less</td></tr>
+          <tr><td><b>Aburame</b></td><td>+18% summon damage and +2 minion slots</td></tr>
+          <tr><td><b>Inuzuka</b></td><td>Melee crit and big move speed</td></tr>
+          <tr><td><b>Akimichi</b></td><td>+80 life, +10 defence, huge knockback; slow</td></tr>
+          <tr><td><b>Kaguya</b></td><td>+14 defence, heavy thorns, immune to knockback</td></tr>
+          <tr><td><b>Sarutobi</b></td><td>+45 chakra and a bit of everything</td></tr>
+          <tr><td><b>Yamanaka</b></td><td>Magic damage, cheaper mana, immune to Confused</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="jutsu">Jutsu</h2>
+    <p>28 jutsu items in five categories. Each costs chakra and may need a clan, an active dojutsu, or both.</p>
+    <ul>
+      <li><b>Ninjutsu</b>: Great Fireball, Phoenix Flower, Water Dragon, Water Bullet, Mud Wall, Great Breakthrough, Chidori, Purple Lightning, Rasengan, Rasenshuriken, Amaterasu, Shinra Tensei, Chibaku Tensei, Tailed Beast Bomb, Susanoo, Sage Mode</li>
+      <li><b>Taijutsu</b>: Leaf Whirlwind, Dynamic Entry, Primary Lotus, Gentle Fist, Eight Trigrams Sixty-Four Palms</li>
+      <li><b>Genjutsu</b>: Tree Binding Death, Sharingan Paralysis, Tsukuyomi, Infinite Tsukuyomi (these freeze ordinary enemies and slow bosses)</li>
+      <li><b>Kinjutsu</b>: Shadow Clone Jutsu, Eight Gates Released Formation</li>
+      <li><b>Summoning</b>: Toad Summoning</li>
+    </ul>
+
+    <h2 id="dojutsu">Dojutsu</h2>
+    <p>Seven eye accessories. Toggle one on with <code>V</code> for big bonuses at a continuous chakra drain; each has its own abilities on <code>Z</code>, <code>G</code> and <code>H</code>.</p>
+    <p><code>Byakugan → Sharingan → Mangekyō → Eternal Mangekyō → Rinnegan / Tenseigan → Rinne Sharingan</code></p>
+    <p>Sharingan-line eyes need the Uchiha clan; Byakugan and Tenseigan need Hyuga. Rinnegan and Rinne Sharingan are open to anyone who can craft them.</p>
+    <h3>Mangekyō paths</h3>
+    <p>The first time you equip a Mangekyō Sharingan, you choose whose eyes you opened. The choice is permanent and sets your three ability keys and passive:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Wielder</th><th>Z</th><th>G</th><th>H</th><th>Passive</th></tr></thead>
+        <tbody>
+          <tr><td><b>Itachi</b></td><td>Tsukuyomi</td><td>Amaterasu</td><td>Crow Clone</td><td>+15% magic, +10% crit, −6 defence</td></tr>
+          <tr><td><b>Sasuke</b></td><td>Amaterasu</td><td>Blaze Release: Kagutsuchi</td><td>Susanoo</td><td>+20% magic, fire and lava immunity</td></tr>
+          <tr><td><b>Madara</b></td><td>Perfect Susanoo</td><td>Susanoo: Yasaka Magatama</td><td>Susanoo: Ribcage Guard</td><td>+25% melee, +12 defence, +10% DR, no knockback</td></tr>
+          <tr><td><b>Shisui</b></td><td>Kotoamatsukami</td><td>Kotoamatsukami: Suggestion</td><td>Body Flicker</td><td>Jutsu cost −40%, big chakra regen, +25% speed</td></tr>
+          <tr><td><b>Kakashi</b></td><td>Kamui</td><td>Kamui: Banish</td><td>Kamui Shuriken</td><td>Free Body Flicker, +40% speed, +15% melee</td></tr>
+          <tr><td><b>Obito</b></td><td>Kamui: Intangibility</td><td>Kamui: Phase</td><td>Kamui: Absorb</td><td>Intangible every 4 s, +15% DR, +6 regen</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Kurama sometimes drops a <b>Preserved Mangekyō Sharingan Set</b> (roughly one fight in three). It gives one wielder's eyes at random; using a different wielder's eyes fuses the two into an <b>Eternal Mangekyō</b> that has both wielders' techniques.</p>
+
+    <h2 id="kurama">Kurama, the Nine-Tails</h2>
+    <article class="entry">
+      <div class="art"><img class="icon-lg" src="img/Kurama_Head_Boss.png" alt=""><img class="icon-lg" src="img/KuramaChakraMode_Head_Boss.png" alt=""></div>
+      <div>
+        <h3>Kurama <span class="badge">Any time</span></h3>
+        <p><b>Summon:</b> a craftable <b>Kurama Sealing Tag</b> with no prerequisites, so you can fight him as soon as you have the materials, and as often as you like.</p>
+        <p>Four attacks: a chakra orb volley, a charge, the Tailed Beast Bomb and a claw rush. At half health he transforms into <b>Kurama, Nine-Tails Chakra Mode</b>: gold, a little larger, at full enraged pace and with 20% more defence. He draws his own health bar showing which half of the fight you're in.</p>
+        <p class="meta">Drops: Tailed Beast Chakra and Six Paths Chakra (the materials for most Hardmode recipes), sometimes a Preserved Mangekyō Sharingan Set</p>
+      </div>
+    </article>
+
+    <h2 id="npcs">Town NPCs</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>NPC</th><th>Arrives</th><th>Shop</th><th>Second shop</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap"><img class="icon" src="img/Naruto_Head.png" alt=""><b>Naruto</b></td><td>Immediately</td><td>Scrolls, kunai, shuriken, tags, headband, soldier pills, chakra crystals, starter jutsu</td><td>All 12 clan scrolls</td></tr>
+          <tr><td class="nowrap"><img class="icon" src="img/Sasuke_Head.png" alt=""><b>Sasuke</b></td><td>After the Eater of Worlds or Brain of Cthulhu</td><td>The jutsu catalogue</td><td>Sharingan, Byakugan and sealing tags</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Naruto loves the forest and dislikes the snow; Sasuke is the reverse.</p>
+
+    <h2 id="progression">Suggested progression</h2>
+    <ol class="timeline">
+      <li><h3>Pick a bloodline</h3><p>Get a Blank Scroll and a Clan Scroll from Naruto's stock.</p></li>
+      <li><h3>Learn the basics</h3><p>Buy starter jutsu and thrown weapons from Naruto.</p></li>
+      <li><h3>Grow your chakra</h3><p>Craft Chakra Crystals (Fallen Stars and a Sapphire).</p></li>
+      <li><h3>Unlock Sasuke</h3><p>Beat the Eye of Cthulhu and an evil boss; Sasuke moves in with the jutsu catalogue.</p></li>
+      <li><h3>Fight the Nine-Tails</h3><p>Craft a Kurama Sealing Tag whenever you like.</p></li>
+      <li><h3>Endgame</h3><p>Tailed Beast Chakra unlocks the Rasengan line, Susanoo, Sage Mode and the Mangekyō; Six Paths Chakra unlocks the Rinnegan, Tenseigan and the Rinne Sharingan with Infinite Tsukuyomi.</p></li>
+    </ol>
+
+    <h2 id="install">Install</h2>
+    <ol>
+      <li>Copy or link the <code>ninjafight</code> folder from the repository into your <code>ModSources</code> folder. Keep the name <code>ninjafight</code>: it must match the mod's namespace.</li>
+      <li>In tModLoader open <b>Workshop → Develop Mods</b> and click <b>Build + Reload</b>.</li>
+    </ol>
+    <p>Source: <a href="https://github.com/speedyteam101/terraria-mod">github.com/speedyteam101/terraria-mod</a></p>
+  </main>
+  <footer class="site-footer">
+    <div class="inner">
+      <p><a href="index.html">← All of Speed's Mods</a></p>
+      <p>Naruto is created by Masashi Kishimoto. This is a non-commercial fan project and is not affiliated with or endorsed by Masashi Kishimoto, Shueisha or Studio Pierrot.</p>
+    </div>
+  </footer>
+</body>
+</html>
