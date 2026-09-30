@@ -38,6 +38,17 @@ android {
         abortOnError = true
         warningsAsErrors = false
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric runs the editor tests with the real manifest, theme and resources.
+            isIncludeAndroidResources = true
+            all {
+                it.maxHeapSize = "3g"
+                it.jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED")
+            }
+        }
+    }
 }
 
 tasks.withType<KotlinCompile>().configureEach {
@@ -46,4 +57,5 @@ tasks.withType<KotlinCompile>().configureEach {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
 }

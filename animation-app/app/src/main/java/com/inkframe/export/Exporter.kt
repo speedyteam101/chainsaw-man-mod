@@ -239,7 +239,7 @@ class ExportProvider : ContentProvider() {
         val f = fileFor(uri)
         val cols = projection ?: arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
         val cursor = MatrixCursor(cols)
-        cursor.addRow(cols.map { c ->
+        cursor.addRow(cols.map<String, Any?> { c ->
             when (c) {
                 OpenableColumns.DISPLAY_NAME -> f.name
                 OpenableColumns.SIZE -> f.length()

@@ -181,9 +181,11 @@ class CanvasView(context: Context, private val host: CanvasHost) : View(context)
 
     // --- view transform ---
 
+    private val matrixValues = FloatArray(9)
+
     val scale: Float
         get() {
-            val v = FloatArray(9)
+            val v = matrixValues
             viewMatrix.getValues(v)
             return sqrt(v[Matrix.MSCALE_X] * v[Matrix.MSCALE_X] + v[Matrix.MSKEW_Y] * v[Matrix.MSKEW_Y])
         }

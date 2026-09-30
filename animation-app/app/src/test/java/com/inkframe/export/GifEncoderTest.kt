@@ -4,20 +4,12 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.Random
-import javax.imageio.ImageIO
-import javax.imageio.ImageReader
-import javax.imageio.metadata.IIOMetadataNode
 
 class GifEncoderTest {
 
-    private fun decodeAll(bytes: ByteArray): Pair<ImageReader, Int> {
-        val reader = ImageIO.getImageReadersByFormatName("gif").next()
-        reader.input = ImageIO.createImageInputStream(ByteArrayInputStream(bytes))
-        return reader to reader.getNumImages(true)
-    }
+    private fun decodeAll(bytes: ByteArray) = GifDecoder(bytes).decode()
 
     @Test
     fun flatColorsRoundTripExactly() {
@@ -26,19 +18,16 @@ class GifEncoderTest {
         val colors = intArrayOf(0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0xFF0000FF.toInt(), 0xFFFFFFFF.toInt(), 0xFF123456.toInt())
         val frames = (0 until 3).map { f -> IntArray(w * h) { i -> colors[(i / 7 + f) % colors.size] } }
         val out = ByteArrayOutputStream()
-        val gif = GifEncoder(out, w, h)
-        frames.forEach { gif.addFrame(it, 8) }
-        gif.finish()
+        val enc = GifEncoder(out, w, h)
+        frames.forEach { enc.addFrame(it, 8) }
+        enc.finish()
 
-        val (reader, n) = decodeAll(out.toByteArray())
-        assertEquals(3, n)
+        val gif = decodeAll(out.toByteArray())
+        assertEquals(3, gif.frames.size)
+        assertEquals(0, gif.loopCount)
         for (f in 0 until 3) {
-            val img = reader.read(f)
-            val got = IntArray(w * h) { img.getRGB(it % w, it / w) }
-            assertArrayEquals("frame $f", frames[f], got)
-            val meta = reader.getImageMetadata(f).getAsTree("javax_imageio_gif_image_1.0") as IIOMetadataNode
-            val gce = meta.getElementsByTagName("GraphicControlExtension").item(0) as IIOMetadataNode
-            assertEquals("8", gce.getAttribute("delayTime"))
+            assertArrayEquals("frame $f", frames[f], gif.frames[f].pixels)
+            assertEquals(8, gif.frames[f].delayCs)
         }
     }
 
@@ -54,12 +43,9 @@ class GifEncoderTest {
         val px = IntArray(w * h) { distinct[rnd.nextInt(distinct.size)] }
         val out = ByteArrayOutputStream()
         GifEncoder(out, w, h).apply { addFrame(px, 5); finish() }
-        val (reader, n) = decodeAll(out.toByteArray())
-        assertEquals(1, n)
-        val img = reader.read(0)
-        var mismatches = 0
-        for (i in px.indices) if (img.getRGB(i % w, i / w) != px[i]) mismatches++
-        assertEquals(0, mismatches)
+        val gif = decodeAll(out.toByteArray())
+        assertEquals(1, gif.frames.size)
+        assertArrayEquals(px, gif.frames[0].pixels)
     }
 
     @Test
@@ -69,10 +55,9 @@ class GifEncoderTest {
         val px = IntArray(w * h) { if (it < 32) 0 else 0xFF336699.toInt() }
         val out = ByteArrayOutputStream()
         GifEncoder(out, w, h).apply { addFrame(px, 10); finish() }
-        val (reader, _) = decodeAll(out.toByteArray())
-        val img = reader.read(0)
-        assertEquals(0, img.getRGB(0, 0) ushr 24)
-        assertEquals(0xFF336699.toInt(), img.getRGB(0, 7))
+        val img = decodeAll(out.toByteArray()).frames[0].pixels
+        assertEquals(0, img[0] ushr 24)
+        assertEquals(0xFF336699.toInt(), img[7 * w])
     }
 
     @Test

@@ -55,12 +55,12 @@ so the only build dependency is the Android Gradle plugin.
 
 ## Building
 
-Requirements: Android Studio (or JDK 17 + Android SDK with platform 35).
+Requirements: Android Studio (or JDK 21 + Android SDK with platform 35).
 
 ```sh
 cd animation-app
 ./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
-./gradlew testDebugUnitTest      # unit tests for the brush, shape, fill and GIF code
+./gradlew testDebugUnitTest      # unit tests + an end-to-end editor test (Robolectric)
 ```
 
 Or open the `animation-app` folder in Android Studio and press Run.

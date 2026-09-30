@@ -244,7 +244,8 @@ class SideSlider(
                 bubbleHost?.invoke(format(value))
             }
             MotionEvent.ACTION_MOVE -> {
-                value = downValue + (downY - e.y) / span
+                // Short sliders still need a comfortable drag distance for the full range.
+                value = downValue + (downY - e.y) / maxOf(span, dp(150f))
                 onChange(value)
                 bubbleHost?.invoke(format(value))
             }
@@ -386,7 +387,8 @@ object Popover {
         content: View,
         widthDp: Int = 300,
         maxHeightDp: Int = 560,
-        focusable: Boolean = false,
+        // Focusable popups swallow the outside tap that closes them, so it never paints on the canvas.
+        focusable: Boolean = true,
         scroll: Boolean = true,
         onDismiss: (() -> Unit)? = null,
     ): PopupWindow {

@@ -202,8 +202,10 @@ class ProjectRepository(val root: File) {
     }
 
     companion object {
+        private val tmpCounter = java.util.concurrent.atomic.AtomicLong()
+
         fun writeAtomically(target: File, write: (File) -> Unit) {
-            val tmp = File(target.parentFile, target.name + "." + Thread.currentThread().id + ".tmp")
+            val tmp = File(target.parentFile, target.name + "." + tmpCounter.incrementAndGet() + ".tmp")
             try {
                 write(tmp)
                 if (!tmp.renameTo(target)) {

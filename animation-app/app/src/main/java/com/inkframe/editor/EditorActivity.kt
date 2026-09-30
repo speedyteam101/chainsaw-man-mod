@@ -145,7 +145,7 @@ class EditorActivity : Activity(), CanvasHost, Document.Listener, Player.Listene
         if (!loaded) return
         if (player.isPlaying) player.stop()
         applyTransform()
-        if (isFinishing) return
+        // Saving here (not only in onDestroy) queues the save before the gallery reloads its list.
         if (doc.unsaved) doc.save()
     }
 
@@ -328,15 +328,40 @@ class EditorActivity : Activity(), CanvasHost, Document.Listener, Player.Listene
         sideBar.addView(undoButton)
         sideBar.addView(redoButton)
         root.addView(sideBar, sideBarParams())
+        sizeSideBar()
     }
+
+    /** Side-bar slider height in dp, chosen so the whole bar fits between the top bar and the timeline. */
+    private var sliderDp = 150
+
+    private fun availableSideDp(): Int {
+        val d = resources.displayMetrics.density
+        return resources.configuration.screenHeightDp - 52 - 136 - ((cutout.top + cutout.bottom) / d).toInt()
+    }
+
+    private fun sideBarHeightDp() = 2 * sliderDp + 142
 
     private fun sideBarParams() = FrameLayout.LayoutParams(
         dp(46), ViewGroup.LayoutParams.WRAP_CONTENT,
-        Gravity.CENTER_VERTICAL or if (prefs.sidebarRight) Gravity.END else Gravity.START,
+        Gravity.TOP or if (prefs.sidebarRight) Gravity.END else Gravity.START,
     ).apply {
         leftMargin = dp(6) + cutout.left
         rightMargin = dp(6) + cutout.right
-        bottomMargin = dp(60)
+        // Centred in the space between the top bar (52dp) and the timeline (136dp).
+        topMargin = dp(52) + cutout.top + dp(maxOf(0, (availableSideDp() - sideBarHeightDp()) / 2))
+    }
+
+    /** Shrinks the side-bar sliders on short screens (landscape phones) so the bar always fits. */
+    private fun sizeSideBar() {
+        sliderDp = ((availableSideDp() - 142 - 8) / 2).coerceIn(36, 150)
+        for (s in listOf(sizeSlider, opacitySlider)) {
+            s.layoutParams = LinearLayout.LayoutParams(dp(36), dp(sliderDp))
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (loaded) placeSideBar()
     }
 
     private fun applyCutout() {
@@ -349,6 +374,7 @@ class EditorActivity : Activity(), CanvasHost, Document.Listener, Player.Listene
     }
 
     fun placeSideBar() {
+        sizeSideBar()
         sideBar.layoutParams = sideBarParams()
         (bubbleView.layoutParams as FrameLayout.LayoutParams).gravity =
             Gravity.CENTER_VERTICAL or if (prefs.sidebarRight) Gravity.END else Gravity.START

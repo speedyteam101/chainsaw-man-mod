@@ -58,7 +58,7 @@ class Panels(private val a: EditorActivity) {
     private var lastExport: Pair<File, ExportFormat>? = null
     private var popup: PopupWindow? = null
 
-    private fun show(anchor: View, content: View, widthDp: Int = 300, focusable: Boolean = false, onDismiss: (() -> Unit)? = null): PopupWindow {
+    private fun show(anchor: View, content: View, widthDp: Int = 300, focusable: Boolean = true, onDismiss: (() -> Unit)? = null): PopupWindow {
         popup?.dismiss()
         return Popover.show(anchor, content, widthDp, focusable = focusable, onDismiss = onDismiss).also { popup = it }
     }
