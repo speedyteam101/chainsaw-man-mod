@@ -1,14 +1,23 @@
 # Shadowfall: Hollow Creek
 
 A Roblox game. At noon the sky over the town of Hollow Creek went black, and the whole town was pulled into the shadow world.
-**Shadows** live there: pitch-black, blocky, R6-shaped figures with smoke pouring off them and thin glowing eyes.
+**Shadows** live there. Every shadow is built on the **default Roblox R6 character**: the same parts, rounded head and joint layout, but pitch black, with smoke pouring off them and thin glowing eyes.
 Up close you can see more: smoke tendrils sway behind them, dim cracks of light pulse across their bodies, smoke trails off their hands and drips from their fingers, and a pool of darkness follows their feet.
 Their mouths split open when they attack. They glitch out of view for a frame, their heads snap sideways, and stalkers move in a jerky stop-motion.
 
-The game starts as a first-person **horror** chapter: you have a flashlight and nothing else. Then you find out you have a power, roll it, and the game turns into a **bandit-beater-style** action game.
+The whole game is played in **first person**. You can see your own arms when you punch and cast, a small crosshair aims your attacks, and the mouse frees itself whenever a menu or dialogue is open. It starts as a **horror** chapter: you have a flashlight and nothing else. Then you find out you have a power, roll it, and the game turns into a **bandit-beater-style** action game.
 The difference from other bandit beaters is that it has **no quests and no XP**. The only way to level up is to earn a feat that qualifies you for the next level.
 
 Everything (map, shadows, UI, effects) is generated from code, so the project needs no uploaded models.
+
+**The map** is built on Roblox Terrain:
+* **Hollow Creek:** grass lawns sit on a thick slab of earth with rock cliffs where the town was torn out of the ground. Chunks dangle underneath.
+* **Streets:** asphalt roads with dashed centre lines, crosswalks, raised concrete sidewalks, cast-iron street lamps, wooden power poles with sagging wires, hydrants, bins, street signs and manholes.
+* **Houses:** siding or brick, corner boards, framed windows with mullions and sills, an open front door, a porch with steps and a light, overhanging gable roofs, chimneys, front walks, mailboxes and hedges. Some have two storeys.
+* **Woods and Rift:** the Woods have rolling ground, leaf litter, a muddy track, mossy boulders and fallen logs. The Rift's islands are floating masses of earth and rock.
+* **Cathedral and Heart:** the Cathedral is flooded with real (knee-deep) water. The Heart is basalt shot through with cracked lava.
+
+For swaying grass blades, select **Terrain** in Studio's Explorer and tick **Decoration**. Scripts can't turn this on.
 
 ---
 

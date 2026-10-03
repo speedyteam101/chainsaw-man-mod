@@ -673,7 +673,8 @@ function EnemyService.Start(world)
 	folder = Instance.new("Folder")
 	folder.Name = "Enemies"
 	folder.Parent = workspace
-	floorParams.FilterDescendantsInstances = { world.floors }
+	floorParams.FilterDescendantsInstances = { world.floors, workspace.Terrain }
+	floorParams.IgnoreWater = true
 
 	-- Spawn points for each area.
 	local sampler = Random.new(99)

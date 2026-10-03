@@ -98,12 +98,7 @@ local function onCharacterAdded(player: Player, character: Model)
 		task.spawn(placeCharacter, character, Act1Director.SpawnCFrame(player))
 		task.spawn(Act1Director.OnCharacter, player, character)
 	else
-		player.CameraMode = Enum.CameraMode.Classic
-		-- Coming out of first person: push the camera out once, then let the player zoom freely.
-		player.CameraMinZoomDistance = 12
-		task.delay(1, function()
-			player.CameraMinZoomDistance = 0.5
-		end)
+		player.CameraMode = Enum.CameraMode.LockFirstPerson
 		humanoid.MaxHealth = Config.Act2.BaseMaxHealth + (data.level - 1) * Config.Act2.HealthPerLevel
 		humanoid.Health = humanoid.MaxHealth
 		humanoid.WalkSpeed = Config.Act2.WalkSpeed

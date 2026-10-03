@@ -14,6 +14,7 @@ local active = {}
 local nextId = 0
 local mapParams = RaycastParams.new()
 mapParams.FilterType = Enum.RaycastFilterType.Include
+mapParams.IgnoreWater = true
 
 -- spec: { team = "player"|"enemy", owner = Player?, enemy = enemy?, origin, direction, speed, range,
 --         radius, damage, pierce, effects, color, size }
@@ -48,7 +49,7 @@ local function step(dt: number)
 	end
 	local map = workspace:FindFirstChild("Map")
 	if map then
-		mapParams.FilterDescendantsInstances = { map }
+		mapParams.FilterDescendantsInstances = { map, workspace.Terrain }
 	end
 	for index = #active, 1, -1 do
 		local spec = active[index]

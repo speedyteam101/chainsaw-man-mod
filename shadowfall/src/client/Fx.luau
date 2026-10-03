@@ -76,7 +76,8 @@ local function groundBelow(position: Vector3): Vector3
 	local params = RaycastParams.new()
 	local map = workspace:FindFirstChild("Map")
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { map }
+	params.FilterDescendantsInstances = { map, workspace.Terrain }
+	params.IgnoreWater = true
 	local hit = map and workspace:Raycast(position + Vector3.new(0, 4, 0), Vector3.new(0, -60, 0), params)
 	return hit and hit.Position or position
 end

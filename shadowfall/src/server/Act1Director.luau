@@ -463,7 +463,6 @@ local function finale(player: Player)
 	PlayerData.Sync(player)
 	PlayerData.Save(player)
 	Remotes.Fx:FireAllClients("AwakenBurst", { position = root.Position, color = power.color })
-	player.CameraMode = Enum.CameraMode.Classic
 	story(player, "Roll", { power = power.id })
 	-- If the client never reports the roll animation finished, move on anyway.
 	task.delay(30, finishAct1, player)
@@ -527,7 +526,8 @@ function Act1Director.Start(worldInfo)
 	folder = Instance.new("Folder")
 	folder.Name = "Stalkers"
 	folder.Parent = workspace
-	losParams.FilterDescendantsInstances = { world.map }
+	losParams.FilterDescendantsInstances = { world.map, workspace.Terrain }
+	losParams.IgnoreWater = true
 
 	local act1 = world.act1
 	points = WorldBuilder.SamplePoints(world.floors, act1.bounds.min + Vector3.new(8, 0, 8), act1.bounds.max - Vector3.new(8, 0, 8), 220, Random.new(7), {

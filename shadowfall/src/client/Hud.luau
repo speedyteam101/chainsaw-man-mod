@@ -331,6 +331,7 @@ local function playDialogue(speaker: string, lines)
 	dialogueToken += 1
 	local token = dialogueToken
 	dialogue.Visible = true
+	ClientState.DialogueOpen = true
 	dialogue.Speaker.Text = speaker
 	for _, line in lines do
 		if token ~= dialogueToken then
@@ -349,6 +350,7 @@ local function playDialogue(speaker: string, lines)
 	end
 	if token == dialogueToken then
 		dialogue.Visible = false
+		ClientState.DialogueOpen = false
 	end
 end
 

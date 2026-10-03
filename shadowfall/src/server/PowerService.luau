@@ -166,7 +166,8 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 		local finish = origin + direction * move.distance
 		local mapParams = RaycastParams.new()
 		mapParams.FilterType = Enum.RaycastFilterType.Include
-		mapParams.FilterDescendantsInstances = { workspace:FindFirstChild("Map") }
+		mapParams.FilterDescendantsInstances = { workspace:FindFirstChild("Map"), workspace.Terrain }
+		mapParams.IgnoreWater = true
 		local wall = workspace:Raycast(origin, direction * move.distance, mapParams)
 		if wall then
 			finish = wall.Position - direction * 2

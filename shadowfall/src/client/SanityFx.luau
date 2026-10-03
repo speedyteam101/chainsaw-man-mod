@@ -47,7 +47,8 @@ local function spawnPhantom(close: boolean)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
 	local map = workspace:FindFirstChild("Map")
-	params.FilterDescendantsInstances = { map }
+	params.FilterDescendantsInstances = { map, workspace.Terrain }
+	params.IgnoreWater = true
 	local hit = map and workspace:Raycast(spot + Vector3.new(0, 20, 0), Vector3.new(0, -60, 0), params)
 	if not hit then
 		return

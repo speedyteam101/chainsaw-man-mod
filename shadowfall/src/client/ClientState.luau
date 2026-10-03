@@ -20,6 +20,7 @@ local ClientState = {
 	MenuOpen = false,
 	InCutscene = false,
 	BuildMode = false,
+	DialogueOpen = false,
 }
 
 function ClientState.Apply(snapshot)

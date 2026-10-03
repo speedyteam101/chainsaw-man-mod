@@ -15,9 +15,9 @@
     "StarterPlayer": {
       "$properties": {
         "GameSettingsAvatar": "R6",
-        "CameraMaxZoomDistance": 22,
         "CharacterWalkSpeed": 16,
-        "EnableMouseLockOption": false
+        "EnableMouseLockOption": false,
+        "CameraMode": "LockFirstPerson"
       },
       "StarterPlayerScripts": {
         "Client": {

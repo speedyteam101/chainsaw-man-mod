@@ -90,7 +90,7 @@ local function persist(player: Player)
 end
 
 local function overlapParams(extra)
-	local exclude = { world.floors }
+	local exclude = { world.floors, workspace.Terrain }
 	for _, name in { "Enemies", "Stalkers", "Ducks", "LocalFx" } do
 		local f = workspace:FindFirstChild(name)
 		if f then
@@ -500,7 +500,8 @@ local function validCrystalSpot(player: Player, position: Vector3): (boolean, st
 	end
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { world.floors }
+	params.FilterDescendantsInstances = { world.floors, workspace.Terrain }
+	params.IgnoreWater = true
 	local hit = workspace:Raycast(position + Vector3.new(0, 6, 0), Vector3.new(0, -30, 0), params)
 	if not hit then
 		return false, "That isn't solid ground."

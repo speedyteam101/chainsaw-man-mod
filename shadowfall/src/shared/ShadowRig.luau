@@ -1,6 +1,7 @@
 --!nonstrict
--- Builds a shadow: a pitch-black, blocky R6-proportioned body (head, torso, two arms, two legs)
--- with glowing eyes and smoke pouring off it.
+-- Builds a shadow on the default Roblox R6 character template: the same parts, sizes, rounded
+-- head mesh and Motor6D joint layout (RootJoint, Neck, shoulders, hips) as the standard R6 rig,
+-- but pitch black, with glowing eyes and smoke pouring off it.
 --
 -- Parts use black Neon so they render as flat, unlit black: a silhouette cut out of the world.
 -- The humanoid uses an explicit HipHeight so scaled rigs (brutes, bosses) stand correctly.
@@ -98,7 +99,8 @@ export type RigOptions = {
 
 function ShadowRig.Build(options: RigOptions): Model
 	local s = options.scale or 1
-	local armLength = options.armLength or 1
+	-- Default R6 proportions for every shadow (armLength is kept for API compatibility only).
+	local armLength = 1
 	local eyeColor = options.eyeColor or Color3.fromRGB(235, 235, 255)
 
 	local model = Instance.new("Model")
@@ -118,13 +120,22 @@ function ShadowRig.Build(options: RigOptions): Model
 	local rightLeg = part("Right Leg", Vector3.new(1, 2, 1) * s, model)
 	local leftLeg = part("Left Leg", Vector3.new(1, 2, 1) * s, model)
 
-	-- Classic R6 joint layout, scaled.
-	motor("RootJoint", root, torso, CFrame.new(), CFrame.new())
-	motor("Neck", torso, head, CFrame.new(0, 1 * s, 0), CFrame.new(0, -0.5 * s, 0))
-	motor("Right Shoulder", torso, rightArm, CFrame.new(1 * s, 0.5 * s, 0), CFrame.new(-0.5 * s, (armLength - 0.5) * s, 0))
-	motor("Left Shoulder", torso, leftArm, CFrame.new(-1 * s, 0.5 * s, 0), CFrame.new(0.5 * s, (armLength - 0.5) * s, 0))
-	motor("Right Hip", torso, rightLeg, CFrame.new(0.5 * s, -1 * s, 0), CFrame.new(0, 1 * s, 0))
-	motor("Left Hip", torso, leftLeg, CFrame.new(-0.5 * s, -1 * s, 0), CFrame.new(0, 1 * s, 0))
+	-- The default R6 rig's joints (same C0/C1 positions and orientations), scaled.
+	local function r6(x: number, y: number, z: number, ...)
+		return CFrame.new(x * s, y * s, z * s, ...)
+	end
+	motor("RootJoint", root, torso, r6(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0), r6(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0))
+	motor("Neck", torso, head, r6(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0), r6(0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0))
+	motor("Right Shoulder", torso, rightArm, r6(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0), r6(-0.5, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0))
+	motor("Left Shoulder", torso, leftArm, r6(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0), r6(0.5, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0))
+	motor("Right Hip", torso, rightLeg, r6(1, -1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0), r6(0.5, 1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0))
+	motor("Left Hip", torso, leftLeg, r6(-1, -1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0), r6(-0.5, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0))
+
+	-- The default R6 head is a rounded mesh 1.25x the part size.
+	local headMesh = Instance.new("SpecialMesh")
+	headMesh.MeshType = Enum.MeshType.Head
+	headMesh.Scale = Vector3.new(1.25, 1.25, 1.25)
+	headMesh.Parent = head
 
 	-- Snap the limbs into place so welded extras line up before the first physics step.
 	torso.CFrame = root.CFrame
@@ -139,12 +150,12 @@ function ShadowRig.Build(options: RigOptions): Model
 		weld(head, e, CFrame.new(offset))
 		table.insert(eyes, e)
 	end
-	eye("EyeL", Vector3.new(-0.42, 0.08, -0.5) * s, Vector3.new(0.38, 0.14, 0.08) * s)
-	eye("EyeR", Vector3.new(0.42, 0.08, -0.5) * s, Vector3.new(0.38, 0.14, 0.08) * s)
+	eye("EyeL", Vector3.new(-0.36, 0.1, -0.62) * s, Vector3.new(0.34, 0.13, 0.08) * s)
+	eye("EyeR", Vector3.new(0.36, 0.1, -0.62) * s, Vector3.new(0.34, 0.13, 0.08) * s)
 	if options.manyEyes then
 		local spots = {
-			Vector3.new(0, 0.35, -0.5), Vector3.new(-0.7, -0.3, -0.5), Vector3.new(0.7, -0.3, -0.5),
-			Vector3.new(0.6, 0.6, 0.2), Vector3.new(-0.6, 0.6, 0.2), Vector3.new(0, -0.6, -0.5),
+			Vector3.new(0, 0.38, -0.6), Vector3.new(-0.62, -0.25, -0.58), Vector3.new(0.62, -0.25, -0.58),
+			Vector3.new(0.6, 0.6, 0.2), Vector3.new(-0.6, 0.6, 0.2), Vector3.new(0, -0.45, -0.6),
 		}
 		for index, spot in spots do
 			eye("EyeExtra" .. index, spot * s, Vector3.new(0.2, 0.2, 0.08) * s)
@@ -186,7 +197,7 @@ function ShadowRig.Build(options: RigOptions): Model
 		{ torso, Vector3.new(0.12, 1.3, 0.04), CFrame.new(-0.35, 0.1, -0.51) * CFrame.Angles(0, 0, 0.35) },
 		{ torso, Vector3.new(0.1, 0.9, 0.04), CFrame.new(0.4, -0.3, -0.51) * CFrame.Angles(0, 0, -0.5) },
 		{ torso, Vector3.new(0.6, 0.08, 0.04), CFrame.new(0.15, 0.55, -0.51) * CFrame.Angles(0, 0, 0.2) },
-		{ head, Vector3.new(0.08, 0.5, 0.04), CFrame.new(0.55, 0.25, -0.51) * CFrame.Angles(0, 0, 0.4) },
+		{ head, Vector3.new(0.08, 0.45, 0.04), CFrame.new(0.5, 0.2, -0.61) * CFrame.Angles(0, 0, 0.4) },
 		{ torso, Vector3.new(0.1, 1.2, 0.04), CFrame.new(0.2, 0, 0.51) * CFrame.Angles(0, 0, -0.3) },
 	}
 	for _, crack in cracks do
@@ -201,7 +212,7 @@ function ShadowRig.Build(options: RigOptions): Model
 		local tooth = part("Mouth", Vector3.new(0.26, 0.1 + (index == 2 and 0.08 or 0), 0.06) * s, model)
 		tooth.Color = Color3.fromRGB(120, 0, 10)
 		tooth.Transparency = 1
-		weld(head, tooth, CFrame.new(Vector3.new(x, -0.28, -0.51) * s) * CFrame.Angles(0, 0, (index - 2) * 0.25))
+		weld(head, tooth, CFrame.new(Vector3.new(x, -0.25, -0.62) * s) * CFrame.Angles(0, 0, (index - 2) * 0.25))
 	end
 
 	-- A pool of darkness under its feet.

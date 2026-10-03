@@ -4,6 +4,7 @@
 -- The client (DuckClient) handles the waddling, quacking and advice bubbles.
 
 local CollectionService = game:GetService("CollectionService")
+local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -135,6 +136,11 @@ local function buildDuck(owner: Player): Model
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = root
 
+	for _, p in model:GetDescendants() do
+		if p:IsA("BasePart") then
+			p.CollisionGroup = "Ducks"
+		end
+	end
 	model:SetAttribute("Owner", owner.UserId)
 	CollectionService:AddTag(model, "Duck")
 	return model
@@ -211,7 +217,7 @@ local function follow(player: Player, duck)
 		duck.humanoid:MoveTo(duck.root.Position)
 		return
 	end
-	local target = (root.CFrame * CFrame.new(2.6, -2, 3.2)).Position
+	local target = (root.CFrame * CFrame.new(3, -2, -4.5)).Position
 	local offset = target - duck.root.Position
 	local distance = Vector3.new(offset.X, 0, offset.Z).Magnitude
 	if distance > 50 or math.abs(offset.Y) > 14 then
@@ -231,6 +237,37 @@ local function follow(player: Player, duck)
 end
 
 function DuckService.Start()
+	-- Ducks and players pass through each other so Biscuit can walk in front of you.
+	if not PhysicsService:IsCollisionGroupRegistered("Ducks") then
+		PhysicsService:RegisterCollisionGroup("Ducks")
+	end
+	if not PhysicsService:IsCollisionGroupRegistered("Players") then
+		PhysicsService:RegisterCollisionGroup("Players")
+	end
+	PhysicsService:CollisionGroupSetCollidable("Ducks", "Players", false)
+	local function groupCharacter(character: Model)
+		for _, p in character:GetDescendants() do
+			if p:IsA("BasePart") then
+				p.CollisionGroup = "Players"
+			end
+		end
+		character.DescendantAdded:Connect(function(p)
+			if p:IsA("BasePart") then
+				p.CollisionGroup = "Players"
+			end
+		end)
+	end
+	local function watchPlayer(p: Player)
+		if p.Character then
+			groupCharacter(p.Character)
+		end
+		p.CharacterAdded:Connect(groupCharacter)
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
+	for _, p in Players:GetPlayers() do
+		watchPlayer(p)
+	end
+
 	folder = Instance.new("Folder")
 	folder.Name = "Ducks"
 	folder.Parent = workspace
@@ -266,7 +303,7 @@ function DuckService.OnCharacter(player: Player, character: Model)
 		return
 	end
 	task.wait(0.3)
-	DuckService.Place(player, (root :: BasePart).CFrame * CFrame.new(2.6, -1.9, 3.2), false)
+	DuckService.Place(player, (root :: BasePart).CFrame * CFrame.new(3, -1.9, -4.5), false)
 end
 
 return DuckService

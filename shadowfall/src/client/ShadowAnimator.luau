@@ -71,9 +71,20 @@ local function register(model: Model)
 	}
 end
 
+-- Shadows use the default R6 joint layout, so (like Roblox's own R6 animations) limbs swing
+-- around each joint's Z axis, mirrored between the right and left side.
+--   limbs: angleX = swing forward (+) / back (-), angleZ = small sideways spread
+--   neck:  angleX = nod, angleZ = tilt, angleY = turn
 local function pose(joint, angleX: number, angleZ: number?, angleY: number?)
-	if joint then
-		joint.motor.C0 = joint.base * CFrame.Angles(angleX, angleY or 0, angleZ or 0)
+	if not joint then
+		return
+	end
+	local name = joint.motor.Name
+	if name == "Neck" then
+		joint.motor.C0 = joint.base * CFrame.Angles(-angleX, angleZ or 0, angleY or 0)
+	else
+		local side = string.sub(name, 1, 5) == "Right" and 1 or -1
+		joint.motor.C0 = joint.base * CFrame.Angles((angleZ or 0) * side, 0, angleX * side)
 	end
 end
 

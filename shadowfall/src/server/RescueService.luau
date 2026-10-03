@@ -164,7 +164,8 @@ function RescueService.Start(world)
 	folder.Parent = workspace
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = { world.floors }
+	params.FilterDescendantsInstances = { world.floors, workspace.Terrain }
+	params.IgnoreWater = true
 
 	for _, person in Townsfolk.List do
 		local hit = workspace:Raycast(person.at + Vector3.new(0, 40, 0), Vector3.new(0, -80, 0), params)

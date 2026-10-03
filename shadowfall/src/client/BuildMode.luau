@@ -71,6 +71,7 @@ local function overlapBlocked(cf: CFrame, size: Vector3): boolean
 	if floors then
 		table.insert(exclude, floors)
 	end
+	table.insert(exclude, workspace.Terrain)
 	for _, p in Players:GetPlayers() do
 		if p.Character then
 			table.insert(exclude, p.Character)
@@ -155,6 +156,7 @@ local function update()
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = excludeList()
+	params.IgnoreWater = true
 	local hit = workspace:Raycast(ray.Origin, ray.Direction * 160, params)
 	if not hit then
 		active.valid = false
