@@ -143,7 +143,7 @@ local function refreshStatus()
 		rarityText.Text = p.rarity
 		rarityText.TextColor3 = rarity.color
 	end
-	essenceText.Text = string.format("%d Essence", player:GetAttribute("Essence") or 0)
+	essenceText.Text = string.format("%d Essence   |   %d Tokens", player:GetAttribute("Essence") or 0, player:GetAttribute("Tokens") or 0)
 	ascendPill.Visible = player:GetAttribute("CanAscend") == true
 	refreshMoves()
 end
@@ -461,7 +461,7 @@ function Hud.Start()
 		end
 	end)
 
-	for _, name in { "Level", "Power", "Essence", "CanAscend" } do
+	for _, name in { "Level", "Power", "Essence", "Tokens", "CanAscend" } do
 		player:GetAttributeChangedSignal(name):Connect(refreshStatus)
 	end
 	refreshStatus()
@@ -492,6 +492,8 @@ function Hud.Start()
 			cooldownEnds = {}
 		elseif kind == "Essence" then
 			Hud.Toast(string.format("+%d Essence", data.amount), Color3.fromRGB(190, 160, 255), 1.5)
+		elseif kind == "PassUnlocked" then
+			showBanner(data.name .. " unlocked", "It's yours for good. Thank you for playing!", Color3.fromRGB(120, 230, 255))
 		elseif kind == "Dialogue" then
 			task.spawn(playDialogue, data.speaker, data.lines)
 		elseif kind == "OpenMenu" then

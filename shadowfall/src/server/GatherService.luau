@@ -13,6 +13,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Registry = require(script.Parent.Registry)
 local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
+local PassService = require(script.Parent.PassService)
 local WorldBuilder = require(script.Parent.World.WorldBuilder)
 local B = require(script.Parent.World.Builders)
 
@@ -203,6 +204,10 @@ local function hit(player: Player, node)
 	local def = node.def
 	node.hp -= 1
 	local amount = def.perHit * toolMultiplier(player, def.material)
+	local belt = PassService.GatherMultiplier(player)
+	if belt ~= 1 then
+		amount = math.ceil(amount * belt) -- Builder's Belt
+	end
 	InventoryService.Add(player, def.material, amount, false)
 	local color = Materials.ById[def.material].color
 	Remotes.Fx:FireAllClients("Gather", { position = node.position, color = color, kind = node.kind })
@@ -211,6 +216,9 @@ local function hit(player: Player, node)
 		node.depleted = true
 		for id, bonus in def.final do
 			local total = bonus * toolMultiplier(player, id)
+			if belt ~= 1 then
+				total = math.ceil(total * belt)
+			end
 			InventoryService.Add(player, id, total, false)
 			Remotes.Notify:FireClient(player, "Gathered", { id = id, amount = total, position = node.position })
 		end

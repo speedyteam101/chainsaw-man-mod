@@ -44,6 +44,17 @@ function FirstPerson.Start()
 					child.LocalTransparencyModifier = 0
 				end
 			end
+			-- Your own hair (from the character creator) would block the view from inside your head.
+			local hair = character:FindFirstChild("LookHair")
+			local head = character:FindFirstChild("Head")
+			if hair and head then
+				local inside = (workspace.CurrentCamera.CFrame.Position - head.Position).Magnitude < 2
+				for _, part in hair:GetChildren() do
+					if part:IsA("BasePart") then
+						part.LocalTransparencyModifier = inside and 1 or 0
+					end
+				end
+			end
 		end
 		local needsMouse = ClientState.MenuOpen or ClientState.DialogueOpen or false
 		freeMouse.Visible = needsMouse

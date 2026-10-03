@@ -331,6 +331,11 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 	end
 
 	amount *= passive(player).defense or 1
+	-- Beginner's Blessing: new players take less damage until their first Ascension.
+	local data = PlayerData.Get(player)
+	if data and data.act == 2 and data.level < Config.Beginner.UntilLevel then
+		amount *= Config.Beginner.DamageTaken
+	end
 	if InventoryService.HasItem(player, "Coat") then
 		amount *= 0.85
 	end

@@ -14,6 +14,8 @@ local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 
 local PlayerData = {}
 
+PlayerData.SpawnOverride = nil :: ((Player) -> boolean)? -- set by Main (LookService.Spawn)
+
 local profiles: { [Player]: any } = {}
 local storeOk, store = pcall(function()
 	return DataStoreService:GetDataStore(Config.DataStoreName)
@@ -41,6 +43,13 @@ local function defaults()
 		rescued = {}, -- [townsfolkId] = true
 		base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} },
 		story = { chapter = 1, seen = {}, pages = {} },
+		tokens = 0,
+		essenceTraded = 0, -- lifetime Essence traded for Tokens (the newcomer rate uses this)
+		welcomeTokens = false,
+		passes = {}, -- [passId] = true
+		vault = {}, -- [powerId] = true (Power Vault pass)
+		duckOutfit = 1,
+		-- look = nil until the character creator is finished (see Looks.luau)
 	}
 end
 
@@ -154,6 +163,7 @@ function PlayerData.Sync(player: Player)
 	player:SetAttribute("Power", data.power or "")
 	player:SetAttribute("Essence", data.essence)
 	player:SetAttribute("Pity", data.pity)
+	player:SetAttribute("Tokens", data.tokens)
 	player:SetAttribute(
 		"CanAscend",
 		data.act == 2 and data.level < Config.MaxLevel and Achievements.IsQualified(data.achievements, data.level + 1)
@@ -170,6 +180,11 @@ function PlayerData.Sync(player: Player)
 		basePlaced = data.base.placed,
 		duckSaved = data.duckSaved,
 		story = data.story,
+		passes = data.passes,
+		vault = data.vault,
+		essenceTraded = data.essenceTraded,
+		duckOutfit = data.duckOutfit,
+		look = data.look,
 	})
 end
 
@@ -177,6 +192,10 @@ end
 -- LoadCharacter in case the running engine version doesn't have it.
 function PlayerData.Respawn(player: Player)
 	if not player.Parent then
+		return
+	end
+	-- Wear the look from the character creator, if one was chosen.
+	if PlayerData.SpawnOverride and PlayerData.SpawnOverride(player) then
 		return
 	end
 	local ok, err = pcall(function()

@@ -141,6 +141,13 @@ Config.Base = {
 	TurretInterval = 1.5,
 }
 
+-- Help for new players.
+Config.Beginner = {
+	DamageTaken = 0.7, -- Beginner's Blessing: take 30% less damage...
+	UntilLevel = 2, -- ...until you first Ascend to this level
+	ShowGuide = true, -- the "what now?" hint card in the top-left (players can hide it with H)
+}
+
 -- Lets the in-game Dev tab work. It is also hard-gated to Studio by RunService:IsStudio().
 Config.EnableStudioDevTools = true
 

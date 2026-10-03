@@ -23,6 +23,8 @@ local Hud = require(script.Parent.Hud)
 local ClientState = require(script.Parent.ClientState)
 local BuildMode = require(script.Parent.BuildMode)
 local Cinematic = require(script.Parent.Cinematic)
+local CharacterCreator = require(script.Parent.CharacterCreator)
+local Passes = require(ReplicatedStorage.Shared.Passes)
 
 local Menu = {}
 
@@ -32,7 +34,7 @@ local gui, panel, content, tabButtons
 local currentTab = "Ascension"
 local busy = false
 
-local TABS = { "Ascension", "Feats", "Power", "Pack", "Build", "Base", "Journal", "Warp" }
+local TABS = { "Ascension", "Feats", "Power", "Tokens", "Pack", "Build", "Base", "Journal", "Warp", "Look" }
 if Config.EnableStudioDevTools and RunService:IsStudio() then
 	table.insert(TABS, "Dev")
 end
@@ -185,7 +187,11 @@ local function reroll(useDie: boolean?)
 	local resolved = Remotes.Request:InvokeServer("KeepRoll", keepNew)
 	busy = false
 	if resolved and resolved.ok then
-		Hud.Toast("Your power: " .. tostring(resolved.power), Powers.ById[resolved.power] and Powers.ById[resolved.power].color or T.Text)
+		local p = Powers.ById[resolved.power]
+		Hud.Toast("Your power: " .. (p and p.name or tostring(resolved.power)), p and p.color or T.Text)
+		if result.vaulted then
+			Hud.Toast("Both powers are safe in your Power Vault. Swap any time in the Power tab.", Color3.fromRGB(190, 140, 255), 4)
+		end
 	end
 end
 
@@ -209,6 +215,44 @@ function render.Power()
 		}))
 	end
 	add(Ui.label("[G]  Awakening  -  1.5x damage, half cooldowns" .. (level() >= 5 and "" or "   (level 5)"), { Size = UDim2.new(1, 0, 0, 20), TextSize = 14, TextColor3 = level() >= 5 and T.Text or T.Muted }))
+
+	add(Ui.label("POWER VAULT", { Size = UDim2.new(1, 0, 0, 30), Font = T.Bold, TextSize = 14, TextColor3 = Color3.fromRGB(190, 140, 255) }))
+	if ClientState.passes and ClientState.passes.vault then
+		paragraph("Every power you've owned since getting the Vault is kept here. Swap for free (not mid-fight).")
+		for _, vaulted in Powers.List do
+			if ClientState.vault and ClientState.vault[vaulted.id] then
+				local current = vaulted.id == p.id
+				local row = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = T.PanelLight }, {
+					Ui.corner(8),
+					Ui.padding(6),
+					Ui.label(vaulted.name .. "  -  " .. vaulted.rarity, { Size = UDim2.new(1, -120, 1, 0), Font = T.Bold, TextSize = 15, TextColor3 = vaulted.color }),
+				}))
+				Ui.button(current and "In use" or "Use", {
+					AnchorPoint = Vector2.new(1, 0.5),
+					Position = UDim2.new(1, 0, 0.5, 0),
+					Size = UDim2.new(0, 110, 0, 28),
+					TextSize = 14,
+					AutoButtonColor = not current,
+					TextColor3 = current and T.Muted or T.Text,
+					Parent = row,
+				}, function()
+					if current or busy then
+						return
+					end
+					busy = true
+					local result = Remotes.Request:InvokeServer("EquipPower", vaulted.id)
+					busy = false
+					if result and result.ok then
+						Hud.Toast("Your power: " .. vaulted.name, vaulted.color)
+					else
+						Hud.Toast(result and result.message or "Can't swap right now.", T.Bad)
+					end
+				end)
+			end
+		end
+	else
+		paragraph("Want to keep every power you roll, forever? The Power Vault pass (Tokens tab) stores them so you can swap any time.")
+	end
 
 	add(Ui.label("THE SHRINE", { Size = UDim2.new(1, 0, 0, 30), Font = T.Bold, TextSize = 14, TextColor3 = T.Accent }))
 	local pity = player:GetAttribute("Pity") or 0
@@ -553,6 +597,145 @@ function render.Journal()
 	end
 end
 
+-- Tokens: the Essence exchange and passes ------------------------------------------------------
+
+local TOKEN_COLOR = Color3.fromRGB(120, 230, 255)
+
+local function exchange(amount: number)
+	if busy then
+		return
+	end
+	busy = true
+	local result = Remotes.Request:InvokeServer("Exchange", amount)
+	busy = false
+	if result and result.ok then
+		Hud.Toast(string.format("Traded %d Essence for %d Tokens", result.essence, result.tokens), TOKEN_COLOR, 3)
+	else
+		Hud.Toast(result and result.message or "The exchange is closed.", T.Bad)
+	end
+end
+
+function render.Tokens()
+	local essence = player:GetAttribute("Essence") or 0
+	local tokens = player:GetAttribute("Tokens") or 0
+	local traded = ClientState.essenceTraded or 0
+	local E = Passes.Exchange
+	heading("Tokens")
+	add(Ui.label(string.format("%d Tokens      %d Essence", tokens, essence), { Size = UDim2.new(1, 0, 0, 24), Font = T.Bold, TextSize = 18, TextColor3 = TOKEN_COLOR }))
+	paragraph("Tokens buy passes: permanent upgrades that stay with you forever. You get Tokens by trading Essence here. Essence and Tokens can never be bought with Robux, so everything in this game can be earned just by playing.")
+
+	add(Ui.label("THE EXCHANGE", { Size = UDim2.new(1, 0, 0, 30), Font = T.Bold, TextSize = 14, TextColor3 = TOKEN_COLOR }))
+	local cheapLeft = math.max(0, E.NewcomerAllowance - traded)
+	if cheapLeft > 0 then
+		paragraph(string.format("Newcomer rate: %d Essence = 1 Token for your next %d Essence. After that, %d Essence = 1 Token.", E.NewcomerEssencePerToken, cheapLeft, E.EssencePerToken), T.Good)
+	else
+		paragraph(string.format("Rate: %d Essence = 1 Token.", E.EssencePerToken))
+	end
+	paragraph(string.format("Remember a shrine reroll costs %d Essence, so keep some if you want one.", Config.Roll.RerollCost))
+	local row = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 }, {
+		Ui.new("UIGridLayout", { CellSize = UDim2.new(0.5, -4, 0, 40), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+	}))
+	local amounts = table.clone(E.Presets)
+	local all = essence - essence % E.Step
+	table.insert(amounts, all)
+	for index, amount in amounts do
+		local affordable = amount >= E.Step and essence >= amount
+		local label = index == #amounts and string.format("Trade all (%d)  ->  %d Tokens", amount, Passes.Quote(amount, traded))
+			or string.format("Trade %d  ->  %d Tokens", amount, Passes.Quote(amount, traded))
+		Ui.button(label, {
+			TextSize = 14,
+			LayoutOrder = index,
+			AutoButtonColor = affordable,
+			BackgroundColor3 = affordable and Color3.fromRGB(14, 50, 64) or T.PanelLight,
+			TextColor3 = affordable and TOKEN_COLOR or T.Muted,
+			Parent = row,
+		}, function()
+			if affordable then
+				task.spawn(exchange, amount)
+			end
+		end)
+	end
+
+	add(Ui.label("PASSES", { Size = UDim2.new(1, 0, 0, 30), Font = T.Bold, TextSize = 14, TextColor3 = T.Gold }))
+	for _, pass in Passes.List do
+		local owned = ClientState.passes and ClientState.passes[pass.id]
+		local affordable = tokens >= pass.price
+		local robux = (pass.robuxId or 0) > 0 and not owned
+		local card = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundColor3 = owned and Color3.fromRGB(20, 30, 24) or T.PanelLight }, {
+			Ui.corner(8),
+			Ui.stroke(owned and T.Good or pass.color, 1, owned and 0.2 or 0.5),
+			Ui.padding(10),
+			Ui.label(pass.name .. (owned and "   (owned)" or ""), { Size = UDim2.new(1, -140, 0, 22), Font = T.Title, TextSize = 20, TextColor3 = pass.color }),
+			Ui.label(pass.desc, { Position = UDim2.new(0, 0, 0, 24), Size = UDim2.new(1, -140, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextSize = 13, TextColor3 = T.Muted }),
+		}))
+		if owned then
+			Ui.label("OWNED", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, 0, 0, 0), Size = UDim2.new(0, 130, 0, 32), Font = T.Bold, TextSize = 15, TextColor3 = T.Good, TextXAlignment = Enum.TextXAlignment.Right, Parent = card })
+		else
+			Ui.button(pass.price .. " Tokens", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, 0, 0, 0),
+				Size = UDim2.new(0, 130, 0, 32),
+				TextSize = 14,
+				AutoButtonColor = affordable,
+				BackgroundColor3 = affordable and Color3.fromRGB(60, 44, 10) or T.PanelLight,
+				TextColor3 = affordable and T.Gold or T.Muted,
+				Parent = card,
+			}, function()
+				if busy then
+					return
+				end
+				busy = true
+				local result = Remotes.Request:InvokeServer("BuyPass", pass.id)
+				busy = false
+				if not (result and result.ok) then
+					Hud.Toast(result and result.message or "Can't buy that right now.", T.Bad)
+				end
+			end)
+		end
+		if robux then
+			Ui.button("or buy with Robux", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, 0, 0, 38),
+				Size = UDim2.new(0, 130, 0, 26),
+				TextSize = 12,
+				TextColor3 = T.Muted,
+				Parent = card,
+			}, function()
+				local result = Remotes.Request:InvokeServer("PromptPass", pass.id)
+				if not (result and result.ok) then
+					Hud.Toast(result and result.message or "The store isn't available.", T.Bad)
+				end
+			end)
+		end
+		if owned and pass.id == "wardrobe" then
+			local outfits = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 }, {
+				Ui.new("UIGridLayout", { CellSize = UDim2.fromOffset(120, 32), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
+			}))
+			for index, name in Passes.DuckOutfits do
+				local on = (ClientState.duckOutfit or 1) == index
+				Ui.button(name, {
+					TextSize = 13,
+					LayoutOrder = index,
+					BackgroundColor3 = on and Color3.fromRGB(70, 40, 60) or T.PanelLight,
+					TextColor3 = on and Color3.fromRGB(255, 190, 210) or T.Text,
+					Parent = outfits,
+				}, function()
+					Remotes.Request:InvokeServer("DuckOutfit", index)
+				end)
+			end
+		end
+	end
+end
+
+function render.Look()
+	heading("Look")
+	paragraph("Change how your character looks: skin, hair, shirt and trousers, or switch back to your own Roblox avatar. Everyone else sees it too.")
+	add(Ui.button("OPEN THE CHARACTER CREATOR", { Size = UDim2.new(1, 0, 0, 46), TextSize = 18, BackgroundColor3 = Color3.fromRGB(40, 30, 64) }, function()
+		Menu.Close()
+		CharacterCreator.Open(ClientState.look, false)
+	end))
+end
+
 function render.Warp()
 	heading("Warp")
 	paragraph("Travel to any area you've unlocked. You can't warp in combat.")
@@ -589,7 +772,7 @@ end
 function render.Dev()
 	heading("Dev (Studio only)")
 	paragraph("Shortcuts for testing. These are refused by the server outside Studio.")
-	for _, command in { { "Skip Act 1", "SkipAct1" }, { "Grant a qualifying feat", "Qualify" }, { "+1000 Essence", "Essence" }, { "+60 of every material", "Materials" }, { "Rescue all townsfolk", "RescueAll" }, { "Reset my data", "Reset" } } do
+	for _, command in { { "Skip Act 1", "SkipAct1" }, { "Grant a qualifying feat", "Qualify" }, { "+1000 Essence", "Essence" }, { "+500 Tokens", "Tokens" }, { "+60 of every material", "Materials" }, { "Rescue all townsfolk", "RescueAll" }, { "Reset my data", "Reset" } } do
 		add(Ui.button(command[1], { Size = UDim2.new(1, 0, 0, 40) }, function()
 			local result = Remotes.Request:InvokeServer("Dev", command[2])
 			Hud.Toast(result and result.ok and ("Done: " .. command[1]) or (result and result.message or "Failed"), T.Accent)
@@ -642,15 +825,24 @@ function Menu.Start()
 		Ui.stroke(T.Stroke, 1),
 		Ui.new("UISizeConstraint", { MaxSize = Vector2.new(820, 600) }),
 	})
-	local tabs = Ui.new("Frame", { Position = UDim2.new(0, 14, 0, 14), Size = UDim2.new(0, 150, 1, -28), BackgroundTransparency = 1, Parent = panel }, { Ui.list(8) })
+	local tabs = Ui.new("ScrollingFrame", {
+		Position = UDim2.new(0, 14, 0, 14),
+		Size = UDim2.new(0, 150, 1, -28),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 4,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		Parent = panel,
+	}, { Ui.list(6) })
 	tabButtons = {}
 	for index, name in TABS do
-		tabButtons[name] = Ui.button(name, { Size = UDim2.new(1, 0, 0, 40), LayoutOrder = index, Parent = tabs }, function()
+		tabButtons[name] = Ui.button(name, { Size = UDim2.new(1, -6, 0, 36), LayoutOrder = index, Parent = tabs }, function()
 			currentTab = name
 			Menu.Render()
 		end)
 	end
-	Ui.button("Close", { Size = UDim2.new(1, 0, 0, 36), LayoutOrder = 99, BackgroundColor3 = Color3.fromRGB(50, 20, 26), Parent = tabs }, Menu.Close)
+	Ui.button("Close", { Size = UDim2.new(1, -6, 0, 34), LayoutOrder = 99, BackgroundColor3 = Color3.fromRGB(50, 20, 26), Parent = tabs }, Menu.Close)
 
 	content = Ui.new("ScrollingFrame", {
 		Position = UDim2.new(0, 178, 0, 14),
@@ -709,7 +901,7 @@ function Menu.Start()
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.Tab)
 	ClientState.Changed:Connect(Menu.Render)
-	for _, name in { "Level", "Power", "Essence", "CanAscend", "Pity", "BasePlaced", "BaseLevel" } do
+	for _, name in { "Level", "Power", "Essence", "Tokens", "CanAscend", "Pity", "BasePlaced", "BaseLevel" } do
 		player:GetAttributeChangedSignal(name):Connect(Menu.Render)
 	end
 end

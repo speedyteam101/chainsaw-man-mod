@@ -12,6 +12,7 @@ local Projectiles = require(script.Parent.Projectiles)
 local PlayerData = require(script.Parent.PlayerData)
 local AllyService = require(script.Parent.AllyService)
 local InventoryService = require(script.Parent.InventoryService)
+local PassService = require(script.Parent.PassService)
 
 local PowerService = {}
 
@@ -56,8 +57,9 @@ function PowerService.AwakeningRoll(player: Player)
 	if data.power then
 		return Powers.ById[data.power]
 	end
-	local power = roll(data)
+	local power = roll(data, PassService.RollLuck(player))
 	data.power = power.id
+	PassService.Remember(player, power.id)
 	Registry.PowerRolled:Fire(player, power.id)
 	PlayerData.Sync(player)
 	return power
@@ -84,12 +86,14 @@ function PowerService.Reroll(player: Player, useDie: boolean?)
 		end
 		data.essence -= Config.Roll.RerollCost
 	end
-	local luck = InventoryService.TakeItem(player, "StarShard") and 3 or 1
+	local luck = (InventoryService.TakeItem(player, "StarShard") and 3 or 1) * PassService.RollLuck(player)
 	local power = roll(data, luck)
 	pendingRolls[player] = power.id
+	-- With the Power Vault, every roll is kept forever, whichever one you choose to use now.
+	PassService.Remember(player, power.id)
 	Registry.PowerRolled:Fire(player, power.id)
 	PlayerData.Sync(player)
-	return { ok = true, power = power.id, current = data.power }
+	return { ok = true, power = power.id, current = data.power, vaulted = PassService.Has(player, "vault") }
 end
 
 function PowerService.ResolveReroll(player: Player, keepNew: boolean)

@@ -30,6 +30,8 @@ local RescueService = require(Server.RescueService)
 local AllyService = require(Server.AllyService)
 local ShopService = require(Server.ShopService)
 local StoryService = require(Server.StoryService)
+local PassService = require(Server.PassService)
+local LookService = require(Server.LookService)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 local Materials = require(ReplicatedStorage.Shared.Materials)
 
@@ -52,6 +54,9 @@ RescueService.Start(world)
 AllyService.Start()
 ShopService.Start(world)
 StoryService.Start(world)
+PassService.Start()
+PassService.OnOutfitChanged = DuckService.ApplyOutfit
+PlayerData.SpawnOverride = LookService.Spawn
 StoryService.OnAllPages = function(player: Player)
 	AchievementService.Grant(player, "archivist")
 end
@@ -98,6 +103,7 @@ local function onCharacterAdded(player: Player, character: Model)
 	state.inSafeZone = false
 	SanityService.OnCharacter(player)
 	task.spawn(DuckService.OnCharacter, player, character)
+	task.spawn(LookService.OnCharacter, player, character)
 
 	if data.act == 1 then
 		player.CameraMode = Enum.CameraMode.LockFirstPerson
@@ -113,6 +119,7 @@ local function onCharacterAdded(player: Player, character: Model)
 		humanoid.WalkSpeed = Config.Act2.WalkSpeed
 		BaseService.Load(player)
 		task.spawn(placeCharacter, character, BaseService.RespawnCFrame(player) or ZoneService.HubSpawn())
+		task.delay(8, PassService.Welcome, player)
 	end
 
 	humanoid.Died:Connect(function()
@@ -134,6 +141,9 @@ local function onPlayerAdded(player: Player)
 		onCharacterAdded(player, character)
 	end)
 	PlayerData.Load(player)
+	PassService.OnLoaded(player)
+	-- New players make their character first (the client shows the creator while this waits).
+	LookService.WaitForLook(player)
 	if player.Parent then
 		PlayerData.Respawn(player)
 	end
@@ -148,6 +158,7 @@ end
 Players.PlayerRemoving:Connect(function(player: Player)
 	PowerService.Forget(player)
 	Act1Director.Forget(player)
+	LookService.Forget(player)
 	ZoneService.Forget(player)
 	PlayerData.Release(player)
 	Registry.PlayerState[player] = nil
@@ -202,6 +213,9 @@ local function devCommand(player: Player, command)
 	elseif command == "Essence" then
 		data.essence += 1000
 		PlayerData.Sync(player)
+	elseif command == "Tokens" then
+		data.tokens += 500
+		PlayerData.Sync(player)
 	elseif command == "Materials" then
 		for _, material in Materials.List do
 			InventoryService.Add(player, material.id, 60, false)
@@ -215,9 +229,11 @@ local function devCommand(player: Player, command)
 	elseif command == "Reset" then
 		BaseService.Unload(player)
 		DuckService.Remove(player)
+		local look = data.look -- keep the character you made
 		for key in table.clone(data) do
 			data[key] = nil
 		end
+		data.look = look
 		data.version, data.act, data.act1Stage, data.level, data.essence, data.pity, data.totalRolls = 1, 1, 1, 1, 0, 0, 0
 		data.achievements = {}
 		data.act1Stage = 0
@@ -225,6 +241,9 @@ local function devCommand(player: Player, command)
 		data.stats = { kills = 0, parries = 0, perfectDodges = 0, bruteClean = 0, crafted = 0, built = 0 }
 		data.inventory, data.items, data.rescued = {}, {}, {}
 		data.base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} }
+		data.story = { chapter = 1, seen = {}, pages = {} }
+		data.tokens, data.essenceTraded, data.welcomeTokens = 0, 0, false
+		data.passes, data.vault, data.duckOutfit = {}, {}, 1
 		PlayerData.Sync(player)
 		PlayerData.Respawn(player)
 	end
@@ -269,6 +288,18 @@ Remotes.Request.OnServerInvoke = function(player: Player, request, arg)
 		return BaseService.Upgrade(player)
 	elseif request == "AbandonBase" then
 		return BaseService.Abandon(player)
+	elseif request == "Exchange" then
+		return PassService.Exchange(player, arg)
+	elseif request == "BuyPass" then
+		return PassService.BuyWithTokens(player, arg)
+	elseif request == "PromptPass" then
+		return PassService.PromptRobux(player, arg)
+	elseif request == "EquipPower" then
+		return PassService.EquipVaulted(player, arg)
+	elseif request == "DuckOutfit" then
+		return PassService.SetDuckOutfit(player, arg)
+	elseif request == "SaveLook" then
+		return LookService.Save(player, arg)
 	elseif request == "Dev" then
 		return devCommand(player, arg)
 	end

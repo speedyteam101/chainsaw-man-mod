@@ -9,6 +9,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
+local Passes = require(ReplicatedStorage.Shared.Passes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Registry = require(script.Parent.Registry)
 local PlayerData = require(script.Parent.PlayerData)
@@ -175,6 +176,61 @@ local function buildDuck(owner: Player): Model
 	return model
 end
 
+-- Biscuit's Wardrobe: little outfits welded onto the head or body.
+function DuckService.ApplyOutfit(player: Player)
+	local duck = ducks[player]
+	if not duck then
+		return
+	end
+	local old = duck.model:FindFirstChild("Outfit")
+	if old then
+		old:Destroy()
+	end
+	local data = PlayerData.Get(player)
+	if not data or not (data.passes and data.passes.wardrobe) then
+		return
+	end
+	local outfit = Passes.DuckOutfits[data.duckOutfit or 1]
+	local head = duck.model:FindFirstChild("Head") :: BasePart?
+	local body = duck.model:FindFirstChild("Body") :: BasePart?
+	if not outfit or outfit == "None" or not head or not body then
+		return
+	end
+	local holder = Instance.new("Model")
+	holder.Name = "Outfit"
+	holder.Parent = duck.model
+	local function add(anchor: BasePart, name: string, size: Vector3, color: Color3, offset: CFrame, shape: Enum.PartType?)
+		local p = piece(holder, name, size, color, anchor.CFrame * offset, shape)
+		weldTo(anchor, p)
+		return p
+	end
+	local upright = CFrame.Angles(0, 0, math.rad(90)) -- cylinders point along X; this stands them up
+	if outfit == "Bow Tie" then
+		local red = Color3.fromRGB(190, 30, 40)
+		add(body, "BowL", Vector3.new(0.3, 0.26, 0.1), red, CFrame.new(-0.17, 0.62, -1.4) * CFrame.Angles(0, 0, math.rad(12)))
+		add(body, "BowR", Vector3.new(0.3, 0.26, 0.1), red, CFrame.new(0.17, 0.62, -1.4) * CFrame.Angles(0, 0, math.rad(-12)))
+		add(body, "Knot", Vector3.new(0.13, 0.13, 0.12), Color3.fromRGB(150, 20, 30), CFrame.new(0, 0.62, -1.42))
+	elseif outfit == "Top Hat" then
+		local black = Color3.fromRGB(20, 18, 22)
+		add(head, "Brim", Vector3.new(0.06, 0.9, 0.9), black, CFrame.new(0, 0.47, 0.05) * upright, Enum.PartType.Cylinder)
+		add(head, "Crown", Vector3.new(0.55, 0.6, 0.6), black, CFrame.new(0, 0.78, 0.05) * upright, Enum.PartType.Cylinder)
+		add(head, "Band", Vector3.new(0.12, 0.62, 0.62), Color3.fromRGB(170, 30, 40), CFrame.new(0, 0.58, 0.05) * upright, Enum.PartType.Cylinder)
+	elseif outfit == "Flower Crown" then
+		local colors = { Color3.fromRGB(255, 150, 190), Color3.fromRGB(255, 240, 140), Color3.fromRGB(190, 160, 255) }
+		for i = 1, 8 do
+			local angle = (i / 8) * math.pi * 2
+			local offset = CFrame.new(math.cos(angle) * 0.42, 0.4, math.sin(angle) * 0.42)
+			add(head, "Flower", Vector3.new(0.17, 0.17, 0.17), colors[(i % #colors) + 1], offset, Enum.PartType.Ball)
+			add(head, "Leaf", Vector3.new(0.1, 0.04, 0.16), Color3.fromRGB(90, 170, 90), offset * CFrame.new(0, -0.06, 0.08))
+		end
+	elseif outfit == "Scarf" then
+		local red = Color3.fromRGB(200, 40, 50)
+		add(body, "Wrap", Vector3.new(0.95, 0.24, 0.95), red, CFrame.new(0, 0.66, -0.95))
+		add(body, "Stripe", Vector3.new(0.97, 0.07, 0.97), Color3.new(1, 1, 1), CFrame.new(0, 0.66, -0.95))
+		add(body, "Tail", Vector3.new(0.22, 0.55, 0.08), red, CFrame.new(0.3, 0.38, -1.42) * CFrame.Angles(0, 0, math.rad(-10)))
+	end
+end
+
 function DuckService.Get(player: Player)
 	return ducks[player]
 end
@@ -187,6 +243,7 @@ function DuckService.Place(player: Player, cf: CFrame, scared: boolean?)
 		model.Parent = folder
 		duck = { model = model, humanoid = model:FindFirstChildOfClass("Humanoid"), root = model.PrimaryPart, lastPet = 0 }
 		ducks[player] = duck
+		DuckService.ApplyOutfit(player)
 		model.PrimaryPart.ProximityPrompt.Triggered:Connect(function(who: Player)
 			if who ~= player or duck.state ~= "follow" then
 				return

@@ -47,6 +47,12 @@ The world is built when the server starts, so in Studio's edit mode the Workspac
 
 ---
 
+## Creating your character
+
+The first time you join, before the story starts, you make your character: skin tone, hairstyle (short, messy, long, ponytail, spiky, beanie, cap or none), hair colour, shirt colour with long or short sleeves, and trouser colour. There's a **Random** button, or you can pick **Use my Roblox avatar** instead. A spinning blocky R6 preview shows the result. Change it any time later from the menu's **Look** tab.
+
+Players who already had a save also see the creator once, the next time they join.
+
 ## Act 1: the night it happened (horror)
 
 * **Opening cutscene:** a red clock reads 12:04 PM, and your call duck **Biscuit** is quacking in a panic. You open your eyes and find Mum and Dad lying on the living-room floor. A shadow has Biscuit cornered.
@@ -104,7 +110,8 @@ You wake up at the survivors' camp in the middle of what's left of Hollow Creek.
 | Sprint | Shift | L3 |
 | Power moves (unlock at levels 1-4) | Z X C V | X, Y, D-pad left/right |
 | Awakening (level 5) | G | D-pad up |
-| Menu (Ascension, Feats, Power, Pack, Build, Base, Warp) | M | Select |
+| Menu (Ascension, Feats, Power, Tokens, Pack, Build, Base, Journal, Warp, Look) | M | Select |
+| Hide / show Biscuit's Tip | H | |
 | Build menu / Pack (inventory + crafting) | B / Tab | |
 | Use Bandage / Sanity Tonic / Light Bomb | 1 / 2 / 3 | |
 | Build mode: place / rotate / stop | Click / R / X | R2 / Y / B |
@@ -238,6 +245,40 @@ Press E on a merchant to trade Essence for goods:
 | Doc Mercer | Camp | Bandages, Sanity Tonics, Light Bombs, Duck Bread (feed it to Biscuit for a big sanity boost) |
 | The Hooded Stranger | Whispering Woods | Fate Dice (a free reroll), Star Shards (next roll about 3x as likely to be Legendary or better), Light Cores, crystal and umbral shards |
 
+## Tokens and passes
+
+**Tokens** are a second currency. You get them by trading Essence in the menu's **Tokens** tab. The trade is one way: Essence becomes Tokens, never the reverse.
+
+| | Rate |
+| --- | --- |
+| Newcomer rate (your first 1000 Essence traded) | 2 Essence = 1 Token |
+| After that | 4 Essence = 1 Token |
+| Welcome gift, the first time you reach the camp | +100 Tokens |
+
+So a new player who trades their first 1000 Essence ends up with 600 Tokens including the gift. That's enough for two or three passes. (These numbers are a first guess and haven't been balance-tested. Change them in `src/shared/Passes.luau`.)
+
+**Passes** are permanent upgrades bought with Tokens:
+
+| Pass | Tokens | What it does |
+| --- | --- | --- |
+| Power Vault | 300 | **Permanent powers.** Every power you own or roll from then on is kept forever, even ones you replace. Swap between them for free in the Power tab (not mid-fight). |
+| Lucky Star | 400 | Every roll is 1.5x as likely to be Legendary or better. Stacks with Star Shards. |
+| Builder's Belt | 200 | +50% materials from gathering. |
+| Biscuit's Wardrobe | 120 | Outfits for Biscuit: bow tie, top hat, flower crown, scarf. Looks only. |
+
+**Robux.** Essence and Tokens can **never** be bought with Robux. The game has no developer products and no `ProcessReceipt` handler, and nothing sells a currency. Passes are Tokens-only by default. If you also want to sell a pass for Robux:
+
+1. Create a game pass for it on the Creator Dashboard.
+2. Paste its id into that pass's `robuxId` in `src/shared/Passes.luau`.
+
+An "or buy with Robux" button then appears. Owning the Roblox game pass unlocks the same in-game pass. Ownership is checked on join with `MarketplaceService:UserOwnsGamePassAsync`, and purchases come in through `PromptGamePassPurchaseFinished`.
+
+## Help for new players
+
+* **Biscuit's Tip** (top-left, H to hide) suggests one useful next thing based on where you are: place your base crystal, Ascend when a feat qualifies you, free townsfolk, trade Essence, spend Tokens. It isn't a quest log and gives no rewards. For your first ten minutes in the camp it also lists the controls.
+* **Beginner's Blessing:** you take 30% less damage until you first Ascend to level 2 (`Config.Beginner`).
+* The newcomer exchange rate and the welcome Tokens (above).
+
 ## Gathering, crafting, building
 
 ### Gathering
@@ -332,6 +373,8 @@ shadowfall/
     Enemies.luau              shadow types and bosses
     ShadowRig.luau            builds the blocky R6 shadow model (black neon + smoke)
     Materials.luau, Recipes.luau, Structures.luau, Townsfolk.luau
+    Passes.luau               Tokens exchange rates and the passes (with optional Robux game pass ids)
+    Looks.luau                character creator choices, body colours, part-built hairstyles
     Remotes.luau, Signal.luau
   src/server/                 ServerScriptService.Server
     Main.server.luau          entry point: world, services, spawning, remotes
@@ -349,6 +392,8 @@ shadowfall/
     CraftingService.luau      crafting and consumables
     BaseService.luau          crystal, barrier, blueprints, buildings, saving
     RescueService.luau        cocoons, guards, freeing townsfolk
+    PassService.luau          Essence -> Tokens, buying passes, Power Vault, game pass checks
+    LookService.luau          waits for new players to make a character, applies looks
     Projectiles.luau, PlayerData.luau, Registry.luau
   src/client/                 StarterPlayerScripts.Client
     Main.client.luau          entry point
@@ -362,12 +407,14 @@ shadowfall/
     DuckClient.luau           Biscuit's waddle and advice bubbles
     SanityFx.luau             hallucinations and low-sanity screen effects
     BuildMode.luau            holographic placement
+    CharacterCreator.luau     the character creator and its 3D preview
+    Guide.luau                Biscuit's Tip and the controls card
   src/character/Health.server.luau   turns off Roblox's default regen (the server handles it)
 ```
 
 ### Dev tools
 
-In Studio only, the menu has a **Dev** tab: skip Act 1, grant a qualifying feat, +1000 Essence, +60 of every material, rescue all townsfolk, reset your data. The server refuses these outside Studio. To remove the tab entirely, set `Config.EnableStudioDevTools = false`.
+In Studio only, the menu has a **Dev** tab: skip Act 1, grant a qualifying feat, +1000 Essence, +500 Tokens, +60 of every material, rescue all townsfolk, reset your data. The server refuses these outside Studio. To remove the tab entirely, set `Config.EnableStudioDevTools = false`.
 
 ---
 
@@ -377,3 +424,6 @@ In Studio only, the menu has a **Dev** tab: skip Act 1, grant a qualifying feat,
 * Shadows walk straight at their target and jump when they get stuck. There's no pathfinding, so they can catch on walls. (In Act 1 that reads as them "phasing" closer when you look away.)
 * The wisp particles on shadows use the texture path `rbxasset://textures/particles/smoke_main.dds`. I believe that's one of Roblox's built-in textures but haven't confirmed it. If the wisps don't show up, the classic `Smoke` effect on each shadow still works.
 * There's no sound until you add ids in `Config.Sounds`.
+* The hairstyles are positioned for the default R6 head (about 1.2 studs across once its mesh is scaled). If a style sits slightly off in Studio, nudge the offsets in `src/shared/Looks.luau`.
+* Custom looks spawn with `Player:LoadCharacterWithHumanoidDescriptionAsync`, using only body colours and no clothing assets. I haven't confirmed in Studio that a blank face id gives the default smile. If the face is missing, set `Face` on the description in `LookService.Description`. If the custom spawn fails, the game falls back to the player's normal avatar and prints a warning.
+* Robux game passes can't be tested until the place is published and the passes exist. Studio's test purchases should exercise the prompt.
