@@ -15,6 +15,7 @@ local Registry = require(script.Parent.Registry)
 local Combat = require(script.Parent.Combat)
 local Projectiles = require(script.Parent.Projectiles)
 local PlayerData = require(script.Parent.PlayerData)
+local InventoryService = require(script.Parent.InventoryService)
 local WorldBuilder = require(script.Parent.World.WorldBuilder)
 
 local EnemyService = {}
@@ -89,6 +90,8 @@ local function create(def, area, position: Vector3, bossId: string?)
 		crown = def.crown,
 		manyEyes = def.manyEyes,
 		smokeRate = isBoss and 30 or 14,
+		tendrils = isBoss and 5 or (def.behaviour == "brute" and 4 or 3),
+		eyeLight = isBoss,
 	})
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local root = model.PrimaryPart
@@ -465,6 +468,21 @@ local function think(enemy)
 		humanoid.WalkSpeed = 0
 		return
 	end
+
+	-- Base barriers: shadows can't stay inside one. Push them back out.
+	local inBarrier, owner = Registry.InBarrier(root.Position)
+	if inBarrier then
+		local barrier = Registry.Barriers[owner]
+		local out = root.Position - barrier.center
+		out = Vector3.new(out.X, 0, out.Z)
+		out = out.Magnitude > 0.1 and out.Unit or Vector3.new(1, 0, 0)
+		root.AssemblyLinearVelocity = out * 45 + Vector3.new(0, 8, 0)
+		humanoid:MoveTo(root.Position + out * 14)
+		if enemy.isAdd and not enemy.isBoss then
+			enemy.aggroOn = nil
+		end
+		return
+	end
 	local speed = def.speed * (now < enemy.slowUntil and enemy.slowMult or 1)
 	humanoid.WalkSpeed = speed
 
@@ -576,6 +594,22 @@ local function onKilled(enemy, killer: Player?, damagers)
 	enemy.model:SetAttribute("Dead", true)
 	Remotes.Fx:FireAllClients("Dissolve", { model = model, boss = enemy.isBoss })
 
+	-- Umbral shards: the stuff shadows are made of. The killer gets them (bosses: everyone).
+	for player, dealt in damagers do
+		if player.Parent and (player == killer or (enemy.isBoss and dealt >= enemy.maxHp * 0.05)) then
+			local amount = 0
+			if enemy.isBoss then
+				amount = 4 + enemy.area.index * 3
+			elseif rng:NextNumber() < 0.35 then
+				amount = 1 + math.floor(enemy.area.index / 2)
+			end
+			if amount > 0 then
+				InventoryService.Add(player, "Umbral", amount, false)
+				Remotes.Notify:FireClient(player, "Gathered", { id = "Umbral", amount = amount, position = enemy.root.Position })
+			end
+		end
+	end
+
 	-- Essence to everyone who meaningfully helped.
 	local essence = math.floor(enemy.def.essence * (enemy.isBoss and 1 or enemy.area.essenceMult))
 	for player, dealt in damagers do
@@ -613,6 +647,26 @@ local function onKilled(enemy, killer: Player?, damagers)
 			spawnEnemy(enemy.def.name, enemy.area)
 		end
 	end)
+end
+
+-- A one-off shadow (e.g. guarding a trapped townsperson). It doesn't respawn.
+function EnemyService.SpawnAdd(typeName: string, area, position: Vector3, aggroOn: Player?)
+	local enemy = create(Enemies.Types[typeName], area, position)
+	enemy.isAdd = true
+	enemy.home = groundAt(position)
+	enemy.aggroOn = aggroOn
+	return enemy
+end
+
+-- Quietly removes a shadow without rewards.
+function EnemyService.Despawn(enemy)
+	if enemy.dead then
+		return
+	end
+	enemy.dead = true
+	Registry.Enemies[enemy.model] = nil
+	Remotes.Fx:FireAllClients("Dissolve", { model = enemy.model })
+	Debris:AddItem(enemy.model, 1.2)
 end
 
 function EnemyService.Start(world)

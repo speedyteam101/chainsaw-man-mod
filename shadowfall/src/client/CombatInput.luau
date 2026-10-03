@@ -15,6 +15,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local ClientState = require(script.Parent.ClientState)
 
 local CombatInput = {}
+CombatInput.OnMessage = nil -- function(text) set by Main to show toasts
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -27,7 +28,7 @@ local lastDodge = 0
 local dashing = false
 
 local function active(): boolean
-	return player:GetAttribute("Act") == 2 and not ClientState.MenuOpen and not ClientState.InCutscene
+	return player:GetAttribute("Act") == 2 and not ClientState.MenuOpen and not ClientState.InCutscene and not ClientState.BuildMode
 end
 
 local function characterParts()
@@ -229,6 +230,20 @@ function CombatInput.Start()
 			end
 			return Enum.ContextActionResult.Sink
 		end, keys[1], keys[2])
+	end
+	for index, itemId in { "Bandage", "Tonic", "LightBomb" } do
+		bind("ShadowfallItem" .. index, nil, function(state)
+			if state == Enum.UserInputState.Begin and active() then
+				task.spawn(function()
+					local result = Remotes.Request:InvokeServer("Use", itemId)
+					if result and not result.ok and result.message and CombatInput.OnMessage then
+						CombatInput.OnMessage(result.message)
+					end
+				end)
+				return Enum.ContextActionResult.Sink
+			end
+			return Enum.ContextActionResult.Pass
+		end, ({ Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three })[index])
 	end
 	bind("ShadowfallAwaken", "G", function(state)
 		if state == Enum.UserInputState.Begin and active() and (player:GetAttribute("Level") or 1) >= 5 then

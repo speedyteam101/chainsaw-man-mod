@@ -11,8 +11,15 @@ local ClientState = {
 	totalRolls = 0,
 	kills = 0,
 	Changed = Signal.new(),
+	inventory = {},
+	items = {},
+	rescued = {},
+	baseLevel = 1,
+	basePlaced = false,
+	duckSaved = false,
 	MenuOpen = false,
 	InCutscene = false,
+	BuildMode = false,
 }
 
 function ClientState.Apply(snapshot)

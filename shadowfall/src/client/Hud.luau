@@ -9,6 +9,8 @@ local RunService = game:GetService("RunService")
 
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local Powers = require(ReplicatedStorage.Shared.Powers)
+local Materials = require(ReplicatedStorage.Shared.Materials)
+local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Ui = require(script.Parent.Ui)
 local Audio = require(script.Parent.Audio)
@@ -21,7 +23,8 @@ local T = Ui.Theme
 local player = Players.LocalPlayer
 
 local gui
-local healthFill, healthText, levelText, powerText, rarityText, essenceText, ascendPill
+local healthFill, healthText, levelText, powerText, rarityText, essenceText, ascendPill, sanityFill
+local gatherFeed, itemSlots = nil, {}
 local slots = {} -- [slot] = { frame, cover, timer, lock, name }
 local cooldownEnds = {}
 local bossFrame, bossName, bossFill
@@ -43,7 +46,7 @@ local function buildStatus()
 	local card = Ui.new("Frame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.new(0, 20, 1, -20),
-		Size = UDim2.new(0, 300, 0, 104),
+		Size = UDim2.new(0, 300, 0, 124),
 		BackgroundColor3 = T.Panel,
 		BackgroundTransparency = 0.15,
 		Parent = gui,
@@ -57,6 +60,9 @@ local function buildStatus()
 	rarityText = Ui.label("", { Position = UDim2.new(0, 66, 0, 26), Size = UDim2.new(1, -66, 0, 16), TextSize = 13, Font = T.Bold, Parent = card })
 	essenceText = Ui.label("", { Position = UDim2.new(0, 66, 0, 42), Size = UDim2.new(1, -66, 0, 16), TextSize = 13, Font = T.Bold, TextColor3 = Color3.fromRGB(190, 160, 255), Parent = card })
 
+	local sanityBack = Ui.new("Frame", { Position = UDim2.new(0, 0, 1, -36), Size = UDim2.new(1, 0, 0, 10), BackgroundColor3 = Color3.fromRGB(24, 16, 34), Parent = card }, { Ui.corner(5) })
+	sanityFill = Ui.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(170, 130, 255), Parent = sanityBack }, { Ui.corner(5) })
+	Ui.label("SANITY", { Position = UDim2.new(1, -60, 0, -1), Size = UDim2.new(0, 56, 1, 2), TextSize = 9, Font = T.Bold, TextColor3 = Color3.fromRGB(230, 220, 255), TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 2, Parent = sanityBack })
 	local barBack = Ui.new("Frame", { Position = UDim2.new(0, 0, 1, -18), Size = UDim2.new(1, 0, 0, 18), BackgroundColor3 = Color3.fromRGB(30, 14, 18), Parent = card }, { Ui.corner(6) })
 	healthFill = Ui.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(220, 60, 70), Parent = barBack }, {
 		Ui.corner(6),
@@ -66,7 +72,7 @@ local function buildStatus()
 
 	ascendPill = Ui.button("FEAT EARNED - ASCEND  [M]", {
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 20, 1, -132),
+		Position = UDim2.new(0, 20, 1, -152),
 		Size = UDim2.new(0, 300, 0, 34),
 		BackgroundColor3 = Color3.fromRGB(60, 44, 10),
 		TextColor3 = T.Gold,
@@ -140,6 +146,83 @@ local function refreshStatus()
 	essenceText.Text = string.format("%d Essence", player:GetAttribute("Essence") or 0)
 	ascendPill.Visible = player:GetAttribute("CanAscend") == true
 	refreshMoves()
+end
+
+local function buildItems()
+	local bar = Ui.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -114),
+		Size = UDim2.new(0, 3 * 120 + 2 * 6, 0, 30),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	}, { Ui.list(6, Enum.FillDirection.Horizontal, Enum.HorizontalAlignment.Center) })
+	for index, id in Recipes.Consumables do
+		local recipe = Recipes.ById[id]
+		local slot = Ui.label("", {
+			Size = UDim2.new(0, 120, 0, 30),
+			BackgroundTransparency = 0.2,
+			BackgroundColor3 = T.Panel,
+			TextSize = 13,
+			Font = T.Bold,
+			TextXAlignment = Enum.TextXAlignment.Center,
+			LayoutOrder = index,
+			Parent = bar,
+		})
+		Ui.corner(8).Parent = slot
+		itemSlots[id] = { label = slot, name = recipe.name, key = recipe.key }
+	end
+	gatherFeed = Ui.new("Frame", {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, -20, 1, -20),
+		Size = UDim2.new(0, 200, 0, 220),
+		BackgroundTransparency = 1,
+		Parent = gui,
+	}, {
+		Ui.new("UIListLayout", { Padding = UDim.new(0, 4), VerticalAlignment = Enum.VerticalAlignment.Bottom, HorizontalAlignment = Enum.HorizontalAlignment.Right, SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+end
+
+local feedEntries = {} -- [materialId] = { label, amount, token }
+local feedOrder = 0
+local function showGathered(id: string, amount: number)
+	local material = Materials.ById[id]
+	if not material then
+		return
+	end
+	local entry = feedEntries[id]
+	if not entry or not entry.label.Parent then
+		feedOrder += 1
+		entry = {
+			amount = 0,
+			token = 0,
+			label = Ui.label("", { Size = UDim2.new(1, 0, 0, 22), TextSize = 16, Font = T.Bold, TextColor3 = material.color, TextStrokeTransparency = 0.4, TextXAlignment = Enum.TextXAlignment.Right, LayoutOrder = feedOrder, Parent = gatherFeed }),
+		}
+		feedEntries[id] = entry
+	end
+	entry.amount += amount
+	entry.token += 1
+	local token = entry.token
+	entry.label.Text = string.format("+%d %s", entry.amount, material.name)
+	entry.label.TextTransparency = 0
+	task.delay(2.5, function()
+		if entry.token == token then
+			Ui.tween(entry.label, 0.5, { TextTransparency = 1, TextStrokeTransparency = 1 })
+			task.wait(0.55)
+			if entry.token == token then
+				entry.label:Destroy()
+				feedEntries[id] = nil
+			end
+		end
+	end)
+end
+
+local function refreshItems()
+	for id, slot in itemSlots do
+		local count = ClientState.items and (ClientState.items[id] or 0) or 0
+		slot.label.Text = string.format("[%s] %s  x%d", slot.key, slot.name, count)
+		slot.label.TextColor3 = count > 0 and T.Text or T.Muted
+		slot.label.Visible = count > 0
+	end
 end
 
 local function buildBanner()
@@ -328,6 +411,7 @@ local function onStep()
 		local ratio = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
 		healthFill.Size = UDim2.fromScale(ratio, 1)
 		healthText.Text = string.format("%d / %d", math.ceil(humanoid.Health), humanoid.MaxHealth)
+		sanityFill.Size = UDim2.fromScale(math.clamp((player:GetAttribute("Sanity") or 100) / 100, 0, 1), 1)
 	end
 	local now = os.clock()
 	for slot, s in slots do
@@ -363,6 +447,7 @@ function Hud.Start()
 	gui = Ui.screen("Hud", 10)
 	buildStatus()
 	buildMoveBar()
+	buildItems()
 	buildBanner()
 	buildBossBar()
 	buildToasts()
@@ -389,6 +474,12 @@ function Hud.Start()
 	Remotes.Notify.OnClientEvent:Connect(function(kind, data)
 		if kind == "State" then
 			ClientState.Apply(data)
+			refreshItems()
+		elseif kind == "Gathered" then
+			showGathered(data.id, data.amount)
+		elseif kind == "Rescued" then
+			showBanner(data.name .. " is free!", (#data.roles > 0 and table.concat(data.roles, " & ") or "Survivor") .. "  -  they'll wait for you at your base", Color3.fromRGB(220, 190, 255))
+			Hud.Toast(string.format("%s: \"%s\"", data.name, data.line), Color3.fromRGB(255, 225, 180), 7)
 		elseif kind == "Toast" then
 			Hud.Toast(data.text, data.color)
 		elseif kind == "Achievement" then
@@ -426,7 +517,7 @@ function Hud.Start()
 	end)
 
 	-- Shows when you're inside the camp's safe zone.
-	local safeLabel = Ui.label("SAFE - the fire keeps them away", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 62), Size = UDim2.new(0, 360, 0, 20), TextSize = 14, Font = T.Bold, TextColor3 = Color3.fromRGB(255, 190, 120), TextXAlignment = Enum.TextXAlignment.Center, Visible = false, Parent = gui })
+	local safeLabel = Ui.label("SAFE - shadows can't reach you here", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 62), Size = UDim2.new(0, 360, 0, 20), TextSize = 14, Font = T.Bold, TextColor3 = Color3.fromRGB(255, 190, 120), TextXAlignment = Enum.TextXAlignment.Center, Visible = false, Parent = gui })
 	local function watchSafe(character)
 		character:GetAttributeChangedSignal("Safe"):Connect(function()
 			safeLabel.Visible = character:GetAttribute("Safe") == true

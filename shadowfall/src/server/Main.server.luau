@@ -20,6 +20,15 @@ local PowerService = require(Server.PowerService)
 local AchievementService = require(Server.AchievementService)
 local Act1Director = require(Server.Act1Director)
 local ZoneService = require(Server.ZoneService)
+local InventoryService = require(Server.InventoryService)
+local DuckService = require(Server.DuckService)
+local SanityService = require(Server.SanityService)
+local GatherService = require(Server.GatherService)
+local CraftingService = require(Server.CraftingService)
+local BaseService = require(Server.BaseService)
+local RescueService = require(Server.RescueService)
+local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
+local Materials = require(ReplicatedStorage.Shared.Materials)
 
 Players.CharacterAutoLoads = false
 
@@ -32,6 +41,21 @@ AchievementService.Start()
 EnemyService.Start(world)
 Act1Director.Start(world)
 ZoneService.Start()
+DuckService.Start()
+SanityService.Start()
+GatherService.Start(world)
+BaseService.Start(world)
+RescueService.Start(world)
+
+-- Late wiring between services that would otherwise require each other in a loop.
+SanityService.BaseBonus = BaseService.SanityBonus
+CraftingService.HasStationNearby = BaseService.HasStationNearby
+CraftingService.OnCrafted = function(player: Player)
+	local data = PlayerData.Get(player)
+	if data and data.stats.crafted >= Achievements.ById.crafter.goal then
+		AchievementService.Grant(player, "crafter")
+	end
+end
 PlayerData.StartAutosave()
 
 -- Spawning ---------------------------------------------------------------------------------
@@ -63,6 +87,8 @@ local function onCharacterAdded(player: Player, character: Model)
 	state.cooldowns = {}
 	state.awakenedUntil = 0
 	state.inSafeZone = false
+	SanityService.OnCharacter(player)
+	task.spawn(DuckService.OnCharacter, player, character)
 
 	if data.act == 1 then
 		player.CameraMode = Enum.CameraMode.LockFirstPerson
@@ -81,7 +107,8 @@ local function onCharacterAdded(player: Player, character: Model)
 		humanoid.MaxHealth = Config.Act2.BaseMaxHealth + (data.level - 1) * Config.Act2.HealthPerLevel
 		humanoid.Health = humanoid.MaxHealth
 		humanoid.WalkSpeed = Config.Act2.WalkSpeed
-		task.spawn(placeCharacter, character, ZoneService.HubSpawn())
+		task.spawn(placeCharacter, character, BaseService.RespawnCFrame(player) or ZoneService.HubSpawn())
+		BaseService.Load(player)
 	end
 
 	humanoid.Died:Connect(function()
@@ -160,6 +187,8 @@ local function devCommand(player: Player, command)
 		if data.act == 1 then
 			PowerService.AwakeningRoll(player)
 			data.act = 2
+			data.duckSaved = true
+			data.act1Stage = 4
 			AchievementService.Grant(player, "awakened")
 			PlayerData.Sync(player)
 			PlayerData.Respawn(player)
@@ -169,13 +198,29 @@ local function devCommand(player: Player, command)
 	elseif command == "Essence" then
 		data.essence += 1000
 		PlayerData.Sync(player)
+	elseif command == "Materials" then
+		for _, material in Materials.List do
+			InventoryService.Add(player, material.id, 60, false)
+		end
+	elseif command == "RescueAll" then
+		for _, person in Townsfolk.List do
+			data.rescued[person.id] = true
+		end
+		BaseService.RefreshTownsfolk(player)
+		PlayerData.Sync(player)
 	elseif command == "Reset" then
+		BaseService.Unload(player)
+		DuckService.Remove(player)
 		for key in table.clone(data) do
 			data[key] = nil
 		end
 		data.version, data.act, data.act1Stage, data.level, data.essence, data.pity, data.totalRolls = 1, 1, 1, 1, 0, 0, 0
 		data.achievements = {}
-		data.stats = { kills = 0, parries = 0, perfectDodges = 0, bruteClean = 0 }
+		data.act1Stage = 0
+		data.duckSaved = false
+		data.stats = { kills = 0, parries = 0, perfectDodges = 0, bruteClean = 0, crafted = 0, built = 0 }
+		data.inventory, data.items, data.rescued = {}, {}, {}
+		data.base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} }
 		PlayerData.Sync(player)
 		PlayerData.Respawn(player)
 	end
@@ -197,6 +242,21 @@ Remotes.Request.OnServerInvoke = function(player: Player, request, arg)
 	elseif request == "State" then
 		PlayerData.Sync(player)
 		return { ok = true }
+	elseif request == "Craft" then
+		return CraftingService.Craft(player, tostring(arg))
+	elseif request == "Use" then
+		return CraftingService.Use(player, tostring(arg))
+	elseif request == "PlaceCrystal" then
+		return BaseService.PlaceCrystal(player, arg)
+	elseif request == "PlaceStructure" then
+		if type(arg) ~= "table" then
+			return { ok = false }
+		end
+		return BaseService.PlaceStructure(player, arg.id, arg.position, arg.rotation)
+	elseif request == "UpgradeBase" then
+		return BaseService.Upgrade(player)
+	elseif request == "AbandonBase" then
+		return BaseService.Abandon(player)
 	elseif request == "Dev" then
 		return devCommand(player, arg)
 	end

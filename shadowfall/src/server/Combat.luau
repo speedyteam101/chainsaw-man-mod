@@ -10,6 +10,7 @@ local Powers = require(ReplicatedStorage.Shared.Powers)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Registry = require(script.Parent.Registry)
 local PlayerData = require(script.Parent.PlayerData)
+local InventoryService = require(script.Parent.InventoryService)
 
 local Combat = {}
 
@@ -83,6 +84,9 @@ function Combat.DamageMultiplier(player: Player): number
 	end
 	if now < state.awakenedUntil then
 		mult *= C.AwakeningDamage
+	end
+	if InventoryService.HasItem(player, "Charm") then
+		mult *= 1.1
 	end
 	return mult
 end
@@ -305,6 +309,9 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 	end
 
 	amount *= passive(player).defense or 1
+	if InventoryService.HasItem(player, "Coat") then
+		amount *= 0.85
+	end
 	amount = math.max(1, math.floor(amount + 0.5))
 	humanoid.Health -= amount
 	state.lastDamaged = now
@@ -349,6 +356,7 @@ function Combat.M1(player: Player, aim: Vector3?)
 	Remotes.Fx:FireAllClients("Swing", { character = character, combo = state.combo, color = color })
 
 	local hits = Combat.EnemiesInSphere(center, C.M1Range / 2 + 0.5)
+	Registry.M1Swing:Fire(player, center, C.M1Range / 2 + 0.5)
 	local effects = {}
 	if finisher then
 		effects.knockback = 55

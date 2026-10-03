@@ -10,11 +10,20 @@ pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 end)
 
-for _, name in { "CameraFx", "Atmosphere", "ShadowAnimator", "Fx", "Horror", "Hud", "Menu", "CombatInput" } do
+for _, name in { "CameraFx", "Atmosphere", "ShadowAnimator", "Fx", "Horror", "SanityFx", "DuckClient", "Hud", "BuildMode", "Menu", "CombatInput" } do
 	local ok, err = pcall(function()
 		require(Client:WaitForChild(name)).Start()
 	end)
 	if not ok then
 		warn("[Shadowfall] failed to start", name, err)
 	end
+end
+
+-- Messages from build mode and item use show up as HUD toasts.
+local Hud = require(Client.Hud)
+require(Client.BuildMode).OnMessage = function(text, color)
+	Hud.Toast(text, color, 3)
+end
+require(Client.CombatInput).OnMessage = function(text)
+	Hud.Toast(text, nil, 2)
 end

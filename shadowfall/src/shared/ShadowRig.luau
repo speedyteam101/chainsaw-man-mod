@@ -21,6 +21,7 @@ local function part(name: string, size: Vector3, parent: Instance): Part
 	p.Material = Enum.Material.Neon
 	p.CanCollide = false
 	p.CanTouch = false
+	p.CanQuery = false
 	p.Massless = true
 	p.TopSurface = Enum.SurfaceType.Smooth
 	p.BottomSurface = Enum.SurfaceType.Smooth
@@ -88,6 +89,8 @@ export type RigOptions = {
 	eyeColor: Color3?,
 	armLength: number?, -- 1 = classic R6 arms; stalkers get longer arms
 	smokeRate: number?,
+	tendrils: number?, -- smoke tendrils trailing from the back (0-5)
+	eyeLight: boolean?, -- eyes cast a faint light (stalkers, bosses)
 	antlers: boolean?,
 	crown: boolean?,
 	manyEyes: boolean?,
@@ -104,6 +107,7 @@ function ShadowRig.Build(options: RigOptions): Model
 	local root = part("HumanoidRootPart", Vector3.new(2, 2, 1) * s, model)
 	root.Transparency = 1
 	root.CanCollide = true
+	root.CanQuery = true
 	root.Massless = false
 	model.PrimaryPart = root
 
@@ -172,6 +176,106 @@ function ShadowRig.Build(options: RigOptions): Model
 			spike.Color = Color3.fromRGB(60, 0, 10)
 			weld(head, spike, CFrame.new(math.cos(angle) * 0.85 * s, 0.95 * s, math.sin(angle) * 0.45 * s))
 		end
+	end
+
+	-- Detail: the body is only barely holding together.
+	local veinColor = eyeColor:Lerp(Color3.new(0, 0, 0), 0.55)
+
+	-- Cracks of dim light running across the torso, arms and face (the client pulses them).
+	local cracks = {
+		{ torso, Vector3.new(0.12, 1.3, 0.04), CFrame.new(-0.35, 0.1, -0.51) * CFrame.Angles(0, 0, 0.35) },
+		{ torso, Vector3.new(0.1, 0.9, 0.04), CFrame.new(0.4, -0.3, -0.51) * CFrame.Angles(0, 0, -0.5) },
+		{ torso, Vector3.new(0.6, 0.08, 0.04), CFrame.new(0.15, 0.55, -0.51) * CFrame.Angles(0, 0, 0.2) },
+		{ head, Vector3.new(0.08, 0.5, 0.04), CFrame.new(0.55, 0.25, -0.51) * CFrame.Angles(0, 0, 0.4) },
+		{ torso, Vector3.new(0.1, 1.2, 0.04), CFrame.new(0.2, 0, 0.51) * CFrame.Angles(0, 0, -0.3) },
+	}
+	for _, crack in cracks do
+		local v = part("Vein", crack[2] * s, model)
+		v.Color = veinColor
+		local base = crack[3]
+		weld(crack[1], v, CFrame.new(base.Position * s) * base.Rotation)
+	end
+
+	-- A mouth that splits open when it attacks (hidden until then; the client shows it).
+	for index, x in { -0.3, 0, 0.3 } do
+		local tooth = part("Mouth", Vector3.new(0.26, 0.1 + (index == 2 and 0.08 or 0), 0.06) * s, model)
+		tooth.Color = Color3.fromRGB(120, 0, 10)
+		tooth.Transparency = 1
+		weld(head, tooth, CFrame.new(Vector3.new(x, -0.28, -0.51) * s) * CFrame.Angles(0, 0, (index - 2) * 0.25))
+	end
+
+	-- A pool of darkness under its feet.
+	local pool = part("Pool", Vector3.new(0.1, 4.2, 4.2) * s, model)
+	pool.Shape = Enum.PartType.Cylinder
+	pool.Transparency = 0.35
+	weld(root, pool, CFrame.new(0, -3 * s + 0.06, 0) * CFrame.Angles(0, 0, math.pi / 2))
+
+	-- Smoke tendrils trailing from the back, jointed so the client can make them sway.
+	local tendrilCount = options.tendrils or 3
+	local anchors = { Vector3.new(-0.55, 0.6, 0.5), Vector3.new(0.55, 0.6, 0.5), Vector3.new(0, -0.2, 0.5), Vector3.new(-0.3, 0.9, 0.5), Vector3.new(0.3, -0.6, 0.5) }
+	for t = 1, math.min(tendrilCount, #anchors) do
+		local previous: BasePart = torso
+		local attach = CFrame.new(anchors[t] * s) * CFrame.Angles(math.rad(-15 + t * 6), math.rad((t % 2 == 0 and 1 or -1) * 12), 0)
+		for segment = 1, 3 do
+			local thickness = (0.42 - segment * 0.09) * s
+			local length = (1.5 - segment * 0.2) * s
+			local seg = part("Tendril", Vector3.new(thickness, thickness, length), model)
+			motor("Tendril" .. t .. "_" .. segment, previous, seg, attach, CFrame.new(0, 0, -length / 2))
+			previous = seg
+			attach = CFrame.new(0, 0, length / 2)
+		end
+	end
+
+	-- Smoke trails off the head and hands while it moves.
+	local function trail(target: BasePart, a: Vector3, b: Vector3, width: number)
+		local a0 = Instance.new("Attachment")
+		a0.Position = a
+		a0.Parent = target
+		local a1 = Instance.new("Attachment")
+		a1.Position = b
+		a1.Parent = target
+		local t = Instance.new("Trail")
+		t.Attachment0 = a0
+		t.Attachment1 = a1
+		t.Color = ColorSequence.new(Color3.new(0, 0, 0))
+		t.LightInfluence = 0
+		t.Transparency = NumberSequence.new(0.35, 1)
+		t.Lifetime = 0.45
+		t.WidthScale = NumberSequence.new(1, 0.2)
+		t.MinLength = 0.05
+		t.Parent = target
+		return t
+	end
+	trail(head, Vector3.new(0, 0.45, 0) * s, Vector3.new(0, -0.45, 0) * s, 1)
+	for _, arm in { rightArm, leftArm } do
+		local tip = -(armLength - 0.15) * s
+		trail(arm, Vector3.new(0, tip, 0.4 * s), Vector3.new(0, tip, -0.4 * s), 1)
+		-- Smoke dripping off the fingertips.
+		local drip = Instance.new("ParticleEmitter")
+		drip.Name = "Drip"
+		drip.Texture = SMOKE_TEXTURE
+		drip.Color = ColorSequence.new(Color3.new(0, 0, 0))
+		drip.LightInfluence = 0
+		drip.Size = NumberSequence.new(0.35 * s, 0.05)
+		drip.Transparency = NumberSequence.new(0.2, 1)
+		drip.Lifetime = NumberRange.new(0.5, 0.9)
+		drip.Rate = 5
+		drip.Speed = NumberRange.new(0, 0.5)
+		drip.Acceleration = Vector3.new(0, -28, 0)
+		local emitAt = Instance.new("Attachment")
+		emitAt.Position = Vector3.new(0, tip, 0)
+		emitAt.Parent = arm
+		drip.Parent = emitAt
+	end
+
+	if options.eyeLight then
+		local glow = Instance.new("PointLight")
+		glow.Name = "EyeGlow"
+		glow.Color = eyeColor
+		glow.Range = 7 * s
+		glow.Brightness = 1.2
+		glow.Shadows = false
+		glow.Parent = head
 	end
 
 	addSmoke(torso, s, options.smokeRate or 14)

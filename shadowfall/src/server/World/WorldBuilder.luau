@@ -82,7 +82,10 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 				local cf = CFrame.lookAt(position, position + look)
 				if rng:NextNumber() < 0.14 and not options.noEmptyLots then
 					-- Empty lot: a dead tree and a broken fence.
-					B.tree(parent, position, rng, true)
+					local tree = B.tree(parent, position + Vector3.new(4, 0, 4), rng, true)
+					if options.nodes then
+						table.insert(options.nodes, { model = tree, kind = "Tree" })
+					end
 					B.fence(parent, position + Vector3.new(-9, 0, -9), position + Vector3.new(9, 0, -9))
 				else
 					local model = B.house(parent, cf, rng, { litWindows = options.litWindows, broken = rng:NextNumber() < 0.25 })
@@ -115,7 +118,10 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 		local x, z = if alongX then along else line + rng:NextNumber(-5, 5), if alongX then line + rng:NextNumber(-5, 5) else along
 		if not isReserved(reserved, x, z, 6) then
 			local yaw = (alongX and math.pi / 2 or 0) + rng:NextNumber(-0.5, 0.5) + (rng:NextNumber() < 0.5 and math.pi or 0)
-			B.car(parent, CFrame.new(origin + Vector3.new(x, 0, z)) * CFrame.Angles(0, yaw, 0), rng)
+			local car = B.car(parent, CFrame.new(origin + Vector3.new(x, 0, z)) * CFrame.Angles(0, yaw, 0), rng)
+			if options.nodes then
+				table.insert(options.nodes, { model = car, kind = "Car" })
+			end
 		end
 	end
 
@@ -416,23 +422,85 @@ local function buildAct1(map: Instance, rng: Random, info)
 		cars = 12,
 	})
 
-	-- Player's house: a hollow house with a bed and a table. The player wakes up inside.
+	-- Your house. You wake up in bed; your parents are on the living-room floor, and a shadow
+	-- has Biscuit the call duck cornered at the back. Local axes: -Z is the front door.
 	local houseCf = CFrame.lookAt(origin + Vector3.new(playerHouseAt.X, 0, playerHouseAt.Y), origin + Vector3.new(playerHouseAt.X, 0, 0))
-	local _, size = B.house(folder, houseCf, rng, { width = 22, depth = 20, height = 12, litWindows = 0, name = "YourHouse" })
-	B.block(folder, { name = "Bed", size = Vector3.new(5, 1.6, 8), cf = houseCf * CFrame.new(-6, 1.4, 4), color = Color3.fromRGB(110, 40, 40), material = Enum.Material.Fabric })
-	B.block(folder, { name = "Pillow", size = Vector3.new(4, 0.6, 1.6), cf = houseCf * CFrame.new(-6, 2.4, 7.2), color = Color3.fromRGB(220, 220, 210), material = Enum.Material.Fabric })
-	B.block(folder, { name = "Table", size = Vector3.new(5, 0.4, 3), cf = houseCf * CFrame.new(6, 3, 4), color = Color3.fromRGB(70, 50, 36), material = Enum.Material.Wood })
-	local note = B.block(folder, { name = "Note", size = Vector3.new(1, 0.05, 1.3), cf = houseCf * CFrame.new(6, 3.25, 4), color = Color3.fromRGB(240, 235, 210), material = Enum.Material.SmoothPlastic, collide = false })
-	info.act1.notePrompt = B.prompt(note, "Read", "Note", 0, 8)
-	local lampInside = B.block(folder, { name = "DeadBulb", size = Vector3.new(1, 1, 1), cf = houseCf * CFrame.new(0, 11.2, 0), color = Color3.fromRGB(255, 170, 90), material = Enum.Material.Neon, collide = false, shape = Enum.PartType.Ball })
+	local _, size = B.house(folder, houseCf, rng, { width = 30, depth = 24, height = 12, litWindows = 0, name = "YourHouse" })
+	local floorY = 0.6
+	local function at(x: number, y: number, z: number)
+		return houseCf * CFrame.new(x, floorY + y, z)
+	end
+	B.block(folder, { name = "Bed", size = Vector3.new(5, 1.6, 8), cf = at(-10, 0.8, 7), color = Color3.fromRGB(70, 60, 110), material = Enum.Material.Fabric })
+	B.block(folder, { name = "Pillow", size = Vector3.new(4, 0.6, 1.6), cf = at(-10, 1.9, 10.2), color = Color3.fromRGB(220, 220, 210), material = Enum.Material.Fabric })
+	B.block(folder, { name = "Blanket", size = Vector3.new(5.2, 0.3, 4.5), cf = at(-10, 1.75, 5) * CFrame.Angles(0, 0, 0.05), color = Color3.fromRGB(90, 120, 160), material = Enum.Material.Fabric, collide = false })
+	B.block(folder, { name = "Rug", size = Vector3.new(12, 0.1, 8), cf = at(4, 0.05, -1), color = Color3.fromRGB(110, 50, 40), material = Enum.Material.Fabric, collide = false })
+	B.block(folder, { name = "Table", size = Vector3.new(5, 0.4, 3), cf = at(10, 2.4, -8), color = Color3.fromRGB(70, 50, 36), material = Enum.Material.Wood })
+	for _, leg in { Vector3.new(-2.2, 1.2, -1.2), Vector3.new(2.2, 1.2, -1.2), Vector3.new(-2.2, 1.2, 1.2), Vector3.new(2.2, 1.2, 1.2) } do
+		B.block(folder, { name = "TableLeg", size = Vector3.new(0.3, 2.4, 0.3), cf = at(10 + leg.X, leg.Y, -8 + leg.Z), color = Color3.fromRGB(60, 42, 30), material = Enum.Material.Wood })
+	end
+	local note = B.block(folder, { name = "Note", size = Vector3.new(1, 0.05, 1.3), cf = at(10, 2.65, -8), color = Color3.fromRGB(240, 235, 210), material = Enum.Material.SmoothPlastic, collide = false })
+	info.act1.notePrompt = B.prompt(note, "Read", "Dad's note", 0, 8)
+	-- Signs of a struggle
+	B.block(folder, { name = "ToppledChair", size = Vector3.new(2, 0.3, 2), cf = at(5, 0.6, -6) * CFrame.Angles(math.rad(80), 0.4, 0), color = Color3.fromRGB(80, 56, 40), material = Enum.Material.Wood })
+	B.block(folder, { name = "ChairBack", size = Vector3.new(2, 2.4, 0.3), cf = at(5.4, 0.4, -7.4) * CFrame.Angles(0, 0.4, math.rad(85)), color = Color3.fromRGB(80, 56, 40), material = Enum.Material.Wood })
+	B.block(folder, { name = "BrokenLamp", size = Vector3.new(0.4, 4, 0.4), cf = at(-3, 0.3, -4) * CFrame.Angles(0, 0.8, math.rad(88)), color = Color3.fromRGB(40, 40, 44), material = Enum.Material.Metal })
+	B.block(folder, { name = "LampShade", size = Vector3.new(1.6, 1.2, 1.6), cf = at(-4.8, 0.6, -5.6) * CFrame.Angles(0.4, 0, 1.2), color = Color3.fromRGB(200, 180, 140), material = Enum.Material.Fabric })
+	B.block(folder, { name = "Picture", size = Vector3.new(3, 2.2, 0.15), cf = at(-6, 6, 10.9), color = Color3.fromRGB(150, 130, 100), material = Enum.Material.SmoothPlastic, collide = false })
+	B.block(folder, { name = "DuckBowl", size = Vector3.new(0.4, 1.4, 1.4), cf = at(12, 0.2, 6) * CFrame.Angles(0, 0, math.pi / 2), color = Color3.fromRGB(240, 200, 70), material = Enum.Material.SmoothPlastic, shape = Enum.PartType.Cylinder })
+
+	-- Mum and Dad, lying where they fell. Dark scorch-like stains where the shadows touched them.
+	local function lyingPerson(cf: CFrame, shirt: Color3, pants: Color3, skin: Color3, hair: Color3)
+		local person = Instance.new("Model")
+		person.Name = "Parent"
+		local lay = cf * CFrame.new(0, 0.5, 0) * CFrame.Angles(math.rad(90), 0, 0)
+		local function limb(name: string, size: Vector3, standing: CFrame, color: Color3)
+			B.block(person, { name = name, size = size, cf = lay * standing, color = color, material = Enum.Material.SmoothPlastic, collide = false })
+		end
+		limb("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), shirt)
+		limb("Head", Vector3.new(2, 1, 1), CFrame.new(0, 4.5, 0), skin)
+		limb("Hair", Vector3.new(2.05, 0.4, 1.05), CFrame.new(0, 5.05, 0), hair)
+		limb("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.7, 3.2, 0) * CFrame.Angles(0, 0, math.rad(-20)), skin)
+		limb("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.6, 3.4, 0) * CFrame.Angles(0, 0, math.rad(35)), skin)
+		limb("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, 1, 0), pants)
+		limb("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.6, 1, 0) * CFrame.Angles(0, 0, math.rad(8)), pants)
+		for _, x in { -0.4, 0.4 } do
+			B.block(person, { name = "ClosedEye", size = Vector3.new(0.32, 0.06, 0.05), cf = lay * CFrame.new(x, 4.6, -0.52), color = Color3.fromRGB(30, 24, 22), material = Enum.Material.SmoothPlastic, collide = false })
+		end
+		for i = 1, 3 do
+			B.block(person, {
+				name = "Stain",
+				size = Vector3.new(0.08, 3 + i, 2.4 + i * 0.6),
+				cf = cf * CFrame.new((i - 2) * 0.8, 0.04, 1.2 + (i - 2) * 1.4) * CFrame.Angles(0, i * 0.7, math.pi / 2),
+				color = Color3.new(0, 0, 0),
+				material = Enum.Material.SmoothPlastic,
+				transparency = 0.25 + i * 0.1,
+				collide = false,
+				shape = Enum.PartType.Cylinder,
+			})
+		end
+		person.Parent = folder
+	end
+	lyingPerson(at(1, 0, -3) * CFrame.Angles(0, math.rad(70), 0), Color3.fromRGB(150, 70, 90), Color3.fromRGB(50, 50, 70), Color3.fromRGB(240, 200, 170), Color3.fromRGB(90, 50, 30))
+	lyingPerson(at(7, 0, 1) * CFrame.Angles(0, math.rad(-150), 0), Color3.fromRGB(60, 90, 130), Color3.fromRGB(60, 50, 40), Color3.fromRGB(225, 185, 150), Color3.fromRGB(40, 32, 28))
+
+	local lampInside = B.block(folder, { name = "DeadBulb", size = Vector3.new(1, 1, 1), cf = at(2, 10.4, 0), color = Color3.fromRGB(255, 170, 90), material = Enum.Material.Neon, collide = false, shape = Enum.PartType.Ball })
 	local insideLight = Instance.new("PointLight")
-	insideLight.Range = 14
-	insideLight.Brightness = 0.8
+	insideLight.Range = 18
+	insideLight.Brightness = 0.7
 	insideLight.Color = Color3.fromRGB(255, 170, 90)
 	insideLight.Parent = lampInside
 	CollectionService:AddTag(lampInside, "FlickerLight")
-	info.act1.houseSpawn = houseCf * CFrame.new(0, 3.5, 3)
+
+	info.act1.houseSpawn = at(-6, 3, 6) * CFrame.Angles(0, math.rad(60), 0)
 	info.act1.houseExit = (houseCf * CFrame.new(0, 0, -size.Z / 2 - 5)).Position
+	local duckSpot = at(12.3, 1.05, 9.3)
+	info.act1.duckCorner = CFrame.lookAt(duckSpot.Position, at(6, 1.05, 4).Position)
+	local intruderAt = at(5.5, 3.3, 4).Position
+	info.act1.intruderStart = CFrame.lookAt(intruderAt, Vector3.new(duckSpot.Position.X, intruderAt.Y, duckSpot.Position.Z))
+	-- Cutscene camera shots (positions + look-at targets)
+	info.act1.bedView = { from = at(-10, 2.9, 9.4).Position, to = at(-10, 12, 8.6).Position }
+	info.act1.parentsView = { from = at(-5, 6.5, 7).Position, to = at(4, 0.6, -1).Position }
+	info.act1.duckView = { from = at(3, 4.5, -1).Position, to = at(11, 1.5, 8).Position }
 
 	-- Town square: a dead fountain and benches.
 	local square = origin
@@ -508,14 +576,15 @@ local function buildHub(map: Instance, rng: Random, info)
 		litWindows = 0.25,
 		lampChance = 0.85,
 		lampStrength = 0.9,
-		cars = 14,
+		cars = 18,
+		nodes = info.nodes,
 	})
 	buildCamp(folder, Vector3.zero, rng, info)
 	buildChurchyard(folder, Areas.ById.town.boss.arena, rng)
 	B.debrisField(folder, Vector3.zero, 480, 50, rng)
 end
 
-local function buildWoods(map: Instance, rng: Random)
+local function buildWoods(map: Instance, rng: Random, info)
 	local area = Areas.ById.woods
 	local folder = B.folder(map, "WhisperingWoods")
 	local c = area.center
@@ -539,7 +608,8 @@ local function buildWoods(map: Instance, rng: Random)
 		end
 		if ok then
 			table.insert(placed, p)
-			B.tree(folder, p, rng, rng:NextNumber() < 0.3)
+			local tree = B.tree(folder, p, rng, rng:NextNumber() < 0.3)
+			table.insert(info.nodes, { model = tree, kind = "Tree" })
 		end
 	end
 	-- Ruined cabins
@@ -568,7 +638,7 @@ local function buildWoods(map: Instance, rng: Random)
 	B.debrisField(folder, c, 420, 35, rng)
 end
 
-local function buildRift(map: Instance, rng: Random)
+local function buildRift(map: Instance, rng: Random, info)
 	local area = Areas.ById.rift
 	local folder = B.folder(map, "TheRift")
 	local islands = {
@@ -583,7 +653,10 @@ local function buildRift(map: Instance, rng: Random)
 		{ p = Vector3.new(1012, 0, 84), r = 20 },
 	}
 	for _, island in islands do
-		B.island(folder, island.p, island.r, rng)
+		local _, crystals = B.island(folder, island.p, island.r, rng)
+		for _, crystal in crystals do
+			table.insert(info.nodes, { model = crystal, kind = "Crystal" })
+		end
 	end
 	local links = { { 1, 2 }, { 1, 3 }, { 2, 4 }, { 3, 5 }, { 4, 6 }, { 5, 6 }, { 2, 6 }, { 3, 6 }, { 6, 7 }, { 4, 8 }, { 8, 7 }, { 5, 9 }, { 9, 7 } }
 	for _, link in links do
@@ -729,11 +802,11 @@ function WorldBuilder.Build()
 	map = B.folder(workspace, "Map")
 	B.Floors = B.folder(map, "Floors")
 
-	local info = { act1 = {} }
+	local info = { act1 = {}, nodes = {} }
 	buildAct1(map, rng, info)
 	buildHub(map, rng, info)
-	buildWoods(map, rng)
-	buildRift(map, rng)
+	buildWoods(map, rng, info)
+	buildRift(map, rng, info)
 	buildCathedral(map, rng)
 	buildHeart(map, rng)
 	buildSky(map)

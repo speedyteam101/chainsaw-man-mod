@@ -491,6 +491,7 @@ function B.island(parent: Instance, center: Vector3, radius: number, rng: Random
 			shape = Enum.PartType.Cylinder,
 		})
 	end
+	local crystals = {}
 	for _ = 1, math.floor(radius / 6) do
 		local a = rng:NextNumber(0, math.pi * 2)
 		local d = rng:NextNumber(radius * 0.55, radius * 0.9)
@@ -510,9 +511,10 @@ function B.island(parent: Instance, center: Vector3, radius: number, rng: Random
 			light.Brightness = 1
 			light.Parent = crystal
 		end
+		table.insert(crystals, crystal)
 	end
 	model.Parent = parent
-	return model
+	return model, crystals
 end
 
 -- A narrow plank walkway between two points (for the Rift islands).

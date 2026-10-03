@@ -10,6 +10,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
+local Registry = require(script.Parent.Registry)
 
 local ZoneService = {}
 
@@ -59,7 +60,9 @@ local function update(player: Player)
 	end
 
 	-- Camp safe zone
-	local safe = area.id == "town" and Vector2.new(position.X, position.Z).Magnitude < Config.Act2.CampRadius
+	local atCamp = area.id == "town" and Vector2.new(position.X, position.Z).Magnitude < Config.Act2.CampRadius
+	local inBarrier = Registry.InBarrier(position)
+	local safe = atCamp or inBarrier
 	if state.inSafeZone ~= safe then
 		state.inSafeZone = safe
 		character:SetAttribute("Safe", safe)
@@ -68,7 +71,7 @@ local function update(player: Player)
 	-- Regeneration out of combat (much faster at the fire)
 	local now = os.clock()
 	if humanoid.Health < humanoid.MaxHealth and (safe or now - state.lastDamaged > Config.Act2.RegenDelay) then
-		local rate = safe and 0.12 or Config.Act2.RegenPerSecond
+		local rate = atCamp and 0.12 or (inBarrier and 0.06 or Config.Act2.RegenPerSecond)
 		humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + humanoid.MaxHealth * rate * TICK)
 	end
 end

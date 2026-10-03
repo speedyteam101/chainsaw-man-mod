@@ -10,6 +10,7 @@ local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Achievements = require(ReplicatedStorage.Shared.Achievements)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 
 local PlayerData = {}
 
@@ -26,14 +27,19 @@ local function defaults()
 	return {
 		version = 1,
 		act = 1,
-		act1Stage = 1,
+		act1Stage = 0, -- 0 = the intro (save Biscuit)
+		duckSaved = false,
 		power = nil,
 		level = 1,
 		achievements = {},
 		essence = 0,
 		pity = 0,
 		totalRolls = 0,
-		stats = { kills = 0, parries = 0, perfectDodges = 0, bruteClean = 0 },
+		stats = { kills = 0, parries = 0, perfectDodges = 0, bruteClean = 0, crafted = 0, built = 0 },
+		inventory = {}, -- [materialId] = count
+		items = {}, -- [recipeId] = count (tools/gear: 1, consumables: stack)
+		rescued = {}, -- [townsfolkId] = true
+		base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} },
 	}
 end
 
@@ -116,6 +122,10 @@ local function progressOf(player: Player, data)
 		unbroken = session.noDeathStreak or 0,
 		last_light = session.noDeathStreak or 0,
 		hundred = data.stats.kills,
+		good_neighbour = Townsfolk.Count(data.rescued),
+		full_house = Townsfolk.Count(data.rescued),
+		master_builder = data.stats.built,
+		crafter = data.stats.crafted,
 	}
 end
 
@@ -141,6 +151,12 @@ function PlayerData.Sync(player: Player)
 		progress = progressOf(player, data),
 		totalRolls = data.totalRolls,
 		kills = data.stats.kills,
+		inventory = data.inventory,
+		items = data.items,
+		rescued = data.rescued,
+		baseLevel = data.base.level,
+		basePlaced = data.base.placed,
+		duckSaved = data.duckSaved,
 	})
 end
 

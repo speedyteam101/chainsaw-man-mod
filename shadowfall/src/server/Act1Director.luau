@@ -17,6 +17,7 @@ local PlayerData = require(script.Parent.PlayerData)
 local PowerService = require(script.Parent.PowerService)
 local AchievementService = require(script.Parent.AchievementService)
 local WorldBuilder = require(script.Parent.World.WorldBuilder)
+local DuckService = require(script.Parent.DuckService)
 
 local Act1Director = {}
 
@@ -30,6 +31,7 @@ local losParams = RaycastParams.new()
 losParams.FilterType = Enum.RaycastFilterType.Include
 
 local OBJECTIVES = {
+	[0] = "Save Biscuit! Hold your flashlight [F] on the shadow.",
 	[1] = "Get out of the house.",
 	[2] = "Find someone. Try the town square.",
 	[3] = "Follow the blinking light to the radio station.",
@@ -70,7 +72,9 @@ end
 function Act1Director.SpawnCFrame(player: Player): CFrame
 	local data = PlayerData.Get(player)
 	local stage = data and data.act1Stage or 1
-	if stage >= 4 then
+	if stage <= 1 then
+		return world.act1.houseSpawn
+	elseif stage >= 4 then
 		return world.act1.radioSpawn
 	elseif stage == 3 then
 		return world.act1.squareSpawn
@@ -86,7 +90,15 @@ local function setStage(player: Player, stage: number)
 	data.act1Stage = stage
 	PlayerData.Sync(player)
 	story(player, "Objective", { text = OBJECTIVES[stage], stage = stage })
-	if stage == 2 then
+	if stage == 1 then
+		story(player, "Subtitles", {
+			lines = {
+				"Biscuit... you're okay. You're okay.",
+				"Mom. Dad. I...",
+				"I can't stay here. Not with them still out there.",
+			},
+		})
+	elseif stage == 2 then
 		story(player, "Subtitles", { lines = { "Hello? Is anyone out here?", "...", "Where is everyone?" } })
 	elseif stage == 3 then
 		story(player, "Subtitles", {
@@ -129,7 +141,7 @@ local function pickSpawnPoint(root: BasePart, look: Vector3)
 end
 
 local function spawnStalker(player: Player, state, position: Vector3, speed: number, finale: boolean?)
-	local model = ShadowRig.Build({ name = "Stalker", scale = 1.05, armLength = 1.35, eyeColor = Color3.fromRGB(245, 245, 255), smokeRate = 18 })
+	local model = ShadowRig.Build({ name = "Stalker", scale = 1.05, armLength = 1.35, eyeColor = Color3.fromRGB(245, 245, 255), smokeRate = 18, tendrils = 4, eyeLight = true })
 	model:PivotTo(CFrame.new(position + Vector3.new(0, 3.7, 0)))
 	model:SetAttribute("Owner", player.UserId)
 	CollectionService:AddTag(model, "Stalker")
@@ -190,7 +202,102 @@ local function catch(player: Player, state, stalker)
 		humanoid.Health -= A.CatchDamage
 	end
 	state.touched = true
+	Registry.SanityChange:Fire(player, -Config.Sanity.CaughtLoss)
 	story(player, "Jumpscare", {})
+end
+
+-- The intro: a shadow has Biscuit cornered in the living room ----------------------------
+
+local function clearIntruder(state)
+	if state.intruder and state.intruder.model.Parent then
+		state.intruder.model:Destroy()
+	end
+	state.intruder = nil
+end
+
+local function startIntro(player: Player, state)
+	clearIntruder(state)
+	local act1 = world.act1
+	DuckService.Place(player, act1.duckCorner, true)
+	local model = ShadowRig.Build({ name = "Intruder", scale = 1.1, armLength = 1.4, eyeColor = Color3.fromRGB(245, 245, 255), smokeRate = 20, tendrils = 5, eyeLight = true })
+	model:PivotTo(act1.intruderStart)
+	model:SetAttribute("Owner", player.UserId)
+	CollectionService:AddTag(model, "Stalker")
+	model.Parent = folder
+	pcall(function()
+		model.PrimaryPart:SetNetworkOwner(nil)
+	end)
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	humanoid.WalkSpeed = 1.2
+	state.intruder = { model = model, humanoid = humanoid, root = model.PrimaryPart, lit = 0 }
+	story(player, "Intro", {
+		duck = DuckService.Get(player).model,
+		intruder = model,
+		bedView = act1.bedView,
+		parentsView = act1.parentsView,
+		duckView = act1.duckView,
+	})
+end
+
+local function saveDuck(player: Player, state)
+	local data = PlayerData.Get(player)
+	local intruder = state.intruder
+	state.intruder = nil
+	if intruder then
+		Remotes.Fx:FireAllClients("Banish", { model = intruder.model })
+		task.delay(0.6, function()
+			intruder.model:Destroy()
+		end)
+	end
+	data.duckSaved = true
+	DuckService.SetFollowing(player)
+	AchievementService.Grant(player, "duck_parent")
+	Registry.SanityChange:Fire(player, 25)
+	local duck = DuckService.Get(player)
+	if duck then
+		Remotes.Fx:FireAllClients("Hearts", { model = duck.model })
+	end
+	story(player, "DuckSaved", {})
+	setStage(player, 1)
+	PlayerData.Save(player)
+end
+
+local function updateIntro(player: Player, state, character: Model, root: BasePart, dt: number)
+	local intruder = state.intruder
+	if not intruder or not intruder.model.Parent then
+		return
+	end
+	if isLit(state, intruder, character) then
+		intruder.humanoid.WalkSpeed = 0
+		intruder.humanoid:MoveTo(intruder.root.Position)
+		intruder.lit += dt
+		intruder.model:SetAttribute("Lit", true)
+		if intruder.lit >= A.IntruderBurnTime then
+			saveDuck(player, state)
+		end
+		return
+	end
+	intruder.model:SetAttribute("Lit", false)
+	intruder.lit = math.max(0, intruder.lit - dt * 0.4)
+	-- It creeps toward Biscuit, and turns on you if you get too close without your light.
+	local toPlayer = (root.Position - intruder.root.Position).Magnitude
+	if toPlayer < A.CatchDistance + 0.6 then
+		local _, humanoid = Combat.GetCharacter(player)
+		if humanoid then
+			humanoid.Health -= A.CatchDamage * 0.6
+		end
+		Registry.SanityChange:Fire(player, -Config.Sanity.CaughtLoss * 0.5)
+		story(player, "Jumpscare", {})
+		intruder.model:PivotTo(world.act1.intruderStart)
+		return
+	end
+	local duckPosition = world.act1.duckCorner.Position
+	if (intruder.root.Position - duckPosition).Magnitude > 3.5 then
+		intruder.humanoid.WalkSpeed = 1.2
+		intruder.humanoid:MoveTo(duckPosition)
+	else
+		intruder.humanoid:MoveTo(intruder.root.Position)
+	end
 end
 
 local function updatePlayer(player: Player, state, dt: number)
@@ -201,6 +308,15 @@ local function updatePlayer(player: Player, state, dt: number)
 		return
 	end
 	local stage = data.act1Stage
+
+	if stage == 0 then
+		if data.duckSaved then
+			setStage(player, 1)
+		else
+			updateIntro(player, state, character, root, dt)
+		end
+		return
+	end
 
 	-- Story triggers
 	if stage == 1 and (root.Position - world.act1.houseExit).Magnitude < 8 then
@@ -221,7 +337,7 @@ local function updatePlayer(player: Player, state, dt: number)
 		return
 	end
 
-	local tuning = A.Stages[math.clamp(stage, 1, 4)]
+	local tuning = A.Stages[math.clamp(stage, 0, 4)]
 	local count = 0
 	for _ in state.stalkers do
 		count += 1
@@ -375,16 +491,35 @@ function Act1Director.OnCharacter(player: Player, character: Model)
 		light.Parent = head
 	end
 	local data = PlayerData.Get(player)
-	story(player, "Objective", { text = OBJECTIVES[data and data.act1Stage or 1], stage = data and data.act1Stage or 1 })
-	if data and data.act1Stage == 1 then
-		story(player, "Subtitles", {
-			lines = {
-				"...",
-				"The clock on the wall says 12:04. Noon.",
-				"So why is it pitch black outside?",
-			},
-		})
+	local stage = data and data.act1Stage or 0
+	if stage == 0 and data and not data.duckSaved then
+		startIntro(player, state)
 	end
+	story(player, "Objective", { text = OBJECTIVES[stage], stage = stage })
+end
+
+function Act1Director.IsFlashlightOn(player: Player): boolean
+	local state = states[player]
+	return state ~= nil and state.flashlight and os.clock() - state.lastPacket < 0.6
+end
+
+function Act1Director.NearestStalkerDistance(player: Player): number
+	local state = states[player]
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not state or not root then
+		return math.huge
+	end
+	local best = math.huge
+	for stalker in state.stalkers do
+		if stalker.root.Parent then
+			best = math.min(best, (stalker.root.Position - root.Position).Magnitude)
+		end
+	end
+	if state.intruder and state.intruder.root.Parent then
+		best = math.min(best, (state.intruder.root.Position - root.Position).Magnitude)
+	end
+	return best
 end
 
 function Act1Director.Start(worldInfo)
@@ -421,7 +556,7 @@ function Act1Director.Start(worldInfo)
 	end)
 	act1.notePrompt.Triggered:Connect(function(player: Player)
 		story(player, "Note", {
-			text = "If you're reading this, DON'T go outside.\n\nThe sky went out at noon. Mrs. Hale went to see what the noise was and she came back wrong. Black all over. Smoking. Her eyes...\n\nDon't let them touch you. Light helps. I think light helps.\n\nI went to find the others. Stay here.\n\n- Dad",
+			text = "If you wake up and we're not... I'm sorry, kiddo.\n\nThe sky went out at noon. They came in under the door like smoke. Your mother tried to keep them off Biscuit.\n\nLight hurts them. Keep your flashlight on them and they freeze.\n\nTake Biscuit and get to someone. Anyone. The radio station still has power.\n\nWe love you.\n- Dad",
 		})
 	end)
 
@@ -429,6 +564,7 @@ function Act1Director.Start(worldInfo)
 		local state = states[player]
 		if state then
 			clearStalkers(state)
+			clearIntruder(state)
 			state.finale = false
 		end
 	end)
@@ -462,6 +598,7 @@ function Act1Director.Forget(player: Player)
 	local state = states[player]
 	if state then
 		clearStalkers(state)
+		clearIntruder(state)
 	end
 	states[player] = nil
 end

@@ -25,7 +25,7 @@ local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
 local gui
-local objectiveLabel, subtitleLabel, hintLabel, batteryFill, staminaFill, meters
+local objectiveLabel, subtitleLabel, hintLabel, batteryFill, staminaFill, sanityFill, meters
 local vignette = {}
 local notePanel, scareFrame, fadeFrame
 
@@ -104,7 +104,7 @@ local function buildUi()
 		Parent = gui,
 	})
 
-	meters = Ui.new("Frame", { BackgroundTransparency = 1, Position = UDim2.new(0, 28, 1, -76), Size = UDim2.new(0, 220, 0, 46), Parent = gui })
+	meters = Ui.new("Frame", { BackgroundTransparency = 1, Position = UDim2.new(0, 28, 1, -100), Size = UDim2.new(0, 220, 0, 70), Parent = gui })
 	local function meter(y: number, color: Color3, name: string)
 		local back = Ui.new("Frame", {
 			Position = UDim2.new(0, 0, 0, y),
@@ -119,6 +119,7 @@ local function buildUi()
 	end
 	batteryFill = meter(14, Color3.fromRGB(255, 235, 170), "FLASHLIGHT  [F]")
 	staminaFill = meter(38, Color3.fromRGB(170, 200, 220), "STAMINA  [SHIFT]")
+	sanityFill = meter(62, Color3.fromRGB(190, 150, 255), "SANITY")
 
 	notePanel = Ui.new("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -245,9 +246,10 @@ local function onStep(dt: number)
 		else
 			stamina = math.min(A.StaminaMax, stamina + A.StaminaRegen * dt)
 		end
-		humanoid.WalkSpeed = finaleRunning and 4 or (canSprint and A.SprintSpeed or A.WalkSpeed)
+		humanoid.WalkSpeed = if ClientState.InCutscene and not finaleRunning then 0 else (finaleRunning and 4 or (canSprint and A.SprintSpeed or A.WalkSpeed))
 	end
 	staminaFill.Size = UDim2.new(stamina / A.StaminaMax, 0, 1, 0)
+	sanityFill.Size = UDim2.new(math.clamp((player:GetAttribute("Sanity") or 100) / 100, 0, 1), 0, 1, 0)
 
 	-- Local flashlight follows the camera (the server-side one in your head is for other players).
 	if lightPart then
@@ -362,8 +364,88 @@ local function lightsBack()
 	end
 end
 
+-- The opening: waking up, finding Mum and Dad, and Biscuit in trouble ------------------------
+
+local introPlayed = false
+
+local function shot(view, time: number, style: Enum.EasingStyle?)
+	local goal = CFrame.lookAt(view.from, view.to)
+	if time <= 0 then
+		camera.CFrame = goal
+		return
+	end
+	local tween = Ui.tween(camera, time, { CFrame = goal }, style or Enum.EasingStyle.Sine, Enum.EasingDirection.InOut)
+	tween.Completed:Wait()
+end
+
+local function playIntro(payload)
+	if introPlayed then
+		showHint("Hold your flashlight [F] on the shadow to drive it away from Biscuit!")
+		return
+	end
+	introPlayed = true
+	ClientState.InCutscene = true
+	camera.CameraType = Enum.CameraType.Scriptable
+
+	-- Eyelids and blur for waking up.
+	local blur = Instance.new("BlurEffect")
+	blur.Size = 24
+	blur.Parent = game:GetService("Lighting")
+	local top = Ui.new("Frame", { Size = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, ZIndex = 45, Parent = gui })
+	local bottom = Ui.new("Frame", { Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.new(1, 0, 0.5, 0), BackgroundColor3 = Color3.new(0, 0, 0), BorderSizePixel = 0, ZIndex = 45, Parent = gui })
+	local clock = Ui.label("", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.45), Size = UDim2.new(0.6, 0, 0, 60), Font = T.Title, TextSize = 46, TextColor3 = Color3.fromRGB(200, 40, 40), TextXAlignment = Enum.TextXAlignment.Center, ZIndex = 46, Parent = gui })
+	shot(payload.bedView, 0)
+
+	Ui.typewrite(clock, "12:04 PM", 0.12)
+	task.wait(1.2)
+	Ui.tween(clock, 0.8, { TextTransparency = 1 })
+	Audio.Play("Quack", 0.9, 1.3)
+	queueLines({ "*QUACK! QUACK QUACK!*" }, Color3.fromRGB(255, 230, 150))
+	task.wait(1.4)
+	Audio.Play("Quack", 1, 1.45)
+
+	-- Open your eyes... slowly, then a blink.
+	local function lids(open: number, time: number)
+		Ui.tween(top, time, { Size = UDim2.new(1, 0, 0.5 - open * 0.5, 0) })
+		local t = Ui.tween(bottom, time, { Position = UDim2.new(0, 0, 0.5 + open * 0.5, 0), Size = UDim2.new(1, 0, 0.5 - open * 0.5, 0) })
+		t.Completed:Wait()
+	end
+	lids(0.35, 1.2)
+	lids(0, 0.25)
+	lids(1, 0.9)
+	Ui.tween(blur, 2.5, { Size = 0 })
+	queueLines({ "Why is it so dark? It's noon...", "Biscuit? What's wrong?" })
+	task.wait(2.6)
+
+	shot(payload.parentsView, 2.6)
+	queueLines({ "...Mum? Dad?", "No. No, no, no..." }, Color3.fromRGB(255, 210, 200))
+	shake = 0.4
+	task.wait(4)
+
+	Audio.Play("Quack", 1, 1.6)
+	shot(payload.duckView, 1.4, Enum.EasingStyle.Quad)
+	shake = 1.2
+	queueLines({ "BISCUIT!" }, Color3.fromRGB(255, 120, 120))
+	task.wait(2.2)
+
+	blur:Destroy()
+	top:Destroy()
+	bottom:Destroy()
+	clock:Destroy()
+	camera.CameraType = Enum.CameraType.Custom
+	ClientState.InCutscene = false
+	showHint("Press F for your flashlight. Hold the light on the shadow to drive it away from Biscuit!")
+end
+
 local function onStory(kind: string, payload)
-	if kind == "Objective" then
+	if kind == "Intro" then
+		playIntro(payload)
+	elseif kind == "DuckSaved" then
+		Audio.Play("Quack", 1, 1.2)
+		task.delay(5, function()
+			showHint("Biscuit follows you now. Staying close to Biscuit calms you and slowly heals you.")
+		end)
+	elseif kind == "Objective" then
 		setObjective(payload.text)
 	elseif kind == "Subtitles" then
 		queueLines(payload.lines)

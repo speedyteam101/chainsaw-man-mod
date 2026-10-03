@@ -515,6 +515,76 @@ function handlers.Banish(d)
 	dissolve(d.model, Color3.new(1, 1, 1), 0.5)
 end
 
+function handlers.Hearts(d)
+	local head = d.model and d.model:FindFirstChild("Head")
+	if not head then
+		return
+	end
+	for i = 1, d.small and 1 or 4 do
+		task.delay(i * 0.12, function()
+			floatingText(head.Position + Vector3.new(0, 1, 0), "\u{2665}", Color3.fromRGB(255, 120, 160), d.small and 18 or 26, 4)
+		end)
+	end
+	if not d.small then
+		sphere(head.Position, 2, Color3.fromRGB(255, 170, 200), 0.4, 0.4)
+		Audio.Play("Quack", 0.7, 1.4, head.Position)
+	end
+end
+
+function handlers.Gather(d)
+	for _ = 1, 4 do
+		local chip = part({
+			Size = Vector3.one * rng:NextNumber(0.3, 0.6),
+			CFrame = CFrame.new(d.position + rng:NextUnitVector() * 1.5),
+			Color = d.color,
+			Material = Enum.Material.SmoothPlastic,
+			Transparency = 0,
+		})
+		Ui.tween(chip, 0.4, { CFrame = chip.CFrame + Vector3.new(rng:NextNumber(-2, 2), rng:NextNumber(1, 3), rng:NextNumber(-2, 2)) })
+		fade(chip, 0.45)
+	end
+	Audio.Play("Gather", 0.5, rng:NextNumber(0.9, 1.15), d.position)
+	CameraFx.ShakeAt(d.position, 0.08)
+end
+
+function handlers.GatherBreak(d)
+	sphere(d.position, 4, d.color, 0.35, 0.3)
+	ring(d.position - Vector3.new(0, 2, 0), 5, d.color, 0.4, 0.4)
+end
+
+function handlers.Deposit(d)
+	ring(d.position, 3, Color3.fromRGB(110, 200, 255), 0.3, 0.3)
+end
+
+function handlers.Built(d)
+	local size = d.size or Vector3.new(4, 4, 4)
+	local box = part({ Size = size + Vector3.one * 0.4, CFrame = CFrame.new(d.position), Color = Color3.fromRGB(140, 220, 255), Transparency = 0.2 })
+	fade(box, 0.6, size + Vector3.one * 2)
+	Audio.Play("Build", 0.8, 1, d.position)
+end
+
+function handlers.BarrierGrow(d)
+	local dome = part({ Shape = Enum.PartType.Ball, Size = Vector3.one * 2, CFrame = CFrame.new(d.position), Color = Color3.fromRGB(140, 210, 255), Transparency = 0.3 })
+	Ui.tween(dome, 0.9, { Size = Vector3.one * d.radius * 2, Transparency = 1 })
+	Debris:AddItem(dome, 1)
+	ring(d.position + Vector3.new(0, 0.3, 0), d.radius, Color3.fromRGB(140, 210, 255), 1, 1)
+end
+
+function handlers.Freed(d)
+	sphere(d.position, 8, Color3.fromRGB(255, 245, 220), 0.6, 0)
+	ring(d.position - Vector3.new(0, 2.5, 0), 12, Color3.fromRGB(200, 170, 255), 0.8, 0.8)
+end
+
+function handlers.Crafted(d)
+	local root = rootOf(d.character)
+	if root then
+		ring(root.Position - Vector3.new(0, 2.5, 0), 4, Color3.fromRGB(255, 220, 140), 0.4, 0.3)
+		if d.character == player.Character then
+			Audio.Play("Craft", 0.8)
+		end
+	end
+end
+
 function Fx.Start()
 	folder = Instance.new("Folder")
 	folder.Name = "LocalFx"
