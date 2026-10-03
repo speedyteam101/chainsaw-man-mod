@@ -236,6 +236,9 @@ Remotes.Request.OnServerInvoke = function(player: Player, request, arg)
 		return AchievementService.Ascend(player)
 	elseif request == "Reroll" then
 		return PowerService.Reroll(player, arg == "die")
+	elseif request == "SceneDone" then
+		StoryService.SceneDone(player)
+		return { ok = true }
 	elseif request == "ShopBuy" then
 		if type(arg) ~= "table" then
 			return { ok = false }

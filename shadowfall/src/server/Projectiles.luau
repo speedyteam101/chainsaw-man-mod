@@ -41,7 +41,7 @@ end
 
 local function finish(spec, position: Vector3)
 	spec.done = true
-	Remotes.Fx:FireAllClients("ProjectileEnd", { id = spec.id, position = position, color = spec.color, radius = spec.radius, style = spec.style })
+	Remotes.Fx:FireAllClients("ProjectileEnd", { id = spec.id, position = position, color = spec.color, radius = spec.radius, style = spec.style, team = spec.team })
 end
 
 local function step(dt: number)

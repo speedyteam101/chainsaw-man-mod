@@ -277,7 +277,7 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 			state.damageBuffUntil = now + move.duration
 		end
 		if move.iframes then
-			state.dodgeUntil = math.max(state.dodgeUntil, now + move.iframes)
+			state.invulnUntil = math.max(state.invulnUntil or 0, now + move.iframes)
 		end
 		if move.speedMult then
 			player:SetAttribute("SpeedBuff", move.speedMult)
@@ -296,13 +296,17 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 		local points = { origin }
 		local hit = {}
 		local current = origin
+		local sight = RaycastParams.new()
+		sight.FilterType = Enum.RaycastFilterType.Include
+		sight.FilterDescendantsInstances = { workspace:FindFirstChild("Map"), workspace.Terrain }
+		sight.IgnoreWater = true
 		for _ = 1, move.count do
 			local best, bestDistance = nil, move.range
 			for _, enemy in Combat.EnemiesInSphere(current, move.range) do
 				local d = (enemy.root.Position - current).Magnitude
 				-- The first hop prefers shadows in front of you.
 				local ahead = #points > 1 or (enemy.root.Position - origin).Unit:Dot(direction) > 0.2
-				if not hit[enemy] and ahead and d < bestDistance then
+				if not hit[enemy] and ahead and d < bestDistance and not workspace:Raycast(current, enemy.root.Position - current, sight) then
 					best, bestDistance = enemy, d
 				end
 			end
@@ -314,9 +318,21 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 			table.insert(points, current)
 			Combat.DamageEnemy(best, damage, player, { effects = { stun = 0.4 }, sourcePosition = current, color = color, crit = true })
 		end
-		local finish = #points > 1 and points[#points] - (points[#points] - points[#points - 1]).Unit * 3 or origin + direction * 30
-		if #points == 1 then
+		local finish
+		if #points > 1 then
+			finish = points[#points] - (points[#points] - points[#points - 1]).Unit * 3
+		else
+			-- Nothing to hit: blink forward, stopping short of walls.
+			local wall = workspace:Raycast(origin, direction * 30, sight)
+			finish = wall and wall.Position - direction * 2.5 or origin + direction * 30
 			table.insert(points, finish)
+		end
+		-- Land on solid ground, never over the void.
+		local floor = workspace:Raycast(finish + Vector3.new(0, 8, 0), Vector3.new(0, -30, 0), sight)
+		if floor then
+			finish = floor.Position + Vector3.new(0, 3, 0)
+		else
+			finish = origin
 		end
 		state.dodgeUntil = math.max(state.dodgeUntil, now + 0.2 + 0.05 * #points)
 		Remotes.Fx:FireAllClients("BlinkChain", { points = points, color = color, style = style, character = character })

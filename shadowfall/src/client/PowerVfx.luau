@@ -5,8 +5,11 @@
 -- stars, blood, poison clouds, blades, void implosions and speed afterimages.
 
 local Debris = game:GetService("Debris")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+
+local ShadowRig = require(ReplicatedStorage.Shared.ShadowRig)
 
 local PowerVfx = {}
 
@@ -208,7 +211,7 @@ local function joints(character: Model)
 	end
 	for _, m in { right, left } do
 		if not restC0[m] then
-			restC0[m] = m.C0
+			restC0[m] = ShadowRig.R6RestC0[m.Name] or m.C0
 		end
 	end
 	return right, left
@@ -332,6 +335,9 @@ function PowerVfx.Projectile(d, p: Part)
 end
 
 function PowerVfx.ProjectileEnd(d)
+	if d.team ~= "player" then
+		return
+	end
 	PowerVfx.Impact(d.position, d, (d.radius or 1) * 3)
 end
 

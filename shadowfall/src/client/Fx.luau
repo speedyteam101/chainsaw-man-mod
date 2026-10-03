@@ -12,6 +12,7 @@ local Ui = require(script.Parent.Ui)
 local Audio = require(script.Parent.Audio)
 local CameraFx = require(script.Parent.CameraFx)
 local PowerVfx = require(script.Parent.PowerVfx)
+local ShadowRig = require(ReplicatedStorage.Shared.ShadowRig)
 
 local Fx = {}
 
@@ -123,7 +124,7 @@ local function swingArm(character: Model, right: boolean)
 		return
 	end
 	joint:SetAttribute("Swinging", true)
-	local base = joint.C0
+	local base = ShadowRig.R6RestC0[joint.Name] or joint.C0
 	local angle = right and math.rad(95) or math.rad(-95)
 	Ui.tween(joint, 0.07, { C0 = base * CFrame.Angles(0, 0, angle) })
 	task.delay(0.16, function()

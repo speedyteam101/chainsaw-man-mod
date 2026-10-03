@@ -37,7 +37,13 @@ function StoryService.Play(player: Player, beatId: string)
 	end
 	if beat.blocking then
 		-- Nothing can hurt you while a scene plays.
-		Combat.GetState(player).storyShieldUntil = os.clock() + #beat.lines * 4 + (beat.chapter and 3 or 0)
+		-- Same timing the client uses per line, plus letterbox, chapter card and slack. The client
+		-- also reports when the scene ends ("SceneDone"), which lifts the shield early.
+		local duration = 1 + (beat.chapter and 3.3 or 0) + 5
+		for _, line in beat.lines do
+			duration += math.clamp(#line.text * 0.045, 2.2, 6.5) + 0.5
+		end
+		Combat.GetState(player).storyShieldUntil = os.clock() + duration
 	end
 	Remotes.Notify:FireClient(player, "Scene", { id = beatId, chapter = beat.chapter, blocking = beat.blocking, lines = beat.lines })
 	PlayerData.Sync(player)
@@ -76,6 +82,10 @@ local function makePage(page, ground: Vector3, parent: Instance)
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = paper
 	return prompt
+end
+
+function StoryService.SceneDone(player: Player)
+	Combat.GetState(player).storyShieldUntil = 0
 end
 
 function StoryService.Start(world)

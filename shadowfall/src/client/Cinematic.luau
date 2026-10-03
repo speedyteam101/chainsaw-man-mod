@@ -86,6 +86,9 @@ local function playScene(scene)
 		task.wait(0.5)
 		ClientState.InCutscene = false
 		ClientState.DialogueOpen = false
+		task.spawn(function()
+			Remotes.Request:InvokeServer("SceneDone")
+		end)
 	end
 end
 

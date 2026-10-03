@@ -11,6 +11,13 @@ local CollectionService = game:GetService("CollectionService")
 
 local ShadowRig = {}
 
+-- The default R6 shoulder joints at rest. Client animations always return arms to these, so two
+-- animations overlapping can never leave an arm stuck at an odd angle.
+ShadowRig.R6RestC0 = {
+	["Right Shoulder"] = CFrame.new(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0),
+	["Left Shoulder"] = CFrame.new(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0),
+}
+
 local BLACK = Color3.new(0, 0, 0)
 local SMOKE_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
 

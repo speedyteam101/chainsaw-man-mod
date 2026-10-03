@@ -295,8 +295,8 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 		return nil
 	end
 	local now = os.clock()
-	if now < (state.storyShieldUntil or 0) then
-		return nil -- watching a story scene
+	if now < (state.storyShieldUntil or 0) or now < (state.invulnUntil or 0) then
+		return nil -- watching a story scene, or invulnerable (Phase Shift, Time Blur, a Phoenix rebirth)
 	end
 
 	-- Dodging through an attack: no damage, and you hit harder for a moment.
@@ -331,18 +331,18 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 	end
 
 	amount *= passive(player).defense or 1
+	if InventoryService.HasItem(player, "Coat") then
+		amount *= 0.85
+	end
 	-- Phoenix: a killing blow sets you ablaze and you rise instead.
 	local revive = passive(player).revive
 	if revive and humanoid.Health - amount <= 0 and now >= (state.reviveReady or 0) then
 		state.reviveReady = now + revive
 		humanoid.Health = humanoid.MaxHealth * 0.5
-		state.dodgeUntil = now + 1.5
+		state.invulnUntil = now + 1.5
 		Remotes.Fx:FireAllClients("Revive", { character = character, color = Color3.fromRGB(255, 150, 40) })
 		Remotes.Notify:FireClient(player, "Toast", { text = "You burn, and rise again!", color = Color3.fromRGB(255, 170, 80) })
 		return "revived"
-	end
-	if InventoryService.HasItem(player, "Coat") then
-		amount *= 0.85
 	end
 	amount = math.max(1, math.floor(amount + 0.5))
 	humanoid.Health -= amount
