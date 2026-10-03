@@ -1,0 +1,2 @@
+-- Replaces Roblox's default "Health" regeneration script.
+-- Shadowfall handles regeneration on the server (ZoneService): only out of combat, faster at the camp fire.

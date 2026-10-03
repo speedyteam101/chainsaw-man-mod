@@ -4,6 +4,8 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 
 The wiki site lives in [`docs/`](docs/index.html) (plain HTML, ready for GitHub Pages).
 
+This repo also contains **Shadowfall: Hollow Creek**, a Roblox horror/action game, in [`shadowfall/`](shadowfall/README.md).
+
 ## Content
 
 | Item | What it does | Recipe |

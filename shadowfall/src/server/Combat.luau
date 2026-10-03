@@ -1,0 +1,398 @@
+--!nonstrict
+-- Core combat rules: player combat state, basic attacks (M1 combo), block/parry, dodge with
+-- i-frames, damage to players and enemies, and status effects on enemies.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage.Shared.Config)
+local Powers = require(ReplicatedStorage.Shared.Powers)
+local Remotes = require(ReplicatedStorage.Shared.Remotes)
+local Registry = require(script.Parent.Registry)
+local PlayerData = require(script.Parent.PlayerData)
+
+local Combat = {}
+
+local C = Config.Combat
+
+function Combat.GetState(player: Player)
+	local state = Registry.PlayerState[player]
+	if not state then
+		state = {
+			combo = 0,
+			lastM1 = 0,
+			m1Ready = 0,
+			blocking = false,
+			blockStart = 0,
+			dodgeUntil = 0,
+			dodgeReady = 0,
+			cooldowns = {},
+			lastDamaged = 0,
+			damageBuff = 1,
+			damageBuffUntil = 0,
+			awakenedUntil = 0,
+			awakenReady = 0,
+			stunUntil = 0,
+			inSafeZone = false,
+			session = { noDamageStreak = 0, noDeathStreak = 0, killTimes = {} },
+		}
+		Registry.PlayerState[player] = state
+	end
+	return state
+end
+
+function Combat.GetCharacter(player: Player)
+	local character = player.Character
+	if not character then
+		return nil
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not root or humanoid.Health <= 0 then
+		return nil
+	end
+	return character, humanoid, root
+end
+
+local function power(player: Player)
+	local data = PlayerData.Get(player)
+	return data and data.power and Powers.ById[data.power]
+end
+
+local function passive(player: Player)
+	local p = power(player)
+	return p and p.passiveEffect or {}
+end
+
+-- Everything that multiplies a player's outgoing damage.
+function Combat.DamageMultiplier(player: Player): number
+	local data = PlayerData.Get(player)
+	if not data then
+		return 1
+	end
+	local state = Combat.GetState(player)
+	local now = os.clock()
+	local mult = Config.LevelDamage[data.level] or 1
+	local p = power(player)
+	if p then
+		mult *= Powers.RarityById[p.rarity].damage
+		mult *= p.passiveEffect.allDamage or 1
+	end
+	if now < state.damageBuffUntil then
+		mult *= state.damageBuff
+	end
+	if now < state.awakenedUntil then
+		mult *= C.AwakeningDamage
+	end
+	return mult
+end
+
+-- Spatial queries over the enemy registry ------------------------------------------------
+
+local function hitRadius(enemy)
+	return 1.4 * (enemy.scale or 1)
+end
+
+function Combat.EnemiesInSphere(center: Vector3, radius: number)
+	local result = {}
+	for _, enemy in Registry.Enemies do
+		if not enemy.dead and (enemy.root.Position - center).Magnitude <= radius + hitRadius(enemy) then
+			table.insert(result, enemy)
+		end
+	end
+	return result
+end
+
+local function distanceToSegment(point: Vector3, a: Vector3, b: Vector3): number
+	local ab = b - a
+	local lengthSq = ab:Dot(ab)
+	if lengthSq < 1e-6 then
+		return (point - a).Magnitude
+	end
+	local t = math.clamp((point - a):Dot(ab) / lengthSq, 0, 1)
+	return (point - (a + ab * t)).Magnitude
+end
+Combat.DistanceToSegment = distanceToSegment
+
+function Combat.EnemiesAlongSegment(a: Vector3, b: Vector3, width: number)
+	local result = {}
+	for _, enemy in Registry.Enemies do
+		if not enemy.dead and distanceToSegment(enemy.root.Position, a, b) <= width / 2 + hitRadius(enemy) then
+			table.insert(result, enemy)
+		end
+	end
+	return result
+end
+
+-- Act 2 players that enemies may hurt.
+function Combat.TargetablePlayers()
+	local result = {}
+	for _, player in Players:GetPlayers() do
+		if player:GetAttribute("Act") == 2 then
+			local character, humanoid, root = Combat.GetCharacter(player)
+			if character and not Combat.GetState(player).inSafeZone then
+				table.insert(result, { player = player, character = character, humanoid = humanoid, root = root })
+			end
+		end
+	end
+	return result
+end
+
+function Combat.PlayersInSphere(center: Vector3, radius: number)
+	local result = {}
+	for _, target in Combat.TargetablePlayers() do
+		if (target.root.Position - center).Magnitude <= radius + 1.5 then
+			table.insert(result, target)
+		end
+	end
+	return result
+end
+
+-- Damage to enemies ------------------------------------------------------------------------
+
+function Combat.ApplyEffects(enemy, effects, sourcePosition: Vector3, attacker: Player?, damageDealt: number)
+	if not effects or enemy.dead then
+		return
+	end
+	local now = os.clock()
+	local resist = enemy.isBoss and 0.3 or 1
+	if effects.burn then
+		enemy.burn = { dps = effects.burn.dps * (attacker and Combat.DamageMultiplier(attacker) or 1), untilTime = now + effects.burn.time, attacker = attacker }
+	end
+	if effects.slow then
+		enemy.slowMult = math.min(enemy.slowUntil > now and enemy.slowMult or 1, effects.slow.mult + (1 - effects.slow.mult) * (1 - resist))
+		enemy.slowUntil = now + effects.slow.time
+	end
+	if effects.stun then
+		enemy.stunUntil = math.max(enemy.stunUntil, now + effects.stun * resist)
+	end
+	if effects.weaken then
+		enemy.weakenMult = effects.weaken.mult
+		enemy.weakenUntil = now + effects.weaken.time
+	end
+	local root = enemy.root
+	if effects.knockback and not enemy.isBoss then
+		local away = root.Position - sourcePosition
+		away = Vector3.new(away.X, 0, away.Z)
+		if away.Magnitude < 0.1 then
+			away = Vector3.new(0, 0, 1)
+		end
+		root.AssemblyLinearVelocity = away.Unit * effects.knockback / (enemy.scale or 1) + Vector3.new(0, 18, 0)
+		enemy.stunUntil = math.max(enemy.stunUntil, now + 0.35)
+	end
+	if effects.pull and not enemy.isBoss then
+		local toward = sourcePosition - root.Position
+		toward = Vector3.new(toward.X, 0, toward.Z)
+		if toward.Magnitude > 2 then
+			root.AssemblyLinearVelocity = toward.Unit * math.min(effects.pull, toward.Magnitude * 3) + Vector3.new(0, 8, 0)
+			enemy.stunUntil = math.max(enemy.stunUntil, now + 0.3)
+		end
+	end
+	if effects.lifesteal and attacker then
+		Combat.HealPlayer(attacker, damageDealt * effects.lifesteal)
+	end
+end
+
+-- opts: { effects, sourcePosition, noFx, color, crit }
+function Combat.DamageEnemy(enemy, amount: number, attacker: Player?, opts)
+	if enemy.dead or amount <= 0 then
+		return 0
+	end
+	opts = opts or {}
+	local now = os.clock()
+	if now < enemy.weakenUntil then
+		amount *= enemy.weakenMult
+	end
+	amount = math.floor(amount + 0.5)
+	enemy.hp -= amount
+	enemy.lastHitTime = now
+	enemy.model:SetAttribute("Health", math.max(0, enemy.hp))
+	if attacker then
+		enemy.damagers[attacker] = (enemy.damagers[attacker] or 0) + amount
+		enemy.lastAttacker = attacker
+		enemy.aggroOn = attacker
+		local lifesteal = passive(attacker).lifesteal
+		if lifesteal then
+			Combat.HealPlayer(attacker, amount * lifesteal)
+		end
+	end
+	if not opts.noFx then
+		Remotes.Fx:FireAllClients("Hit", { position = enemy.root.Position + Vector3.new(0, 2 * (enemy.scale or 1), 0), amount = amount, color = opts.color, crit = opts.crit, target = enemy.model })
+	end
+	if opts.effects then
+		Combat.ApplyEffects(enemy, opts.effects, opts.sourcePosition or enemy.root.Position, attacker, amount)
+	end
+	if enemy.hp <= 0 then
+		enemy.dead = true
+		Registry.EnemyKilled:Fire(enemy, enemy.lastAttacker, enemy.damagers)
+	end
+	return amount
+end
+
+-- Damage to players ------------------------------------------------------------------------
+
+function Combat.HealPlayer(player: Player, amount: number)
+	local _, humanoid = Combat.GetCharacter(player)
+	if humanoid then
+		humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + amount)
+	end
+end
+
+-- source: { enemy = enemy?, position = Vector3, kind = "melee" | "projectile" | "aoe" }
+-- Returns "hit", "blocked", "parried", "dodged" or nil if nothing happened.
+function Combat.DamagePlayer(player: Player, amount: number, source)
+	local character, humanoid, root = Combat.GetCharacter(player)
+	if not character then
+		return nil
+	end
+	local state = Combat.GetState(player)
+	if state.inSafeZone then
+		return nil
+	end
+	local now = os.clock()
+
+	-- Dodging through an attack: no damage, and you hit harder for a moment.
+	if now < state.dodgeUntil then
+		state.damageBuff = C.PerfectDodgeBuff
+		state.damageBuffUntil = now + C.PerfectDodgeBuffTime
+		state.dodgeUntil = 0 -- one perfect dodge per dash
+		Remotes.Fx:FireAllClients("Evade", { character = character })
+		Registry.PerfectDodge:Fire(player)
+		return "dodged"
+	end
+
+	local facing = true
+	if source.position then
+		local toSource = source.position - root.Position
+		toSource = Vector3.new(toSource.X, 0, toSource.Z)
+		if toSource.Magnitude > 0.5 then
+			facing = root.CFrame.LookVector:Dot(toSource.Unit) > -0.2
+		end
+	end
+
+	local result = "hit"
+	if state.blocking and facing then
+		if source.kind == "melee" and now - state.blockStart <= C.ParryWindow and source.enemy then
+			source.enemy.stunUntil = math.max(source.enemy.stunUntil, now + C.ParryStun * (source.enemy.isBoss and 0.4 or 1))
+			Remotes.Fx:FireAllClients("Parry", { character = character, position = root.Position })
+			Registry.Parried:Fire(player, source.enemy)
+			return "parried"
+		end
+		amount *= 1 - C.BlockReduction
+		result = "blocked"
+	end
+
+	amount *= passive(player).defense or 1
+	amount = math.max(1, math.floor(amount + 0.5))
+	humanoid.Health -= amount
+	state.lastDamaged = now
+	Remotes.Fx:FireAllClients("PlayerHit", { character = character, amount = amount, blocked = result == "blocked" })
+	Registry.PlayerDamaged:Fire(player, amount, source)
+	return result
+end
+
+-- Basic attack ----------------------------------------------------------------------------
+
+function Combat.M1(player: Player, aim: Vector3?)
+	local character, _, root = Combat.GetCharacter(player)
+	if not character or player:GetAttribute("Act") ~= 2 then
+		return
+	end
+	local state = Combat.GetState(player)
+	local now = os.clock()
+	if now < state.m1Ready or now < state.stunUntil or state.blocking then
+		return
+	end
+	if now - state.lastM1 > C.M1ComboReset then
+		state.combo = 0
+	end
+	state.combo = state.combo % #C.M1Damage + 1
+	state.lastM1 = now
+	local finisher = state.combo == #C.M1Damage
+	state.m1Ready = now + (finisher and C.M1ComboFinisherCooldown or C.M1Cooldown)
+
+	local p = power(player)
+	local effect = passive(player)
+	local look = root.CFrame.LookVector
+	if aim then
+		local flat = Vector3.new(aim.X - root.Position.X, 0, aim.Z - root.Position.Z)
+		if flat.Magnitude > 0.5 then
+			look = flat.Unit
+		end
+	end
+	local center = root.Position + look * (C.M1Range / 2 + 0.5)
+	local damage = C.M1Damage[state.combo] * Combat.DamageMultiplier(player) * (effect.m1Damage or 1)
+	local color = p and p.color or Color3.new(1, 1, 1)
+
+	Remotes.Fx:FireAllClients("Swing", { character = character, combo = state.combo, color = color })
+
+	local hits = Combat.EnemiesInSphere(center, C.M1Range / 2 + 0.5)
+	local effects = {}
+	if finisher then
+		effects.knockback = 55
+		effects.stun = 0.4
+	end
+	if effect.m1Burn then
+		effects.burn = effect.m1Burn
+	end
+	if effect.m1Slow then
+		effects.slow = effect.m1Slow
+	end
+	if effect.m1Weaken then
+		effects.weaken = effect.m1Weaken
+	end
+	if effect.m1Pull then
+		effects.pull = effect.m1Pull
+	end
+	for _, enemy in hits do
+		Combat.DamageEnemy(enemy, damage, player, { effects = effects, sourcePosition = root.Position, color = color, crit = finisher })
+		if effect.m1Heal then
+			Combat.HealPlayer(player, effect.m1Heal)
+		end
+	end
+	-- Volt: every 4th hit chains to the nearest other shadow.
+	if effect.m1Chain and finisher and #hits > 0 then
+		local first = hits[1]
+		local best, bestDistance = nil, 26
+		for _, enemy in Combat.EnemiesInSphere(first.root.Position, 26) do
+			local d = (enemy.root.Position - first.root.Position).Magnitude
+			if enemy ~= first and d < bestDistance then
+				best, bestDistance = enemy, d
+			end
+		end
+		if best then
+			Remotes.Fx:FireAllClients("Bolt", { from = first.root.Position, to = best.root.Position, color = color })
+			Combat.DamageEnemy(best, effect.m1Chain * Combat.DamageMultiplier(player), player, { effects = { stun = 0.4 }, color = color })
+		end
+	end
+end
+
+function Combat.SetBlocking(player: Player, blocking: boolean)
+	local state = Combat.GetState(player)
+	if blocking and not state.blocking then
+		state.blockStart = os.clock()
+	end
+	state.blocking = blocking and player:GetAttribute("Act") == 2
+	local character = player.Character
+	if character then
+		character:SetAttribute("Blocking", state.blocking)
+	end
+end
+
+function Combat.Dodge(player: Player): boolean
+	local character = Combat.GetCharacter(player)
+	if not character or player:GetAttribute("Act") ~= 2 then
+		return false
+	end
+	local state = Combat.GetState(player)
+	local now = os.clock()
+	if now < state.dodgeReady or now < state.stunUntil then
+		return false
+	end
+	state.dodgeReady = now + C.DodgeCooldown
+	state.dodgeUntil = now + C.DodgeIFrames
+	Remotes.Fx:FireAllClients("Dodge", { character = character })
+	return true
+end
+
+return Combat

@@ -1,0 +1,52 @@
+{
+  "name": "Shadowfall",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "GameSettingsAvatar": "R6",
+        "CameraMaxZoomDistance": 22,
+        "CharacterWalkSpeed": 16,
+        "EnableMouseLockOption": false
+      },
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/client"
+        }
+      },
+      "StarterCharacterScripts": {
+        "$path": "src/character"
+      }
+    },
+    "Players": {
+      "$properties": {
+        "CharacterAutoLoads": false
+      }
+    },
+    "Workspace": {
+      "$properties": {
+        "StreamingEnabled": false,
+        "FallenPartsDestroyHeight": -400
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "ClockTime": 0,
+        "Brightness": 0.4,
+        "GlobalShadows": true
+      }
+    },
+    "SoundService": {},
+    "StarterGui": {}
+  }
+}

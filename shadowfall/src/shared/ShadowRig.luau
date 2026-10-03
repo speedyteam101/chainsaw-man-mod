@@ -1,0 +1,208 @@
+--!nonstrict
+-- Builds a shadow: a pitch-black, blocky R6-proportioned body (head, torso, two arms, two legs)
+-- with glowing eyes and smoke pouring off it.
+--
+-- Parts use black Neon so they render as flat, unlit black: a silhouette cut out of the world.
+-- The humanoid uses an explicit HipHeight so scaled rigs (brutes, bosses) stand correctly.
+-- Limbs are joined with Motor6Ds named like a classic R6 rig; the client animates them.
+
+local CollectionService = game:GetService("CollectionService")
+
+local ShadowRig = {}
+
+local BLACK = Color3.new(0, 0, 0)
+local SMOKE_TEXTURE = "rbxasset://textures/particles/smoke_main.dds"
+
+local function part(name: string, size: Vector3, parent: Instance): Part
+	local p = Instance.new("Part")
+	p.Name = name
+	p.Size = size
+	p.Color = BLACK
+	p.Material = Enum.Material.Neon
+	p.CanCollide = false
+	p.CanTouch = false
+	p.Massless = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = parent
+	return p
+end
+
+local function motor(name: string, part0: BasePart, part1: BasePart, c0: CFrame, c1: CFrame)
+	local m = Instance.new("Motor6D")
+	m.Name = name
+	m.Part0 = part0
+	m.Part1 = part1
+	m.C0 = c0
+	m.C1 = c1
+	m.Parent = part0
+	return m
+end
+
+local function weld(part0: BasePart, part1: BasePart, offset: CFrame)
+	part1.CFrame = part0.CFrame * offset
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = part0
+	w.Part1 = part1
+	w.Parent = part1
+end
+
+local function addSmoke(target: BasePart, scale: number, rate: number)
+	local smoke = Instance.new("Smoke")
+	smoke.Color = Color3.fromRGB(8, 6, 12)
+	smoke.Opacity = 0.18
+	smoke.RiseVelocity = 2.5 * scale
+	smoke.Size = 1.6 * scale
+	smoke.TimeScale = 0.6
+	smoke.Parent = target
+
+	local wisps = Instance.new("ParticleEmitter")
+	wisps.Name = "Wisps"
+	wisps.Texture = SMOKE_TEXTURE
+	wisps.Color = ColorSequence.new(Color3.fromRGB(0, 0, 0))
+	wisps.LightEmission = 0
+	wisps.LightInfluence = 0
+	wisps.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.35),
+		NumberSequenceKeypoint.new(0.6, 0.6),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	wisps.Size = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.9 * scale),
+		NumberSequenceKeypoint.new(1, 2.4 * scale),
+	})
+	wisps.Lifetime = NumberRange.new(0.8, 1.6)
+	wisps.Rate = rate
+	wisps.Speed = NumberRange.new(1, 3)
+	wisps.SpreadAngle = Vector2.new(35, 35)
+	wisps.Acceleration = Vector3.new(0, 3, 0)
+	wisps.Rotation = NumberRange.new(0, 360)
+	wisps.RotSpeed = NumberRange.new(-40, 40)
+	wisps.EmissionDirection = Enum.NormalId.Top
+	wisps.Parent = target
+end
+
+export type RigOptions = {
+	name: string?,
+	scale: number?,
+	eyeColor: Color3?,
+	armLength: number?, -- 1 = classic R6 arms; stalkers get longer arms
+	smokeRate: number?,
+	antlers: boolean?,
+	crown: boolean?,
+	manyEyes: boolean?,
+}
+
+function ShadowRig.Build(options: RigOptions): Model
+	local s = options.scale or 1
+	local armLength = options.armLength or 1
+	local eyeColor = options.eyeColor or Color3.fromRGB(235, 235, 255)
+
+	local model = Instance.new("Model")
+	model.Name = options.name or "Shadow"
+
+	local root = part("HumanoidRootPart", Vector3.new(2, 2, 1) * s, model)
+	root.Transparency = 1
+	root.CanCollide = true
+	root.Massless = false
+	model.PrimaryPart = root
+
+	local torso = part("Torso", Vector3.new(2, 2, 1) * s, model)
+	local head = part("Head", Vector3.new(2, 1, 1) * s, model)
+	local rightArm = part("Right Arm", Vector3.new(1, 2 * armLength, 1) * s, model)
+	local leftArm = part("Left Arm", Vector3.new(1, 2 * armLength, 1) * s, model)
+	local rightLeg = part("Right Leg", Vector3.new(1, 2, 1) * s, model)
+	local leftLeg = part("Left Leg", Vector3.new(1, 2, 1) * s, model)
+
+	-- Classic R6 joint layout, scaled.
+	motor("RootJoint", root, torso, CFrame.new(), CFrame.new())
+	motor("Neck", torso, head, CFrame.new(0, 1 * s, 0), CFrame.new(0, -0.5 * s, 0))
+	motor("Right Shoulder", torso, rightArm, CFrame.new(1 * s, 0.5 * s, 0), CFrame.new(-0.5 * s, (armLength - 0.5) * s, 0))
+	motor("Left Shoulder", torso, leftArm, CFrame.new(-1 * s, 0.5 * s, 0), CFrame.new(0.5 * s, (armLength - 0.5) * s, 0))
+	motor("Right Hip", torso, rightLeg, CFrame.new(0.5 * s, -1 * s, 0), CFrame.new(0, 1 * s, 0))
+	motor("Left Hip", torso, leftLeg, CFrame.new(-0.5 * s, -1 * s, 0), CFrame.new(0, 1 * s, 0))
+
+	-- Snap the limbs into place so welded extras line up before the first physics step.
+	torso.CFrame = root.CFrame
+	head.CFrame = torso.CFrame * CFrame.new(0, 1.5 * s, 0)
+
+	-- Eyes: two thin glowing slits on the front (-Z) face of the head.
+	local eyes = {}
+	local function eye(name: string, offset: Vector3, size: Vector3)
+		local e = part(name, size, model)
+		e.Color = eyeColor
+		e.Material = Enum.Material.Neon
+		weld(head, e, CFrame.new(offset))
+		table.insert(eyes, e)
+	end
+	eye("EyeL", Vector3.new(-0.42, 0.08, -0.5) * s, Vector3.new(0.38, 0.14, 0.08) * s)
+	eye("EyeR", Vector3.new(0.42, 0.08, -0.5) * s, Vector3.new(0.38, 0.14, 0.08) * s)
+	if options.manyEyes then
+		local spots = {
+			Vector3.new(0, 0.35, -0.5), Vector3.new(-0.7, -0.3, -0.5), Vector3.new(0.7, -0.3, -0.5),
+			Vector3.new(0.6, 0.6, 0.2), Vector3.new(-0.6, 0.6, 0.2), Vector3.new(0, -0.6, -0.5),
+		}
+		for index, spot in spots do
+			eye("EyeExtra" .. index, spot * s, Vector3.new(0.2, 0.2, 0.08) * s)
+		end
+		for index = 1, 8 do
+			local offset = Vector3.new((index % 2 == 0 and 0.5 or -0.5), 0.9 - index * 0.25, -0.52)
+			local e = part("TorsoEye" .. index, Vector3.new(0.22, 0.12, 0.06) * s, model)
+			e.Color = eyeColor
+			weld(torso, e, CFrame.new(offset * s))
+			table.insert(eyes, e)
+		end
+	end
+
+	if options.antlers then
+		for _, side in { -1, 1 } do
+			local base = part("Antler", Vector3.new(0.3, 2.2, 0.3) * s, model)
+			weld(head, base, CFrame.new(0.6 * side * s, 1.4 * s, 0) * CFrame.Angles(0, 0, math.rad(-25 * side)))
+			for branch = 1, 3 do
+				local tine = part("Tine", Vector3.new(0.22, 1.1, 0.22) * s, model)
+				weld(base, tine, CFrame.new(0.35 * side * s, (branch * 0.6 - 0.8) * s, 0) * CFrame.Angles(0, 0, math.rad(-55 * side)))
+			end
+		end
+	end
+
+	if options.crown then
+		for index = 0, 6 do
+			local angle = index / 7 * math.pi * 2
+			local spike = part("CrownSpike", Vector3.new(0.25, 1.3, 0.25) * s, model)
+			spike.Color = Color3.fromRGB(60, 0, 10)
+			weld(head, spike, CFrame.new(math.cos(angle) * 0.85 * s, 0.95 * s, math.sin(angle) * 0.45 * s))
+		end
+	end
+
+	addSmoke(torso, s, options.smokeRate or 14)
+	addSmoke(head, s * 0.7, (options.smokeRate or 14) * 0.5)
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.RigType = Enum.HumanoidRigType.R15 -- R15 so HipHeight is honoured exactly
+	humanoid.HipHeight = 2 * s
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+	humanoid.BreakJointsOnDeath = false
+	humanoid.RequiresNeck = false
+	humanoid.AutoJumpEnabled = true
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.FallingDown, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+	humanoid.Parent = model
+
+	model:SetAttribute("RigScale", s)
+	CollectionService:AddTag(model, "ShadowRig")
+	return model
+end
+
+-- Recolours the eyes (used for attack tells: eyes flash red during a wind-up).
+function ShadowRig.SetEyeColor(model: Model, color: Color3)
+	for _, child in model:GetChildren() do
+		if child:IsA("BasePart") and (string.sub(child.Name, 1, 3) == "Eye" or string.sub(child.Name, 1, 8) == "TorsoEye") then
+			child.Color = color
+		end
+	end
+end
+
+return ShadowRig
