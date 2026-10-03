@@ -60,6 +60,15 @@ The world is built when the server starts, so in Studio's edit mode the Workspac
 
 ## Biscuit, your call duck
 
+Biscuit is built from smooth rounded shapes: a round body and chest, a big round head, a short orange bill whose lower half opens when Biscuit quacks, eyes with a glint, folded wings with grey-tipped feathers, an upturned tail and webbed feet.
+
+Biscuit acts like a real duck:
+* waddles, rolling side to side with each step
+* bobs their head while walking
+* pecks at the ground, preens, looks around
+* stretches a wing, shakes their tail and settles down to rest
+* flaps in a panic when scared
+
 * Biscuit waddles after you everywhere, including warps and respawns.
 * **While you're within about 20 studs of Biscuit you regain sanity and health.**
 * You can **pet** Biscuit (E) for a burst of sanity, and you get hearts and a quack.
@@ -151,11 +160,83 @@ The first roll is free (the awakening). After that you can reroll at the shrine 
 | Radiance | Epic (9% shared) | +20% basic damage, basic attacks weaken | Light Lance, Solar Flare, Halo, Sunrise |
 | Gravity | Epic | Basic attacks pull | Gravity Orb, Repulse, Singularity, Collapse |
 | Eclipse | Legendary (2.5%) | 10% lifesteal | Umbral Spear, Devour, Shadow Step, Total Eclipse |
-| Dawnbringer | Mythic (0.5%) | +25% damage, basic attacks heal | Dawn Arrow, Daybreak, Radiant Rush, Second Sun |
+| Venom | Rare | Basic attacks poison | Toxic Spit, Plague Cloud, Serpent Lunge, Pandemic |
+| Blade | Rare | +15% basic damage | Sword Wave, Whirlwind, Phantom Cut, Thousand Swords |
+| Storm | Epic | Every 4th hit calls lightning | Chain Lightning, Thunderclap, Tornado, Tempest |
+| Hemomancy | Legendary | 8% lifesteal, +10% basic damage | Blood Lance, Crimson Burst, Sanguine Rush, Blood Moon |
+| Phantom | Legendary | +10% move speed | Phantom Bolts, Mirror Images (clones fight for you), Blink, Phantom Legion |
+| Dawnbringer | Mythic (0.5% shared) | +25% damage, basic attacks heal | Dawn Arrow, Daybreak, Radiant Rush, Second Sun |
+| **Necromancer** | Mythic | Fallen shadows have a 25% chance to rise and fight for you | Bone Spear, Raise Dead, Soul Harvest, Army of the Damned |
+| Phoenix | Mythic | Rise from a killing blow once every 3 minutes; basic attacks burn | Phoenix Feathers, Flame Wings, Rebirth Flare, Sunfall Dive |
+| Void | Mythic | Basic attacks weaken, +15% damage | Void Orb, Phase Shift (invulnerable), Rift Tear, Black Hole |
+| **God Speed** | **Transcendent (0.1% shared)** | Move 60% faster, swing 40% faster, afterimages | Flash Step (zip between 5 shadows), Thousand Cuts, Time Blur, Lightspeed Barrage (zip between 14) |
+| Chronos | Transcendent | Basic attacks slow time, +20% damage | Time Bolt, Stop (freezes everything), Rewind (back to your health 4 s ago), Time Collapse |
+| Celestial | Transcendent | +30% damage | Starfall, Constellation, Nova Star, Supernova |
+
+**Animation and effects.** Every move has a casting animation:
+* **Projectiles:** your arm thrusts forward.
+* **Novas:** you raise both arms and slam down.
+* **Strikes:** you call down with a raised arm.
+* **Zones:** both arms go up.
+* **Buffs:** your arms spread wide.
+* **Summons:** you raise your arms, then slam them down.
+* **Dashes:** your arms sweep back.
+
+A charge-up glow flashes in your hand. Each power's element then has its own look:
+
+| Power | Effects |
+| --- | --- |
+| Fire, Phoenix, Dawnbringer | Embers and flames (Phoenix adds flying feathers) |
+| Frost | Ice shards |
+| Stone | Rocks that erupt and fly |
+| Volt, Storm, God Speed | Forked lightning (God Speed adds afterimages) |
+| Radiance, Celestial | Light rays (Celestial adds star bursts) |
+| Gravity, Eclipse, Void | Black implosions |
+| Venom | Poison clouds |
+| Blade, Phantom | Blade slashes |
+| Hemomancy | Blood droplets |
+| Necromancer | Rising souls and skull projectiles |
+| Chronos | Spinning clock rings |
+
+Strikes drop a matching object from the sky: a meteor, a lightning bolt, a sword or a star.
+
+**Rarities:**
+
+| Rarity | Chance |
+| --- | --- |
+| Common | 42% |
+| Uncommon | 30% |
+| Rare | 16% |
+| Epic | 9% |
+| Legendary | 2.4% |
+| Mythic | 0.5% |
+| Transcendent | 0.1% |
+
+Rolling a Transcendent power gets a rainbow reveal.
 
 Higher rarities also get a flat damage multiplier (x1.0 up to x1.55). All numbers live in `src/shared/` and are meant to be tuned.
 
 ---
+
+## The story
+
+The story moves forward as you play. There are still no quests: scenes trigger when you arrive at the camp, ascend, enter a new area, beat a boss or free someone. They play as letterboxed cinematic dialogue with chapter title cards. Nothing can hurt you while a scene is playing.
+
+**Chapters:** The Night Hollow Creek Fell, Embers, Into the Woods, Falling Pieces, The Drowned Choir, The Heart of It, Dawn.
+
+**The mystery.** Three days before noon, Dr. Elias Vance carried a machine called the Lantern into the Whispering Woods. It opened a window onto the shadow world, and something patient and hungry came through. Everyone the shadows touch becomes one of them. Each boss you beat frees a soul and reveals more. The ending is in the Heart of Shadow.
+
+**Journal:** there are 10 journal pages to find across every area: Vance's logs, a postcard from another lost town, and a last note from your parents. They sit on small glowing stands. The **Journal** tab tracks your chapters and pages, and finding every page earns the **Archivist** feat.
+
+## Merchants
+
+Press E on a merchant to trade Essence for goods:
+
+| Merchant | Where | Sells |
+| --- | --- | --- |
+| Ollie the Scavenger | Camp | Wood, stone, scrap, cloth, rope, planks, iron bars |
+| Doc Mercer | Camp | Bandages, Sanity Tonics, Light Bombs, Duck Bread (feed it to Biscuit for a big sanity boost) |
+| The Hooded Stranger | Whispering Woods | Fate Dice (a free reroll), Star Shards (next roll about 3x as likely to be Legendary or better), Light Cores, crystal and umbral shards |
 
 ## Gathering, crafting, building
 

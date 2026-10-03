@@ -6,7 +6,7 @@ local Shops = {}
 -- Items that only come from shops (crafted items are described in Recipes).
 Shops.Items = {
 	FateDie = { name = "Fate Die", desc = "A bone die that hums. Use it at the shrine for a free reroll." },
-	StarShard = { name = "Star Shard", desc = "A sliver of a star. Your next roll is three times as likely to be Legendary or better." },
+	StarShard = { name = "Star Shard", desc = "A sliver of a star. Your next roll is about three times as likely to be Legendary or better." },
 	DuckBread = { name = "Duck Bread", desc = "Biscuit's favourite. Feed it to Biscuit (use it near them) for a big sanity boost." },
 }
 

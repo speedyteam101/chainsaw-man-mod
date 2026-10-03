@@ -224,7 +224,7 @@ function render.Power()
 		end))
 	end
 	if stars > 0 then
-		paragraph(string.format("You have %d Star Shard%s. Your next roll uses one and is three times as likely to be Legendary or better.", stars, stars == 1 and "" or "s"), T.Gold)
+		paragraph(string.format("You have %d Star Shard%s. Your next roll uses one and is about three times as likely to be Legendary or better.", stars, stars == 1 and "" or "s"), T.Gold)
 	end
 	add(Ui.label("ODDS", { Size = UDim2.new(1, 0, 0, 26), Font = T.Bold, TextSize = 14, TextColor3 = T.Muted }))
 	for _, odds in Powers.Odds() do
