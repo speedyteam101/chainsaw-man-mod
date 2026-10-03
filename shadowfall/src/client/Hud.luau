@@ -138,7 +138,7 @@ local function refreshStatus()
 	levelText.Text = tostring(level)
 	if p then
 		local rarity = Powers.RarityById[p.rarity]
-		powerText.Text = string.upper(p.id)
+		powerText.Text = string.upper(p.name)
 		powerText.TextColor3 = p.color
 		rarityText.Text = p.rarity
 		rarityText.TextColor3 = rarity.color

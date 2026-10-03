@@ -40,6 +40,7 @@ local function defaults()
 		items = {}, -- [recipeId] = count (tools/gear: 1, consumables: stack)
 		rescued = {}, -- [townsfolkId] = true
 		base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} },
+		story = { chapter = 1, seen = {}, pages = {} },
 	}
 end
 
@@ -130,6 +131,13 @@ local function progressOf(player: Player, data)
 		full_house = Townsfolk.Count(data.rescued),
 		master_builder = data.stats.built,
 		crafter = data.stats.crafted,
+		archivist = (function()
+			local found = 0
+			for _ in (data.story and data.story.pages) or {} do
+				found += 1
+			end
+			return found
+		end)(),
 	}
 end
 
@@ -161,6 +169,7 @@ function PlayerData.Sync(player: Player)
 		baseLevel = data.base.level,
 		basePlaced = data.base.placed,
 		duckSaved = data.duckSaved,
+		story = data.story,
 	})
 end
 

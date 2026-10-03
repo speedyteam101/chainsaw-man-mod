@@ -21,6 +21,7 @@ local ClientState = {
 	InCutscene = false,
 	BuildMode = false,
 	DialogueOpen = false,
+	story = { chapter = 1, seen = {}, pages = {} },
 }
 
 function ClientState.Apply(snapshot)

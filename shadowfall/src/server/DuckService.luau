@@ -20,7 +20,6 @@ local ducks: { [Player]: any } = {}
 local folder: Folder
 
 local WHITE = Color3.fromRGB(252, 250, 244)
-local ORANGE = Color3.fromRGB(255, 165, 40)
 
 local function piece(model: Model, name: string, size: Vector3, color: Color3, cf: CFrame, shape: Enum.PartType?)
 	local p = Instance.new("Part")
@@ -61,11 +60,26 @@ local function joint(name: string, part0: BasePart, part1: BasePart, c0: CFrame,
 	return m
 end
 
--- A small, round, very white call duck with rosy cheeks.
+-- An ellipsoid: a part whose sphere mesh stretches to its size, for smooth rounded shapes.
+local function blob(model: Model, name: string, size: Vector3, color: Color3, cf: CFrame)
+	local p = piece(model, name, size, color, cf)
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.Sphere
+	mesh.Parent = p
+	return p
+end
+
+-- Biscuit: a white call duck built from smooth rounded shapes. Round body and chest, a big round
+-- head on a short neck, a short orange bill whose lower half opens when Biscuit quacks, small dark
+-- eyes with a glint, folded wings with grey-tipped flight feathers, a little upturned tail, and
+-- orange legs with webbed feet. Head, bill, wings and tail are jointed so the client can animate
+-- them.
 local function buildDuck(owner: Player): Model
 	local model = Instance.new("Model")
 	model.Name = "Biscuit"
 	local origin = CFrame.new()
+	local CREAM = Color3.fromRGB(246, 243, 234)
+	local BILL = Color3.fromRGB(240, 160, 50)
 	local root = piece(model, "HumanoidRootPart", Vector3.new(1.4, 1.2, 1.8), WHITE, origin)
 	root.Transparency = 1
 	root.CanCollide = true
@@ -73,31 +87,46 @@ local function buildDuck(owner: Player): Model
 	root.Massless = false
 	model.PrimaryPart = root
 
-	local body = piece(model, "Body", Vector3.new(1.6, 1.25, 2), WHITE, origin)
+	local body = blob(model, "Body", Vector3.new(1.55, 1.3, 2.2), WHITE, origin)
 	joint("Waddle", root, body, CFrame.new(), CFrame.new())
-	local chest = piece(model, "Chest", Vector3.new(1.4, 1, 0.6), WHITE, body.CFrame * CFrame.new(0, 0.1, -1.05))
-	weldTo(body, chest)
-	local tail = piece(model, "Tail", Vector3.new(0.7, 0.45, 0.5), WHITE, body.CFrame * CFrame.new(0, 0.4, 1.1) * CFrame.Angles(math.rad(30), 0, 0))
-	weldTo(body, tail)
+	weldTo(body, blob(model, "Chest", Vector3.new(1.35, 1.25, 1.1), WHITE, body.CFrame * CFrame.new(0, 0.18, -0.85)))
+	weldTo(body, blob(model, "Belly", Vector3.new(1.3, 0.8, 1.6), CREAM, body.CFrame * CFrame.new(0, -0.32, -0.1)))
 
-	local head = piece(model, "Head", Vector3.new(1.15, 1.1, 1.1), WHITE, origin)
-	joint("Neck", body, head, CFrame.new(0, 1.0, -0.95), CFrame.new())
-	local beak = piece(model, "Beak", Vector3.new(0.75, 0.3, 0.6), ORANGE, head.CFrame * CFrame.new(0, -0.12, -0.78))
-	weldTo(head, beak)
+	-- Tail: a small upturned tuft with a curled feather.
+	local tail = blob(model, "Tail", Vector3.new(0.75, 0.55, 0.8), WHITE, origin)
+	joint("TailJoint", body, tail, CFrame.new(0, 0.32, 1.05) * CFrame.Angles(math.rad(35), 0, 0), CFrame.new())
+	local curl = piece(model, "TailCurl", Vector3.new(0.12, 0.35, 0.3), WHITE, tail.CFrame * CFrame.new(0, 0.32, 0.12) * CFrame.Angles(math.rad(-40), 0, 0))
+	weldTo(tail, curl)
+
+	-- Head on a short neck.
+	weldTo(body, blob(model, "NeckFeathers", Vector3.new(0.85, 0.9, 0.85), WHITE, body.CFrame * CFrame.new(0, 0.75, -0.95)))
+	local head = blob(model, "Head", Vector3.new(1.05, 1, 1.05), WHITE, origin)
+	joint("Neck", body, head, CFrame.new(0, 1.15, -1.05), CFrame.new())
+	local upperBill = blob(model, "Bill", Vector3.new(0.5, 0.2, 0.55), BILL, head.CFrame * CFrame.new(0, -0.08, -0.62))
+	weldTo(head, upperBill)
+	local lowerBill = blob(model, "LowerBill", Vector3.new(0.44, 0.13, 0.48), Color3.fromRGB(230, 145, 45), origin)
+	joint("Jaw", head, lowerBill, CFrame.new(0, -0.2, -0.38), CFrame.new(0, 0, 0.2))
+	weldTo(head, piece(model, "BillTip", Vector3.new(0.14, 0.05, 0.1), Color3.fromRGB(200, 120, 40), head.CFrame * CFrame.new(0, -0.03, -0.88)))
 	for _, side in { -1, 1 } do
-		local eye = piece(model, "Eye", Vector3.new(0.17, 0.24, 0.05), Color3.fromRGB(20, 20, 24), head.CFrame * CFrame.new(0.3 * side, 0.16, -0.57))
+		local eye = blob(model, "Eye", Vector3.new(0.13, 0.15, 0.1), Color3.fromRGB(16, 14, 16), head.CFrame * CFrame.new(0.38 * side, 0.12, -0.36))
 		weldTo(head, eye)
-		local sparkle = piece(model, "Sparkle", Vector3.new(0.06, 0.06, 0.03), Color3.new(1, 1, 1), head.CFrame * CFrame.new(0.3 * side + 0.03, 0.22, -0.6))
-		sparkle.Material = Enum.Material.Neon
-		weldTo(head, sparkle)
-		local cheek = piece(model, "Cheek", Vector3.new(0.24, 0.13, 0.04), Color3.fromRGB(255, 160, 180), head.CFrame * CFrame.new(0.43 * side, -0.12, -0.57))
-		weldTo(head, cheek)
-		local wing = piece(model, "Wing", Vector3.new(0.22, 0.85, 1.35), Color3.fromRGB(240, 238, 230), origin)
-		joint(side < 0 and "WingL" or "WingR", body, wing, CFrame.new(0.82 * side, 0.45, 0.1), CFrame.new(0, 0.4, 0))
-		local leg = piece(model, "Leg", Vector3.new(0.18, 0.45, 0.18), ORANGE, body.CFrame * CFrame.new(0.35 * side, -0.78, 0))
-		weldTo(body, leg)
-		local foot = piece(model, "Foot", Vector3.new(0.5, 0.12, 0.55), ORANGE, body.CFrame * CFrame.new(0.35 * side, -0.97, -0.15))
-		weldTo(body, foot)
+		local glint = blob(model, "Glint", Vector3.new(0.045, 0.045, 0.02), Color3.new(1, 1, 1), head.CFrame * CFrame.new(0.4 * side, 0.16, -0.405))
+		glint.Material = Enum.Material.Neon
+		weldTo(head, glint)
+
+		-- Folded wing with grey-tipped flight feathers along the back.
+		local wing = blob(model, "Wing", Vector3.new(0.28, 0.85, 1.6), Color3.fromRGB(240, 238, 230), origin)
+		joint(side < 0 and "WingL" or "WingR", body, wing, CFrame.new(0.68 * side, 0.32, 0.15), CFrame.new(0, 0.3, -0.1))
+		local tips = blob(model, "WingTip", Vector3.new(0.22, 0.45, 0.9), Color3.fromRGB(205, 205, 205), wing.CFrame * CFrame.new(0, -0.05, 0.55))
+		weldTo(wing, tips)
+
+		-- Leg and webbed foot.
+		weldTo(body, piece(model, "Leg", Vector3.new(0.14, 0.42, 0.14), BILL, body.CFrame * CFrame.new(0.32 * side, -0.82, 0.05)))
+		local web = piece(model, "Foot", Vector3.new(0.5, 0.06, 0.5), BILL, body.CFrame * CFrame.new(0.32 * side, -1.0, -0.18))
+		weldTo(body, web)
+		for toe = -1, 1 do
+			weldTo(body, piece(model, "Toe", Vector3.new(0.07, 0.06, 0.42), Color3.fromRGB(225, 140, 40), body.CFrame * CFrame.new(0.32 * side + toe * 0.17, -0.99, -0.34) * CFrame.Angles(0, math.rad(toe * 22), 0)))
+		end
 	end
 
 	local humanoid = Instance.new("Humanoid")

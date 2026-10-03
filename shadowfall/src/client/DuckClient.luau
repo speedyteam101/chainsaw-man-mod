@@ -38,7 +38,19 @@ local function register(model: Model)
 		local m = model:FindFirstChild(name, true)
 		return m and m:IsA("Motor6D") and { motor = m, base = m.C0 } or nil
 	end
-	ducks[model] = { waddle = motor("Waddle"), neck = motor("Neck"), wingL = motor("WingL"), wingR = motor("WingR"), phase = math.random() * 6 }
+	ducks[model] = {
+		waddle = motor("Waddle"),
+		neck = motor("Neck"),
+		jaw = motor("Jaw"),
+		tail = motor("TailJoint"),
+		wingL = motor("WingL"),
+		wingR = motor("WingR"),
+		phase = math.random() * 6,
+		idle = nil, -- current idle behaviour
+		idleStarted = 0,
+		nextIdle = os.clock() + math.random(2, 5),
+		quackUntil = 0,
+	}
 end
 
 local function myDuck(): Model?
@@ -87,6 +99,9 @@ function DuckClient.Say(text: string, duration: number?)
 	frame.Size = UDim2.new(0.6, 0, 0, 0)
 	Ui.tween(frame, 0.25, { Size = UDim2.new(1, 0, 0, 0) }, Enum.EasingStyle.Back)
 	Audio.Play("Quack", 0.7, 1.1 + math.random() * 0.4, head.Position)
+	if ducks[duck] then
+		ducks[duck].quackUntil = os.clock() + 0.6
+	end
 	task.delay(duration or 6, function()
 		if token == bubbleToken and bubble then
 			bubble:Destroy()
@@ -185,22 +200,89 @@ function DuckClient.Start()
 			local velocity = root.AssemblyLinearVelocity
 			local speed = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
 			local scared = model:GetAttribute("Scared") == true
-			duck.phase += dt * (scared and 30 or math.clamp(speed, 0, 30) * 0.9 + 1.2)
+			local walking = speed > 1.5
+			duck.phase += dt * (scared and 30 or (walking and math.clamp(speed, 4, 30) * 0.9 or 1.2))
+
+			-- Pick a new idle behaviour now and then: peck, preen, look around, stretch, shake.
+			if walking or scared then
+				duck.idle = nil
+			elseif now >= duck.nextIdle then
+				local options = { "peck", "preen", "look", "stretch", "shake", "rest" }
+				duck.idle = options[math.random(1, #options)]
+				duck.idleStarted = now
+				duck.nextIdle = now + math.random(3, 7)
+			end
+			local idle = duck.idle
+			local t = now - duck.idleStarted
+
+			-- Body: a waddle that rolls side to side with each step, a little hop, gentle breathing.
+			local roll, hop, pitch = 0, 0, 0
+			if scared then
+				roll = math.sin(duck.phase) * 0.06
+			elseif walking then
+				roll = math.sin(duck.phase) * math.clamp(speed / 12, 0.3, 1) * 0.22
+				hop = math.abs(math.sin(duck.phase)) * math.clamp(speed / 20, 0, 1) * 0.18
+				pitch = -0.08
+			else
+				hop = math.sin(now * 2.2) * 0.02
+				if idle == "shake" and t < 0.6 then
+					roll = math.sin(t * 50) * 0.25
+				elseif idle == "rest" and t < 3 then
+					hop = -0.15
+				end
+			end
 			if duck.waddle then
-				local roll = scared and math.sin(duck.phase) * 0.05 or math.sin(duck.phase) * math.clamp(speed / 12, 0, 1) * 0.28
-				local hop = math.abs(math.sin(duck.phase)) * math.clamp(speed / 20, 0, 1) * 0.25
-				duck.waddle.motor.C0 = duck.waddle.base * CFrame.new(0, hop, 0) * CFrame.Angles(0, 0, roll)
+				duck.waddle.motor.C0 = duck.waddle.base * CFrame.new(0, hop, 0) * CFrame.Angles(pitch, 0, roll)
+			end
+
+			-- Head: bobs forward with each step; otherwise pecks, preens or looks around.
+			local nod, turn, tilt, lift = 0, 0, 0, 0
+			if scared then
+				nod, lift = -0.3, -0.2
+				turn = math.sin(now * 9) * 0.3
+			elseif walking then
+				nod = math.sin(duck.phase * 2) * 0.14
+			elseif idle == "peck" and t < 1.4 then
+				nod = math.max(0, math.sin(t * 9)) * -0.9
+				lift = math.max(0, math.sin(t * 9)) * -0.25
+			elseif idle == "preen" and t < 2 then
+				turn = 2.2 * math.min(1, t * 3) * (t < 1.7 and 1 or 0)
+				nod = -0.5 * math.min(1, t * 3)
+				tilt = math.sin(t * 14) * 0.15
+			elseif idle == "look" and t < 2.4 then
+				turn = math.sin(t * 2.6) * 0.9
+				tilt = math.sin(t * 2.6) * 0.25
+			else
+				nod = math.sin(now * 1.3) * 0.04
 			end
 			if duck.neck then
-				local bob = scared and -0.25 or math.sin(duck.phase * 2) * 0.12
-				duck.neck.motor.C0 = duck.neck.base * CFrame.new(0, scared and -0.2 or 0, 0) * CFrame.Angles(bob, 0, 0)
+				duck.neck.motor.C0 = duck.neck.base * CFrame.new(0, lift, 0) * CFrame.Angles(nod, turn, tilt)
 			end
-			local flap = (scared or speed > 18) and math.sin(now * 28) * 0.9 or 0
+
+			-- Bill opens when Biscuit quacks.
+			if duck.jaw then
+				local open = now < duck.quackUntil and math.abs(math.sin((duck.quackUntil - now) * 16)) * 0.45 or 0
+				duck.jaw.motor.C0 = duck.jaw.base * CFrame.Angles(-open, 0, 0)
+			end
+
+			-- Tail wags when happy (idle) and flicks with each step.
+			if duck.tail then
+				local wag = (idle == "shake" and t < 0.8) and math.sin(t * 40) * 0.5 or (walking and math.sin(duck.phase) * 0.15 or math.sin(now * 3) * 0.06)
+				duck.tail.motor.C0 = duck.tail.base * CFrame.Angles(0, wag, 0)
+			end
+
+			-- Wings: flap when scared or running hard; a big stretch now and then.
+			local flap = (scared or speed > 18) and math.max(0, math.sin(now * 28)) * 0.9 or 0
+			local stretchL, stretchR = 0, 0
+			if idle == "stretch" and t < 1.5 then
+				local amount = math.sin(math.min(t / 1.5, 1) * math.pi)
+				stretchR = amount * 1.2
+			end
 			if duck.wingL then
-				duck.wingL.motor.C0 = duck.wingL.base * CFrame.Angles(0, 0, -math.max(flap, 0) - 0.05)
+				duck.wingL.motor.C0 = duck.wingL.base * CFrame.Angles(0, 0, -flap - stretchL - 0.04)
 			end
 			if duck.wingR then
-				duck.wingR.motor.C0 = duck.wingR.base * CFrame.Angles(0, 0, math.max(flap, 0) + 0.05)
+				duck.wingR.motor.C0 = duck.wingR.base * CFrame.Angles(0, 0, flap + stretchR + 0.04)
 			end
 		end
 

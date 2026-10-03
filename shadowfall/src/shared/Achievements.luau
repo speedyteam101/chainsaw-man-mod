@@ -36,6 +36,8 @@ Achievements.List = {
 	-- Honours
 	{ id = "lucky", name = "Golden Hour", desc = "Roll a Legendary power." },
 	{ id = "mythic", name = "Impossible Dawn", desc = "Roll a Mythic power." },
+	{ id = "transcendent", name = "Beyond", desc = "Roll a Transcendent power." },
+	{ id = "archivist", name = "Archivist", desc = "Find every journal page.", goal = 10 },
 	{ id = "ascendant", name = "Ascendant", desc = "Reach level 5." },
 	{ id = "boss_king", name = "Dawn", desc = "Defeat the Umbral King in the Heart of Shadow." },
 	{ id = "hundred", name = "Exterminator", desc = "Defeat 500 shadows in total.", goal = 500 },

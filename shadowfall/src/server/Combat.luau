@@ -247,6 +247,25 @@ function Combat.DamageEnemy(enemy, amount: number, attacker: Player?, opts)
 	end
 	if opts.effects then
 		Combat.ApplyEffects(enemy, opts.effects, opts.sourcePosition or enemy.root.Position, attacker, amount)
+		-- Chain: arc to nearby shadows (the arcs themselves don't chain again).
+		local chain = opts.effects.chain
+		if chain and not opts.chained then
+			local from = enemy.root.Position
+			local targets = {}
+			for _, other in Combat.EnemiesInSphere(from, chain.range) do
+				if other ~= enemy then
+					table.insert(targets, other)
+				end
+			end
+			table.sort(targets, function(a, b)
+				return (a.root.Position - from).Magnitude < (b.root.Position - from).Magnitude
+			end)
+			for i = 1, math.min(chain.count, #targets) do
+				local other = targets[i]
+				Remotes.Fx:FireAllClients("Bolt", { from = from, to = other.root.Position, color = opts.color or Color3.fromRGB(150, 210, 255) })
+				Combat.DamageEnemy(other, amount * chain.damage, attacker, { chained = true, color = opts.color, effects = { stun = 0.3 } })
+			end
+		end
 	end
 	if enemy.hp <= 0 then
 		enemy.dead = true
@@ -276,6 +295,9 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 		return nil
 	end
 	local now = os.clock()
+	if now < (state.storyShieldUntil or 0) then
+		return nil -- watching a story scene
+	end
 
 	-- Dodging through an attack: no damage, and you hit harder for a moment.
 	if now < state.dodgeUntil then
@@ -309,6 +331,16 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 	end
 
 	amount *= passive(player).defense or 1
+	-- Phoenix: a killing blow sets you ablaze and you rise instead.
+	local revive = passive(player).revive
+	if revive and humanoid.Health - amount <= 0 and now >= (state.reviveReady or 0) then
+		state.reviveReady = now + revive
+		humanoid.Health = humanoid.MaxHealth * 0.5
+		state.dodgeUntil = now + 1.5
+		Remotes.Fx:FireAllClients("Revive", { character = character, color = Color3.fromRGB(255, 150, 40) })
+		Remotes.Notify:FireClient(player, "Toast", { text = "You burn, and rise again!", color = Color3.fromRGB(255, 170, 80) })
+		return "revived"
+	end
 	if InventoryService.HasItem(player, "Coat") then
 		amount *= 0.85
 	end
@@ -338,7 +370,7 @@ function Combat.M1(player: Player, aim: Vector3?)
 	state.combo = state.combo % #C.M1Damage + 1
 	state.lastM1 = now
 	local finisher = state.combo == #C.M1Damage
-	state.m1Ready = now + (finisher and C.M1ComboFinisherCooldown or C.M1Cooldown)
+	state.m1Ready = now + (finisher and C.M1ComboFinisherCooldown or C.M1Cooldown) * (passive(player).m1Speed or 1)
 
 	local p = power(player)
 	local effect = passive(player)
@@ -353,7 +385,7 @@ function Combat.M1(player: Player, aim: Vector3?)
 	local damage = C.M1Damage[state.combo] * Combat.DamageMultiplier(player) * (effect.m1Damage or 1)
 	local color = p and p.color or Color3.new(1, 1, 1)
 
-	Remotes.Fx:FireAllClients("Swing", { character = character, combo = state.combo, color = color })
+	Remotes.Fx:FireAllClients("Swing", { character = character, combo = state.combo, color = color, style = p and p.vfx })
 
 	local hits = Combat.EnemiesInSphere(center, C.M1Range / 2 + 0.5)
 	Registry.M1Swing:Fire(player, center, C.M1Range / 2 + 0.5)

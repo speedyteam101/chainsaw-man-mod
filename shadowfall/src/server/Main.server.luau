@@ -27,6 +27,9 @@ local GatherService = require(Server.GatherService)
 local CraftingService = require(Server.CraftingService)
 local BaseService = require(Server.BaseService)
 local RescueService = require(Server.RescueService)
+local AllyService = require(Server.AllyService)
+local ShopService = require(Server.ShopService)
+local StoryService = require(Server.StoryService)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 local Materials = require(ReplicatedStorage.Shared.Materials)
 
@@ -46,6 +49,12 @@ SanityService.Start()
 GatherService.Start(world)
 BaseService.Start(world)
 RescueService.Start(world)
+AllyService.Start()
+ShopService.Start(world)
+StoryService.Start(world)
+StoryService.OnAllPages = function(player: Player)
+	AchievementService.Grant(player, "archivist")
+end
 
 -- Late wiring between services that would otherwise require each other in a loop.
 SanityService.BaseBonus = BaseService.SanityBonus
@@ -226,7 +235,12 @@ Remotes.Request.OnServerInvoke = function(player: Player, request, arg)
 	if request == "Ascend" then
 		return AchievementService.Ascend(player)
 	elseif request == "Reroll" then
-		return PowerService.Reroll(player)
+		return PowerService.Reroll(player, arg == "die")
+	elseif request == "ShopBuy" then
+		if type(arg) ~= "table" then
+			return { ok = false }
+		end
+		return ShopService.Buy(player, arg.shop, arg.item)
 	elseif request == "KeepRoll" then
 		return PowerService.ResolveReroll(player, arg == true)
 	elseif request == "Warp" then

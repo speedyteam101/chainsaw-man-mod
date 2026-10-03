@@ -10,18 +10,37 @@ local Registry = require(script.Parent.Registry)
 local Combat = require(script.Parent.Combat)
 local Projectiles = require(script.Parent.Projectiles)
 local PlayerData = require(script.Parent.PlayerData)
+local AllyService = require(script.Parent.AllyService)
+local InventoryService = require(script.Parent.InventoryService)
 
 local PowerService = {}
 
 local rng = Random.new()
+
+-- Health samples for Rewind.
+task.spawn(function()
+	while true do
+		task.wait(0.5)
+		for player, state in Registry.PlayerState do
+			local _, humanoid = Combat.GetCharacter(player)
+			if humanoid then
+				state.healthHistory = state.healthHistory or {}
+				table.insert(state.healthHistory, { t = os.clock(), hp = humanoid.Health })
+				while #state.healthHistory > 16 do
+					table.remove(state.healthHistory, 1)
+				end
+			end
+		end
+	end
+end)
 local pendingRolls: { [Player]: string } = {} -- rerolled power waiting for keep/replace
 
 -- Rolls a power, advancing pity. Returns the power definition.
-local function roll(data)
+local function roll(data, luck: number?)
 	data.totalRolls += 1
 	data.pity += 1
 	local forced = data.pity >= Config.Roll.PityAt
-	local power = Powers.Roll(rng, forced)
+	local power = Powers.Roll(rng, forced, luck)
 	if Powers.RarityById[power.rarity].rank >= Powers.RarityById.Legendary.rank then
 		data.pity = 0
 	end
@@ -45,7 +64,9 @@ function PowerService.AwakeningRoll(player: Player)
 end
 
 -- A paid reroll at the shrine. The result waits for the player to keep it or not.
-function PowerService.Reroll(player: Player)
+-- A paid reroll at the shrine (or a free one with a Fate Die). A Star Shard, if you have one,
+-- is used up to triple your chance of Legendary or better.
+function PowerService.Reroll(player: Player, useDie: boolean?)
 	local data = PlayerData.Get(player)
 	if not data or data.act ~= 2 then
 		return { ok = false, message = "Your power hasn't awakened yet." }
@@ -53,11 +74,18 @@ function PowerService.Reroll(player: Player)
 	if pendingRolls[player] then
 		return { ok = false, message = "Choose what to do with your last roll first." }
 	end
-	if data.essence < Config.Roll.RerollCost then
-		return { ok = false, message = string.format("You need %d Essence (you have %d).", Config.Roll.RerollCost, data.essence) }
+	if useDie then
+		if not InventoryService.TakeItem(player, "FateDie") then
+			return { ok = false, message = "You don't have a Fate Die." }
+		end
+	else
+		if data.essence < Config.Roll.RerollCost then
+			return { ok = false, message = string.format("You need %d Essence (you have %d).", Config.Roll.RerollCost, data.essence) }
+		end
+		data.essence -= Config.Roll.RerollCost
 	end
-	data.essence -= Config.Roll.RerollCost
-	local power = roll(data)
+	local luck = InventoryService.TakeItem(player, "StarShard") and 3 or 1
+	local power = roll(data, luck)
 	pendingRolls[player] = power.id
 	Registry.PowerRolled:Fire(player, power.id)
 	PlayerData.Sync(player)
@@ -134,6 +162,9 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 	local damage = (move.damage or 0) * mult
 	local color = power.color
 	local effects = move.effect
+	local style = power.vfx
+	-- Cast animation first, so the arms move as the effect appears.
+	Remotes.Fx:FireAllClients("Cast", { character = character, color = color, kind = move.kind, style = style, aim = aimAt })
 
 	if move.kind == "projectile" then
 		local count = move.count or 1
@@ -154,10 +185,11 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 				pierce = move.pierce,
 				effects = effects,
 				color = color,
+				style = style,
 			})
 		end
 	elseif move.kind == "nova" then
-		Remotes.Fx:FireAllClients("Nova", { position = origin, radius = move.radius, color = color })
+		Remotes.Fx:FireAllClients("Nova", { position = origin, radius = move.radius, color = color, style = style })
 		for _, enemy in Combat.EnemiesInSphere(origin, move.radius) do
 			Combat.DamageEnemy(enemy, damage, player, { effects = effects, sourcePosition = origin, color = color })
 		end
@@ -172,7 +204,7 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 		if wall then
 			finish = wall.Position - direction * 2
 		end
-		Remotes.Fx:FireAllClients("DashTrail", { from = origin, to = finish, color = color, width = move.width })
+		Remotes.Fx:FireAllClients("DashTrail", { from = origin, to = finish, color = color, width = move.width, style = style, character = character })
 		Remotes.Notify:FireClient(player, "DashMotion", { to = finish })
 		state.dodgeUntil = math.max(state.dodgeUntil, now + 0.3) -- brief i-frames while dashing
 		for _, enemy in Combat.EnemiesAlongSegment(origin, finish, move.width) do
@@ -180,23 +212,31 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 		end
 	elseif move.kind == "beam" then
 		local finish = origin + direction * move.range
-		Remotes.Fx:FireAllClients("Beam", { from = origin + Vector3.new(0, 1, 0), to = finish + Vector3.new(0, 1, 0), color = color, width = move.width })
+		Remotes.Fx:FireAllClients("Beam", { from = origin + Vector3.new(0, 1, 0), to = finish + Vector3.new(0, 1, 0), color = color, width = move.width, style = style })
 		for _, enemy in Combat.EnemiesAlongSegment(origin, finish, move.width) do
 			Combat.DamageEnemy(enemy, damage, player, { effects = effects, sourcePosition = origin, color = color })
 		end
 	elseif move.kind == "strike" then
-		local target = clampAim(origin, aimAt, move.range)
-		Remotes.Fx:FireAllClients("StrikeWarn", { position = target, radius = move.radius, color = color, delay = move.delay })
-		task.delay(move.delay, function()
-			Remotes.Fx:FireAllClients("Strike", { position = target, radius = move.radius, color = color })
-			for _, enemy in Combat.EnemiesInSphere(target, move.radius) do
-				Combat.DamageEnemy(enemy, damage, player, { effects = effects, sourcePosition = target, color = color, crit = true })
+		local center = clampAim(origin, aimAt, move.range)
+		for i = 1, move.count or 1 do
+			local target = center
+			if i > 1 then
+				local a = rng:NextNumber(0, math.pi * 2)
+				target = center + Vector3.new(math.cos(a), 0, math.sin(a)) * rng:NextNumber(4, move.spread or 12)
 			end
-		end)
+			local delayTime = move.delay + (i - 1) * 0.18
+			Remotes.Fx:FireAllClients("StrikeWarn", { position = target, radius = move.radius, color = color, delay = delayTime, style = style })
+			task.delay(delayTime, function()
+				Remotes.Fx:FireAllClients("Strike", { position = target, radius = move.radius, color = color, style = style })
+				for _, enemy in Combat.EnemiesInSphere(target, move.radius) do
+					Combat.DamageEnemy(enemy, damage, player, { effects = effects, sourcePosition = target, color = color, crit = true })
+				end
+			end)
+		end
 	elseif move.kind == "zone" then
 		local center = (move.range or 0) > 0 and clampAim(origin, aimAt, move.range) or origin
 		local followSelf = (move.range or 0) == 0
-		Remotes.Fx:FireAllClients("Zone", { position = center, radius = move.radius, color = color, duration = move.duration, follow = followSelf and character or nil })
+		Remotes.Fx:FireAllClients("Zone", { position = center, radius = move.radius, color = color, duration = move.duration, follow = followSelf and character or nil, style = style })
 		task.spawn(function()
 			local elapsed = 0
 			while elapsed < move.duration do
@@ -216,19 +256,72 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 			end
 		end)
 	elseif move.kind == "buff" then
-		Remotes.Fx:FireAllClients("Buff", { character = character, color = color, duration = move.duration })
-		if move.heal then
-			local _, humanoid = Combat.GetCharacter(player)
-			if humanoid then
-				Combat.HealPlayer(player, humanoid.MaxHealth * move.heal)
+		Remotes.Fx:FireAllClients("Buff", { character = character, color = color, duration = move.duration, style = style })
+		local _, humanoid = Combat.GetCharacter(player)
+		if move.heal and humanoid then
+			Combat.HealPlayer(player, humanoid.MaxHealth * move.heal)
+		end
+		if move.rewind and humanoid then
+			-- Back to the health you had a few seconds ago (never lower than now).
+			local past = humanoid.Health
+			for _, sample in state.healthHistory or {} do
+				if now - sample.t >= move.rewind - 0.5 and now - sample.t <= move.rewind + 1.5 then
+					past = math.max(past, sample.hp)
+				end
 			end
+			humanoid.Health = math.min(humanoid.MaxHealth, past)
+			Remotes.Fx:FireAllClients("Rewind", { character = character, color = color })
 		end
 		if move.damageMult then
 			state.damageBuff = move.damageMult
 			state.damageBuffUntil = now + move.duration
 		end
+		if move.iframes then
+			state.dodgeUntil = math.max(state.dodgeUntil, now + move.iframes)
+		end
+		if move.speedMult then
+			player:SetAttribute("SpeedBuff", move.speedMult)
+			local token = now
+			state.speedToken = token
+			task.delay(move.duration, function()
+				if state.speedToken == token then
+					player:SetAttribute("SpeedBuff", nil)
+				end
+			end)
+		end
+	elseif move.kind == "summon" then
+		AllyService.Summon(player, move.ally, move.count, move.duration, move.damage, nil)
+	elseif move.kind == "blinkchain" then
+		-- Zip from shadow to shadow, striking each one.
+		local points = { origin }
+		local hit = {}
+		local current = origin
+		for _ = 1, move.count do
+			local best, bestDistance = nil, move.range
+			for _, enemy in Combat.EnemiesInSphere(current, move.range) do
+				local d = (enemy.root.Position - current).Magnitude
+				-- The first hop prefers shadows in front of you.
+				local ahead = #points > 1 or (enemy.root.Position - origin).Unit:Dot(direction) > 0.2
+				if not hit[enemy] and ahead and d < bestDistance then
+					best, bestDistance = enemy, d
+				end
+			end
+			if not best then
+				break
+			end
+			hit[best] = true
+			current = best.root.Position
+			table.insert(points, current)
+			Combat.DamageEnemy(best, damage, player, { effects = { stun = 0.4 }, sourcePosition = current, color = color, crit = true })
+		end
+		local finish = #points > 1 and points[#points] - (points[#points] - points[#points - 1]).Unit * 3 or origin + direction * 30
+		if #points == 1 then
+			table.insert(points, finish)
+		end
+		state.dodgeUntil = math.max(state.dodgeUntil, now + 0.2 + 0.05 * #points)
+		Remotes.Fx:FireAllClients("BlinkChain", { points = points, color = color, style = style, character = character })
+		Remotes.Notify:FireClient(player, "DashMotion", { to = finish })
 	end
-	Remotes.Fx:FireAllClients("Cast", { character = character, color = color, kind = move.kind })
 end
 
 function PowerService.Awaken(player: Player)

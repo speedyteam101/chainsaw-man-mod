@@ -164,11 +164,14 @@ function AchievementService.Start()
 
 	Registry.PowerRolled:Connect(function(player: Player, powerId: string)
 		local power = Powers.ById[powerId]
-		if power.rarity == "Legendary" or power.rarity == "Mythic" then
+		if power.rarity == "Legendary" or power.rarity == "Mythic" or power.rarity == "Transcendent" then
 			AchievementService.Grant(player, "lucky")
 		end
-		if power.rarity == "Mythic" then
+		if power.rarity == "Mythic" or power.rarity == "Transcendent" then
 			AchievementService.Grant(player, "mythic")
+		end
+		if power.rarity == "Transcendent" then
+			AchievementService.Grant(player, "transcendent")
 		end
 	end)
 end

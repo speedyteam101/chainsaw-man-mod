@@ -14,12 +14,15 @@ local Materials = require(ReplicatedStorage.Shared.Materials)
 local Recipes = require(ReplicatedStorage.Shared.Recipes)
 local Structures = require(ReplicatedStorage.Shared.Structures)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
+local Shops = require(ReplicatedStorage.Shared.Shops)
+local Story = require(ReplicatedStorage.Shared.Story)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Ui = require(script.Parent.Ui)
 local RollUI = require(script.Parent.RollUI)
 local Hud = require(script.Parent.Hud)
 local ClientState = require(script.Parent.ClientState)
 local BuildMode = require(script.Parent.BuildMode)
+local Cinematic = require(script.Parent.Cinematic)
 
 local Menu = {}
 
@@ -29,7 +32,7 @@ local gui, panel, content, tabButtons
 local currentTab = "Ascension"
 local busy = false
 
-local TABS = { "Ascension", "Feats", "Power", "Pack", "Build", "Base", "Warp" }
+local TABS = { "Ascension", "Feats", "Power", "Pack", "Build", "Base", "Journal", "Warp" }
 if Config.EnableStudioDevTools and RunService:IsStudio() then
 	table.insert(TABS, "Dev")
 end
@@ -164,12 +167,12 @@ function render.Feats()
 	end
 end
 
-local function reroll()
+local function reroll(useDie: boolean?)
 	if busy then
 		return
 	end
 	busy = true
-	local result = Remotes.Request:InvokeServer("Reroll")
+	local result = Remotes.Request:InvokeServer("Reroll", useDie and "die" or nil)
 	if not result or not result.ok then
 		busy = false
 		Hud.Toast(result and result.message or "The shrine is silent.", T.Bad)
@@ -194,7 +197,7 @@ function render.Power()
 		return
 	end
 	local rarity = Powers.RarityById[p.rarity]
-	add(Ui.label(string.upper(p.id) .. "  -  " .. p.rarity, { Size = UDim2.new(1, 0, 0, 28), Font = T.Title, TextSize = 26, TextColor3 = p.color }))
+	add(Ui.label(string.upper(p.name) .. "  -  " .. p.rarity, { Size = UDim2.new(1, 0, 0, 28), Font = T.Title, TextSize = 26, TextColor3 = p.color }))
 	paragraph(p.blurb)
 	add(Ui.label("Passive: " .. p.passive, { Size = UDim2.new(1, 0, 0, 22), Font = T.Bold, TextSize = 15, TextColor3 = rarity.color }))
 	for slot, move in p.moves do
@@ -211,14 +214,24 @@ function render.Power()
 	local pity = player:GetAttribute("Pity") or 0
 	paragraph(string.format("Reroll for %d Essence (you have %d). If you don't like the result, keep your current power. Guaranteed Legendary or better within %d rolls.", Config.Roll.RerollCost, player:GetAttribute("Essence") or 0, math.max(1, Config.Roll.PityAt - pity)))
 	add(Ui.button("REROLL  (" .. Config.Roll.RerollCost .. " Essence)", { Size = UDim2.new(1, 0, 0, 44), TextSize = 18, BackgroundColor3 = Color3.fromRGB(40, 30, 64) }, function()
-		task.spawn(reroll)
+		task.spawn(reroll, false)
 	end))
+	local dice = ClientState.items["FateDie"] or 0
+	local stars = ClientState.items["StarShard"] or 0
+	if dice > 0 then
+		add(Ui.button(string.format("USE A FATE DIE  (you have %d)", dice), { Size = UDim2.new(1, 0, 0, 40), TextSize = 16, BackgroundColor3 = Color3.fromRGB(60, 44, 10), TextColor3 = T.Gold }, function()
+			task.spawn(reroll, true)
+		end))
+	end
+	if stars > 0 then
+		paragraph(string.format("You have %d Star Shard%s. Your next roll uses one and is three times as likely to be Legendary or better.", stars, stars == 1 and "" or "s"), T.Gold)
+	end
 	add(Ui.label("ODDS", { Size = UDim2.new(1, 0, 0, 26), Font = T.Bold, TextSize = 14, TextColor3 = T.Muted }))
 	for _, odds in Powers.Odds() do
 		local names = {}
 		for _, power in Powers.List do
 			if power.rarity == odds.id then
-				table.insert(names, power.id)
+				table.insert(names, power.name)
 			end
 		end
 		add(Ui.label(string.format("%s  %.1f%%   (%s)", odds.id, odds.percent, table.concat(names, ", ")), { Size = UDim2.new(1, 0, 0, 20), TextSize = 14, TextColor3 = odds.color }))
@@ -284,8 +297,27 @@ function render.Pack()
 			end
 		end
 	end
+	for id, info in Shops.Items do
+		local count = ClientState.items[id] or 0
+		if count > 0 then
+			anyItem = true
+			local row = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 40), BackgroundColor3 = T.PanelLight }, {
+				Ui.corner(6),
+				Ui.padding(8),
+				Ui.label(string.format("%s  x%d  -  %s", info.name, count, info.desc), { Size = UDim2.new(1, -110, 1, 0), TextSize = 14 }),
+			}))
+			if id == "DuckBread" then
+				Ui.button("Feed Biscuit", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.new(0, 100, 0, 28), TextSize = 13, Parent = row }, function()
+					local result = Remotes.Request:InvokeServer("Use", "DuckBread")
+					if result and not result.ok and result.message then
+						Hud.Toast(result.message, T.Bad)
+					end
+				end)
+			end
+		end
+	end
 	if not anyItem then
-		paragraph("Nothing yet. Craft something below.")
+		paragraph("Nothing yet. Craft something below, or visit the merchants at the camp.")
 	end
 
 	local groups = { { "material", "REFINING" }, { "tool", "TOOLS" }, { "gear", "GEAR" }, { "consumable", "CONSUMABLES" } }
@@ -482,6 +514,42 @@ function render.Base()
 			Hud.Toast(result and result.ok and "Base abandoned. Place your crystal again from the Build tab." or (result and result.message or "Failed"), T.Muted)
 			Menu.Render()
 		end))
+	end
+end
+
+function render.Journal()
+	heading("Journal")
+	local story = ClientState.story or {}
+	local chapter = story.chapter or 1
+	add(Ui.label("CHAPTERS", { Size = UDim2.new(1, 0, 0, 22), Font = T.Bold, TextSize = 14, TextColor3 = T.Accent }))
+	for _, c in Story.Chapters do
+		local reached = c.id <= chapter
+		add(Ui.label(string.format("%s  Chapter %d: %s", reached and "*" or " ", c.id, reached and c.title or "???"), {
+			Size = UDim2.new(1, 0, 0, 22),
+			Font = reached and T.Title or T.Body,
+			TextSize = 17,
+			TextColor3 = c.id == chapter and T.Gold or (reached and T.Text or T.Muted),
+		}))
+	end
+	local found = 0
+	for _ in story.pages or {} do
+		found += 1
+	end
+	add(Ui.label(string.format("PAGES FOUND  %d / %d", found, #Story.Pages), { Size = UDim2.new(1, 0, 0, 28), Font = T.Bold, TextSize = 14, TextColor3 = T.Accent }))
+	paragraph("Pages are scattered across every area. Look for a faint glow on a little wooden stand.")
+	for _, page in Story.Pages do
+		local has = story.pages and story.pages[page.id]
+		local row = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 38), BackgroundColor3 = has and Color3.fromRGB(40, 34, 24) or T.PanelLight }, {
+			Ui.corner(6),
+			Ui.padding(8),
+			Ui.label(has and page.title or ("??? (somewhere in " .. Areas.ById[page.area].name .. ")"), { Size = UDim2.new(1, -100, 1, 0), TextSize = 14, TextColor3 = has and Color3.fromRGB(240, 225, 190) or T.Muted }),
+		}))
+		if has then
+			Ui.button("Read", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, 0, 0.5, 0), Size = UDim2.new(0, 90, 0, 26), TextSize = 13, Parent = row }, function()
+				Menu.Close()
+				Cinematic.ShowPage(page)
+			end)
+		end
 	end
 end
 

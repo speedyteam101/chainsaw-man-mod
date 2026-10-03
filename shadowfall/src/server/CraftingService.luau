@@ -12,6 +12,7 @@ local Registry = require(script.Parent.Registry)
 local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
+local DuckService = require(script.Parent.DuckService)
 
 local CraftingService = {}
 
@@ -88,6 +89,17 @@ function CraftingService.Use(player: Player, itemId: string)
 		end
 		Registry.SanityChange:Fire(player, 40)
 		Remotes.Fx:FireAllClients("Buff", { character = character, color = Color3.fromRGB(150, 200, 255), duration = 1 })
+	elseif itemId == "DuckBread" then
+		local duck = DuckService.Get(player)
+		if not duck or not DuckService.IsNear(player) then
+			return { ok = false, message = "Biscuit needs to be right next to you." }
+		end
+		if not InventoryService.TakeItem(player, itemId) then
+			return { ok = false, message = "You have no duck bread." }
+		end
+		Registry.SanityChange:Fire(player, 35)
+		Remotes.Fx:FireAllClients("Hearts", { model = duck.model })
+		Remotes.Notify:FireClient(player, "DuckSay", { text = "QUACK QUACK! (Biscuit gobbles the bread and does a happy little dance.)" })
 	elseif itemId == "LightBomb" then
 		if not InventoryService.TakeItem(player, itemId) then
 			return { ok = false, message = "You have no light bombs." }

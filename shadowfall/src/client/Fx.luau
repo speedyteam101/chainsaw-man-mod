@@ -11,6 +11,7 @@ local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Ui = require(script.Parent.Ui)
 local Audio = require(script.Parent.Audio)
 local CameraFx = require(script.Parent.CameraFx)
+local PowerVfx = require(script.Parent.PowerVfx)
 
 local Fx = {}
 
@@ -403,9 +404,6 @@ function handlers.Cast(d)
 	if root then
 		sphere(root.Position + root.CFrame.LookVector * 1.5 + Vector3.new(0, 0.5, 0), 1.6, d.color, 0.2, 0.2)
 	end
-	if d.character then
-		swingArm(d.character, true)
-	end
 end
 
 function handlers.Awaken(d)
@@ -591,12 +589,30 @@ function Fx.Start()
 	folder.Name = "LocalFx"
 	folder.Parent = workspace
 
+	PowerVfx.SetFolder(folder)
 	Remotes.Fx.OnClientEvent:Connect(function(kind, data)
 		local handler = handlers[kind]
 		if handler then
 			local ok, err = pcall(handler, data)
 			if not ok then
 				warn("[Shadowfall] fx error", kind, err)
+			end
+		end
+		-- Power styling on top of the basic effect.
+		local extra = PowerVfx[kind]
+		if extra then
+			local ok, err = pcall(function()
+				if kind == "Projectile" then
+					local info = projectiles[data.id]
+					if info then
+						extra(data, info.part)
+					end
+				else
+					extra(data)
+				end
+			end)
+			if not ok then
+				warn("[Shadowfall] power fx error", kind, err)
 			end
 		end
 	end)

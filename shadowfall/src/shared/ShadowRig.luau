@@ -92,6 +92,10 @@ export type RigOptions = {
 	smokeRate: number?,
 	tendrils: number?, -- smoke tendrils trailing from the back (0-5)
 	eyeLight: boolean?, -- eyes cast a faint light (stalkers, bosses)
+	bodyColor: Color3?, -- recolour the body (summoned allies)
+	bodyMaterial: Enum.Material?,
+	bodyTransparency: number?,
+	noSmoke: boolean?,
 	antlers: boolean?,
 	crown: boolean?,
 	manyEyes: boolean?,
@@ -305,6 +309,31 @@ function ShadowRig.Build(options: RigOptions): Model
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
 	humanoid.Parent = model
+
+	-- Allies reuse the rig in other colours: bone-white skeletons, glassy clones.
+	if options.bodyColor then
+		local keep = { HumanoidRootPart = true, Mouth = true }
+		for _, child in model:GetChildren() do
+			if child:IsA("BasePart") and not keep[child.Name] and string.sub(child.Name, 1, 3) ~= "Eye" and string.sub(child.Name, 1, 8) ~= "TorsoEye" then
+				if child.Name == "Pool" then
+					child.Transparency = 1
+				elseif child.Name == "Vein" then
+					child.Color = eyeColor
+				else
+					child.Color = options.bodyColor
+					child.Material = options.bodyMaterial or Enum.Material.SmoothPlastic
+					child.Transparency = options.bodyTransparency or 0
+				end
+			end
+		end
+	end
+	if options.noSmoke then
+		for _, d in model:GetDescendants() do
+			if d:IsA("Smoke") or d:IsA("ParticleEmitter") or d:IsA("Trail") then
+				d:Destroy()
+			end
+		end
+	end
 
 	model:SetAttribute("RigScale", s)
 	CollectionService:AddTag(model, "ShadowRig")

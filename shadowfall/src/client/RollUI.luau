@@ -34,7 +34,7 @@ local function card(power, index: number)
 			BackgroundColor3 = power.color,
 			Rotation = 45,
 		}, { Ui.corner(6), Ui.stroke(Color3.new(1, 1, 1), 1, 0.6) }),
-		Ui.label(string.upper(power.id), { Position = UDim2.new(0, 0, 0, 98), Size = UDim2.new(1, 0, 0, 26), Font = T.Title, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = T.Text }),
+		Ui.label(string.upper(power.name), { Position = UDim2.new(0, 0, 0, 98), Size = UDim2.new(1, 0, 0, 26), Font = T.Title, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = T.Text }),
 		Ui.label(power.rarity, { Position = UDim2.new(0, 0, 0, 126), Size = UDim2.new(1, 0, 0, 18), Font = T.Bold, TextSize = 14, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = rarity.color }),
 	})
 end
@@ -140,7 +140,7 @@ function RollUI.Play(powerId: string, opts)
 		Ui.corner(14),
 		Ui.stroke(rarity.color, 3),
 		Ui.padding(22),
-		Ui.label(string.upper(result.id), { Size = UDim2.new(1, 0, 0, 56), Font = T.Title, TextSize = 52, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = result.color }),
+		Ui.label(string.upper(result.name), { Size = UDim2.new(1, 0, 0, 56), Font = T.Title, TextSize = 52, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = result.color }),
 		Ui.label(string.upper(result.rarity), { Position = UDim2.new(0, 0, 0, 58), Size = UDim2.new(1, 0, 0, 22), Font = T.Bold, TextSize = 18, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = rarity.color }),
 		Ui.label(result.blurb, { Position = UDim2.new(0, 0, 0, 92), Size = UDim2.new(1, 0, 0, 48), TextSize = 16, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = T.Muted, Font = T.Body }),
 		Ui.label("Passive: " .. result.passive, { Position = UDim2.new(0, 0, 0, 146), Size = UDim2.new(1, 0, 0, 22), TextSize = 15, TextXAlignment = Enum.TextXAlignment.Center, TextColor3 = T.Text, Font = T.Bold }),
@@ -152,6 +152,31 @@ function RollUI.Play(powerId: string, opts)
 			TextColor3 = T.Muted,
 		}),
 	})
+	if result.rarity == "Transcendent" then
+		local stroke = reveal:FindFirstChildOfClass("UIStroke")
+		local gradient = Ui.new("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 120, 200)),
+				ColorSequenceKeypoint.new(0.25, Color3.fromRGB(255, 240, 140)),
+				ColorSequenceKeypoint.new(0.5, Color3.fromRGB(140, 255, 220)),
+				ColorSequenceKeypoint.new(0.75, Color3.fromRGB(140, 170, 255)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 120, 200)),
+			}),
+		})
+		gradient.Parent = stroke
+		if stroke then
+			stroke.Thickness = 5
+		end
+		task.spawn(function()
+			while reveal.Parent do
+				gradient.Rotation = (gradient.Rotation + 3) % 360
+				task.wait()
+			end
+		end)
+		title.Text = "T R A N S C E N D E N T"
+		local burstFrame = Ui.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 0, ZIndex = 6, Parent = backdrop })
+		Ui.tween(burstFrame, 1.6, { BackgroundTransparency = 1 })
+	end
 	reveal.Size = UDim2.new(0, 500, 0, 290)
 	Ui.tween(reveal, 0.35, { Size = UDim2.new(0, 560, 0, 330) }, Enum.EasingStyle.Back)
 
@@ -173,10 +198,10 @@ function RollUI.Play(powerId: string, opts)
 		end)
 	else
 		local current = opts.current and Powers.ById[opts.current]
-		Ui.button("Take " .. result.id, { Size = UDim2.new(0, 220, 0, 40), BackgroundColor3 = Color3.fromRGB(40, 60, 40), Parent = buttons }, function()
+		Ui.button("Take " .. result.name, { Size = UDim2.new(0, 220, 0, 40), BackgroundColor3 = Color3.fromRGB(40, 60, 40), Parent = buttons }, function()
 			choice = true
 		end)
-		Ui.button("Keep " .. (current and current.id or "current"), { Size = UDim2.new(0, 220, 0, 40), Parent = buttons }, function()
+		Ui.button("Keep " .. (current and current.name or "current"), { Size = UDim2.new(0, 220, 0, 40), Parent = buttons }, function()
 			choice = false
 		end)
 	end
