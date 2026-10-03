@@ -257,14 +257,21 @@ Press E on a merchant to trade Essence for goods:
 
 So a new player who trades their first 1000 Essence ends up with 600 Tokens including the gift. That's enough for two or three passes. (These numbers are a first guess and haven't been balance-tested. Change them in `src/shared/Passes.luau`.)
 
-**Passes** are permanent upgrades bought with Tokens:
+**Passes** are permanent upgrades bought with Tokens. "Suggested Robux" is only a suggestion if you also sell a pass as a Roblox game pass. The real price is whatever you set on the Creator Dashboard.
 
-| Pass | Tokens | What it does |
-| --- | --- | --- |
-| Power Vault | 300 | **Permanent powers.** Every power you own or roll from then on is kept forever, even ones you replace. Swap between them for free in the Power tab (not mid-fight, once every 15 seconds; move cooldowns carry over). |
-| Lucky Star | 400 | Every roll is 1.5x as likely to be Legendary or better. Stacks with Star Shards. |
-| Builder's Belt | 200 | +50% materials from gathering on average (each hit has a chance of an extra piece). |
-| Biscuit's Wardrobe | 120 | Outfits for Biscuit: bow tie, top hat, flower crown, scarf. Looks only. |
+| Pass | Tokens | Suggested Robux | What it does |
+| --- | --- | --- | --- |
+| Power Vault | 300 | 349 | **Permanent powers.** Every power you own or roll from then on is kept forever, even ones you replace. Swap between them for free in the Power tab (not mid-fight, once every 15 seconds; move cooldowns carry over). |
+| Lucky Star | 400 | 399 | Every roll is 1.5x as likely to be Legendary or better. Stacks with Star Shards. |
+| Second Wind | 350 | 249 | Once every 5 minutes, a killing blow leaves you at 30% health with 1.5 s of protection. |
+| Fleet Feet | 220 | 149 | Walk and sprint 12% faster in the shadow world. |
+| Builder's Belt | 200 | 149 | +50% materials from gathering on average (each hit has a chance of an extra piece). |
+| Steady Mind | 180 | 99 | Sanity drains 35% slower. Stacks with the Lantern. |
+| Biscuit's Glow | 180 | 99 | Biscuit's sanity/health aura reaches 50% further and works 50% faster. |
+| Radiant Aura | 150 | 99 | A light in your power's colour around you, plus sparkles other players see. Looks only, and it can be toggled. |
+| Biscuit's Wardrobe | 120 | 79 | Outfits for Biscuit: bow tie, top hat, flower crown, scarf. Looks only. |
+
+There are deliberately no passes that multiply Essence or Tokens, or give merchant discounts. Selling those for Robux would amount to selling the currency.
 
 **Robux.** Essence and Tokens can **never** be bought with Robux. The game has no developer products and no `ProcessReceipt` handler, and nothing sells a currency. Passes are Tokens-only by default. If you also want to sell a pass for Robux:
 

@@ -38,6 +38,10 @@ local function grant(player: Player, passId: string, how: string)
 	if passId == "vault" and data.power then
 		data.vault[data.power] = true
 	end
+	if passId == "aura" then
+		data.auraOn = true
+		task.defer(PassService.RefreshAura, player)
+	end
 	Remotes.Notify:FireClient(player, "PassUnlocked", { id = passId, name = pass.name, how = how })
 	PlayerData.Sync(player)
 	PlayerData.Save(player)
@@ -209,6 +213,62 @@ function PassService.SetDuckOutfit(player: Player, index)
 	return { ok = true }
 end
 
+-- Radiant Aura: a light in your power's colour (you see it on the ground around you) and sparkles
+-- (hidden on your own screen in first person, so they don't fill your view).
+function PassService.RefreshAura(player: Player)
+	local character = player.Character
+	if not character then
+		return
+	end
+	for _, old in character:GetDescendants() do
+		if old.Name == "RadiantAura" then
+			old:Destroy()
+		end
+	end
+	local data = PlayerData.Get(player)
+	if not data or not data.passes.aura or data.auraOn == false then
+		return
+	end
+	local power = data.power and Powers.ById[data.power]
+	local color = power and power.color or Color3.fromRGB(255, 240, 210)
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local torso = character:FindFirstChild("Torso")
+	if root then
+		local light = Instance.new("PointLight")
+		light.Name = "RadiantAura"
+		light.Color = color
+		light.Range = 12
+		light.Brightness = 1.4
+		light.Shadows = false
+		light.Parent = root
+	end
+	if torso then
+		local sparkles = Instance.new("Sparkles")
+		sparkles.Name = "RadiantAura"
+		sparkles.SparkleColor = color
+		sparkles.Parent = torso
+	end
+end
+
+function PassService.SetAura(player: Player, on)
+	local data = PlayerData.Get(player)
+	if not data or not data.passes.aura then
+		return { ok = false, message = "You need the Radiant Aura pass." }
+	end
+	data.auraOn = on == true
+	PassService.RefreshAura(player)
+	PlayerData.Sync(player)
+	return { ok = true }
+end
+
+function PassService.OnCharacter(player: Player, character: Model)
+	character:WaitForChild("HumanoidRootPart", 10)
+	character:WaitForChild("Torso", 10)
+	if player.Character == character then
+		PassService.RefreshAura(player)
+	end
+end
+
 function PassService.Start()
 	MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player: Player, gamePassId: number, purchased: boolean)
 		if not purchased then
@@ -223,6 +283,9 @@ function PassService.Start()
 end
 
 function PassService.OnLoaded(player: Player)
+	player:GetAttributeChangedSignal("Power"):Connect(function()
+		PassService.RefreshAura(player) -- recolour to the new power
+	end)
 	local data = PlayerData.Get(player)
 	if data and data.passes.vault and data.power then
 		data.vault[data.power] = true

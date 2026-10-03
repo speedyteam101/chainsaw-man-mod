@@ -284,7 +284,9 @@ function DuckService.IsNear(player: Player): boolean
 	if not duck or duck.state ~= "follow" or not root then
 		return false
 	end
-	return (duck.root.Position - root.Position).Magnitude <= S.DuckRange
+	local data = PlayerData.Get(player)
+	local range = S.DuckRange * ((data and data.passes and data.passes.glow) and Passes.DuckGlowMultiplier or 1) -- Biscuit's Glow
+	return (duck.root.Position - root.Position).Magnitude <= range
 end
 
 function DuckService.Remove(player: Player)

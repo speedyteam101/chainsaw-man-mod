@@ -11,6 +11,7 @@ local Config = require(ReplicatedStorage.Shared.Config)
 local Achievements = require(ReplicatedStorage.Shared.Achievements)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
+local Passes = require(ReplicatedStorage.Shared.Passes)
 
 local PlayerData = {}
 
@@ -49,6 +50,7 @@ local function defaults()
 		passes = {}, -- [passId] = true
 		vault = {}, -- [powerId] = true (Power Vault pass)
 		duckOutfit = 1,
+		auraOn = true, -- Radiant Aura pass
 		-- look = nil until the character creator is finished (see Looks.luau)
 	}
 end
@@ -164,6 +166,7 @@ function PlayerData.Sync(player: Player)
 	player:SetAttribute("Essence", data.essence)
 	player:SetAttribute("Pity", data.pity)
 	player:SetAttribute("Tokens", data.tokens)
+	player:SetAttribute("PassSpeed", if data.passes.swift then Passes.SpeedMultiplier else nil) -- Fleet Feet
 	player:SetAttribute(
 		"CanAscend",
 		data.act == 2 and data.level < Config.MaxLevel and Achievements.IsQualified(data.achievements, data.level + 1)
@@ -184,6 +187,7 @@ function PlayerData.Sync(player: Player)
 		vault = data.vault,
 		essenceTraded = data.essenceTraded,
 		duckOutfit = data.duckOutfit,
+		auraOn = data.auraOn,
 		look = data.look,
 	})
 end

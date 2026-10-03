@@ -7,6 +7,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Powers = require(ReplicatedStorage.Shared.Powers)
+local Passes = require(ReplicatedStorage.Shared.Passes)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Registry = require(script.Parent.Registry)
 local PlayerData = require(script.Parent.PlayerData)
@@ -347,6 +348,16 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 		state.invulnUntil = now + 1.5
 		Remotes.Fx:FireAllClients("Revive", { character = character, color = Color3.fromRGB(255, 150, 40) })
 		Remotes.Notify:FireClient(player, "Toast", { text = "You burn, and rise again!", color = Color3.fromRGB(255, 170, 80) })
+		return "revived"
+	end
+	-- Second Wind (pass): the same idea on a long cooldown.
+	if data and data.passes and data.passes.secondwind and humanoid.Health - amount <= 0 and now >= (state.secondWindReady or 0) then
+		local SW = Passes.SecondWind
+		state.secondWindReady = now + SW.Cooldown
+		humanoid.Health = math.max(1, humanoid.MaxHealth * SW.Health)
+		state.invulnUntil = now + SW.Protection
+		Remotes.Fx:FireAllClients("Revive", { character = character, color = Color3.fromRGB(255, 130, 120) })
+		Remotes.Notify:FireClient(player, "Toast", { text = "Second Wind! You stay on your feet.", color = Color3.fromRGB(255, 150, 140) })
 		return "revived"
 	end
 	amount = math.max(1, math.floor(amount + 0.5))

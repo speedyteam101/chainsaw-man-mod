@@ -290,7 +290,7 @@ function CombatInput.Start()
 		if blocking then
 			speed = 8
 		end
-		humanoid.WalkSpeed = speed * passive * (tonumber(player:GetAttribute("SpeedBuff")) or 1)
+		humanoid.WalkSpeed = speed * passive * (tonumber(player:GetAttribute("SpeedBuff")) or 1) * (tonumber(player:GetAttribute("PassSpeed")) or 1)
 	end)
 
 	player.CharacterAdded:Connect(function()

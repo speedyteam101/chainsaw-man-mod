@@ -707,6 +707,16 @@ function render.Tokens()
 				end
 			end)
 		end
+		if owned and pass.id == "aura" then
+			local on = ClientState.auraOn ~= false
+			add(Ui.button(on and "Aura: ON  (click to turn off)" or "Aura: OFF  (click to turn on)", {
+				Size = UDim2.new(0, 260, 0, 32),
+				TextSize = 13,
+				BackgroundColor3 = on and Color3.fromRGB(50, 46, 30) or T.PanelLight,
+			}, function()
+				Remotes.Request:InvokeServer("Aura", not on)
+			end))
+		end
 		if owned and pass.id == "wardrobe" then
 			local outfits = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 }, {
 				Ui.new("UIGridLayout", { CellSize = UDim2.fromOffset(120, 32), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder }),

@@ -44,6 +44,12 @@ function FirstPerson.Start()
 					child.LocalTransparencyModifier = 0
 				end
 			end
+			-- Your own Radiant Aura sparkles would fill the screen; other players still see them.
+			local torso = character:FindFirstChild("Torso")
+			local sparkles = torso and torso:FindFirstChild("RadiantAura")
+			if sparkles and sparkles:IsA("Sparkles") and sparkles.Enabled then
+				sparkles.Enabled = false
+			end
 			-- Your own hair (from the character creator) would block the view from inside your head.
 			local hair = character:FindFirstChild("LookHair")
 			local head = character:FindFirstChild("Head")

@@ -13,6 +13,8 @@ local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
 local DuckService = require(script.Parent.DuckService)
 local Act1Director = require(script.Parent.Act1Director)
+local PassService = require(script.Parent.PassService)
+local Passes = require(ReplicatedStorage.Shared.Passes)
 
 local SanityService = {}
 
@@ -59,6 +61,10 @@ local function update(player: Player)
 	end
 	local delta = 0
 	local drainMult = InventoryService.HasItem(player, "Lantern") and 0.6 or 1
+	if PassService.Has(player, "steady") then
+		drainMult *= Passes.SanityDrainMultiplier -- Steady Mind
+	end
+	local duckMult = PassService.Has(player, "glow") and Passes.DuckGlowMultiplier or 1 -- Biscuit's Glow
 	local area = Areas.At(root.Position)
 
 	-- Drains
@@ -74,7 +80,7 @@ local function update(player: Player)
 	-- Comforts
 	local nearDuck = DuckService.IsNear(player)
 	if nearDuck then
-		delta += S.DuckRegen
+		delta += S.DuckRegen * duckMult
 	end
 	if data.act == 2 then
 		if area and area.id == "town" and Vector2.new(root.Position.X, root.Position.Z).Magnitude < Config.Act2.CampRadius then
@@ -91,7 +97,7 @@ local function update(player: Player)
 
 	-- Biscuit's company heals, too.
 	if nearDuck and humanoid.Health < humanoid.MaxHealth then
-		humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + S.DuckHealthRegen * TICK)
+		humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + S.DuckHealthRegen * duckMult * TICK)
 	end
 
 	-- At the bottom, the dark starts to hurt.

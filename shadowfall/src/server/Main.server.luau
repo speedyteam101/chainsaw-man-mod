@@ -104,6 +104,7 @@ local function onCharacterAdded(player: Player, character: Model)
 	SanityService.OnCharacter(player)
 	task.spawn(DuckService.OnCharacter, player, character)
 	task.spawn(LookService.OnCharacter, player, character)
+	task.spawn(PassService.OnCharacter, player, character)
 
 	if data.act == 1 then
 		player.CameraMode = Enum.CameraMode.LockFirstPerson
@@ -243,7 +244,7 @@ local function devCommand(player: Player, command)
 		data.base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} }
 		data.story = { chapter = 1, seen = {}, pages = {} }
 		data.tokens, data.essenceTraded, data.welcomeTokens = 0, 0, false
-		data.passes, data.vault, data.duckOutfit = {}, {}, 1
+		data.passes, data.vault, data.duckOutfit, data.auraOn = {}, {}, 1, true
 		PlayerData.Sync(player)
 		PlayerData.Respawn(player)
 	end
@@ -298,6 +299,8 @@ Remotes.Request.OnServerInvoke = function(player: Player, request, arg)
 		return PassService.EquipVaulted(player, arg)
 	elseif request == "DuckOutfit" then
 		return PassService.SetDuckOutfit(player, arg)
+	elseif request == "Aura" then
+		return PassService.SetAura(player, arg)
 	elseif request == "SaveLook" then
 		return LookService.Save(player, arg)
 	elseif request == "Dev" then
