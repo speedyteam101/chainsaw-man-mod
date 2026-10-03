@@ -339,6 +339,9 @@ function Menu.Start()
 			Menu.Close()
 		else
 			Menu.Open(nil)
+			if not panel.Visible then
+				return Enum.ContextActionResult.Pass
+			end
 		end
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.M, Enum.KeyCode.ButtonSelect)

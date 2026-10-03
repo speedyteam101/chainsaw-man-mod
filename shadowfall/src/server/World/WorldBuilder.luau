@@ -687,6 +687,9 @@ local function buildHeart(map: Instance, rng: Random)
 	-- Obsidian spikes around the rim
 	for i = 0, 35 do
 		local a = i / 36 * math.pi * 2
+		if math.cos(a) < 0 and math.abs(math.sin(a)) < 0.12 then
+			continue -- leave the bridge entrance (west side) open
+		end
 		local h = rng:NextNumber(10, 30)
 		local p = c + Vector3.new(math.cos(a), 0, math.sin(a)) * rng:NextNumber(128, 138)
 		B.block(folder, { class = "WedgePart", name = "Spike", size = Vector3.new(4, h, 4), cf = CFrame.lookAt(p, c) * CFrame.new(0, h / 2, 0), color = Color3.fromRGB(16, 12, 18), material = Enum.Material.Glass })

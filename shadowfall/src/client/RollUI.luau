@@ -2,6 +2,7 @@
 -- The power roll: a reel of powers that spins, slows, and lands on your result, followed by a
 -- reveal card. Used for the free awakening roll and for shrine rerolls (keep new / keep current).
 
+local GuiService = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
@@ -180,9 +181,21 @@ function RollUI.Play(powerId: string, opts)
 		end)
 	end
 
+	-- Free the mouse (Modal works even in first person) and give gamepads a selected button.
+	local firstButton
+	for _, child in buttons:GetChildren() do
+		if child:IsA("TextButton") then
+			child.Modal = true
+			firstButton = firstButton or child
+		end
+	end
+	if firstButton then
+		GuiService.SelectedObject = firstButton
+	end
 	while choice == nil do
 		task.wait()
 	end
+	GuiService.SelectedObject = nil
 	Ui.tween(backdrop, 0.4, { BackgroundTransparency = 1 })
 	for _, child in backdrop:GetDescendants() do
 		if child:IsA("GuiObject") then

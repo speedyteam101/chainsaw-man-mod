@@ -362,7 +362,7 @@ local function bossAttack(enemy, target)
 			local duration = attack.distance / 110
 			while os.clock() - start < duration and not enemy.dead do
 				root.AssemblyLinearVelocity = direction * 110
-				for _, t in Combat.PlayersInSphere(root.Position, attack.width / 2 + 2) do
+				for _, t in Combat.PlayersInSphere(groundAt(root.Position) + Vector3.new(0, 3, 0), attack.width / 2 + 2) do
 					if not hit[t.player] then
 						hit[t.player] = true
 						Combat.DamagePlayer(t.player, damage, { enemy = enemy, position = root.Position, kind = "aoe" })
@@ -381,11 +381,13 @@ local function bossAttack(enemy, target)
 				local offset = attack.count == 1 and 0 or (i - 1) / (attack.count - (attack.spread >= 360 and 0 or 1)) * attack.spread - attack.spread / 2
 				local yaw = baseYaw + math.rad(offset)
 				local direction = CFrame.Angles(0, yaw, 0).LookVector
+				local flatDistance = math.max(Vector3.new(base.X, 0, base.Z).Magnitude, 1)
+				local drop = (target.root.Position.Y - origin.Y) / flatDistance
 				Projectiles.Fire({
 					team = "enemy",
 					enemy = enemy,
 					origin = origin,
-					direction = Vector3.new(direction.X, -0.04, direction.Z),
+					direction = Vector3.new(direction.X, drop, direction.Z),
 					speed = attack.speed,
 					range = 120,
 					radius = 1.8,

@@ -302,6 +302,7 @@ local function finale(player: Player)
 	task.wait(5)
 	if not state.finale or not root.Parent or humanoid.Health <= 0 then
 		state.finale = false
+		story(player, "FinaleAborted", {})
 		return
 	end
 	local center = root.Position
@@ -316,7 +317,8 @@ local function finale(player: Player)
 	local started = os.clock()
 	while os.clock() - started < 9 do
 		if not state.finale then
-			return -- died or left during the finale; they can ring the bell again
+			story(player, "FinaleAborted", {}) -- died during the finale; they can ring the bell again
+			return
 		end
 		for stalker in state.stalkers do
 			stalker.humanoid:MoveTo(root.Position)
@@ -330,7 +332,13 @@ local function finale(player: Player)
 	for stalker in table.clone(state.stalkers) do
 		removeStalker(state, stalker, true)
 	end
+	if not player.Parent or not state.finale then
+		return
+	end
 	local power = PowerService.AwakeningRoll(player)
+	if not power then
+		return
+	end
 	data.act = 2
 	AchievementService.Grant(player, "awakened")
 	if not state.touched then
@@ -339,6 +347,7 @@ local function finale(player: Player)
 	PlayerData.Sync(player)
 	PlayerData.Save(player)
 	Remotes.Fx:FireAllClients("AwakenBurst", { position = root.Position, color = power.color })
+	player.CameraMode = Enum.CameraMode.Classic
 	story(player, "Roll", { power = power.id })
 	-- If the client never reports the roll animation finished, move on anyway.
 	task.delay(30, finishAct1, player)
@@ -350,6 +359,7 @@ function Act1Director.OnCharacter(player: Player, character: Model)
 	local state = getState(player)
 	clearStalkers(state)
 	state.finale = false
+	state.finished = nil
 	state.nextSpawn = os.clock() + 6
 	local head = character:WaitForChild("Head", 5)
 	if head then
@@ -436,6 +446,8 @@ function Act1Director.Start(worldInfo)
 					if not ok then
 						warn("[Shadowfall] Act 1 error:", err)
 					end
+				elseif states[player] and next(states[player].stalkers) and not states[player].finale then
+					clearStalkers(states[player]) -- e.g. skipped Act 1 from the Dev menu
 				end
 			end
 		end

@@ -260,6 +260,10 @@ function CombatInput.Start()
 		if not humanoid then
 			return
 		end
+		if ClientState.InCutscene then
+			humanoid.WalkSpeed = 0
+			return
+		end
 		local now = os.clock()
 		if attacking and now - lastAttack > 0.15 then
 			lastAttack = now

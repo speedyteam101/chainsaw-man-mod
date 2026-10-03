@@ -390,6 +390,10 @@ local function onStory(kind: string, payload)
 		Audio.Play("Bell", 1)
 		queueLines(payload.lines, Color3.fromRGB(255, 220, 200))
 		task.delay(3, lightsOut)
+	elseif kind == "FinaleAborted" then
+		finaleRunning = false
+		ClientState.InCutscene = false
+		lightsBack()
 	elseif kind == "Surrounded" then
 		queueLines(payload.lines, Color3.fromRGB(255, 200, 160))
 	elseif kind == "Roll" then

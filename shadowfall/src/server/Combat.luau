@@ -93,10 +93,19 @@ local function hitRadius(enemy)
 	return 1.4 * (enemy.scale or 1)
 end
 
+-- The point on a shadow's body (a vertical line from its feet to the top of its head) closest
+-- to `point`. Big rigs have their root far above the ground, so testing only the root would
+-- let attacks pass under bosses.
+local function bodyPointNear(enemy, point: Vector3): Vector3
+	local root = enemy.root.Position
+	local s = enemy.scale or 1
+	return Vector3.new(root.X, math.clamp(point.Y, root.Y - 3 * s, root.Y + 2 * s), root.Z)
+end
+
 function Combat.EnemiesInSphere(center: Vector3, radius: number)
 	local result = {}
 	for _, enemy in Registry.Enemies do
-		if not enemy.dead and (enemy.root.Position - center).Magnitude <= radius + hitRadius(enemy) then
+		if not enemy.dead and (bodyPointNear(enemy, center) - center).Magnitude <= radius + hitRadius(enemy) then
 			table.insert(result, enemy)
 		end
 	end
@@ -114,11 +123,24 @@ local function distanceToSegment(point: Vector3, a: Vector3, b: Vector3): number
 end
 Combat.DistanceToSegment = distanceToSegment
 
+local function closestOnSegment(point: Vector3, a: Vector3, b: Vector3): Vector3
+	local ab = b - a
+	local lengthSq = ab:Dot(ab)
+	if lengthSq < 1e-6 then
+		return a
+	end
+	return a + ab * math.clamp((point - a):Dot(ab) / lengthSq, 0, 1)
+end
+
 function Combat.EnemiesAlongSegment(a: Vector3, b: Vector3, width: number)
 	local result = {}
 	for _, enemy in Registry.Enemies do
-		if not enemy.dead and distanceToSegment(enemy.root.Position, a, b) <= width / 2 + hitRadius(enemy) then
-			table.insert(result, enemy)
+		if not enemy.dead then
+			local onLine = closestOnSegment(enemy.root.Position, a, b)
+			local body = bodyPointNear(enemy, onLine)
+			if distanceToSegment(body, a, b) <= width / 2 + hitRadius(enemy) then
+				table.insert(result, enemy)
+			end
 		end
 	end
 	return result
