@@ -16,6 +16,8 @@ local LookService = {}
 local CREATOR_TIMEOUT = 600
 
 local waiting: { [Player]: thread } = {}
+local lastSave: { [Player]: number } = {}
+local SAVE_COOLDOWN = 3
 
 function LookService.Description(look): HumanoidDescription
 	local description = Instance.new("HumanoidDescription")
@@ -77,8 +79,8 @@ end
 -- Blocks until a brand-new player has picked a look (or the timeout passes).
 function LookService.WaitForLook(player: Player)
 	local data = PlayerData.Get(player)
-	if not data or data.look then
-		return
+	if not data or data.look or not player.Parent then
+		return -- (no Parent: they left while their data was loading)
 	end
 	player:SetAttribute("NeedsLook", true)
 	local me = coroutine.running()
@@ -102,18 +104,26 @@ function LookService.Save(player: Player, raw)
 		return { ok = false }
 	end
 	local look = Looks.Sanitize(raw)
-	data.look = look
-	PlayerData.Sync(player)
 
 	local thread = waiting[player]
 	if thread then
 		-- First time: the spawn code was waiting for this.
+		data.look = look
+		PlayerData.Sync(player)
 		waiting[player] = nil
 		task.defer(thread)
 		return { ok = true }
 	end
 
-	-- Changing an existing character in place.
+	-- Changing an existing character in place. Throttled: applying a description (and fetching
+	-- your Roblox avatar) is expensive.
+	local now = os.clock()
+	if now - (lastSave[player] or -math.huge) < SAVE_COOLDOWN then
+		return { ok = false, message = "Give it a moment before changing again." }
+	end
+	lastSave[player] = now
+	data.look = look
+	PlayerData.Sync(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if character and humanoid and humanoid.Health > 0 then
@@ -136,6 +146,7 @@ function LookService.Save(player: Player, raw)
 end
 
 function LookService.Forget(player: Player)
+	lastSave[player] = nil
 	local thread = waiting[player]
 	waiting[player] = nil
 	if thread then

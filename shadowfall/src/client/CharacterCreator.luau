@@ -180,13 +180,13 @@ function CharacterCreator.Open(current, isFirstTime: boolean?)
 	look = Looks.Sanitize(current or Looks.Default())
 	saveButton.Text = firstTime and "BEGIN" or "SAVE"
 	root.Visible = true
-	ClientState.DialogueOpen = true
+	ClientState.CreatorOpen = true
 	refresh()
 end
 
 local function close()
 	root.Visible = false
-	ClientState.DialogueOpen = false
+	ClientState.CreatorOpen = false
 end
 
 local function save()
@@ -200,6 +200,7 @@ local function save()
 	if result and result.ok then
 		close()
 	else
+		subtitle.Text = (result and result.message) or "Couldn't save that. Try again."
 		saveButton.Text = firstTime and "BEGIN" or "SAVE"
 	end
 end

@@ -21,6 +21,7 @@ local PassService = {}
 PassService.OnOutfitChanged = nil :: ((Player) -> ())? -- set by Main (re-dresses Biscuit)
 
 local E = Passes.Exchange
+local SWAP_COOLDOWN = 15 -- seconds between Power Vault swaps
 
 function PassService.Has(player: Player, passId: string): boolean
 	local data = PlayerData.Get(player)
@@ -49,12 +50,13 @@ function PassService.Exchange(player: Player, amount)
 	if not data or data.act ~= 2 then
 		return { ok = false, message = "You can trade once you reach the camp." }
 	end
-	if type(amount) ~= "number" or amount ~= amount then
-		return { ok = false, message = "Pick an amount." }
+	-- Reject NaN, infinities and anything too small before doing any arithmetic.
+	if type(amount) ~= "number" or not (amount >= E.Step and amount < math.huge) then
+		return { ok = false, message = string.format("Trade at least %d Essence.", E.Step) }
 	end
 	amount = math.min(math.floor(amount), data.essence)
 	amount -= amount % E.Step
-	if amount < E.Step then
+	if not (amount >= E.Step) then
 		return { ok = false, message = string.format("You need at least %d Essence to trade.", E.Step) }
 	end
 	local tokens = Passes.Quote(amount, data.essenceTraded)
@@ -168,16 +170,21 @@ function PassService.EquipVaulted(player: Player, powerId)
 		return { ok = false, message = "You're already using it." }
 	end
 	local state = Combat.GetState(player)
-	if os.clock() - (state.lastDamaged or 0) < 5 then
+	local now = os.clock()
+	if now - (state.lastDamaged or 0) < 5 then
 		return { ok = false, message = "You can't swap powers in the middle of a fight." }
 	end
+	if now < (state.nextVaultSwap or 0) then
+		return { ok = false, message = string.format("You can swap again in %d seconds.", math.ceil(state.nextVaultSwap - now)) }
+	end
+	state.nextVaultSwap = now + SWAP_COOLDOWN
 	data.power = powerId
-	-- A short lockout so swapping isn't a way to skip cooldowns.
-	local now = os.clock()
-	state.cooldowns = { now + 4, now + 4, now + 4, now + 4 }
-	Remotes.Notify:FireClient(player, "ResetCooldowns")
+	-- Cooldowns carry over (per slot, whichever is longer), plus a short lockout, so swapping
+	-- back and forth never makes a move ready sooner.
+	state.cooldowns = state.cooldowns or {}
 	for slot = 1, 4 do
-		Remotes.Notify:FireClient(player, "Cooldown", { slot = slot, duration = 4 })
+		state.cooldowns[slot] = math.max(state.cooldowns[slot] or 0, now + 4)
+		Remotes.Notify:FireClient(player, "Cooldown", { slot = slot, duration = state.cooldowns[slot] - now })
 	end
 	PlayerData.Sync(player)
 	return { ok = true, power = powerId }

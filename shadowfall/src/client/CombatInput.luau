@@ -28,7 +28,7 @@ local lastDodge = 0
 local dashing = false
 
 local function active(): boolean
-	return player:GetAttribute("Act") == 2 and not ClientState.MenuOpen and not ClientState.InCutscene and not ClientState.BuildMode
+	return player:GetAttribute("Act") == 2 and not ClientState.MenuOpen and not ClientState.CreatorOpen and not ClientState.InCutscene and not ClientState.BuildMode
 end
 
 local function characterParts()

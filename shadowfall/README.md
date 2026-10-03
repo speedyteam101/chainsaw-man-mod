@@ -261,9 +261,9 @@ So a new player who trades their first 1000 Essence ends up with 600 Tokens incl
 
 | Pass | Tokens | What it does |
 | --- | --- | --- |
-| Power Vault | 300 | **Permanent powers.** Every power you own or roll from then on is kept forever, even ones you replace. Swap between them for free in the Power tab (not mid-fight). |
+| Power Vault | 300 | **Permanent powers.** Every power you own or roll from then on is kept forever, even ones you replace. Swap between them for free in the Power tab (not mid-fight, once every 15 seconds; move cooldowns carry over). |
 | Lucky Star | 400 | Every roll is 1.5x as likely to be Legendary or better. Stacks with Star Shards. |
-| Builder's Belt | 200 | +50% materials from gathering. |
+| Builder's Belt | 200 | +50% materials from gathering on average (each hit has a chance of an extra piece). |
 | Biscuit's Wardrobe | 120 | Outfits for Biscuit: bow tie, top hat, flower crown, scarf. Looks only. |
 
 **Robux.** Essence and Tokens can **never** be bought with Robux. The game has no developer products and no `ProcessReceipt` handler, and nothing sells a currency. Passes are Tokens-only by default. If you also want to sell a pass for Robux:

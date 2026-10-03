@@ -21,6 +21,7 @@ local ClientState = {
 	InCutscene = false,
 	BuildMode = false,
 	DialogueOpen = false,
+	CreatorOpen = false, -- the character creator (its own flag, so dialogues can't re-lock the mouse under it)
 	story = { chapter = 1, seen = {}, pages = {} },
 }
 

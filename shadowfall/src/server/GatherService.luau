@@ -204,10 +204,17 @@ local function hit(player: Player, node)
 	local def = node.def
 	node.hp -= 1
 	local amount = def.perHit * toolMultiplier(player, def.material)
+	-- Builder's Belt: +50% on average. Amounts are whole numbers, so the fraction becomes a chance
+	-- of one extra (1 per hit becomes 1 or 2, half the time each).
 	local belt = PassService.GatherMultiplier(player)
-	if belt ~= 1 then
-		amount = math.ceil(amount * belt) -- Builder's Belt
+	local function withBelt(n: number): number
+		if belt == 1 then
+			return n
+		end
+		local scaled = n * belt
+		return math.floor(scaled) + (rng:NextNumber() < scaled % 1 and 1 or 0)
 	end
+	amount = withBelt(amount)
 	InventoryService.Add(player, def.material, amount, false)
 	local color = Materials.ById[def.material].color
 	Remotes.Fx:FireAllClients("Gather", { position = node.position, color = color, kind = node.kind })
@@ -216,9 +223,7 @@ local function hit(player: Player, node)
 		node.depleted = true
 		for id, bonus in def.final do
 			local total = bonus * toolMultiplier(player, id)
-			if belt ~= 1 then
-				total = math.ceil(total * belt)
-			end
+			total = withBelt(total)
 			InventoryService.Add(player, id, total, false)
 			Remotes.Notify:FireClient(player, "Gathered", { id = id, amount = total, position = node.position })
 		end

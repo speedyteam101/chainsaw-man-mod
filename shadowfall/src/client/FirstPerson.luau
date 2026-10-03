@@ -56,7 +56,7 @@ function FirstPerson.Start()
 				end
 			end
 		end
-		local needsMouse = ClientState.MenuOpen or ClientState.DialogueOpen or false
+		local needsMouse = ClientState.MenuOpen or ClientState.DialogueOpen or ClientState.CreatorOpen or false
 		freeMouse.Visible = needsMouse
 		dot.Visible = not needsMouse and not ClientState.InCutscene and player:GetAttribute("Act") == 2
 		dot.BackgroundColor3 = ClientState.BuildMode and Color3.fromRGB(140, 220, 255) or Color3.new(1, 1, 1)
