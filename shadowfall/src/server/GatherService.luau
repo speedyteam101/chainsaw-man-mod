@@ -63,7 +63,7 @@ local function register(model: Instance, kind: string)
 		kind = kind,
 		def = KINDS[kind],
 		parts = parts,
-		position = Vector3.new(center.X, math.max(lowest + 2.5, center.Y - 2), center.Z),
+		position = Vector3.new(center.X, lowest + 3, center.Z),
 		hp = KINDS[kind].hp,
 	}
 	model:SetAttribute("GatherKind", kind)
@@ -236,7 +236,8 @@ function GatherService.Start(world)
 	Registry.M1Swing:Connect(function(player: Player, center: Vector3, radius: number)
 		local count = 0
 		for _, node in nodes do
-			if not node.depleted and (node.position - center).Magnitude <= radius + 3 then
+			local offset = node.position - center
+			if not node.depleted and Vector2.new(offset.X, offset.Z).Magnitude <= radius + 3 and math.abs(offset.Y) < 10 then
 				hit(player, node)
 				count += 1
 				if count >= 2 then

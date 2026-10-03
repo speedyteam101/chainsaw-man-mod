@@ -75,6 +75,10 @@ function PlayerData.Load(player: Player)
 		end
 	end
 	data = reconcile(type(data) == "table" and data or {}, defaults())
+	-- Saves made before the intro existed are already past it: give them Biscuit.
+	if not data.duckSaved and (data.act == 2 or data.act1Stage >= 1) then
+		data.duckSaved = true
+	end
 	profiles[player] = data
 	PlayerData.Sync(player)
 	return data

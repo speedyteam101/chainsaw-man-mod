@@ -80,7 +80,7 @@ local function overlapBlocked(cf: CFrame, size: Vector3): boolean
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = exclude
 	for _, part in workspace:GetPartBoundsInBox(cf, size, params) do
-		if part.CanCollide or part.Name == "Bounds" then
+		if part.CanCollide or part.Name == "Bounds" or (part.Parent and part.Parent.Name == "BaseCrystal") then
 			return true
 		end
 	end
@@ -202,7 +202,7 @@ local function update()
 			reason = "Outside your barrier"
 		elseif offset.Y < -6 or offset.Y > 40 then
 			reason = "Too high or too low"
-		elseif overlapBlocked(cf * CFrame.new(0, def.size.Y / 2, 0), def.size - Vector3.new(0.3, 0.3, 0.3)) then
+		elseif overlapBlocked(cf * CFrame.new(0, def.size.Y / 2, 0), def.size - Vector3.new(math.min(def.size.X * 0.5, 1.1), 0.3, math.min(def.size.Z * 0.5, 1.1))) then
 			reason = "Something is in the way"
 		end
 		placeRing(center, radius)

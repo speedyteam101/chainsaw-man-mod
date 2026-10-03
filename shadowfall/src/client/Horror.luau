@@ -316,6 +316,9 @@ local function sendPackets(dt: number)
 end
 
 local function cameraShake()
+	if camera.CameraType == Enum.CameraType.Scriptable then
+		return -- cutscene shots set the camera themselves; shaking here would accumulate
+	end
 	if shake > 0.01 and (act1() or finaleRunning) then
 		local t = os.clock() * 40
 		camera.CFrame = camera.CFrame * CFrame.Angles(math.noise(t, 0) * shake * 0.05, math.noise(0, t) * shake * 0.05, 0)

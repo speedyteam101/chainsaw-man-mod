@@ -107,8 +107,8 @@ local function onCharacterAdded(player: Player, character: Model)
 		humanoid.MaxHealth = Config.Act2.BaseMaxHealth + (data.level - 1) * Config.Act2.HealthPerLevel
 		humanoid.Health = humanoid.MaxHealth
 		humanoid.WalkSpeed = Config.Act2.WalkSpeed
-		task.spawn(placeCharacter, character, BaseService.RespawnCFrame(player) or ZoneService.HubSpawn())
 		BaseService.Load(player)
+		task.spawn(placeCharacter, character, BaseService.RespawnCFrame(player) or ZoneService.HubSpawn())
 	end
 
 	humanoid.Died:Connect(function()

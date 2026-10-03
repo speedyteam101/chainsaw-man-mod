@@ -221,11 +221,14 @@ local function deposit(player: Player, base, s)
 	local added = false
 	for id, need in s.def.cost do
 		local remaining = need - (s.deposited[id] or 0)
-		if remaining > 0 then
-			local realNeeded = math.ceil(remaining / bonus - 1e-6)
+		if remaining > 1e-4 then
+			local realNeeded = math.max(1, math.ceil(remaining / bonus - 1e-6))
 			local take = math.min(realNeeded, InventoryService.Count(player, id))
 			if take > 0 and InventoryService.Spend(player, { [id] = take }) then
 				s.deposited[id] = math.min(need, (s.deposited[id] or 0) + take * bonus)
+				if need - s.deposited[id] < 1e-4 then
+					s.deposited[id] = need
+				end
 				added = true
 			end
 		end
@@ -606,7 +609,7 @@ function BaseService.CanPlace(player: Player, def, cf: CFrame): boolean
 		return false
 	end
 	local box = cf * CFrame.new(0, def.size.Y / 2, 0)
-	local parts = workspace:GetPartBoundsInBox(box, def.size - Vector3.new(0.3, 0.3, 0.3), overlapParams({ base.npcFolder }))
+	local parts = workspace:GetPartBoundsInBox(box, def.size - Vector3.new(math.min(def.size.X * 0.5, 1.1), 0.3, math.min(def.size.Z * 0.5, 1.1)), overlapParams({ base.npcFolder }))
 	for _, part in parts do
 		if part.CanCollide or part.Name == "Bounds" or part.Parent and part.Parent.Name == "BaseCrystal" then
 			return false
