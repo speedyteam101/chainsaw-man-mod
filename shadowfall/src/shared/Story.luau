@@ -61,6 +61,12 @@ Story.Beats = {
 			{ "Mara", "If anyone knows how this happened, it's him. Get stronger. Find out what he did. We'll keep the fire lit." }
 		),
 	},
+	first_blackout = {
+		lines = lines(
+			{ "Mara", "Hear that bell? Get inside the firelight, or get your torch out. NOW." },
+			{ "Tobias", "When the lights die, the Hollow walks. You can't fight it. Keep your light on it and it can't move." }
+		),
+	},
 	first_rescue = {
 		lines = lines(
 			{ "Mara", "You brought someone back alive. Every person we save is one more light the dark can't have." }

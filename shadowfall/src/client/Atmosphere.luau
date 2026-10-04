@@ -7,6 +7,8 @@ local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Config = require(ReplicatedStorage.Shared.Config)
 local Ui = require(script.Parent.Ui)
 
 local Atmosphere = {}
@@ -54,11 +56,36 @@ local PRESETS = {
 	},
 }
 
+-- Act 2 horror: darker versions of the Act 2 preset for outside the camp/base and for the
+-- Blackout, derived from preset 2 so brightening preset 2 brightens these too.
+-- Config.Horror.Darkness (0..1) sets how dark.
+local function darkened(base, amount: number)
+	local out = { lighting = table.clone(base.lighting), atmosphere = table.clone(base.atmosphere), grade = table.clone(base.grade), bloom = table.clone(base.bloom) }
+	local black = Color3.new(0, 0, 0)
+	out.lighting.Ambient = base.lighting.Ambient:Lerp(black, amount * 0.6)
+	out.lighting.OutdoorAmbient = base.lighting.OutdoorAmbient:Lerp(black, amount * 0.65)
+	out.lighting.Brightness = base.lighting.Brightness * (1 - amount * 0.7)
+	out.lighting.ExposureCompensation = base.lighting.ExposureCompensation - amount * 0.6
+	out.atmosphere.Density = math.min(0.75, base.atmosphere.Density + amount * 0.22)
+	out.atmosphere.Haze = base.atmosphere.Haze + amount * 1.2
+	out.atmosphere.Color = base.atmosphere.Color:Lerp(black, amount * 0.5)
+	out.grade.Saturation = base.grade.Saturation - amount * 0.3
+	out.grade.Contrast = base.grade.Contrast + amount * 0.1
+	return out
+end
+local darkness = math.clamp(Config.Horror.Darkness, 0, 1)
+PRESETS["2dark"] = darkened(PRESETS[2], darkness)
+PRESETS.blackout = darkened(PRESETS[2], math.min(1, darkness + 0.45))
+PRESETS.blackout.grade.TintColor = Color3.fromRGB(200, 205, 230)
+
+Atmosphere.Current = nil
+
 function Atmosphere.Apply(presetKey, time: number?)
 	local preset = PRESETS[presetKey]
 	if not preset then
 		return
 	end
+	Atmosphere.Current = presetKey
 	local t = time or 2
 	for key, value in preset.lighting do
 		if typeof(value) == "number" and key ~= "ClockTime" then

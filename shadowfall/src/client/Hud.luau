@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Config = require(ReplicatedStorage.Shared.Config)
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local Powers = require(ReplicatedStorage.Shared.Powers)
 local Materials = require(ReplicatedStorage.Shared.Materials)
@@ -27,6 +28,8 @@ local healthFill, healthText, levelText, powerText, rarityText, essenceText, asc
 local gatherFeed, itemSlots = nil, {}
 local slots = {} -- [slot] = { frame, cover, timer, lock, name }
 local cooldownEnds = {}
+local flowLabel, flowFill
+local flowEnds, flowDuration = 0, 1
 local bossFrame, bossName, bossFill
 local toastHolder
 local dialogue
@@ -455,6 +458,19 @@ function Hud.Start()
 	buildToasts()
 	buildDialogue()
 
+	-- Flow: chain different moves for bonus damage.
+	flowLabel = Ui.label("", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -150), Size = UDim2.new(0, 260, 0, 26), Font = T.Title, TextSize = 24, TextColor3 = Color3.fromRGB(255, 220, 140), TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 0.4, Visible = false, Parent = gui })
+	local flowBack = Ui.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 0), Size = UDim2.new(0, 160, 0, 4), BackgroundColor3 = Color3.fromRGB(40, 30, 20), BorderSizePixel = 0, Parent = flowLabel }, { Ui.corner(2) })
+	flowFill = Ui.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(255, 200, 90), BorderSizePixel = 0, Parent = flowBack }, { Ui.corner(2) })
+	RunService.RenderStepped:Connect(function()
+		local left = flowEnds - os.clock()
+		if left <= 0 then
+			flowLabel.Visible = false
+		else
+			flowFill.Size = UDim2.fromScale(math.clamp(left / flowDuration, 0, 1), 1)
+		end
+	end)
+
 	Ui.button("MENU  [M]", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -20, 0, 20), Size = UDim2.new(0, 130, 0, 36), Parent = gui }, function()
 		if Hud.MenuRequested then
 			Hud.MenuRequested(nil)
@@ -488,6 +504,18 @@ function Hud.Start()
 			featUnlocked(data)
 		elseif kind == "Cooldown" then
 			cooldownEnds[data.slot] = { time = os.clock() + data.duration, duration = data.duration }
+		elseif kind == "Flow" then
+			if (data.stacks or 0) <= 0 then
+				flowEnds = 0
+				flowLabel.Visible = false
+			else
+				flowDuration = data.duration or 4
+				flowEnds = os.clock() + flowDuration
+				flowLabel.Text = string.format("FLOW x%d   +%d%%", data.stacks, math.floor(data.stacks * Config.Combos.FlowPerStack * 100 + 0.5))
+				flowLabel.Visible = true
+				flowLabel.TextSize = 30
+				Ui.tween(flowLabel, 0.25, { TextSize = 24 })
+			end
 		elseif kind == "ResetCooldowns" then
 			cooldownEnds = {}
 		elseif kind == "Essence" then

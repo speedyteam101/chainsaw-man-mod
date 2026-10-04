@@ -6,6 +6,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Shops = require(ReplicatedStorage.Shared.Shops)
+local Figure = require(ReplicatedStorage.Shared.Figure)
 local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
@@ -32,17 +33,27 @@ end
 local function buildMerchant(shop, cf: CFrame, parent: Instance)
 	local model = Instance.new("Model")
 	model.Name = shop.name
-	local skin = shop.hooded and Color3.fromRGB(20, 18, 24) or Color3.fromRGB(225, 185, 150)
-	local torso = block(model, "Torso", Vector3.new(2, 2, 1), cf * CFrame.new(0, 3, 0), shop.shirt)
-	local head = block(model, "Head", Vector3.new(2, 1, 1), cf * CFrame.new(0, 4.5, 0), skin)
-	local mesh = Instance.new("SpecialMesh")
-	mesh.MeshType = Enum.MeshType.Head
-	mesh.Scale = Vector3.new(1.25, 1.25, 1.25)
-	mesh.Parent = head
-	block(model, "Left Arm", Vector3.new(1, 2, 1), cf * CFrame.new(-1.5, 3, 0), shop.hooded and shop.shirt or skin)
-	block(model, "Right Arm", Vector3.new(1, 2, 1), cf * CFrame.new(1.5, 3, 0), shop.hooded and shop.shirt or skin)
-	block(model, "Left Leg", Vector3.new(1, 2, 1), cf * CFrame.new(-0.5, 1, 0), shop.pants)
-	block(model, "Right Leg", Vector3.new(1, 2, 1), cf * CFrame.new(0.5, 1, 0), shop.pants)
+	local spec = Figure.SpecFor(shop.id, {
+		shirt = shop.shirt,
+		pants = shop.pants,
+		outfit = shop.id == "medic" and "doctor" or (shop.id == "scavenger" and "jacket" or nil),
+	})
+	if shop.hooded then
+		spec.skin = Color3.fromRGB(20, 18, 24)
+		spec.hair = 1
+		spec.expression = "closed"
+		spec.outfit = "coat"
+	end
+	spec.cf = cf
+	spec.name = shop.name
+	spec.collide = true
+	local built, parts = Figure.Build(spec)
+	for _, child in built:GetChildren() do
+		child.Parent = model
+	end
+	built:Destroy()
+	model.PrimaryPart = parts.Torso
+	local torso = parts.Torso
 	if shop.hooded then
 		-- A deep hood with two pale points of light inside it.
 		block(model, "Hood", Vector3.new(2.6, 2, 1.8), cf * CFrame.new(0, 4.7, 0.15), shop.shirt, Enum.Material.Fabric)
@@ -58,9 +69,6 @@ local function buildMerchant(shop, cf: CFrame, parent: Instance)
 		light.Brightness = 1.2
 		light.Parent = lantern
 	else
-		for _, x in { -0.4, 0.4 } do
-			block(model, "Eye", Vector3.new(0.18, 0.22, 0.05), cf * CFrame.new(x, 4.6, -0.62), Color3.new(0, 0, 0))
-		end
 		-- A stall: counter, awning and goods.
 		local stall = cf * CFrame.new(0, 0, -3.5)
 		block(model, "Counter", Vector3.new(7, 3, 2), stall * CFrame.new(0, 1.5, 0), Color3.fromRGB(90, 66, 44), Enum.Material.WoodPlanks)

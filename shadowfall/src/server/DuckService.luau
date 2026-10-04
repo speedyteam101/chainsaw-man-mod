@@ -333,6 +333,13 @@ function DuckService.Start()
 		PhysicsService:RegisterCollisionGroup("Players")
 	end
 	PhysicsService:CollisionGroupSetCollidable("Ducks", "Players", false)
+	-- Client-side effect debris (rocks, ice, splinters) bounces off the world but never off people.
+	if not PhysicsService:IsCollisionGroupRegistered("Debris") then
+		PhysicsService:RegisterCollisionGroup("Debris")
+	end
+	PhysicsService:CollisionGroupSetCollidable("Debris", "Players", false)
+	PhysicsService:CollisionGroupSetCollidable("Debris", "Ducks", false)
+	PhysicsService:CollisionGroupSetCollidable("Debris", "Debris", false)
 	local function groupCharacter(character: Model)
 		for _, p in character:GetDescendants() do
 			if p:IsA("BasePart") then

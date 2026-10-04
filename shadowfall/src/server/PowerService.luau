@@ -158,6 +158,7 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 	local cooldownMult = now < state.awakenedUntil and Config.Combat.AwakeningCooldownMult or 1
 	state.cooldowns[slot] = now + move.cooldown * cooldownMult
 	Remotes.Notify:FireClient(player, "Cooldown", { slot = slot, duration = move.cooldown * cooldownMult })
+	Combat.AddFlow(player, slot)
 
 	local origin = root.Position
 	local aimAt: Vector3 = if typeof(aim) == "Vector3" then aim else origin + root.CFrame.LookVector * 30
@@ -363,6 +364,32 @@ function PowerService.Awaken(player: Player)
 	state.cooldowns = {}
 	local power = Powers.ById[data.power]
 	Remotes.Fx:FireAllClients("Awaken", { character = character, color = power.color, duration = Config.Combat.AwakeningDuration })
+
+	-- The Ultimate: awakening detonates around you, carrying your power's signature effect.
+	local K = Config.Combos
+	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if root then
+		local signature = {}
+		for _, move in power.moves do
+			if move.effect then
+				for key, value in move.effect do
+					if key ~= "chain" and key ~= "pull" and signature[key] == nil then
+						signature[key] = value
+					end
+				end
+			end
+		end
+		signature.knockback = 70
+		signature.stun = math.max(signature.stun or 0, 1)
+		local center = root.Position
+		Remotes.Fx:FireAllClients("Ultimate", { position = center, color = power.color, style = power.vfx, radius = K.UltimateRadius })
+		task.delay(0.45, function()
+			local damage = K.UltimateDamage * Combat.DamageMultiplier(player)
+			for _, enemy in Combat.EnemiesInSphere(center, K.UltimateRadius) do
+				Combat.DamageEnemy(enemy, damage, player, { effects = signature, sourcePosition = center, color = power.color, crit = true })
+			end
+		end)
+	end
 	Remotes.Notify:FireClient(player, "ResetCooldowns", {})
 	Remotes.Notify:FireClient(player, "Cooldown", { slot = 5, duration = Config.Combat.AwakeningCooldown })
 end

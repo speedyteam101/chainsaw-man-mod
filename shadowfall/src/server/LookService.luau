@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Looks = require(ReplicatedStorage.Shared.Looks)
+local Figure = require(ReplicatedStorage.Shared.Figure)
 local PlayerData = require(script.Parent.PlayerData)
 
 local LookService = {}
@@ -31,29 +32,28 @@ function LookService.Description(look): HumanoidDescription
 	return description
 end
 
-local function addHair(character: Model, look)
-	local old = character:FindFirstChild("LookHair")
+-- Adds the realistic details (face, hair, clothes, shoes) to a character wearing a custom look.
+local function dress(character: Model, look)
+	local old = character:FindFirstChild("LookDetails")
 	if old then
 		old:Destroy()
 	end
 	if look.avatar then
 		return
 	end
-	local head = character:WaitForChild("Head", 10) :: BasePart?
-	if not head then
-		return
+	for _, name in { "Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg" } do
+		if not character:WaitForChild(name, 10) then
+			return
+		end
 	end
-	local hair = Looks.BuildHair(head, look)
-	if hair then
-		hair.Parent = character
-	end
+	Figure.Dress(character, Figure.FromLook(look))
 end
 
 -- Called for every new character.
 function LookService.OnCharacter(player: Player, character: Model)
 	local data = PlayerData.Get(player)
 	if data and data.look then
-		addHair(character, Looks.Sanitize(data.look))
+		dress(character, Looks.Sanitize(data.look))
 	end
 end
 
@@ -138,7 +138,7 @@ function LookService.Save(player: Player, raw)
 				warn("[Shadowfall] Couldn't apply the new look:", err)
 			end
 			if character.Parent then
-				addHair(character, look)
+				dress(character, look)
 			end
 		end)
 	end

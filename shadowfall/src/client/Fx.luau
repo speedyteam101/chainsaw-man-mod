@@ -12,6 +12,7 @@ local Ui = require(script.Parent.Ui)
 local Audio = require(script.Parent.Audio)
 local CameraFx = require(script.Parent.CameraFx)
 local PowerVfx = require(script.Parent.PowerVfx)
+local VfxKit = require(script.Parent.VfxKit)
 local ShadowRig = require(ReplicatedStorage.Shared.ShadowRig)
 
 local Fx = {}
@@ -197,6 +198,82 @@ function handlers.Hit(d)
 	local spark = sphere(d.position, crit and 2.2 or 1.4, d.color or Color3.new(1, 1, 1), 0.18, 0.1)
 	spark.Material = Enum.Material.Neon
 	Audio.Play("Hit", 0.35, rng:NextNumber(0.9, 1.15), d.position)
+	-- Shadows bleed black.
+	if (d.position - workspace.CurrentCamera.CFrame.Position).Magnitude < 120 then
+		VfxKit.Ichor(d.position, d.amount or 10)
+		VfxKit.Sparks(d.position, d.color or Color3.new(1, 1, 1), crit and 14 or 6, crit and 30 or 18)
+	end
+end
+
+local REACTION_COLORS = {
+	SHATTER = Color3.fromRGB(190, 240, 255),
+	OVERLOAD = Color3.fromRGB(255, 190, 80),
+	CRUSH = Color3.fromRGB(255, 120, 90),
+}
+
+function handlers.Reaction(d)
+	local color = REACTION_COLORS[d.kind] or Color3.new(1, 1, 1)
+	local position = d.position
+	floatingText(position + Vector3.new(0, 4, 0), d.kind .. "!", color, 36, 6)
+	if d.kind == "SHATTER" then
+		VfxKit.Flash(position, color, 26, 6, 0.4)
+		VfxKit.Rubble(position + Vector3.new(0, 2, 0), 12, 28, Enum.Material.Ice, Color3.fromRGB(210, 240, 255))
+		VfxKit.Sparks(position, color, 30, 40)
+		VfxKit.Smoke(position, 2.5, Color3.fromRGB(220, 235, 245), 8, -0.5, 1.6)
+		ring(position, 7, color, 0.35, 0.3)
+	elseif d.kind == "OVERLOAD" then
+		VfxKit.Flash(position, color, 40, 10, 0.7, true)
+		VfxKit.Sparks(position, color, 40, 60)
+		VfxKit.Smoke(position, 3.5, Color3.fromRGB(40, 30, 28), 14, 4)
+		VfxKit.Embers(position, color, 20, 6)
+		local ground = VfxKit.Ground(position, 12)
+		if ground then
+			VfxKit.DustRing(ground.position, 14, ground.color)
+			VfxKit.Scorch(ground.position, 6, Color3.fromRGB(255, 120, 30))
+		end
+		sphere(position, 9, color, 0.35, 0.2)
+	else
+		local ground = VfxKit.Ground(position, 12)
+		if ground then
+			VfxKit.Rubble(ground.position, 10, 30)
+			VfxKit.DustRing(ground.position, 10, ground.color)
+			VfxKit.Cracks(ground.position, 6)
+		end
+		VfxKit.Flash(position, color, 20, 4, 0.3)
+	end
+	CameraFx.ShakeAt(position, d.kind == "OVERLOAD" and 0.7 or 0.45)
+end
+
+-- Awakening's Ultimate: everything gets pulled in, then it detonates.
+function handlers.Ultimate(d)
+	local position = d.position
+	local color = d.color or Color3.new(1, 1, 1)
+	VfxKit.Implode(position, d.radius * 0.6, color)
+	local pillar = part({ Shape = Enum.PartType.Cylinder, Size = Vector3.new(300, 1, 1), CFrame = CFrame.new(position + Vector3.new(0, 140, 0)) * CFrame.Angles(0, 0, math.pi / 2), Color = color, Transparency = 0.2 })
+	Ui.tween(pillar, 0.45, { Size = Vector3.new(300, 7, 7) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+	task.delay(0.45, function()
+		fade(pillar, 0.6, Vector3.new(300, 0.3, 0.3))
+		sphere(position, d.radius * 2, color, 0.7, 0)
+		for i = 0, 2 do
+			task.delay(i * 0.09, function()
+				ring(position - Vector3.new(0, 2.5, 0), d.radius * (1 + i * 0.35), color, 0.7, 1.2)
+			end)
+		end
+		VfxKit.Flash(position, color, 60, 12, 1.4, true)
+		VfxKit.Sparks(position, color, 60, 80)
+		VfxKit.Smoke(position, 6, Color3.fromRGB(28, 24, 30), 20, 3, 3.5)
+		local ground = VfxKit.Ground(position, 14)
+		if ground then
+			VfxKit.DustRing(ground.position, d.radius * 1.4, ground.color)
+			VfxKit.Rubble(ground.position, 22, 55)
+			VfxKit.Cracks(ground.position, d.radius * 0.7, color)
+			VfxKit.Scorch(ground.position, d.radius * 0.35, color)
+		end
+		CameraFx.ShakeAt(position, 1.4)
+		if (position - workspace.CurrentCamera.CFrame.Position).Magnitude < d.radius * 2 then
+			CameraFx.Flash(color, 0.5)
+		end
+	end)
 end
 
 function handlers.Swing(d)
@@ -504,6 +581,10 @@ local function dissolve(model: Model, color: Color3?, time: number)
 end
 
 function handlers.Dissolve(d)
+	local root = d.model and d.model.PrimaryPart
+	if root then
+		VfxKit.Disintegrate(root.Position, (tonumber(d.model:GetAttribute("RigScale")) or 1) * (d.boss and 2 or 1))
+	end
 	dissolve(d.model, nil, d.boss and 2 or 0.8)
 end
 
@@ -591,6 +672,7 @@ function Fx.Start()
 	folder.Parent = workspace
 
 	PowerVfx.SetFolder(folder)
+	VfxKit.Start()
 	Remotes.Fx.OnClientEvent:Connect(function(kind, data)
 		local handler = handlers[kind]
 		if handler then

@@ -2,14 +2,15 @@
 -- The character creator. Shown before the story starts for new players (the server sets the
 -- "NeedsLook" attribute and waits), and any time later from the menu's Look tab.
 --
--- The preview is a blocky R6 figure built from plain parts in a ViewportFrame, coloured and given
--- hair by the same shared Looks module the server uses for your real character.
+-- The preview is built by the same shared Figure module that dresses your real character, so what
+-- you see here is what everyone sees in game.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local Looks = require(ReplicatedStorage.Shared.Looks)
+local Figure = require(ReplicatedStorage.Shared.Figure)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Ui = require(script.Parent.Ui)
 local ClientState = require(script.Parent.ClientState)
@@ -29,66 +30,14 @@ local refreshers = {}
 
 -- Preview figure ---------------------------------------------------------------------------
 
-local R6 = {
-	{ name = "Torso", size = Vector3.new(2, 2, 1), offset = CFrame.new(0, 0, 0) },
-	{ name = "Head", size = Vector3.new(2, 1, 1), offset = CFrame.new(0, 1.5, 0) },
-	{ name = "Left Arm", size = Vector3.new(1, 2, 1), offset = CFrame.new(-1.5, 0, 0) },
-	{ name = "Right Arm", size = Vector3.new(1, 2, 1), offset = CFrame.new(1.5, 0, 0) },
-	{ name = "Left Leg", size = Vector3.new(1, 2, 1), offset = CFrame.new(-0.5, -2, 0) },
-	{ name = "Right Leg", size = Vector3.new(1, 2, 1), offset = CFrame.new(0.5, -2, 0) },
-}
-
 local function buildDummy()
 	if dummy then
 		dummy:Destroy()
 	end
-	dummy = Instance.new("Model")
-	dummy.Name = "Preview"
-	local colors = Looks.Colors(look)
-	local head
-	for _, def in R6 do
-		local part = Instance.new("Part")
-		part.Name = def.name
-		part.Size = def.size
-		part.CFrame = def.offset
-		part.Anchored = true
-		part.Color = colors[def.name]
-		part.Material = Enum.Material.SmoothPlastic
-		part.TopSurface = Enum.SurfaceType.Smooth
-		part.BottomSurface = Enum.SurfaceType.Smooth
-		part.Parent = dummy
-		if def.name == "Head" then
-			local mesh = Instance.new("SpecialMesh")
-			mesh.MeshType = Enum.MeshType.Head
-			mesh.Scale = Vector3.new(1.25, 1.25, 1.25)
-			mesh.Parent = part
-			head = part
-		end
-	end
-	-- A simple painted-on face (your real character gets Roblox's default face).
-	for _, x in { -0.2, 0.2 } do
-		local eye = Instance.new("Part")
-		eye.Size = Vector3.new(0.1, 0.18, 0.05)
-		eye.CFrame = head.CFrame * CFrame.new(x, 0.08, -0.6)
-		eye.Color = Color3.fromRGB(20, 20, 20)
-		eye.Anchored = true
-		eye.Parent = dummy
-	end
-	local mouth = Instance.new("Part")
-	mouth.Size = Vector3.new(0.34, 0.06, 0.05)
-	mouth.CFrame = head.CFrame * CFrame.new(0, -0.2, -0.6)
-	mouth.Color = Color3.fromRGB(20, 20, 20)
-	mouth.Anchored = true
-	mouth.Parent = dummy
-	local hair = Looks.BuildHair(head, look)
-	if hair then
-		for _, part in hair:GetChildren() do
-			if part:IsA("BasePart") then
-				part.Anchored = true
-			end
-		end
-		hair.Parent = dummy
-	end
+	local spec = Figure.FromLook(look)
+	spec.cf = CFrame.new(0, -3, 0)
+	spec.name = "Preview"
+	dummy = Figure.Build(spec)
 	dummy.Parent = viewport
 end
 
@@ -252,13 +201,15 @@ function CharacterCreator.Start()
 	}, { Ui.list(6), Ui.new("UIPadding", { PaddingRight = UDim.new(0, 10) }) })
 
 	swatchRow("SKIN", Looks.Skin, "skin")
+	swatchRow("EYES", Figure.EyeColors, "eyes")
 	local hairNames = {}
 	for _, style in Looks.Hair do
 		table.insert(hairNames, style.name)
 	end
 	choiceRow("HAIR", hairNames, "hair")
 	swatchRow("HAIR COLOUR", Looks.HairColors, "hairColor")
-	swatchRow("SHIRT", Looks.Clothes, "shirt")
+	choiceRow("OUTFIT", Figure.OutfitNames, "outfit")
+	swatchRow("SHIRT / TOP", Looks.Clothes, "shirt")
 	section("SLEEVES")
 	rowOrder += 1
 	local sleeveButton

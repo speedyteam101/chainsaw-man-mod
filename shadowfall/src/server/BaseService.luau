@@ -16,6 +16,7 @@ local Materials = require(ReplicatedStorage.Shared.Materials)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Structures = require(ReplicatedStorage.Shared.Structures)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
+local Figure = require(ReplicatedStorage.Shared.Figure)
 local Registry = require(script.Parent.Registry)
 local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
@@ -360,36 +361,42 @@ end
 local function buildPerson(person, cf: CFrame, parent: Instance)
 	local model = Instance.new("Model")
 	model.Name = person.name
-	local function limb(name: string, size: Vector3, offset: Vector3, color: Color3)
+	local blacksmith = table.find(person.roles, "Blacksmith") ~= nil
+	local carpenter = table.find(person.roles, "Carpenter") ~= nil
+	local spec = Figure.SpecFor(person.id, {
+		shirt = person.shirt,
+		pants = person.pants,
+		outfit = blacksmith and "apron" or (carpenter and "overalls" or nil),
+	})
+	spec.cf = cf
+	spec.name = person.name
+	local built, parts = Figure.Build(spec)
+	for _, child in built:GetChildren() do
+		child.Parent = model
+	end
+	built:Destroy()
+	model.PrimaryPart = parts.Torso
+	local torso = parts.Torso
+	local function prop(name: string, size: Vector3, offset: CFrame, color: Color3, material: Enum.Material)
 		local p = Instance.new("Part")
 		p.Name = name
 		p.Size = size
-		p.CFrame = cf * CFrame.new(offset)
+		p.CFrame = cf * offset
 		p.Color = color
+		p.Material = material
 		p.Anchored = true
 		p.CanCollide = false
 		p.CanQuery = false
 		p.CanTouch = false
-		p.TopSurface = Enum.SurfaceType.Smooth
-		p.BottomSurface = Enum.SurfaceType.Smooth
 		p.Parent = model
-		return p
 	end
-	local skin = Color3.fromRGB(230, 190, 150)
-	local torso = limb("Torso", Vector3.new(2, 2, 1), Vector3.new(0, 3, 0), person.shirt)
-	limb("Head", Vector3.new(2, 1, 1), Vector3.new(0, 4.5, 0), skin)
-	limb("Left Arm", Vector3.new(1, 2, 1), Vector3.new(-1.5, 3, 0), skin)
-	limb("Right Arm", Vector3.new(1, 2, 1), Vector3.new(1.5, 3, 0), skin)
-	limb("Left Leg", Vector3.new(1, 2, 1), Vector3.new(-0.5, 1, 0), person.pants)
-	limb("Right Leg", Vector3.new(1, 2, 1), Vector3.new(0.5, 1, 0), person.pants)
-	for _, x in { -0.4, 0.4 } do
-		limb("Eye", Vector3.new(0.2, 0.25, 0.05), Vector3.new(x, 4.6, -0.52), Color3.new(0, 0, 0))
+	if carpenter then
+		-- A hammer hanging from the hand.
+		prop("HammerHandle", Vector3.new(0.22, 1.5, 0.22), CFrame.new(1.5, 1.6, -0.55), Color3.fromRGB(120, 86, 52), Enum.Material.Wood)
+		prop("HammerHead", Vector3.new(0.35, 0.35, 0.8), CFrame.new(1.5, 0.9, -0.55), Color3.fromRGB(90, 90, 96), Enum.Material.Metal)
 	end
-	if table.find(person.roles, "Carpenter") then
-		limb("Hammer", Vector3.new(0.3, 1.6, 0.3), Vector3.new(1.5, 2, -0.6), Color3.fromRGB(110, 80, 50))
-	end
-	if table.find(person.roles, "Blacksmith") then
-		limb("Apron", Vector3.new(1.8, 2.2, 0.1), Vector3.new(0, 2.6, -0.55), Color3.fromRGB(70, 50, 40))
+	if blacksmith then
+		prop("Tongs", Vector3.new(0.12, 1.6, 0.12), CFrame.new(1.5, 1.5, -0.55) * CFrame.Angles(0, 0, math.rad(8)), Color3.fromRGB(60, 60, 64), Enum.Material.Metal)
 	end
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 38)

@@ -21,7 +21,7 @@ local card, tipLabel, controlsLabel, blessingLabel
 local hidden = false
 local act2Since = nil
 
-local CONTROLS = "Click: punch   F: block   Q: dodge   Shift: sprint\nZ X C V: powers   G: awakening   1 2 3: items\nE: talk / pick up   M: menu   B: build   Tab: pack"
+local CONTROLS = "Click: punch   F: block   Q: dodge   Shift: sprint\nZ X C V: powers   G: ultimate   1 2 3: items\nL: flashlight   E: talk / pick up   M: menu   B: build   Tab: pack"
 
 local function cheapestPassLeft(): number?
 	local best = nil
@@ -37,6 +37,9 @@ local function nextTip(): string
 	local level = player:GetAttribute("Level") or 1
 	local essence = player:GetAttribute("Essence") or 0
 	local tokens = player:GetAttribute("Tokens") or 0
+	if workspace:GetAttribute("Blackout") ~= nil then
+		return "BLACKOUT: get to the camp or your base, or turn your flashlight on (L) and keep it on the Hollow. Your powers can't hurt it."
+	end
 	if player:GetAttribute("CanAscend") then
 		return "You earned a feat that lets you level up! Open the menu (M) and press Ascend."
 	end

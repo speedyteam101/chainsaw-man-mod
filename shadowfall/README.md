@@ -49,7 +49,24 @@ The world is built when the server starts, so in Studio's edit mode the Workspac
 
 ## Creating your character
 
-The first time you join, before the story starts, you make your character: skin tone, hairstyle (short, messy, long, ponytail, spiky, beanie, cap or none), hair colour, shirt colour with long or short sleeves, and trouser colour. There's a **Random** button, or you can pick **Use my Roblox avatar** instead. A spinning blocky R6 preview shows the result. Change it any time later from the menu's **Look** tab.
+The first time you join, before the story starts, you make your character:
+
+* skin tone and eye colour
+* hairstyle (short, messy, long, ponytail, spiky, beanie, cap or none) and hair colour
+* outfit (T-shirt, hoodie, jacket, overalls or long coat), its colour, and long or short sleeves
+* trouser colour
+
+There's a **Random** button, or you can pick **Use my Roblox avatar** instead. A spinning 3D preview shows exactly what you'll look like. Change it any time later from the menu's **Look** tab.
+
+**Realistic characters.** Characters keep the R6 body, because the animations, first-person view and shadows are built on it. On top of that, players and every NPC (camp survivors, rescued townsfolk, people trapped in cocoons, merchants, and your parents in the intro) get detail built from parts (`src/shared/Figure.luau`):
+
+* the rounded R6 head with eyes (whites, coloured irises, pupils and a glint), brows, nose, mouth and ears
+* hands showing under long sleeves
+* fabric clothes with collars, buttons, pockets, cuffs and belts
+* outfit pieces: hood and drawstrings, leather jacket, overalls with straps, a blacksmith's apron, a long coat, a doctor's coat
+* leather shoes with rubber soles, and hair
+
+NPCs get a fitting outfit (the mechanic wears overalls, the doctor a white coat, blacksmiths aprons). Anyone without one gets a look generated from their name, so everyone looks different but always the same. In first person, your own face and hair are hidden, but your sleeves and hands show with your arms.
 
 Players who already had a save also see the creator once, the next time they join.
 
@@ -109,7 +126,8 @@ You wake up at the survivors' camp in the middle of what's left of Hollow Creek.
 | Dodge (i-frames). Dodge through an attack for a **perfect dodge** (+25% damage for a moment) | Q | B |
 | Sprint | Shift | L3 |
 | Power moves (unlock at levels 1-4) | Z X C V | X, Y, D-pad left/right |
-| Awakening (level 5) | G | D-pad up |
+| Awakening + **Ultimate** (level 5) | G | D-pad up |
+| Flashlight | L | D-pad down |
 | Menu (Ascension, Feats, Power, Tokens, Pack, Build, Base, Journal, Warp, Look) | M | Select |
 | Hide / show Biscuit's Tip | H | |
 | Build menu / Pack (inventory + crafting) | B / Tab | |
@@ -120,6 +138,16 @@ You wake up at the survivors' camp in the middle of what's left of Hollow Creek.
 On touch devices, ContextActionService adds on-screen buttons for these actions.
 
 ### Combat that rewards skill
+
+* **Ultimate.** Activating Awakening (G) now detonates first:
+  * everything is pulled in, a pillar of light comes down and the ground erupts
+  * 110 damage (scaled by your level and power) to every shadow within 26 studs
+  * it carries your power's signature effects plus a big knockback and stun
+* **Elemental reactions.** Effects combine with what's already on a shadow:
+  * **SHATTER:** burn a frozen or slowed shadow, or freeze a burning one, for a burst of bonus damage
+  * **OVERLOAD:** shock a burning shadow (chain or stun) and it explodes, hurting everything around it
+  * **CRUSH:** knock back a stunned shadow for bonus damage
+* **Flow.** Using a different move than your last one within 4 seconds builds a stack, up to 5 (+6% damage each). Getting hit drops it, and the HUD shows your Flow.
 
 * Every shadow **telegraphs**: its eyes turn red during a wind-up, and big attacks draw a red area on the ground that fills up before it lands.
 * Stunning a shadow during its wind-up cancels the attack. Parries stagger it.
@@ -234,6 +262,42 @@ The story moves forward as you play. There are still no quests: scenes trigger w
 **The mystery.** Three days before noon, Dr. Elias Vance carried a machine called the Lantern into the Whispering Woods. It opened a window onto the shadow world, and something patient and hungry came through. Everyone the shadows touch becomes one of them. Each boss you beat frees a soul and reveals more. The ending is in the Heart of Shadow.
 
 **Journal:** there are 10 journal pages to find across every area: Vance's logs, a postcard from another lost town, and a last note from your parents. They sit on small glowing stands. The **Journal** tab tracks your chapters and pages, and finding every page earns the **Archivist** feat.
+
+## Act 2 is still a horror game
+
+Your power makes you strong, but the shadow world should never feel safe outside the firelight.
+
+* **Darkness.** Outside the camp and your base the world gets much darker and the fog closes in. Set how dark with `Config.Horror.Darkness`, from 0 (off) to 1 (very dark). The camp and your base always keep the normal Act 2 lighting.
+* **Flashlight (L).** It lights what you look at, and other players see your head lamp.
+* **Fear.** When shadows close in, the edges of the screen darken, your heart pounds and the view trembles.
+* **Watchers.** Out in the dark, a figure sometimes stands at the edge of the fog, turning to face you. Look straight at it and it's gone.
+* **They come up out of the ground.** New shadows claw their way out of a pool of black ichor, with smoke and a flicker of purple light.
+* **The Blackout.** Roughly every 8 to 12 minutes (`Config.Horror.Blackout`):
+  * The bell tolls and the street lamps stutter. Then every light dies for 75 seconds and the shadows get faster.
+  * Something called **the Hollow** hunts every player who is out in the open. Your powers pass straight through it.
+  * It only creeps closer when you look away. Only holding your flashlight on it drives it off.
+  * If it reaches you: a jumpscare, 35% of your health and a big sanity hit.
+  * The camp and base barriers are safe. It waits at the edge, staring.
+  * Get through without being caught for +60 Essence and the **Lights Out** feat, which qualifies you for level 3.
+
+## Realistic effects
+
+Every power keeps its own stylised look, now layered with effects that borrow from how real impacts look (`src/client/VfxKit.luau`):
+
+* **Light:** flashes that light up the surroundings and flicker as they die.
+* **Smoke:** smoke lit by the world rather than glowing, which billows, slows and drifts upward. It's dark soot for fire and blasts, and dust the colour of the ground for rock.
+* **Debris:** chunks of the actual ground material, thrown up with real physics. Players never collide with them.
+* **Sparks and embers:** streaking sparks that fall with gravity, and embers that float up.
+* **Marks on the ground:** scorch marks, glowing cracks, frost patches and splatter, which fade after a while.
+* **Shockwave dust:** a dust ring that rolls out along the ground.
+
+Shadows bleed black ichor when hit, and come apart into rising ash and smoke when destroyed. Moves you cast give a small camera kick, and big impacts shake the camera by distance.
+
+Performance and quality are set in `Config.Vfx`:
+
+* `Quality` (0.5 halves particles and debris)
+* `MaxDebris`
+* the particle textures. They default to Roblox's built-in particle textures. I believe those paths exist but haven't confirmed it outside Studio. For even more realistic results, swap in flipbook textures from the Creator Store.
 
 ## Merchants
 
@@ -381,6 +445,7 @@ shadowfall/
     ShadowRig.luau            builds the blocky R6 shadow model (black neon + smoke)
     Materials.luau, Recipes.luau, Structures.luau, Townsfolk.luau
     Passes.luau               Tokens exchange rates and the passes (with optional Robux game pass ids)
+    Figure.luau               realistic R6 people: faces, clothes, shoes, hair (players and NPCs)
     Looks.luau                character creator choices, body colours, part-built hairstyles
     Remotes.luau, Signal.luau
   src/server/                 ServerScriptService.Server
@@ -400,6 +465,7 @@ shadowfall/
     BaseService.luau          crystal, barrier, blueprints, buildings, saving
     RescueService.luau        cocoons, guards, freeing townsfolk
     PassService.luau          Essence -> Tokens, buying passes, Power Vault, game pass checks
+    BlackoutService.luau      the Blackout event and the Hollow
     LookService.luau          waits for new players to make a character, applies looks
     Projectiles.luau, PlayerData.luau, Registry.luau
   src/client/                 StarterPlayerScripts.Client
@@ -416,6 +482,8 @@ shadowfall/
     BuildMode.luau            holographic placement
     CharacterCreator.luau     the character creator and its 3D preview
     Guide.luau                Biscuit's Tip and the controls card
+    VfxKit.luau               realistic effect building blocks (light, smoke, debris, sparks, marks)
+    Dread.luau                Act 2 horror: darkness, flashlight, fear, Watchers, Blackout, jumpscare
   src/character/Health.server.luau   turns off Roblox's default regen (the server handles it)
 ```
 
@@ -431,6 +499,7 @@ In Studio only, the menu has a **Dev** tab: skip Act 1, grant a qualifying feat,
 * Shadows walk straight at their target and jump when they get stuck. There's no pathfinding, so they can catch on walls. (In Act 1 that reads as them "phasing" closer when you look away.)
 * The wisp particles on shadows use the texture path `rbxasset://textures/particles/smoke_main.dds`. I believe that's one of Roblox's built-in textures but haven't confirmed it. If the wisps don't show up, the classic `Smoke` effect on each shadow still works.
 * There's no sound until you add ids in `Config.Sounds`.
+* Face features and clothing details are positioned for the default R6 head mesh and body by estimate. If something sits slightly off in Studio, nudge the offsets in `src/shared/Figure.luau`.
 * The hairstyles are positioned for the default R6 head (about 1.2 studs across once its mesh is scaled). If a style sits slightly off in Studio, nudge the offsets in `src/shared/Looks.luau`.
 * Custom looks spawn with `Player:LoadCharacterWithHumanoidDescriptionAsync`, using only body colours and no clothing assets. I haven't confirmed in Studio that a blank face id gives the default smile. If the face is missing, set `Face` on the description in `LookService.Description`. If the custom spawn fails, the game falls back to the player's normal avatar and prints a warning.
 * Robux game passes can't be tested until the place is published and the passes exist. Studio's test purchases should exercise the prompt.

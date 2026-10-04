@@ -89,7 +89,37 @@ function Combat.DamageMultiplier(player: Player): number
 	if InventoryService.HasItem(player, "Charm") then
 		mult *= 1.1
 	end
+	-- Flow: chaining different moves together.
+	if (state.flow or 0) > 0 and now < (state.flowUntil or 0) then
+		mult *= 1 + state.flow * Config.Combos.FlowPerStack
+	end
 	return mult
+end
+
+-- Flow: using a different move than the last one within the window builds a stack (up to the
+-- max); repeating the same move keeps it; getting hit or waiting too long drops it.
+function Combat.AddFlow(player: Player, slot: number)
+	local K = Config.Combos
+	local state = Combat.GetState(player)
+	local now = os.clock()
+	if now > (state.flowUntil or 0) then
+		state.flow = 0
+	end
+	if state.lastFlowSlot ~= slot then
+		state.flow = math.min(K.FlowMax, (state.flow or 0) + 1)
+	end
+	state.lastFlowSlot = slot
+	state.flowUntil = now + K.FlowWindow
+	Remotes.Notify:FireClient(player, "Flow", { stacks = state.flow, duration = K.FlowWindow })
+end
+
+function Combat.BreakFlow(player: Player)
+	local state = Combat.GetState(player)
+	if (state.flow or 0) > 0 then
+		state.flow = 0
+		state.flowUntil = 0
+		Remotes.Notify:FireClient(player, "Flow", { stacks = 0 })
+	end
 end
 
 -- Spatial queries over the enemy registry ------------------------------------------------
@@ -220,7 +250,47 @@ function Combat.ApplyEffects(enemy, effects, sourcePosition: Vector3, attacker: 
 	end
 end
 
--- opts: { effects, sourcePosition, noFx, color, crit }
+-- Elemental reactions: some effects combine with what's already on a shadow.
+--   SHATTER  burn a frozen/slowed shadow, or freeze a burning one: a burst of bonus damage
+--   OVERLOAD shock (chain or stun) a burning shadow: it explodes, hurting those around it
+--   CRUSH    knock back a stunned shadow: bonus damage
+function Combat.React(enemy, amount: number, attacker: Player, opts)
+	local K = Config.Combos
+	local effects = opts.effects
+	local now = os.clock()
+	if now < (enemy.reactReady or 0) then
+		return
+	end
+	local burning = enemy.burn ~= nil and now < enemy.burn.untilTime
+	local slowed = now < enemy.slowUntil
+	local stunned = now < enemy.stunUntil
+	local kind
+	if (effects.burn and slowed) or (effects.slow and burning) then
+		kind = "SHATTER"
+	elseif burning and not effects.burn and (effects.chain or effects.stun) then
+		kind = "OVERLOAD"
+	elseif stunned and effects.knockback then
+		kind = "CRUSH"
+	end
+	if not kind then
+		return
+	end
+	enemy.reactReady = now + K.ReactionCooldown
+	local position = enemy.root.Position
+	Remotes.Fx:FireAllClients("Reaction", { kind = kind, position = position, color = opts.color })
+	if kind == "SHATTER" then
+		enemy.slowUntil = 0 -- the ice breaks
+		Combat.DamageEnemy(enemy, amount * K.Shatter, attacker, { reaction = true, color = Color3.fromRGB(200, 240, 255) })
+	elseif kind == "OVERLOAD" then
+		for _, other in Combat.EnemiesInSphere(position, K.Overload.radius) do
+			Combat.DamageEnemy(other, amount * K.Overload.damage, attacker, { reaction = true, color = Color3.fromRGB(255, 200, 90), effects = { knockback = 40 } })
+		end
+	else
+		Combat.DamageEnemy(enemy, amount * K.Crush, attacker, { reaction = true, color = Color3.fromRGB(255, 120, 90) })
+	end
+end
+
+-- opts: { effects, sourcePosition, noFx, color, crit, chained, reaction }
 function Combat.DamageEnemy(enemy, amount: number, attacker: Player?, opts)
 	if enemy.dead or amount <= 0 then
 		return 0
@@ -246,7 +316,10 @@ function Combat.DamageEnemy(enemy, amount: number, attacker: Player?, opts)
 	if not opts.noFx then
 		Remotes.Fx:FireAllClients("Hit", { position = enemy.root.Position + Vector3.new(0, 2 * (enemy.scale or 1), 0), amount = amount, color = opts.color, crit = opts.crit, target = enemy.model })
 	end
-	if opts.effects then
+	if opts.effects and attacker and not opts.chained and not opts.reaction and enemy.hp > 0 then
+		Combat.React(enemy, amount, attacker, opts)
+	end
+	if opts.effects and not enemy.dead then
 		Combat.ApplyEffects(enemy, opts.effects, opts.sourcePosition or enemy.root.Position, attacker, amount)
 		-- Chain: arc to nearby shadows (the arcs themselves don't chain again).
 		local chain = opts.effects.chain
@@ -268,7 +341,7 @@ function Combat.DamageEnemy(enemy, amount: number, attacker: Player?, opts)
 			end
 		end
 	end
-	if enemy.hp <= 0 then
+	if enemy.hp <= 0 and not enemy.dead then -- (a reaction's bonus hit may already have finished it)
 		enemy.dead = true
 		Registry.EnemyKilled:Fire(enemy, enemy.lastAttacker, enemy.damagers)
 	end
@@ -361,6 +434,9 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 		return "revived"
 	end
 	amount = math.max(1, math.floor(amount + 0.5))
+	if result == "hit" then
+		Combat.BreakFlow(player)
+	end
 	humanoid.Health -= amount
 	state.lastDamaged = now
 	Remotes.Fx:FireAllClients("PlayerHit", { character = character, amount = amount, blocked = result == "blocked" })

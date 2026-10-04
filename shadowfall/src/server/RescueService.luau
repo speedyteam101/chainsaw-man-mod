@@ -10,6 +10,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
+local Figure = require(ReplicatedStorage.Shared.Figure)
 local Registry = require(script.Parent.Registry)
 local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
@@ -46,16 +47,16 @@ local function buildCocoon(person, ground: Vector3, parent: Instance)
 	local model = Instance.new("Model")
 	model.Name = "Cocoon_" .. person.id
 	local cf = CFrame.new(ground) * CFrame.Angles(0, math.rad((person.order * 47) % 360), 0)
-	local skin = Color3.fromRGB(230, 190, 150)
-	block(model, "Torso", Vector3.new(2, 2, 1), cf * CFrame.new(0, 3, 0), person.shirt)
-	block(model, "Head", Vector3.new(2, 1, 1), cf * CFrame.new(0, 4.5, 0) * CFrame.Angles(0.2, 0, 0.15), skin)
-	block(model, "Left Arm", Vector3.new(1, 2, 1), cf * CFrame.new(-1.5, 3, 0), skin)
-	block(model, "Right Arm", Vector3.new(1, 2, 1), cf * CFrame.new(1.5, 3, 0), skin)
-	block(model, "Left Leg", Vector3.new(1, 2, 1), cf * CFrame.new(-0.5, 1, 0), person.pants)
-	block(model, "Right Leg", Vector3.new(1, 2, 1), cf * CFrame.new(0.5, 1, 0), person.pants)
-	for _, x in { -0.4, 0.4 } do
-		block(model, "Eye", Vector3.new(0.2, 0.25, 0.05), cf * CFrame.new(x, 4.65, -0.52), Color3.new(0, 0, 0))
+	-- The trapped person: eyes shut, head lolling, fully detailed under the bands.
+	local spec = Figure.SpecFor(person.id, { shirt = person.shirt, pants = person.pants, expression = "closed" })
+	spec.cf = cf
+	spec.name = "Trapped"
+	spec.pose = { Head = CFrame.new(0, 4.5, 0) * CFrame.Angles(0.2, 0, 0.15) }
+	local built = Figure.Build(spec)
+	for _, child in built:GetChildren() do
+		child.Parent = model
 	end
+	built:Destroy()
 	-- Bands of living shadow wrapped around them.
 	for i = 1, 7 do
 		local y = 0.6 + i * 0.68

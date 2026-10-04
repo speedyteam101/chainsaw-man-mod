@@ -50,14 +50,20 @@ function FirstPerson.Start()
 			if sparkles and sparkles:IsA("Sparkles") and sparkles.Enabled then
 				sparkles.Enabled = false
 			end
-			-- Your own hair (from the character creator) would block the view from inside your head.
-			local hair = character:FindFirstChild("LookHair")
-			local head = character:FindFirstChild("Head")
-			if hair and head then
-				local inside = (workspace.CurrentCamera.CFrame.Position - head.Position).Magnitude < 2
-				for _, part in hair:GetChildren() do
+			-- Character details (face, hair, clothes) follow their limb's first-person visibility,
+			-- so your sleeves and hands show with your arms but your own face and hair don't block
+			-- the view.
+			local details = character:FindFirstChild("LookDetails")
+			if details then
+				for _, part in details:GetChildren() do
 					if part:IsA("BasePart") then
-						part.LocalTransparencyModifier = inside and 1 or 0
+						local limbName = part:GetAttribute("Limb")
+						if VISIBLE[limbName] then
+							part.LocalTransparencyModifier = 0
+						else
+							local limb = character:FindFirstChild(limbName)
+							part.LocalTransparencyModifier = limb and limb:IsA("BasePart") and limb.LocalTransparencyModifier or 0
+						end
 					end
 				end
 			end

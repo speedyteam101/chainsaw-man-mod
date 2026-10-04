@@ -497,6 +497,16 @@ function Act1Director.OnCharacter(player: Player, character: Model)
 	story(player, "Objective", { text = OBJECTIVES[stage], stage = stage })
 end
 
+-- Where a player is looking and whether their light is on (from their Flashlight packets, which
+-- the client sends in both acts). Used by the Act 2 Blackout too.
+function Act1Director.View(player: Player)
+	local state = states[player]
+	if not state then
+		return {}
+	end
+	return { on = state.flashlight, eye = state.eye, look = state.look, lastPacket = state.lastPacket }
+end
+
 function Act1Director.IsFlashlightOn(player: Player): boolean
 	local state = states[player]
 	return state ~= nil and state.flashlight and os.clock() - state.lastPacket < 0.6

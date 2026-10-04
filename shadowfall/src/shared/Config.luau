@@ -141,6 +141,56 @@ Config.Base = {
 	TurretInterval = 1.5,
 }
 
+-- Visual effects. The textures below are Roblox's built-in particle textures (I believe these
+-- paths exist in every Roblox client, but haven't been able to confirm it outside Studio). For
+-- more realistic results, swap in flipbook textures from the Creator Store ("rbxassetid://...").
+Config.Vfx = {
+	Textures = {
+		Spark = "rbxasset://textures/particles/sparkles_main.dds",
+		Smoke = "rbxasset://textures/particles/smoke_main.dds",
+		Fire = "rbxasset://textures/particles/fire_main.dds",
+	},
+	Quality = 1, -- 0.5 = half the particles and debris (for slow devices), 1 = full
+	MaxDebris = 60, -- physical rock/ice chunks alive at once
+	MarkLifetime = 9, -- seconds scorch marks, cracks and splatters stay on the ground
+}
+
+-- Act 2 horror.
+Config.Horror = {
+	-- 0 = Act 2 looks like before, 1 = very dark outside the camp and your base. Raise or lower this
+	-- to taste; the camp and your base always stay at the normal Act 2 lighting.
+	Darkness = 0.6,
+	FlashlightRange = 60,
+	Watchers = { Interval = { 25, 50 }, Chance = 0.45, MinDistance = 45, MaxDistance = 85 },
+	Blackout = {
+		Enabled = true,
+		FirstDelay = 360, -- seconds after the server starts
+		Interval = { 480, 720 }, -- between blackouts
+		Warning = 12, -- seconds of warning (lights stutter, the bell tolls)
+		Duration = 75,
+		StalkerSpeed = 15,
+		CatchDistance = 4,
+		CatchDamage = 0.35, -- fraction of max health
+		SanityLoss = 25,
+		BurnTime = 1.6, -- seconds of flashlight to banish the Hollow
+		Respawn = 10, -- seconds before another Hollow comes for you
+		Reward = 60, -- Essence for getting through without being caught
+	},
+}
+
+-- Combat flair: elemental reactions and the Flow meter.
+Config.Combos = {
+	ReactionCooldown = 0.8, -- per enemy
+	Shatter = 0.6, -- bonus damage (fraction of the hit) for burning a frozen/slowed foe or freezing a burning one
+	Overload = { damage = 0.45, radius = 9 }, -- shocking a burning foe makes it explode
+	Crush = 0.5, -- bonus damage for knocking back a stunned foe
+	FlowPerStack = 0.06, -- +6% damage per Flow stack
+	FlowMax = 5,
+	FlowWindow = 4, -- seconds to use a different move to keep Flow going
+	UltimateDamage = 110, -- Awakening burst (scaled by your damage multiplier)
+	UltimateRadius = 26,
+}
+
 -- Help for new players.
 Config.Beginner = {
 	DamageTaken = 0.7, -- Beginner's Blessing: take 30% less damage...

@@ -10,6 +10,9 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local ShadowRig = require(ReplicatedStorage.Shared.ShadowRig)
+local VfxKit = require(script.Parent.VfxKit)
+local CameraFx = require(script.Parent.CameraFx)
+local Players = game:GetService("Players")
 
 local PowerVfx = {}
 
@@ -266,6 +269,9 @@ function PowerVfx.Cast(d)
 	end
 	local s = styleOf(d)
 	poseArms(character, POSES[d.kind] or POSES.projectile)
+	if character == Players.LocalPlayer.Character then
+		CameraFx.Kick((d.kind == "nova" or d.kind == "strike") and 0.3 or 0.15)
+	end
 	-- A charge-up glow in the hand.
 	task.delay(0.05, function()
 		local hand = handPosition(character)
@@ -348,6 +354,11 @@ function PowerVfx.Impact(position: Vector3, d, radius: number)
 	local color = d.color or Color3.new(1, 1, 1)
 	flashLight(position, color, radius * 3, 0.4)
 	local family = s.family
+	-- The realistic layer: lit smoke, physical debris, sparks, scorch/cracks/frost on the ground.
+	if (position - workspace.CurrentCamera.CFrame.Position).Magnitude < 220 then
+		VfxKit.Impact(position, family, radius, color, s.accent)
+		CameraFx.ShakeAt(position, math.clamp(radius / 12, 0.08, 0.6))
+	end
 	if family == "fire" then
 		burst(position, color, 26, radius * 4, 0.8, SPARK, 0.9, 6)
 		burst(position, Color3.fromRGB(40, 30, 30), 10, radius * 1.5, radius * 0.9, SMOKE, 1.4, 4)

@@ -484,6 +484,9 @@ local function think(enemy)
 		return
 	end
 	local speed = def.speed * (now < enemy.slowUntil and enemy.slowMult or 1)
+	if workspace:GetAttribute("Blackout") == "active" then
+		speed *= 1.2 -- the dark makes them bolder
+	end
 	humanoid.WalkSpeed = speed
 
 	-- Fell off the world

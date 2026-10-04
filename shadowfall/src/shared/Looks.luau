@@ -5,7 +5,9 @@
 --
 -- A look is a small table of indexes into the palettes below, so it is cheap to save and easy to
 -- validate:
---   { avatar = false, skin = 3, shirt = 2, pants = 5, hair = 2, hairColor = 1, sleeves = true }
+--   { avatar = false, skin = 3, shirt = 2, pants = 5, hair = 2, hairColor = 1, sleeves = true,
+--     eyes = 1, outfit = 1 }
+-- (eyes and outfit index Figure.EyeColors / Figure.Outfits; Figure turns a look into a person.)
 -- `avatar = true` means "use my own Roblox avatar" instead.
 
 local Looks = {}
@@ -114,8 +116,11 @@ Looks.Hair = {
 	},
 }
 
+Looks.EyeCount = 5 -- must match #Figure.EyeColors
+Looks.OutfitCount = 5 -- must match #Figure.Outfits
+
 function Looks.Default()
-	return { avatar = false, skin = 2, shirt = 2, pants = 10, hair = 2, hairColor = 2, sleeves = true }
+	return { avatar = false, skin = 2, shirt = 2, pants = 10, hair = 2, hairColor = 2, sleeves = true, eyes = 1, outfit = 1 }
 end
 
 local function index(value, list, fallback: number): number
@@ -139,6 +144,8 @@ function Looks.Sanitize(look)
 		hair = index(look.hair, Looks.Hair, default.hair),
 		hairColor = index(look.hairColor, Looks.HairColors, default.hairColor),
 		sleeves = look.sleeves ~= false,
+		eyes = type(look.eyes) == "number" and look.eyes == look.eyes and math.clamp(math.floor(look.eyes), 1, Looks.EyeCount) or default.eyes,
+		outfit = type(look.outfit) == "number" and look.outfit == look.outfit and math.clamp(math.floor(look.outfit), 1, Looks.OutfitCount) or default.outfit,
 	}
 end
 
@@ -151,6 +158,8 @@ function Looks.Random(rng: Random)
 		hair = rng:NextInteger(1, #Looks.Hair),
 		hairColor = rng:NextInteger(1, #Looks.HairColors),
 		sleeves = rng:NextNumber() < 0.6,
+		eyes = rng:NextInteger(1, Looks.EyeCount),
+		outfit = rng:NextInteger(1, Looks.OutfitCount),
 	}
 end
 
@@ -168,42 +177,6 @@ function Looks.Colors(look)
 		["Left Leg"] = pants,
 		["Right Leg"] = pants,
 	}
-end
-
--- Builds the hairstyle as a model of parts welded to `head`. Returns nil for "None".
-function Looks.BuildHair(head: BasePart, look): Model?
-	local style = Looks.Hair[look.hair]
-	if not style or #style.pieces == 0 then
-		return nil
-	end
-	local color = Looks.HairColors[look.hairColor]
-	local model = Instance.new("Model")
-	model.Name = "LookHair"
-	for i, p in style.pieces do
-		local part = Instance.new("Part")
-		part.Name = "Hair" .. i
-		part.Size = p.size
-		part.Color = color
-		part.Material = Enum.Material.SmoothPlastic
-		part.TopSurface = Enum.SurfaceType.Smooth
-		part.BottomSurface = Enum.SurfaceType.Smooth
-		if p.shape == "Ball" then
-			part.Shape = Enum.PartType.Ball
-		end
-		part.CanCollide = false
-		part.CanQuery = false
-		part.CanTouch = false
-		part.Massless = true
-		part.CFrame = head.CFrame
-			* CFrame.new(p.offset)
-			* CFrame.Angles(math.rad(p.rot.X), math.rad(p.rot.Y), math.rad(p.rot.Z))
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = head
-		weld.Part1 = part
-		weld.Parent = part
-		part.Parent = model
-	end
-	return model
 end
 
 return Looks

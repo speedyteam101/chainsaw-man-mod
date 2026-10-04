@@ -32,6 +32,7 @@ local ShopService = require(Server.ShopService)
 local StoryService = require(Server.StoryService)
 local PassService = require(Server.PassService)
 local LookService = require(Server.LookService)
+local BlackoutService = require(Server.BlackoutService)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 local Materials = require(ReplicatedStorage.Shared.Materials)
 
@@ -55,6 +56,10 @@ AllyService.Start()
 ShopService.Start(world)
 StoryService.Start(world)
 PassService.Start()
+BlackoutService.Start()
+BlackoutService.OnSurvived = function(player: Player)
+	AchievementService.Grant(player, "lights_out")
+end
 PassService.OnOutfitChanged = DuckService.ApplyOutfit
 PlayerData.SpawnOverride = LookService.Spawn
 StoryService.OnAllPages = function(player: Player)
@@ -105,6 +110,7 @@ local function onCharacterAdded(player: Player, character: Model)
 	task.spawn(DuckService.OnCharacter, player, character)
 	task.spawn(LookService.OnCharacter, player, character)
 	task.spawn(PassService.OnCharacter, player, character)
+	task.spawn(BlackoutService.OnCharacter, player, character)
 
 	if data.act == 1 then
 		player.CameraMode = Enum.CameraMode.LockFirstPerson

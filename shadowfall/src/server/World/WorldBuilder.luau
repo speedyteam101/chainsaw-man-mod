@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local B = require(script.Parent.Builders)
+local Figure = require(ReplicatedStorage.Shared.Figure)
 
 local WorldBuilder = {}
 
@@ -269,18 +270,19 @@ end
 local function survivor(parent: Instance, cf: CFrame, name: string, shirt: Color3, pants: Color3, skin: Color3)
 	local model = Instance.new("Model")
 	model.Name = name
-	local function limb(n: string, size: Vector3, offset: CFrame, color: Color3)
-		return B.block(model, { name = n, size = size, cf = cf * offset, color = color, material = Enum.Material.SmoothPlastic })
+	-- Outfits that fit who they are.
+	local outfit = string.find(name, "mechanic") and "overalls" or (string.find(name, "Tobias") and "coat" or nil)
+	local spec = Figure.SpecFor(name, { skin = skin, shirt = shirt, pants = pants, outfit = outfit })
+	spec.cf = cf
+	spec.name = name
+	spec.collide = true
+	local built, parts = Figure.Build(spec)
+	for _, child in built:GetChildren() do
+		child.Parent = model
 	end
-	local torso = limb("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), shirt)
-	limb("Head", Vector3.new(2, 1, 1), CFrame.new(0, 4.5, 0), skin)
-	limb("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.5, 3, 0), skin)
-	limb("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.5, 3, 0), skin)
-	limb("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, 1, 0), pants)
-	limb("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.5, 1, 0), pants)
-	for _, x in { -0.4, 0.4 } do
-		limb("Eye", Vector3.new(0.2, 0.25, 0.05), CFrame.new(x, 4.6, -0.52), Color3.new(0, 0, 0))
-	end
+	built:Destroy()
+	model.PrimaryPart = parts.Torso
+	local torso = parts.Torso
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 26)
 	gui.StudsOffset = Vector3.new(0, 6.2, 0)
@@ -573,23 +575,24 @@ local function buildAct1(map: Instance, rng: Random, info)
 	B.block(folder, { name = "DuckBowl", size = Vector3.new(0.4, 1.4, 1.4), cf = at(12, 0.2, 6) * CFrame.Angles(0, 0, math.pi / 2), color = Color3.fromRGB(240, 200, 70), material = Enum.Material.SmoothPlastic, shape = Enum.PartType.Cylinder })
 
 	-- Mum and Dad, lying where they fell. Dark scorch-like stains where the shadows touched them.
-	local function lyingPerson(cf: CFrame, shirt: Color3, pants: Color3, skin: Color3, hair: Color3)
-		local person = Instance.new("Model")
-		person.Name = "Parent"
-		local lay = cf * CFrame.new(0, 0.5, 0) * CFrame.Angles(math.rad(90), 0, 0)
-		local function limb(name: string, size: Vector3, standing: CFrame, color: Color3)
-			B.block(person, { name = name, size = size, cf = lay * standing, color = color, material = Enum.Material.SmoothPlastic, collide = false })
-		end
-		limb("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 3, 0), shirt)
-		limb("Head", Vector3.new(2, 1, 1), CFrame.new(0, 4.5, 0), skin)
-		limb("Hair", Vector3.new(2.05, 0.4, 1.05), CFrame.new(0, 5.05, 0), hair)
-		limb("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.7, 3.2, 0) * CFrame.Angles(0, 0, math.rad(-20)), skin)
-		limb("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.6, 3.4, 0) * CFrame.Angles(0, 0, math.rad(35)), skin)
-		limb("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.5, 1, 0), pants)
-		limb("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.6, 1, 0) * CFrame.Angles(0, 0, math.rad(8)), pants)
-		for _, x in { -0.4, 0.4 } do
-			B.block(person, { name = "ClosedEye", size = Vector3.new(0.32, 0.06, 0.05), cf = lay * CFrame.new(x, 4.6, -0.52), color = Color3.fromRGB(30, 24, 22), material = Enum.Material.SmoothPlastic, collide = false })
-		end
+	local function lyingPerson(cf: CFrame, shirt: Color3, pants: Color3, skin: Color3, hair: Color3, hairStyle: number, outfit: string)
+		local person = Figure.Build({
+			name = "Parent",
+			cf = cf * CFrame.new(0, 0.5, 0),
+			lay = CFrame.Angles(math.rad(90), 0, 0),
+			skin = skin,
+			shirt = shirt,
+			pants = pants,
+			hair = hairStyle,
+			hairColor = hair,
+			outfit = outfit,
+			expression = "closed",
+			pose = {
+				["Left Arm"] = CFrame.new(-1.7, 3.2, 0) * CFrame.Angles(0, 0, math.rad(-20)),
+				["Right Arm"] = CFrame.new(1.6, 3.4, 0) * CFrame.Angles(0, 0, math.rad(35)),
+				["Right Leg"] = CFrame.new(0.6, 1, 0) * CFrame.Angles(0, 0, math.rad(8)),
+			},
+		})
 		for i = 1, 3 do
 			B.block(person, {
 				name = "Stain",
@@ -604,8 +607,8 @@ local function buildAct1(map: Instance, rng: Random, info)
 		end
 		person.Parent = folder
 	end
-	lyingPerson(at(1, 0, -3) * CFrame.Angles(0, math.rad(70), 0), Color3.fromRGB(150, 70, 90), Color3.fromRGB(50, 50, 70), Color3.fromRGB(240, 200, 170), Color3.fromRGB(90, 50, 30))
-	lyingPerson(at(7, 0, 1) * CFrame.Angles(0, math.rad(-150), 0), Color3.fromRGB(60, 90, 130), Color3.fromRGB(60, 50, 40), Color3.fromRGB(225, 185, 150), Color3.fromRGB(40, 32, 28))
+	lyingPerson(at(1, 0, -3) * CFrame.Angles(0, math.rad(70), 0), Color3.fromRGB(150, 70, 90), Color3.fromRGB(50, 50, 70), Color3.fromRGB(240, 200, 170), Color3.fromRGB(90, 50, 30), 4, "casual")
+	lyingPerson(at(7, 0, 1) * CFrame.Angles(0, math.rad(-150), 0), Color3.fromRGB(60, 90, 130), Color3.fromRGB(60, 50, 40), Color3.fromRGB(225, 185, 150), Color3.fromRGB(40, 32, 28), 2, "jacket")
 
 	local lampInside = B.block(folder, { name = "DeadBulb", size = Vector3.new(1, 1, 1), cf = at(2, 10.4, 0), color = Color3.fromRGB(255, 170, 90), material = Enum.Material.Neon, collide = false, shape = Enum.PartType.Ball })
 	local insideLight = Instance.new("PointLight")
