@@ -34,9 +34,15 @@ local folder: Folder
 local hunts: { [Player]: any } = {} -- per player: { hollow, caught, nextSpawn }
 local active = false
 
+-- Only the world blocks light and spawn rays (not Biscuit, other players or passing shadows).
 local losParams = RaycastParams.new()
-losParams.FilterType = Enum.RaycastFilterType.Exclude
+losParams.FilterType = Enum.RaycastFilterType.Include
 losParams.IgnoreWater = true
+local function setWorldFilter()
+	local map = workspace:FindFirstChild("Map")
+	losParams.FilterDescendantsInstances = map and { map, workspace.Terrain } or { workspace.Terrain }
+end
+local EXPOSURE_NEEDED = 20 -- seconds out in the open to count as having survived it
 
 local function inSafety(player: Player, root: BasePart): boolean
 	return Combat.GetState(player).inSafeZone or Registry.InBarrier(root.Position)
@@ -88,7 +94,7 @@ local function spawnHollow(player: Player, hunt, root: BasePart)
 		local angle = math.atan2(-look.Z, -look.X) + rng:NextNumber(-1.1, 1.1)
 		local distance = rng:NextNumber(45, 70)
 		local candidate = root.Position + Vector3.new(math.cos(angle), 0, math.sin(angle)) * distance
-		losParams.FilterDescendantsInstances = { folder, player.Character }
+		setWorldFilter()
 		local hit = workspace:Raycast(candidate + Vector3.new(0, 40, 0), Vector3.new(0, -90, 0), losParams)
 		if hit and not Registry.InBarrier(hit.Position) then
 			spot = hit.Position
@@ -122,7 +128,7 @@ local function isLit(player: Player, hollow): boolean
 	if offset.Magnitude > H.FlashlightRange or offset.Unit:Dot(view.look) < 0.9 then
 		return false
 	end
-	losParams.FilterDescendantsInstances = { folder, player.Character }
+	setWorldFilter()
 	return workspace:Raycast(view.eye, offset, losParams) == nil
 end
 
@@ -133,6 +139,9 @@ local function update(player: Player, hunt, dt: number)
 		return
 	end
 	local now = os.clock()
+	if not inSafety(player, root) then
+		hunt.exposed += dt
+	end
 	local hollow = hunt.hollow
 	if not hollow then
 		if now >= hunt.nextSpawn and not inSafety(player, root) then
@@ -197,7 +206,7 @@ local function runBlackout()
 	workspace:SetAttribute("BlackoutEnds", workspace:GetServerTimeNow() + BO.Warning)
 	for _, player in Players:GetPlayers() do
 		if eligible(player) then
-			StoryService.Play(player, "first_blackout")
+			pcall(StoryService.Play, player, "first_blackout")
 		end
 	end
 	task.wait(BO.Warning)
@@ -206,7 +215,7 @@ local function runBlackout()
 	workspace:SetAttribute("BlackoutEnds", workspace:GetServerTimeNow() + BO.Duration)
 	for _, player in Players:GetPlayers() do
 		if eligible(player) then
-			hunts[player] = { caught = false, nextSpawn = os.clock() + rng:NextNumber(4, 10) }
+			hunts[player] = { caught = false, exposed = 0, nextSpawn = os.clock() + rng:NextNumber(4, 10) }
 		end
 	end
 	local started = os.clock()
@@ -227,26 +236,43 @@ local function runBlackout()
 			end
 		end
 	end
-	active = false
-	workspace:SetAttribute("Blackout", nil)
-	workspace:SetAttribute("BlackoutEnds", nil)
+	-- Rewards for everyone who was out in the dark and never caught.
 	for player, hunt in hunts do
-		removeHollow(hunt, false)
-		if player.Parent and not hunt.caught then
-			local data = PlayerData.Get(player)
-			if data then
-				data.essence += BO.Reward
-				player:SetAttribute("Essence", data.essence)
-				Remotes.Notify:FireClient(player, "Toast", { text = string.format("The lights come back. You made it through the dark. +%d Essence", BO.Reward), color = Color3.fromRGB(255, 230, 160) })
-				if BlackoutService.OnSurvived then
-					BlackoutService.OnSurvived(player)
+		if player.Parent then
+			local ok, err = pcall(function()
+				if not hunt.caught and hunt.exposed >= EXPOSURE_NEEDED then
+					local data = PlayerData.Get(player)
+					if data then
+						data.essence += BO.Reward
+						player:SetAttribute("Essence", data.essence)
+						Remotes.Notify:FireClient(player, "Toast", { text = string.format("The lights come back. You made it through the dark. +%d Essence", BO.Reward), color = Color3.fromRGB(255, 230, 160) })
+						if BlackoutService.OnSurvived then
+							BlackoutService.OnSurvived(player)
+						end
+					end
+				else
+					Remotes.Notify:FireClient(player, "Toast", { text = "The lights come back.", color = Color3.fromRGB(200, 200, 210) })
 				end
+			end)
+			if not ok then
+				warn("[Shadowfall] blackout reward failed:", err)
 			end
-		elseif player.Parent then
-			Remotes.Notify:FireClient(player, "Toast", { text = "The lights come back.", color = Color3.fromRGB(200, 200, 210) })
 		end
 	end
+end
+
+-- Always runs after a Blackout, even if something in it errored.
+local function cleanup()
+	active = false
+	for _, hunt in hunts do
+		pcall(removeHollow, hunt, false)
+	end
 	hunts = {}
+	for _, leftover in folder:GetChildren() do
+		leftover:Destroy()
+	end
+	workspace:SetAttribute("Blackout", nil)
+	workspace:SetAttribute("BlackoutEnds", nil)
 end
 
 function BlackoutService.IsActive(): boolean
@@ -274,9 +300,8 @@ function BlackoutService.Start()
 				local ok, err = pcall(runBlackout)
 				if not ok then
 					warn("[Shadowfall] blackout failed:", err)
-					active = false
-					workspace:SetAttribute("Blackout", nil)
 				end
+				cleanup()
 			end
 			task.wait(rng:NextNumber(BO.Interval[1], BO.Interval[2]))
 		end

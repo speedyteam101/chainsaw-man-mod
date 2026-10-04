@@ -399,14 +399,23 @@ function Dread.Start()
 	localLight.Enabled = false
 	localLight.Parent = lightPart
 
-	ContextActionService:BindAction("ShadowfallAct2Light", function(_, inputState)
-		if inputState ~= Enum.UserInputState.Begin or not act2() or ClientState.MenuOpen or ClientState.CreatorOpen then
-			return Enum.ContextActionResult.Pass
+	-- The flashlight binding (and its touch button) only exists in Act 2; Act 1 has its own.
+	local function bindLight()
+		if act2() then
+			ContextActionService:BindAction("ShadowfallAct2Light", function(_, inputState)
+				if inputState ~= Enum.UserInputState.Begin or ClientState.MenuOpen or ClientState.CreatorOpen then
+					return Enum.ContextActionResult.Pass
+				end
+				setFlashlight(not flashlightOn)
+				return Enum.ContextActionResult.Sink
+			end, true, Enum.KeyCode.L, Enum.KeyCode.DPadDown)
+			ContextActionService:SetTitle("ShadowfallAct2Light", "Light")
+		else
+			ContextActionService:UnbindAction("ShadowfallAct2Light")
 		end
-		setFlashlight(not flashlightOn)
-		return Enum.ContextActionResult.Sink
-	end, true, Enum.KeyCode.L, Enum.KeyCode.DPadDown)
-	ContextActionService:SetTitle("ShadowfallAct2Light", "Light")
+	end
+	bindLight()
+	player:GetAttributeChangedSignal("Act"):Connect(bindLight)
 
 	workspace:GetAttributeChangedSignal("Blackout"):Connect(onBlackoutChanged)
 	player:GetAttributeChangedSignal("Act"):Connect(function()
@@ -424,6 +433,8 @@ function Dread.Start()
 	end)
 	RunService.RenderStepped:Connect(onStep)
 	RunService:BindToRenderStep("ShadowfallDreadShake", Enum.RenderPriority.Camera.Value + 2, cameraShake)
+	-- Joined (or reached Act 2) in the middle of a Blackout: catch up.
+	task.defer(onBlackoutChanged)
 end
 
 return Dread

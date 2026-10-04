@@ -280,6 +280,9 @@ function Figure.Dress(character: Model, spec)
 		local limb = character:FindFirstChild(piece.limb)
 		if limb and limb:IsA("BasePart") then
 			local p = makePart(piece, limb.CFrame * piece.offset, false)
+			if piece.limb == "Head" or piece.limb == "Torso" then
+				p.CastShadow = false -- would throw a shadow into your own flashlight beam
+			end
 			local weld = Instance.new("WeldConstraint")
 			weld.Part0 = limb
 			weld.Part1 = p

@@ -21,7 +21,7 @@ Achievements.List = {
 	{ id = "chain_reaction", name = "Chain Reaction", desc = "Defeat 4 shadows within 3 seconds.", qualifies = 3 },
 	{ id = "shadowstep", name = "Shadowstep", desc = "Perfectly dodge 15 attacks (dodge through them).", qualifies = 3, goal = 15 },
 	{ id = "good_neighbour", name = "Good Neighbour", desc = "Free 3 townsfolk from shadow cocoons.", qualifies = 3, goal = 3 },
-	{ id = "lights_out", name = "Lights Out", desc = "Survive a Blackout without the Hollow catching you.", qualifies = 3 },
+	{ id = "lights_out", name = "Lights Out", desc = "Survive a Blackout out in the open without the Hollow catching you.", qualifies = 3 },
 
 	-- Ascend to level 4
 	{ id = "boss_eyes", name = "Blind Them", desc = "Defeat the Many-Eyed on the Rift's central island.", qualifies = 4 },

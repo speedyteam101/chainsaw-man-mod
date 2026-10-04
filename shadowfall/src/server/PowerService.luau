@@ -373,7 +373,7 @@ function PowerService.Awaken(player: Player)
 		for _, move in power.moves do
 			if move.effect then
 				for key, value in move.effect do
-					if key ~= "chain" and key ~= "pull" and signature[key] == nil then
+					if key ~= "chain" and key ~= "pull" and key ~= "lifesteal" and signature[key] == nil then
 						signature[key] = value
 					end
 				end

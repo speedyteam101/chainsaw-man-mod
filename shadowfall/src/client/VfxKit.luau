@@ -24,9 +24,11 @@ local rng = Random.new()
 local folder: Folder
 local debrisAlive = 0
 
+-- Only the world itself counts as ground (not characters, shadows, Biscuit or effects).
 local groundParams = RaycastParams.new()
-groundParams.FilterType = Enum.RaycastFilterType.Exclude
+groundParams.FilterType = Enum.RaycastFilterType.Include
 groundParams.IgnoreWater = true
+local marksAlive = 0
 
 local function q(n: number): number
 	return math.max(1, math.floor(n * V.Quality + 0.5))
@@ -62,7 +64,8 @@ end
 
 -- The ground under a point: position, normal, material and colour (terrain or part).
 function VfxKit.Ground(position: Vector3, depth: number?)
-	groundParams.FilterDescendantsInstances = { folder, workspace.CurrentCamera }
+	local map = workspace:FindFirstChild("Map")
+	groundParams.FilterDescendantsInstances = map and { map, workspace.Terrain } or { workspace.Terrain }
 	local hit = workspace:Raycast(position + Vector3.new(0, 3, 0), Vector3.new(0, -(depth or 30), 0), groundParams)
 	if not hit then
 		return nil
@@ -306,10 +309,14 @@ end
 -- Ground marks ---------------------------------------------------------------------------------
 
 local function decalOnGround(position: Vector3, size: Vector3, color: Color3, material: Enum.Material, transparency: number, rotation: number?)
+	if marksAlive >= V.MaxMarks then
+		return nil
+	end
 	local ground = VfxKit.Ground(position)
 	if not ground then
 		return nil
 	end
+	marksAlive += 1
 	local up = ground.normal
 	local cf = CFrame.lookAt(ground.position, ground.position + up) * CFrame.Angles(-math.pi / 2, 0, 0) * CFrame.Angles(0, rotation or rng:NextNumber(0, math.pi * 2), 0)
 	local mark = Instance.new("Part")
@@ -329,6 +336,9 @@ local function decalOnGround(position: Vector3, size: Vector3, color: Color3, ma
 			tween(mark, 2, { Transparency = 1 })
 			Debris:AddItem(mark, 2.1)
 		end
+		task.delay(2.1, function()
+			marksAlive -= 1
+		end)
 	end)
 	return mark
 end

@@ -283,7 +283,7 @@ function Combat.React(enemy, amount: number, attacker: Player, opts)
 		Combat.DamageEnemy(enemy, amount * K.Shatter, attacker, { reaction = true, color = Color3.fromRGB(200, 240, 255) })
 	elseif kind == "OVERLOAD" then
 		for _, other in Combat.EnemiesInSphere(position, K.Overload.radius) do
-			Combat.DamageEnemy(other, amount * K.Overload.damage, attacker, { reaction = true, color = Color3.fromRGB(255, 200, 90), effects = { knockback = 40 } })
+			Combat.DamageEnemy(other, amount * K.Overload.damage, attacker, { reaction = true, color = Color3.fromRGB(255, 200, 90), effects = { knockback = 40 }, sourcePosition = position })
 		end
 	else
 		Combat.DamageEnemy(enemy, amount * K.Crush, attacker, { reaction = true, color = Color3.fromRGB(255, 120, 90) })

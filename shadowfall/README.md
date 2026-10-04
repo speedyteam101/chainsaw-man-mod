@@ -278,7 +278,7 @@ Your power makes you strong, but the shadow world should never feel safe outside
   * It only creeps closer when you look away. Only holding your flashlight on it drives it off.
   * If it reaches you: a jumpscare, 35% of your health and a big sanity hit.
   * The camp and base barriers are safe. It waits at the edge, staring.
-  * Get through without being caught for +60 Essence and the **Lights Out** feat, which qualifies you for level 3.
+  * Spend at least 20 seconds of it out in the open and don't get caught: +60 Essence and the **Lights Out** feat, which qualifies you for level 3. Hiding in the camp the whole time is safe, but earns nothing.
 
 ## Realistic effects
 

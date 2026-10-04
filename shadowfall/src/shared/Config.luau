@@ -152,6 +152,7 @@ Config.Vfx = {
 	},
 	Quality = 1, -- 0.5 = half the particles and debris (for slow devices), 1 = full
 	MaxDebris = 60, -- physical rock/ice chunks alive at once
+	MaxMarks = 140, -- scorch marks, cracks, splatters etc. alive at once
 	MarkLifetime = 9, -- seconds scorch marks, cracks and splatters stay on the ground
 }
 
