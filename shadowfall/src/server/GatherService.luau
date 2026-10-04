@@ -143,10 +143,10 @@ local function scatter(world, folder: Folder)
 	end
 	local plan = {
 		town = { { "Rock", 60 }, { "Crate", 70 } },
-		woods = { { "Rock", 55 }, { "Crate", 18 } },
-		rift = { { "Rock", 22 } },
-		cathedral = { { "Rubble", 50 }, { "Crate", 26 } },
-		heart = { { "Obsidian", 20 }, { "Rubble", 8 } },
+		woods = { { "Rock", 70 }, { "Crate", 50 } },
+		rift = { { "Rock", 45 }, { "Crate", 35 } },
+		cathedral = { { "Rubble", 70 }, { "Crate", 45 } },
+		heart = { { "Obsidian", 55 }, { "Rubble", 35 }, { "Crate", 20 } },
 	}
 	for _, area in Areas.List do
 		local minCorner, maxCorner = region(area)

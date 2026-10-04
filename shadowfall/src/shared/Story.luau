@@ -1,4 +1,5 @@
 --!nonstrict
+local Areas = require(script.Parent.Areas)
 -- The story of Shadowfall: chapters, scenes and journal pages.
 --
 -- Scenes play as cinematic dialogue when something happens (arriving at camp, ascending, a boss
@@ -195,6 +196,14 @@ Story.Pages = {
 Story.PagesById = {}
 for _, page in Story.Pages do
 	Story.PagesById[page.id] = page
+end
+
+-- Positions above were written for the original layout; move each with its area (Areas.shift).
+for _, entry in Story.Pages do
+	local area = Areas.ById[entry.area]
+	if area and area.shift ~= 0 then
+		entry.at += Vector3.new(area.shift, 0, 0)
+	end
 end
 
 return Story

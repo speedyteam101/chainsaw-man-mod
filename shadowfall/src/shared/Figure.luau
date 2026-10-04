@@ -302,6 +302,7 @@ end
 function Figure.BuildRig(spec): (Model, { [string]: BasePart }, Humanoid)
 	local model = Instance.new("Model")
 	model.Name = spec.name or "Person"
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic -- arrive on clients whole (streaming)
 	local skin = spec.skin or Color3.fromRGB(225, 185, 150)
 	local shirt = spec.shirt or Color3.fromRGB(70, 90, 130)
 	local pants = spec.pants or Color3.fromRGB(45, 45, 55)

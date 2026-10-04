@@ -96,6 +96,9 @@ function ZoneService.Warp(player: Player, areaId: string)
 	end
 	lastWarp[player] = now
 	local target = area.id == "town" and ZoneService.HubSpawn() or areaSpawn(area)
+	pcall(function()
+		player:RequestStreamAroundAsync(target.Position, 8) -- load the far side of the map first
+	end)
 	character:PivotTo(target)
 	Remotes.Fx:FireAllClients("Blink", { from = target.Position, to = target.Position })
 	return { ok = true }

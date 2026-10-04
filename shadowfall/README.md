@@ -70,6 +70,37 @@ NPCs get a fitting outfit (the mechanic wears overalls, the doctor a white coat,
 
 Players who already had a save also see the creator once, the next time they join.
 
+## Clans
+
+In the character creator you also roll your **clan**, your family line:
+* You get **3 free rolls** and keep whichever one you like.
+* Later you can reroll at the menu's **Clan** tab for **250 Essence**, then choose to keep your old clan or take the new one.
+* A Legendary-or-better clan is guaranteed within 50 rolls.
+* Players with an existing save get their 3 free rolls in the Clan tab.
+
+There are **54 clans** across the same rarities as powers (same odds: Common 42%, Uncommon 30%, Rare 16%, Epic 9%, Legendary 2.4%, Mythic 0.5%, Transcendent 0.1%).
+
+* **Element affinity:** most clans boost the powers that match their element. **Pyro** (Common) gives fire powers 1.5×, Rare clans give 1.75×, Epic 2×, Legendary 2.25×, Mythic 2.5× and Transcendent up to 3×.
+* **Perks:**
+  * flat damage on every hit (e.g. **Brawler**: +5)
+  * max health (e.g. **Titanborn**: 2× HP)
+  * power-spin luck (e.g. **Gambler**: 2× luck)
+  * all damage, defence, move speed, cooldowns, lifesteal, sanity drain, gathering, and Essence from kills
+* **Modes:** every **Mythic** and **Transcendent** clan has a transformation on **Y** (L1 on gamepad), with at least 2× damage and 1.2× speed:
+
+  | Clan | Mode | Damage | Speed | Look |
+  | --- | --- | --- | --- | --- |
+  | Dragonblood | Dragon Form | 2× | 1.25× | fire on your arms and body |
+  | Moonshadow | Eclipse Form | 2.2× | 1.3× | trailing shadow afterimages |
+  | Asura | Asura Rage | 2.5× | 1.2× | two extra pairs of ghostly arms |
+  | Seraphim | Seraph Wings | 2× | 1.35× | wings and a halo |
+  | Primordial | Primordial Awakening | 3× | 1.5× | an aura cycling through every colour |
+  | Hollow Crown | Crown of Shadows | 2.75× | 1.4× | a crown of red spikes and black smoke |
+
+  Everyone sees the transformation, an outline in the clan's colour, and the effects.
+
+The full list with every perk is in `src/shared/Clans.luau` and in-game on the Clan tab (with odds). Balance numbers are first guesses.
+
 ## Act 1: the night it happened (horror)
 
 * **Opening cutscene:** a red clock reads 12:04 PM, and your call duck **Biscuit** is quacking in a panic. You open your eyes and find Mum and Dad lying on the living-room floor. A shadow has Biscuit cornered.
@@ -117,13 +148,25 @@ Sanity runs from 0 to 100, and you'll see its bar in both acts.
 
 You wake up at the survivors' camp in the middle of what's left of Hollow Creek. The bonfire is a safe zone, and you heal fast there. The survivors give you hints, the shrine rerolls your power, and the board shows the Ascension rules.
 
-**A much bigger world.**
+**Five big cities.** Every area is now a whole city of about 720 × 760 studs, each roughly 150 houses on a street grid, joined west to east by bridges and gates:
 
-* **Hollow Creek** is now about 720 × 760 studs: a 7 × 7 grid of named streets and roughly 150 houses. It's denser in the middle and emptier on the overgrown outskirts. The original was 360 × 360.
-* **The Whispering Woods** and **the Sunken Cathedral** stretch about 680 studs north to south. The original was about 300.
-* **The Rift** has eight more floating islands to the north and south.
-* There are more shadows, rocks and crates to match.
-* All the landmarks (camp, bosses, merchants, journal pages, cocoons) are where they were.
+| City | Theme |
+| --- | --- |
+| Hollow Creek | What's left of home, with the survivors' camp in the middle |
+| The Whispering Woods | An overgrown city. Trees push up through yards, and the old forest is a park in the middle |
+| The Rift | A broken city around a bottomless crater. Streets hang out over nothing towards the floating islands |
+| The Sunken Cathedral | A drowned city, knee-deep in water, with the cathedral grounds at its heart |
+| Heart of Shadow | A dead city of black stone and cracked lava around the Heart |
+
+* Every landmark (bosses, merchants, journal pages, cocoons) kept its place within its area.
+* The houses keep clear of them, and every house can be demolished.
+* There are more shadows, rocks and crates per city.
+
+**Streaming.** A map this size is too much to send to every player at once, so `Workspace.StreamingEnabled` is on and players only load what's around them.
+* Teleports (spawning, warping, respawning at your base) load the destination first, using `Player:RequestStreamAroundAsync`.
+* Characters, shadows, NPCs and Biscuit stream in whole (`ModelStreamingMode = Atomic`).
+* I believe streaming is the standard way to handle big Roblox maps, but it changes timing in ways that only show up in play. If something is missing or late to appear, tell me.
+* Building five cities also takes the server a few seconds when it starts.
 
 **People who live here.** The camp survivors wander around the bonfire. Rescued townsfolk wander inside your base barrier, and merchants stand at their stalls. They're animated on each client:
 
@@ -145,6 +188,7 @@ They never body-block you.
 | Sprint | Shift | L3 |
 | Power moves (unlock at levels 1-4) | Z X C V | X, Y, D-pad left/right |
 | Awakening + **Ultimate** (level 5) | G | D-pad up |
+| Clan Mode (Mythic and Transcendent clans) | Y | L1 |
 | Flashlight | L | D-pad down |
 | Menu (Ascension, Feats, Power, Tokens, Pack, Build, Base, Journal, Warp, Look) | M | Select |
 | Hide / show Biscuit's Tip | H | |
@@ -471,6 +515,7 @@ shadowfall/
     ShadowRig.luau            builds the blocky R6 shadow model (black neon + smoke)
     Materials.luau, Recipes.luau, Structures.luau, Townsfolk.luau
     Passes.luau               Tokens exchange rates and the passes (with optional Robux game pass ids)
+    Clans.luau                the 54 clans: rarities, perks, element affinities, Modes
     Figure.luau               realistic R6 people: faces, clothes, shoes, hair (players and NPCs)
     Looks.luau                character creator choices, body colours, part-built hairstyles
     Remotes.luau, Signal.luau
@@ -491,6 +536,7 @@ shadowfall/
     BaseService.luau          crystal, barrier, blueprints, buildings, saving
     RescueService.luau        cocoons, guards, freeing townsfolk
     PassService.luau          Essence -> Tokens, buying passes, Power Vault, game pass checks
+    ClanService.luau          rolling and choosing clans, clan Modes
     BlackoutService.luau      the Blackout event and the Hollow
     HouseService.luau         demolishing houses (and keeping your base's plot clear)
     NpcService.luau           survivors, townsfolk and merchants walking around and reacting to you

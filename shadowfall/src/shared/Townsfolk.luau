@@ -1,4 +1,5 @@
 --!nonstrict
+local Areas = require(script.Parent.Areas)
 -- Townsfolk trapped in shadow cocoons around the world. Free them and they join your base.
 -- Roles: Carpenter unlocks planks and carpentry buildings; Blacksmith unlocks the forge, iron
 -- and metal buildings. Every builder also makes deposited materials count for more.
@@ -87,6 +88,14 @@ function Townsfolk.Count(rescued): number
 		end
 	end
 	return count
+end
+
+-- Positions above were written for the original layout; move each with its area (Areas.shift).
+for _, entry in Townsfolk.List do
+	local area = Areas.ById[entry.area]
+	if area and area.shift ~= 0 then
+		entry.at += Vector3.new(area.shift, 0, 0)
+	end
 end
 
 return Townsfolk

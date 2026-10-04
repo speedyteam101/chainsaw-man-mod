@@ -99,8 +99,17 @@ local function placeCharacter(character: Model, cf: CFrame)
 	if not character:IsDescendantOf(workspace) then
 		character.AncestryChanged:Wait()
 	end
+	-- The map streams in around players; load the destination first so they don't fall through.
+	local player = Players:GetPlayerFromCharacter(character)
+	if player then
+		pcall(function()
+			player:RequestStreamAroundAsync(cf.Position, 8)
+		end)
+	end
 	task.wait()
-	character:PivotTo(cf)
+	if character.Parent then
+		character:PivotTo(cf)
+	end
 end
 
 local function onCharacterAdded(player: Player, character: Model)

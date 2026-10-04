@@ -1,4 +1,5 @@
 --!nonstrict
+local Areas = require(script.Parent.Areas)
 -- Merchants and what they sell (prices in Essence). `give` adds materials; `item` adds an item.
 
 local Shops = {}
@@ -72,6 +73,14 @@ for _, shop in Shops.List do
 	shop.byItem = {}
 	for _, entry in shop.stock do
 		shop.byItem[entry.id] = entry
+	end
+end
+
+-- Positions above were written for the original layout; move each with its area (Areas.shift).
+for _, entry in Shops.List do
+	local area = Areas.ById[entry.area]
+	if area and area.shift ~= 0 then
+		entry.at += Vector3.new(area.shift, 0, 0)
 	end
 end
 

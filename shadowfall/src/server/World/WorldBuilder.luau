@@ -10,6 +10,9 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local B = require(script.Parent.Builders)
 local Figure = require(ReplicatedStorage.Shared.Figure)
+local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
+local Shops = require(ReplicatedStorage.Shared.Shops)
+local Story = require(ReplicatedStorage.Shared.Story)
 
 local WorldBuilder = {}
 
@@ -117,11 +120,18 @@ local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random,
 		zLines = { math.floor((minZ + maxZ) / 2) }
 	end
 
-	B.ground(parent, origin + middle, Vector2.new(sizeX, sizeZ), Color3.new(), Enum.Material.Grass, 24)
+	B.ground(parent, origin + middle, Vector2.new(sizeX, sizeZ), Color3.new(), options.groundMaterial or Enum.Material.Grass, 24)
 	-- Patchy, overgrown lawns
 	for _ = 1, math.floor(24 * scale) do
 		local p = origin + Vector3.new(rng:NextNumber(minX, maxX), -1, rng:NextNumber(minZ, maxZ))
-		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(12, 30), 2, rng:NextNumber(12, 30)), Enum.Material.LeafyGrass)
+		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(12, 30), 2, rng:NextNumber(12, 30)), options.lawnMaterial or Enum.Material.LeafyGrass)
+	end
+	-- A bottomless crater torn out of the middle of the city (the Rift). Streets still cross it,
+	-- hanging over nothing.
+	if options.void then
+		local v = options.void
+		workspace.Terrain:FillCylinder(CFrame.new(origin + Vector3.new(v.at.X, -14, v.at.Y)), 40, v.r, Enum.Material.Air)
+		table.insert(reserved, { at = v.at, r = v.r })
 	end
 
 	-- Streets: asphalt, a dashed centre line, sidewalks, and gaps for crossings.
@@ -205,8 +215,8 @@ local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random,
 				end
 				local cf = CFrame.lookAt(position, position + look)
 				local yard = math.min(dx, dz) - 14
-				local outskirts = math.clamp((Vector2.new(cx, cz).Magnitude - 200) / 300, 0, 1)
-				if rng:NextNumber() < 0.14 + outskirts * 0.22 and not options.noEmptyLots then
+				local outskirts = math.clamp(((Vector2.new(cx, cz) - Vector2.new(middle.X, middle.Z)).Magnitude - 200) / 300, 0, 1)
+				if rng:NextNumber() < 0.14 + outskirts * 0.22 + (options.emptyBias or 0) and not options.noEmptyLots then
 					-- Empty lot: a dead tree, a broken fence and weeds.
 					local tree = B.tree(parent, position + Vector3.new(4, 0, 4), rng, true)
 					if options.nodes then
@@ -217,7 +227,7 @@ local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random,
 						B.bush(parent, position + Vector3.new(rng:NextNumber(-8, 8), 0, rng:NextNumber(-8, 8)), rng)
 					end
 				else
-					local model, size = B.house(parent, cf, rng, { litWindows = options.litWindows, broken = rng:NextNumber() < 0.2 + outskirts * 0.3, yard = yard })
+					local model, size = B.house(parent, cf, rng, { litWindows = options.litWindows, broken = rng:NextNumber() < 0.2 + outskirts * 0.3 + (options.brokenBias or 0), yard = yard })
 					table.insert(houses, { model = model, cf = cf, size = size })
 					-- A yard tree beside some houses
 					if rng:NextNumber() < 0.45 then
@@ -319,6 +329,19 @@ local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random,
 		end
 	end
 
+	-- Overgrowth: trees pushing up through yards and lots (not on the streets).
+	for _ = 1, options.extraTrees or 0 do
+		local x, z = rng:NextNumber(minX + 6, maxX - 6), rng:NextNumber(minZ + 6, maxZ - 6)
+		local dx = nearestLine(x, xLines)
+		local dz = nearestLine(z, zLines)
+		if dx > 15 and dz > 15 and not isReserved(reserved, x, z, 4) then
+			local tree = B.tree(parent, origin + Vector3.new(x, 0, z), rng, rng:NextNumber() < 0.3)
+			if options.nodes then
+				table.insert(options.nodes, { model = tree, kind = "Tree" })
+			end
+		end
+	end
+
 	-- Torn edges: rock cliffs where the town was ripped out of the ground, with chunks and roots
 	-- dangling underneath.
 	local perimeter = 2 * (sizeX + sizeZ)
@@ -344,6 +367,19 @@ local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random,
 end
 
 -- Classic blocky townsperson for the camp. Anchored, no humanoid; talks through a prompt.
+-- Spots houses must keep clear of in an area: townsfolk cocoons, merchants, journal pages.
+local function landmarksIn(areaId: string): Reserved
+	local list = {}
+	for _, group in { Townsfolk.List, Shops.List, Story.Pages } do
+		for _, entry in group do
+			if entry.area == areaId then
+				table.insert(list, { at = Vector2.new(entry.at.X, entry.at.Z), r = 16 })
+			end
+		end
+	end
+	return list
+end
+
 -- A camp survivor: a living, walking person (NpcService moves them, VillagerAnimator animates them).
 local function survivor(parent: Instance, cf: CFrame, name: string, shirt: Color3, pants: Color3, skin: Color3)
 	-- Outfits that fit who they are.
@@ -768,10 +804,12 @@ local function buildHub(map: Instance, rng: Random, info)
 	local folder = B.folder(map, "HollowCreek")
 	-- Hollow Creek spreads west and north/south of the camp (the east edge meets the bridge).
 	info.houses = buildTown(folder, Vector3.zero, Areas.ById.town.bounds, rng, {
-		reserved = {
-			{ at = Vector2.new(0, 0), r = 44 },
-			{ at = Vector2.new(0, -135), r = 40 },
-		},
+		reserved = (function()
+			local list = landmarksIn("town")
+			table.insert(list, { at = Vector2.new(0, 0), r = 44 })
+			table.insert(list, { at = Vector2.new(0, -135), r = 40 })
+			return list
+		end)(),
 		litWindows = 0.25,
 		lampChance = 0.85,
 		lampStrength = 0.9,
@@ -788,15 +826,15 @@ local function buildWoods(map: Instance, rng: Random, info)
 	local folder = B.folder(map, "WhisperingWoods")
 	local c = area.center
 	local clearing = area.boss.arena
-	B.ground(folder, c, Vector2.new(300, 700), Color3.new(), Enum.Material.Grass, 24)
+	B.ground(folder, c, Vector2.new(300, 340), Color3.new(), Enum.Material.Grass, 24)
 	-- Leaf litter, a muddy track, and gentle rises in the forest floor.
 	for _ = 1, 66 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), -1, rng:NextNumber(-330, 330))
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), -1, rng:NextNumber(-160, 160))
 		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(14, 34), 2, rng:NextNumber(14, 34)), Enum.Material.LeafyGrass)
 	end
 	B.terrainBlock(CFrame.new(c + Vector3.new(0, -1, 0)), Vector3.new(300, 2, 12), Enum.Material.Mud)
 	for _ = 1, 66 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-330, 330))
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-160, 160))
 		local farFromPaths = math.abs(p.Z - c.Z) > 20 and (Vector2.new(p.X, p.Z) - Vector2.new(clearing.X, clearing.Z)).Magnitude > 50 and (p - area.spawn).Magnitude > 30
 		if farFromPaths then
 			B.terrainBall(p - Vector3.new(0, rng:NextNumber(5, 7), 0), rng:NextNumber(7, 10), Enum.Material.Grass)
@@ -804,17 +842,17 @@ local function buildWoods(map: Instance, rng: Random, info)
 	end
 	-- Mossy boulders half sunk in the ground
 	for _ = 1, 57 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-330, 330))
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-160, 160))
 		if math.abs(p.Z - c.Z) > 12 and (Vector2.new(p.X, p.Z) - Vector2.new(clearing.X, clearing.Z)).Magnitude > 44 then
 			B.terrainBall(p + Vector3.new(0, -0.5, 0), rng:NextNumber(1.8, 3.6), Enum.Material.Rock)
 		end
 	end
 	local placed = {}
-	for _ = 1, 760 do
-		if #placed >= 330 then
+	for _ = 1, 420 do
+		if #placed >= 180 then
 			break
 		end
-		local p = c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-335, 335))
+		local p = c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-165, 165))
 		local ok = math.abs(p.Z - c.Z) > 11 and (Vector2.new(p.X, p.Z) - Vector2.new(clearing.X, clearing.Z)).Magnitude > 40 and (p - area.spawn).Magnitude > 22
 		if ok then
 			for _, q in placed do
@@ -832,20 +870,20 @@ local function buildWoods(map: Instance, rng: Random, info)
 	end
 	-- Fallen logs, stumps and undergrowth
 	for _ = 1, 30 do
-		local p = groundAt(c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-330, 330)))
+		local p = groundAt(c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-160, 160)))
 		if math.abs(p.Z - c.Z) > 12 then
 			local length = rng:NextNumber(8, 16)
 			B.block(folder, { name = "FallenLog", size = Vector3.new(length, 2, 2), cf = CFrame.new(p + Vector3.new(0, 0.8, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6), rng:NextNumber(-0.05, 0.05)), color = Color3.fromRGB(58, 44, 34), material = Enum.Material.Wood, shape = Enum.PartType.Cylinder })
 		end
 	end
 	for _ = 1, 110 do
-		local p = groundAt(c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-335, 335)))
+		local p = groundAt(c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-165, 165)))
 		if math.abs(p.Z - c.Z) > 9 then
 			B.bush(folder, p, rng)
 		end
 	end
 	-- Ruined cabins
-	for _, offset in { Vector3.new(-80, 0, 60), Vector3.new(40, 0, 90), Vector3.new(-30, 0, -100), Vector3.new(110, 0, 40), Vector3.new(-60, 0, 220), Vector3.new(70, 0, 280), Vector3.new(-90, 0, -230), Vector3.new(60, 0, -290), Vector3.new(100, 0, -180) } do
+	for _, offset in { Vector3.new(-80, 0, 60), Vector3.new(40, 0, 90), Vector3.new(-30, 0, -100), Vector3.new(110, 0, 40) } do
 		local p = groundAt(c + offset)
 		local cf = CFrame.lookAt(p, Vector3.new(p.X, p.Y, c.Z))
 		local cabin, size = B.house(folder, cf, rng, { width = 16, depth = 14, height = 10, broken = true, litWindows = 0.1, name = "Cabin" })
@@ -853,7 +891,7 @@ local function buildWoods(map: Instance, rng: Random, info)
 	end
 	-- Will-o'-wisps
 	for _ = 1, 55 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), rng:NextNumber(3, 9), rng:NextNumber(-330, 330))
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), rng:NextNumber(3, 9), rng:NextNumber(-160, 160))
 		local wisp = B.block(folder, { name = "Wisp", size = Vector3.new(0.8, 0.8, 0.8), cf = CFrame.new(p), color = Color3.fromRGB(120, 255, 170), material = Enum.Material.Neon, collide = false, shape = Enum.PartType.Ball })
 		local l = Instance.new("PointLight")
 		l.Color = Color3.fromRGB(120, 255, 170)
@@ -869,31 +907,35 @@ local function buildWoods(map: Instance, rng: Random, info)
 		B.block(folder, { name = "Monolith", size = Vector3.new(4, rng:NextNumber(9, 14), 3), cf = CFrame.lookAt(p, clearing) * CFrame.new(0, 5, 0), color = Color3.fromRGB(56, 60, 58), material = Enum.Material.Slate })
 	end
 	B.block(folder, { name = "Altar", size = Vector3.new(8, 2, 5), cf = CFrame.new(clearing + Vector3.new(0, 1, 0)), color = Color3.fromRGB(46, 50, 48), material = Enum.Material.Slate })
-	B.debrisField(folder, c, 560, 60, rng)
+	B.debrisField(folder, c, 620, 80, rng)
 end
 
 local function buildRift(map: Instance, rng: Random, info)
 	local area = Areas.ById.rift
 	local folder = B.folder(map, "TheRift")
+	-- Island positions were laid out for the original Rift; they move with the area.
+	local function at(x: number, z: number): Vector3
+		return Vector3.new(x + area.shift, 0, z)
+	end
 	local islands = {
-		{ p = Vector3.new(810, 0, 0), r = 22 },
-		{ p = Vector3.new(855, 0, -48), r = 26 },
-		{ p = Vector3.new(865, 0, 52), r = 24 },
-		{ p = Vector3.new(912, 0, -86), r = 22 },
-		{ p = Vector3.new(918, 0, 92), r = 24 },
+		{ p = at(810, 0), r = 22 },
+		{ p = at(855, -48), r = 26 },
+		{ p = at(865, 52), r = 24 },
+		{ p = at(912, -86), r = 22 },
+		{ p = at(918, 92), r = 24 },
 		{ p = area.boss.arena, r = 46 },
-		{ p = Vector3.new(1045, 0, 0), r = 22 },
-		{ p = Vector3.new(1010, 0, -82), r = 20 },
-		{ p = Vector3.new(1012, 0, 84), r = 20 },
+		{ p = at(1045, 0), r = 22 },
+		{ p = at(1010, -82), r = 20 },
+		{ p = at(1012, 84), r = 20 },
 		-- The Rift reaches much further north and south now.
-		{ p = Vector3.new(860, 0, -150), r = 24 },
-		{ p = Vector3.new(960, 0, -170), r = 26 },
-		{ p = Vector3.new(900, 0, -250), r = 24 },
-		{ p = Vector3.new(1010, 0, -250), r = 22 },
-		{ p = Vector3.new(860, 0, 150), r = 24 },
-		{ p = Vector3.new(960, 0, 170), r = 26 },
-		{ p = Vector3.new(900, 0, 250), r = 24 },
-		{ p = Vector3.new(1010, 0, 250), r = 22 },
+		{ p = at(860, -150), r = 24 },
+		{ p = at(960, -170), r = 26 },
+		{ p = at(900, -250), r = 24 },
+		{ p = at(1010, -250), r = 22 },
+		{ p = at(860, 150), r = 24 },
+		{ p = at(960, 170), r = 26 },
+		{ p = at(900, 250), r = 24 },
+		{ p = at(1010, 250), r = 22 },
 	}
 	for _, island in islands do
 		local _, crystals = B.island(folder, island.p, island.r, rng)
@@ -914,11 +956,11 @@ local function buildCathedral(map: Instance, rng: Random)
 	local area = Areas.ById.cathedral
 	local folder = B.folder(map, "SunkenCathedral")
 	local c = area.center
-	B.ground(folder, c, Vector2.new(280, 690), Color3.new(), Enum.Material.Slate, 24)
+	B.ground(folder, c, Vector2.new(280, 300), Color3.new(), Enum.Material.Slate, 24)
 	-- Knee-deep flood water over everything
-	B.terrainBlock(CFrame.new(c + Vector3.new(0, 0.6, 0)), Vector3.new(280, 1.2, 690), Enum.Material.Water)
-	for _ = 1, 48 do
-		local p = c + Vector3.new(rng:NextNumber(-130, 130), -1, rng:NextNumber(-335, 335))
+	B.terrainBlock(CFrame.new(c + Vector3.new(0, 0.6, 0)), Vector3.new(280, 1.2, 300), Enum.Material.Water)
+	for _ = 1, 24 do
+		local p = c + Vector3.new(rng:NextNumber(-130, 130), -1, rng:NextNumber(-140, 140))
 		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(10, 24), 2, rng:NextNumber(10, 24)), Enum.Material.Mud)
 	end
 	-- The nave
@@ -970,14 +1012,14 @@ local function buildCathedral(map: Instance, rng: Random)
 		end
 	end
 	-- Graveyard and broken arches outside
-	for _ = 1, 100 do
-		local p = c + Vector3.new(rng:NextNumber(-130, -10), 0, rng:NextNumber(-330, 330))
+	for _ = 1, 50 do
+		local p = c + Vector3.new(rng:NextNumber(-130, -10), 0, rng:NextNumber(-140, 140))
 		if math.abs(p.Z) > 14 then
 			B.block(folder, { name = "Grave", size = Vector3.new(2.6, rng:NextNumber(2.5, 5), 0.8), cf = CFrame.new(p + Vector3.new(0, 1.6, 0)) * CFrame.Angles(math.rad(rng:NextNumber(-15, 15)), rng:NextNumber(0, 6), 0), color = Color3.fromRGB(64, 68, 74), material = Enum.Material.Slate })
 		end
 	end
-	for _ = 1, 26 do
-		local p = c + Vector3.new(rng:NextNumber(-130, 130), 0, rng:NextNumber(-330, 330))
+	for _ = 1, 12 do
+		local p = c + Vector3.new(rng:NextNumber(-130, 130), 0, rng:NextNumber(-140, 140))
 		if (Vector2.new(p.X, p.Z) - Vector2.new(nave.X, nave.Z)).Magnitude > 80 then
 			local yaw = rng:NextNumber(0, 6)
 			local cf = CFrame.new(p) * CFrame.Angles(0, yaw, 0)
@@ -1041,13 +1083,101 @@ local function buildHeart(map: Instance, rng: Random)
 	B.debrisField(folder, c, 400, 70, rng)
 end
 
+-- THE CITIES ----------------------------------------------------------------------------------
+-- Every area is a whole city now, built around its original landmarks (the forest park, the
+-- Rift's islands, the cathedral grounds, the Heart). Houses keep clear of landmarks: townsfolk
+-- cocoons, merchants, journal pages, the area entrance.
+
+
+local CITY_THEMES = {
+	woods = { -- an overgrown city, the forest swallowing it street by street
+		park = 200,
+		groundMaterial = Enum.Material.Grass,
+		lawnMaterial = Enum.Material.LeafyGrass,
+		extraTrees = 260,
+		brokenBias = 0.2,
+		litWindows = 0.05,
+		lampChance = 0.35,
+		lampStrength = 0.7,
+		cars = 14,
+	},
+	rift = { -- a broken city around a bottomless crater, the islands floating in the middle
+		groundMaterial = Enum.Material.Slate,
+		lawnMaterial = Enum.Material.Rock,
+		void = 280,
+		brokenBias = 0.35,
+		emptyBias = 0.1,
+		litWindows = 0.04,
+		lampChance = 0.35,
+		lampStrength = 0.8,
+		cars = 12,
+	},
+	cathedral = { -- a drowned city: knee-deep water in every street
+		park = 200,
+		groundMaterial = Enum.Material.Slate,
+		lawnMaterial = Enum.Material.Mud,
+		brokenBias = 0.4,
+		litWindows = 0.03,
+		lampChance = 0.3,
+		lampStrength = 0.7,
+		cars = 12,
+		flood = true,
+	},
+	heart = { -- a dead city of black stone around the Heart
+		park = 185,
+		groundMaterial = Enum.Material.Basalt,
+		lawnMaterial = Enum.Material.CrackedLava,
+		brokenBias = 0.55,
+		emptyBias = 0.1,
+		litWindows = 0,
+		lampChance = 0.12,
+		lampStrength = 0.6,
+		cars = 10,
+	},
+}
+
+local function buildCity(map: Instance, areaId: string, rng: Random, info)
+	local area = Areas.ById[areaId]
+	local theme = CITY_THEMES[areaId]
+	local folder = B.folder(map, area.name:gsub("%W", "") .. "City")
+	local reserved = landmarksIn(areaId)
+	table.insert(reserved, { at = Vector2.new(area.spawn.X, area.spawn.Z), r = 32 })
+	table.insert(reserved, { at = Vector2.new(area.boss.arena.X, area.boss.arena.Z), r = 60 })
+	if theme.park then
+		table.insert(reserved, { at = Vector2.new(area.center.X, area.center.Z), r = theme.park })
+	end
+	local houses = buildTown(folder, Vector3.zero, area.bounds, rng, {
+		reserved = reserved,
+		groundMaterial = theme.groundMaterial,
+		lawnMaterial = theme.lawnMaterial,
+		void = theme.void and { at = Vector2.new(area.center.X, area.center.Z), r = theme.void } or nil,
+		extraTrees = theme.extraTrees,
+		brokenBias = theme.brokenBias,
+		emptyBias = theme.emptyBias,
+		litWindows = theme.litWindows,
+		lampChance = theme.lampChance,
+		lampStrength = theme.lampStrength,
+		cars = theme.cars,
+		nodes = info.nodes,
+	})
+	for _, house in houses do
+		table.insert(info.houses, house)
+	end
+	if theme.flood then
+		local b = area.bounds
+		B.terrainBlock(CFrame.new((b.minX + b.maxX) / 2, 0.6, (b.minZ + b.maxZ) / 2), Vector3.new(b.maxX - b.minX, 1.2, b.maxZ - b.minZ), Enum.Material.Water)
+	end
+	B.debrisField(folder, area.center, 760, 80, rng)
+end
+
 local function buildSky(map: Instance)
 	local sky = B.folder(map, "Sky")
 	-- A black eclipse with a violet corona hanging over the whole world.
-	local at = Vector3.new(700, 520, -900)
-	local corona = B.block(sky, { name = "Corona", size = Vector3.new(2, 330, 330), cf = CFrame.lookAt(at, Vector3.new(700, 0, 0)) * CFrame.Angles(0, math.pi / 2, 0), color = Color3.fromRGB(130, 70, 255), material = Enum.Material.Neon, shape = Enum.PartType.Cylinder, collide = false })
+	local middle = Vector3.new(1580, 0, 0)
+	local at = Vector3.new(1580, 760, -1300)
+	local corona = B.block(sky, { name = "Corona", size = Vector3.new(2, 560, 560), cf = CFrame.lookAt(at, middle) * CFrame.Angles(0, math.pi / 2, 0), color = Color3.fromRGB(130, 70, 255), material = Enum.Material.Neon, shape = Enum.PartType.Cylinder, collide = false })
 	corona.Transparency = 0.35
-	B.block(sky, { name = "Eclipse", size = Vector3.new(300, 300, 300), cf = CFrame.new(at + (Vector3.new(700, 0, 0) - at).Unit * 8), color = Color3.new(0, 0, 0), material = Enum.Material.Neon, shape = Enum.PartType.Ball, collide = false })
+	B.block(sky, { name = "Eclipse", size = Vector3.new(510, 510, 510), cf = CFrame.new(at + (middle - at).Unit * 8), color = Color3.new(0, 0, 0), material = Enum.Material.Neon, shape = Enum.PartType.Ball, collide = false })
 end
 
 function WorldBuilder.Build()
@@ -1063,18 +1193,21 @@ function WorldBuilder.Build()
 	local info = { act1 = {}, nodes = {} }
 	buildAct1(map, rng, info)
 	buildHub(map, rng, info)
+	buildCity(map, "woods", rng, info)
 	buildWoods(map, rng, info)
+	buildCity(map, "rift", rng, info)
 	buildRift(map, rng, info)
+	buildCity(map, "cathedral", rng, info)
 	buildCathedral(map, rng)
+	buildCity(map, "heart", rng, info)
 	buildHeart(map, rng)
 	buildSky(map)
 
 	-- Bridges and gates between the areas
 	local bridges = B.folder(map, "Bridges")
-	B.bridge(bridges, 178, 332, 0, 22)
-	B.bridge(bridges, 628, 790, 0, 22)
-	B.bridge(bridges, 1065, 1202, 0, 22)
-	B.bridge(bridges, 1478, 1622, 0, 22)
+	for i = 2, #Areas.List do
+		B.bridge(bridges, Areas.List[i - 1].bounds.maxX - 2, Areas.List[i].bounds.minX + 2, 0, 22)
+	end
 	for _, area in Areas.List do
 		if area.gateX then
 			B.gate(bridges, area.gateX, 0, 22, area.level, area.name)

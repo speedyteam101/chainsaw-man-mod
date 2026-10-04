@@ -116,6 +116,8 @@ function ShadowRig.Build(options: RigOptions): Model
 
 	local model = Instance.new("Model")
 	model.Name = options.name or "Shadow"
+	-- With streaming on, arrive on clients whole (the animator needs every joint at once).
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 
 	local root = part("HumanoidRootPart", Vector3.new(2, 2, 1) * s, model)
 	root.Transparency = 1

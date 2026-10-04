@@ -78,6 +78,7 @@ end
 local function buildDuck(owner: Player): Model
 	local model = Instance.new("Model")
 	model.Name = "Biscuit"
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
 	local origin = CFrame.new()
 	local CREAM = Color3.fromRGB(246, 243, 234)
 	local BILL = Color3.fromRGB(240, 160, 50)
