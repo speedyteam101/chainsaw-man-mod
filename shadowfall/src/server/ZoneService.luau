@@ -99,6 +99,11 @@ function ZoneService.Warp(player: Player, areaId: string)
 	pcall(function()
 		player:RequestStreamAroundAsync(target.Position, 8) -- load the far side of the map first
 	end)
+	-- That can take a few seconds: check again that they're alive and still not in a fight.
+	character = Combat.GetCharacter(player)
+	if not character or os.clock() - state.lastDamaged < 5 then
+		return { ok = false, message = "You can't warp while in combat." }
+	end
 	character:PivotTo(target)
 	Remotes.Fx:FireAllClients("Blink", { from = target.Position, to = target.Position })
 	return { ok = true }

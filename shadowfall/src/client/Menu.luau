@@ -784,7 +784,10 @@ function render.Clan()
 			return
 		end
 		clanRolling = true
-		local result = Remotes.Request:InvokeServer("RollClan")
+		local ok, result = pcall(function()
+			return Remotes.Request:InvokeServer("RollClan")
+		end)
+		result = ok and result or nil
 		if result and result.ok then
 			ClanUI.Reel(reel, result.clan)
 			if not result.current then

@@ -99,16 +99,22 @@ local function placeCharacter(character: Model, cf: CFrame)
 	if not character:IsDescendantOf(workspace) then
 		character.AncestryChanged:Wait()
 	end
-	-- The map streams in around players; load the destination first so they don't fall through.
+	task.wait()
+	if not character.Parent then
+		return
+	end
+	-- Move there straight away, but hold still while the map streams in around the spot, so
+	-- nobody falls through ground that hasn't loaded yet.
+	root.Anchored = true
+	character:PivotTo(cf)
 	local player = Players:GetPlayerFromCharacter(character)
 	if player then
 		pcall(function()
 			player:RequestStreamAroundAsync(cf.Position, 8)
 		end)
 	end
-	task.wait()
-	if character.Parent then
-		character:PivotTo(cf)
+	if root.Parent then
+		root.Anchored = false
 	end
 end
 
@@ -138,8 +144,12 @@ local function onCharacterAdded(player: Player, character: Model)
 		humanoid.MaxHealth = 100
 		humanoid.Health = 100
 		humanoid.WalkSpeed = Config.Act1.WalkSpeed
-		task.spawn(placeCharacter, character, Act1Director.SpawnCFrame(player))
-		task.spawn(Act1Director.OnCharacter, player, character)
+		task.spawn(function()
+			placeCharacter(character, Act1Director.SpawnCFrame(player))
+			if character.Parent then
+				Act1Director.OnCharacter(player, character) -- the intro starts once you're actually there
+			end
+		end)
 	else
 		player.CameraMode = Enum.CameraMode.LockFirstPerson
 		humanoid.MaxHealth = Combat.MaxHealthFor(data)
@@ -180,11 +190,25 @@ local function onPlayerAdded(player: Player)
 	else
 		local data = PlayerData.Get(player)
 		if data and not data.clan then
-			task.delay(10, function()
-				if player.Parent then
-					Remotes.Notify:FireClient(player, "Toast", { text = "You have free clan rolls waiting! Open the menu (M) > Clan.", color = Color3.fromRGB(255, 220, 140) })
-				end
-			end)
+			-- Older saves: remind them about their free clan rolls once the menu is available.
+			local function remind()
+				task.delay(10, function()
+					if player.Parent and not PlayerData.Get(player).clan then
+						Remotes.Notify:FireClient(player, "Toast", { text = "You have free clan rolls waiting! Open the menu (M) > Clan.", color = Color3.fromRGB(255, 220, 140) })
+					end
+				end)
+			end
+			if data.act == 2 then
+				remind()
+			else
+				local connection
+				connection = player:GetAttributeChangedSignal("Act"):Connect(function()
+					if player:GetAttribute("Act") == 2 then
+						connection:Disconnect()
+						remind()
+					end
+				end)
+			end
 		end
 	end
 	if player.Parent then

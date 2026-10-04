@@ -695,7 +695,16 @@ function EnemyService.Start(world)
 		-- More sample points for bigger areas.
 		local surface = (bounds.maxX - bounds.minX) * (bounds.maxZ - bounds.minZ)
 		local count = math.clamp(math.floor(surface / 1600), 60, 320)
-		spawnPoints[area.id] = WorldBuilder.SamplePoints(world.floors, Vector3.new(bounds.minX + 8, 0, bounds.minZ + 8), Vector3.new(bounds.maxX - 8, 0, bounds.maxZ - 8), count, sampler, avoid)
+		-- In the Rift, streets hang over the crater: shadows there would just fall off.
+		local function overVoid(hit: RaycastResult): boolean
+			if area.id ~= "rift" then
+				return false
+			end
+			local flat = Vector2.new(hit.Position.X - area.center.X, hit.Position.Z - area.center.Z).Magnitude
+			local name = hit.Instance.Name
+			return flat < 285 and (name == "Road" or name == "Sidewalk" or name == "Corner" or name == "LaneMark" or name == "Crosswalk")
+		end
+		spawnPoints[area.id] = WorldBuilder.SamplePoints(world.floors, Vector3.new(bounds.minX + 8, 0, bounds.minZ + 8), Vector3.new(bounds.maxX - 8, 0, bounds.maxZ - 8), count, sampler, avoid, overVoid)
 	end
 
 	for _, area in Areas.List do

@@ -418,6 +418,17 @@ function Dread.Start()
 	player:GetAttributeChangedSignal("Act"):Connect(bindLight)
 
 	workspace:GetAttributeChangedSignal("Blackout"):Connect(onBlackoutChanged)
+	-- The map streams in as you move: lamps arriving during a Blackout are dead too.
+	CollectionService:GetInstanceAddedSignal("FlickerLight"):Connect(function(part)
+		if act2() and workspace:GetAttribute("Blackout") == "active" then
+			for _, light in part:GetChildren() do
+				if light:IsA("Light") and light.Enabled then
+					light.Enabled = false
+					lightsKilled[light] = true
+				end
+			end
+		end
+	end)
 	player:GetAttributeChangedSignal("Act"):Connect(function()
 		if act2() then
 			onBlackoutChanged()

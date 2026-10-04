@@ -253,7 +253,7 @@ function CombatInput.Start()
 		return Enum.ContextActionResult.Sink
 	end, Enum.KeyCode.G, Enum.KeyCode.DPadUp)
 	-- Clan Mode (Mythic and Transcendent clans only; the server checks).
-	bind("ShadowfallClanMode", "Mode", function(state)
+	bind("ShadowfallClanMode", nil, function(state) -- (touch: tap the Mode pill on the HUD)
 		local clan = Clans.ById[player:GetAttribute("Clan") or ""]
 		if state == Enum.UserInputState.Begin and active() and clan and clan.mode then
 			Remotes.Action:FireServer("Mode")

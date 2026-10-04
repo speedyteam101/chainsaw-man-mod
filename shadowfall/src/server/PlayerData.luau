@@ -29,6 +29,7 @@ end
 local function defaults()
 	return {
 		version = 1,
+		layout = 2, -- world layout version (2 = five cities); see BaseService.Load
 		act = 1,
 		act1Stage = 0, -- 0 = the intro (save Biscuit)
 		duckSaved = false,
@@ -90,7 +91,14 @@ function PlayerData.Load(player: Player)
 			task.wait(1.5 * attempt)
 		end
 	end
+	-- Saves from before the five-city layout have no `layout`; mark them so their base can be moved.
+	if type(data) == "table" and data.layout == nil then
+		data.layout = 1
+	end
 	data = reconcile(type(data) == "table" and data or {}, defaults())
+	if data.layout < 2 and not data.base.placed then
+		data.layout = 2 -- nothing to move (a base placed from now on uses the new layout)
+	end
 	-- Saves made before the intro existed are already past it: give them Biscuit.
 	if not data.duckSaved and (data.act == 2 or data.act1Stage >= 1) then
 		data.duckSaved = true

@@ -15,7 +15,6 @@ local PlayerData = require(script.Parent.PlayerData)
 local PassService = require(script.Parent.PassService)
 
 local ClanService = {}
-ClanService.OnRolled = nil :: ((Player, string) -> ())? -- set by Main (feats)
 
 local K = Config.Clans
 local rng = Random.new()
@@ -69,9 +68,6 @@ function ClanService.Roll(player: Player)
 		data.clanPity = 0
 	end
 	table.insert(data.clanOptions, clan.id)
-	if ClanService.OnRolled then
-		ClanService.OnRolled(player, clan.id)
-	end
 	PlayerData.Sync(player)
 	return { ok = true, clan = clan.id, options = data.clanOptions, free = data.clanFreeRolls, current = data.clan }
 end
@@ -83,6 +79,9 @@ function ClanService.Choose(player: Player, clanId)
 	end
 	if not table.find(data.clanOptions or {}, clanId) then
 		return { ok = false, message = "That clan isn't one of your rolls." }
+	end
+	if data.clan ~= clanId then
+		Combat.GetState(player).clanModeUntil = 0 -- a Mode doesn't carry over to a new clan
 	end
 	data.clan = clanId
 	data.clanOptions = {}

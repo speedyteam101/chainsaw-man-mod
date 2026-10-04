@@ -764,6 +764,24 @@ function BaseService.Load(player: Player)
 		syncAttributes(player)
 		return
 	end
+	-- Bases saved before the five-city layout: every area moved east, so move the base with it.
+	if (data.layout or 1) < 2 then
+		data.layout = 2
+		local OLD_AREAS = { -- old X ranges -> how far that area moved east
+			{ minX = -math.huge, maxX = 255, shift = 0 },
+			{ minX = 255, maxX = 710, shift = 220 },
+			{ minX = 710, maxX = 1130, shift = 655 },
+			{ minX = 1130, maxX = 1550, shift = 1120 },
+			{ minX = 1550, maxX = math.huge, shift = 1580 },
+		}
+		for _, old in OLD_AREAS do
+			if data.base.x >= old.minX and data.base.x < old.maxX then
+				data.base.x += old.shift
+				break
+			end
+		end
+		data.base.cleared = {} -- the houses around it are all different now
+	end
 	local saved = Vector3.new(data.base.x, data.base.y, data.base.z)
 	-- Knock down the houses that were cleared there before checking the spot is free.
 	HouseService.ClearAt(player, saved, radiusOf(data.base.level))
@@ -778,7 +796,7 @@ function BaseService.Load(player: Player)
 			return
 		end
 		player:SetAttribute("BaseSpotWarned", true)
-		toast(player, "Someone has built where your base was. Place your crystal somewhere new (Build menu) and your base will follow.", Color3.fromRGB(255, 210, 140))
+		toast(player, "Your base's old spot can't be used any more (someone built there, or the world changed). Place your crystal somewhere new (Build menu) and your whole base will follow.", Color3.fromRGB(255, 210, 140))
 	end
 end
 

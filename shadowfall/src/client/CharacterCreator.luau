@@ -150,7 +150,7 @@ local function renderClan()
 		end)
 	end
 	clanPerks.Text = ClanUI.Perks(selectedClan)
-	clanRollButton.Text = freeRolls > 0 and string.format("ROLL CLAN  (%d free roll%s left)", freeRolls, freeRolls == 1 and "" or "s") or "No free rolls left (reroll later at the shrine)"
+	clanRollButton.Text = freeRolls > 0 and string.format("ROLL CLAN  (%d free roll%s left)", freeRolls, freeRolls == 1 and "" or "s") or "No free rolls left (reroll later in the menu's Clan tab)"
 	clanRollButton.AutoButtonColor = freeRolls > 0
 end
 
@@ -159,7 +159,10 @@ local function rollClan()
 		return
 	end
 	rolling = true
-	local result = Remotes.Request:InvokeServer("RollClan")
+	local ok, result = pcall(function()
+		return Remotes.Request:InvokeServer("RollClan")
+	end)
+	result = ok and result or nil
 	if result and result.ok then
 		freeRolls = result.free or 0
 		ClanUI.Reel(clanReel, result.clan)
@@ -204,7 +207,9 @@ local function save()
 	saveButton.Text = "..."
 	-- Keep the clan they picked (if they rolled none, the server rolls one for them).
 	if firstTime and selectedClan then
-		Remotes.Request:InvokeServer("ChooseClan", selectedClan)
+		pcall(function()
+			Remotes.Request:InvokeServer("ChooseClan", selectedClan)
+		end)
 	end
 	local result = Remotes.Request:InvokeServer("SaveLook", look)
 	busy = false

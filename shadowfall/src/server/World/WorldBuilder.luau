@@ -883,7 +883,7 @@ local function buildWoods(map: Instance, rng: Random, info)
 		end
 	end
 	-- Ruined cabins
-	for _, offset in { Vector3.new(-80, 0, 60), Vector3.new(40, 0, 90), Vector3.new(-30, 0, -100), Vector3.new(110, 0, 40) } do
+	for _, offset in { Vector3.new(-80, 0, 60), Vector3.new(40, 0, 50), Vector3.new(-50, 0, -55), Vector3.new(140, 0, -40) } do
 		local p = groundAt(c + offset)
 		local cf = CFrame.lookAt(p, Vector3.new(p.X, p.Y, c.Z))
 		local cabin, size = B.house(folder, cf, rng, { width = 16, depth = 14, height = 10, broken = true, litWindows = 0.1, name = "Cabin" })
@@ -1171,7 +1171,11 @@ local function buildCity(map: Instance, areaId: string, rng: Random, info)
 end
 
 local function buildSky(map: Instance)
-	local sky = B.folder(map, "Sky")
+	-- Far away from everyone, so it must never stream out.
+	local sky = Instance.new("Model")
+	sky.Name = "Sky"
+	sky.ModelStreamingMode = Enum.ModelStreamingMode.Persistent
+	sky.Parent = map
 	-- A black eclipse with a violet corona hanging over the whole world.
 	local middle = Vector3.new(1580, 0, 0)
 	local at = Vector3.new(1580, 760, -1300)
@@ -1221,7 +1225,7 @@ end
 
 -- Finds walkable points inside a box: raycasts down onto floor parts and rejects points
 -- that are cramped by walls or props. Call after the world has been built.
-function WorldBuilder.SamplePoints(floors: Folder, minCorner: Vector3, maxCorner: Vector3, count: number, rng: Random, avoid: { { at: Vector3, r: number } }?)
+function WorldBuilder.SamplePoints(floors: Folder, minCorner: Vector3, maxCorner: Vector3, count: number, rng: Random, avoid: { { at: Vector3, r: number } }?, reject: ((RaycastResult) -> boolean)?)
 	local rayParams = RaycastParams.new()
 	rayParams.FilterType = Enum.RaycastFilterType.Include
 	rayParams.FilterDescendantsInstances = { floors, workspace.Terrain }
@@ -1236,7 +1240,7 @@ function WorldBuilder.SamplePoints(floors: Folder, minCorner: Vector3, maxCorner
 		local x = rng:NextNumber(minCorner.X, maxCorner.X)
 		local z = rng:NextNumber(minCorner.Z, maxCorner.Z)
 		local hit = workspace:Raycast(Vector3.new(x, 120, z), Vector3.new(0, -200, 0), rayParams)
-		if hit and hit.Position.Y > -10 then
+		if hit and hit.Position.Y > -10 and not (reject and reject(hit)) then
 			local p = hit.Position
 			local ok = true
 			if avoid then

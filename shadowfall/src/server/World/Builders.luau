@@ -653,7 +653,9 @@ function B.debrisField(parent: Instance, center: Vector3, radius: number, count:
 	for _ = 1, count do
 		local angle = rng:NextNumber(0, math.pi * 2)
 		local distance = rng:NextNumber(radius * 0.6, radius)
-		local position = center + Vector3.new(math.cos(angle) * distance, rng:NextNumber(-120, 160), math.sin(angle) * distance)
+		-- Well above or below street level, never drifting through houses and roads.
+		local height = rng:NextNumber() < 0.4 and rng:NextNumber(-140, -45) or rng:NextNumber(70, 180)
+		local position = center + Vector3.new(math.cos(angle) * distance, height, math.sin(angle) * distance)
 		local size = Vector3.new(rng:NextNumber(6, 30), rng:NextNumber(4, 18), rng:NextNumber(6, 30))
 		local rock = B.block(parent, {
 			name = "Debris",

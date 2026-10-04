@@ -46,6 +46,7 @@ end
 local function buildCocoon(person, ground: Vector3, parent: Instance)
 	local model = Instance.new("Model")
 	model.Name = "Cocoon_" .. person.id
+	model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic -- arrive whole, so a rescued cocoon hides properly
 	local cf = CFrame.new(ground) * CFrame.Angles(0, math.rad((person.order * 47) % 360), 0)
 	-- The trapped person: eyes shut, head lolling, fully detailed under the bands.
 	local spec = Figure.SpecFor(person.id, { shirt = person.shirt, pants = person.pants, expression = "closed" })

@@ -197,12 +197,15 @@ end
 function Clans.Describe(id: string?): { string }
 	local c = Clans.Of(id)
 	local lines = {}
+	local function num(x: number): string
+		return (string.format("%.2f", x):gsub("0+$", ""):gsub("%.$", ""))
+	end
 	local function pct(mult: number): string
 		return string.format("%+d%%", math.floor((mult - 1) * 100 + 0.5))
 	end
 	if c.styles then
 		local list = table.concat(c.styles, ", ")
-		table.insert(lines, string.format("%.2gx damage with %s powers", c.affinity or 1, list == "*" and "ALL" or list))
+		table.insert(lines, num(c.affinity or 1) .. "x damage with " .. (list == "*" and "ALL" or list) .. " powers")
 	end
 	if c.damage then
 		table.insert(lines, pct(c.damage) .. " all damage")
@@ -211,7 +214,7 @@ function Clans.Describe(id: string?): { string }
 		table.insert(lines, string.format("+%d damage per hit", c.flat))
 	end
 	if c.hp then
-		table.insert(lines, string.format("%.2gx max health", c.hp))
+		table.insert(lines, num(c.hp) .. "x max health")
 	end
 	if c.defense then
 		table.insert(lines, pct(c.defense) .. " damage taken")
@@ -223,7 +226,7 @@ function Clans.Describe(id: string?): { string }
 		table.insert(lines, pct(c.cooldown) .. " power cooldowns")
 	end
 	if c.luck then
-		table.insert(lines, string.format("%.2gx luck on power spins", c.luck))
+		table.insert(lines, num(c.luck) .. "x luck on power spins")
 	end
 	if c.lifesteal then
 		table.insert(lines, string.format("Heal %d%% of damage dealt", math.floor(c.lifesteal * 100 + 0.5)))
@@ -239,7 +242,7 @@ function Clans.Describe(id: string?): { string }
 	end
 	if c.mode then
 		local m = c.mode
-		table.insert(lines, string.format("MODE [Y] %s: %.2gx damage, %.2gx speed for %ds (%ds cooldown)", m.name, m.damage, m.speed, m.duration, m.cooldown))
+		table.insert(lines, string.format("MODE [Y] %s: %sx damage, %sx speed for %ds (%ds cooldown)", m.name, num(m.damage), num(m.speed), m.duration, m.cooldown))
 	end
 	return lines
 end
