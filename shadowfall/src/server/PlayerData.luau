@@ -51,6 +51,10 @@ local function defaults()
 		vault = {}, -- [powerId] = true (Power Vault pass)
 		duckOutfit = 1,
 		auraOn = true, -- Radiant Aura pass
+		-- clan = nil until chosen (Clans.luau)
+		clanFreeRolls = 3,
+		clanOptions = {}, -- rolled clans waiting to be picked
+		clanPity = 0,
 		-- look = nil until the character creator is finished (see Looks.luau)
 	}
 end
@@ -166,6 +170,7 @@ function PlayerData.Sync(player: Player)
 	player:SetAttribute("Essence", data.essence)
 	player:SetAttribute("Pity", data.pity)
 	player:SetAttribute("Tokens", data.tokens)
+	player:SetAttribute("Clan", data.clan or "")
 	player:SetAttribute("PassSpeed", if data.passes.swift then Passes.SpeedMultiplier else nil) -- Fleet Feet
 	player:SetAttribute(
 		"CanAscend",
@@ -188,6 +193,9 @@ function PlayerData.Sync(player: Player)
 		essenceTraded = data.essenceTraded,
 		duckOutfit = data.duckOutfit,
 		auraOn = data.auraOn,
+		clan = data.clan,
+		clanOptions = data.clanOptions,
+		clanFreeRolls = data.clanFreeRolls,
 		look = data.look,
 	})
 end

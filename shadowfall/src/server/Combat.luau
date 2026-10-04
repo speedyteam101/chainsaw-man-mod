@@ -8,6 +8,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Config = require(ReplicatedStorage.Shared.Config)
 local Powers = require(ReplicatedStorage.Shared.Powers)
 local Passes = require(ReplicatedStorage.Shared.Passes)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Registry = require(script.Parent.Registry)
 local PlayerData = require(script.Parent.PlayerData)
@@ -67,6 +68,18 @@ local function passive(player: Player)
 end
 
 -- Everything that multiplies a player's outgoing damage.
+-- Act 2 max health: base + per level, times the clan's health perk.
+function Combat.MaxHealthFor(data): number
+	local base = Config.Act2.BaseMaxHealth + (data.level - 1) * Config.Act2.HealthPerLevel
+	return math.floor(base * (Clans.Of(data.clan).hp or 1) + 0.5)
+end
+
+-- Flat damage added to every hit (clan perk).
+function Combat.FlatDamage(player: Player): number
+	local data = PlayerData.Get(player)
+	return data and Clans.Of(data.clan).flat or 0
+end
+
 function Combat.DamageMultiplier(player: Player): number
 	local data = PlayerData.Get(player)
 	if not data then
@@ -88,6 +101,12 @@ function Combat.DamageMultiplier(player: Player): number
 	end
 	if InventoryService.HasItem(player, "Charm") then
 		mult *= 1.1
+	end
+	-- Clan: all-damage perk, and the Mode transformation (Mythic+).
+	local clan = Clans.Of(data.clan)
+	mult *= clan.damage or 1
+	if clan.mode and now < (state.clanModeUntil or 0) then
+		mult *= clan.mode.damage
 	end
 	-- Flow: chaining different moves together.
 	if (state.flow or 0) > 0 and now < (state.flowUntil or 0) then
@@ -308,8 +327,9 @@ function Combat.DamageEnemy(enemy, amount: number, attacker: Player?, opts)
 		enemy.damagers[attacker] = (enemy.damagers[attacker] or 0) + amount
 		enemy.lastAttacker = attacker
 		enemy.aggroOn = attacker
-		local lifesteal = passive(attacker).lifesteal
-		if lifesteal then
+		local attackerData = PlayerData.Get(attacker)
+		local lifesteal = (passive(attacker).lifesteal or 0) + (attackerData and Clans.Of(attackerData.clan).lifesteal or 0)
+		if lifesteal > 0 then
 			Combat.HealPlayer(attacker, amount * lifesteal)
 		end
 	end
@@ -407,6 +427,13 @@ function Combat.DamagePlayer(player: Player, amount: number, source)
 	amount *= passive(player).defense or 1
 	-- Beginner's Blessing: new players take less damage until their first Ascension.
 	local data = PlayerData.Get(player)
+	if data then
+		local clan = Clans.Of(data.clan)
+		amount *= clan.defense or 1
+		if clan.mode and now < (state.clanModeUntil or 0) then
+			amount *= clan.mode.defense or 1
+		end
+	end
 	if data and data.act == 2 and data.level < Config.Beginner.UntilLevel then
 		amount *= Config.Beginner.DamageTaken
 	end
@@ -474,7 +501,7 @@ function Combat.M1(player: Player, aim: Vector3?)
 		end
 	end
 	local center = root.Position + look * (C.M1Range / 2 + 0.5)
-	local damage = C.M1Damage[state.combo] * Combat.DamageMultiplier(player) * (effect.m1Damage or 1)
+	local damage = C.M1Damage[state.combo] * Combat.DamageMultiplier(player) * (effect.m1Damage or 1) + Combat.FlatDamage(player)
 	local color = p and p.color or Color3.new(1, 1, 1)
 
 	Remotes.Fx:FireAllClients("Swing", { character = character, combo = state.combo, color = color, style = p and p.vfx })

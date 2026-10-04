@@ -35,6 +35,7 @@ local LookService = require(Server.LookService)
 local BlackoutService = require(Server.BlackoutService)
 local HouseService = require(Server.HouseService)
 local NpcService = require(Server.NpcService)
+local ClanService = require(Server.ClanService)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 local Materials = require(ReplicatedStorage.Shared.Materials)
 
@@ -132,13 +133,16 @@ local function onCharacterAdded(player: Player, character: Model)
 		task.spawn(Act1Director.OnCharacter, player, character)
 	else
 		player.CameraMode = Enum.CameraMode.LockFirstPerson
-		humanoid.MaxHealth = Config.Act2.BaseMaxHealth + (data.level - 1) * Config.Act2.HealthPerLevel
+		humanoid.MaxHealth = Combat.MaxHealthFor(data)
+		state.clanModeUntil = 0
 		humanoid.Health = humanoid.MaxHealth
 		humanoid.WalkSpeed = Config.Act2.WalkSpeed
 		BaseService.Load(player)
 		task.spawn(placeCharacter, character, BaseService.RespawnCFrame(player) or ZoneService.HubSpawn())
 		task.delay(8, PassService.Welcome, player)
 	end
+
+	ClanService.Apply(player)
 
 	humanoid.Died:Connect(function()
 		Registry.PlayerDied:Fire(player)
@@ -160,8 +164,20 @@ local function onPlayerAdded(player: Player)
 	end)
 	PlayerData.Load(player)
 	PassService.OnLoaded(player)
-	-- New players make their character first (the client shows the creator while this waits).
-	LookService.WaitForLook(player)
+	-- New players make their character (and roll their clan) first; the client shows the creator
+	-- while this waits.
+	if LookService.WaitForLook(player) then
+		ClanService.Finalize(player)
+	else
+		local data = PlayerData.Get(player)
+		if data and not data.clan then
+			task.delay(10, function()
+				if player.Parent then
+					Remotes.Notify:FireClient(player, "Toast", { text = "You have free clan rolls waiting! Open the menu (M) > Clan.", color = Color3.fromRGB(255, 220, 140) })
+				end
+			end)
+		end
+	end
 	if player.Parent then
 		PlayerData.Respawn(player)
 	end
@@ -198,6 +214,8 @@ Remotes.Action.OnServerEvent:Connect(function(player: Player, action, arg1, arg2
 		end
 	elseif action == "Awaken" then
 		PowerService.Awaken(player)
+	elseif action == "Mode" then
+		ClanService.Mode(player)
 	end
 end)
 
@@ -262,6 +280,7 @@ local function devCommand(player: Player, command)
 		data.story = { chapter = 1, seen = {}, pages = {} }
 		data.tokens, data.essenceTraded, data.welcomeTokens = 0, 0, false
 		data.passes, data.vault, data.duckOutfit, data.auraOn = {}, {}, 1, true
+		data.clan, data.clanOptions, data.clanFreeRolls, data.clanPity = nil, {}, Config.Clans.FreeRolls, 0
 		PlayerData.Sync(player)
 		PlayerData.Respawn(player)
 	end
@@ -318,6 +337,10 @@ Remotes.Request.OnServerInvoke = function(player: Player, request, arg)
 		return PassService.SetDuckOutfit(player, arg)
 	elseif request == "Aura" then
 		return PassService.SetAura(player, arg)
+	elseif request == "RollClan" then
+		return ClanService.Roll(player)
+	elseif request == "ChooseClan" then
+		return ClanService.Choose(player, arg)
 	elseif request == "SaveLook" then
 		return LookService.Save(player, arg)
 	elseif request == "Dev" then

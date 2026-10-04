@@ -11,9 +11,11 @@ local RunService = game:GetService("RunService")
 
 local Looks = require(ReplicatedStorage.Shared.Looks)
 local Figure = require(ReplicatedStorage.Shared.Figure)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Ui = require(script.Parent.Ui)
 local ClientState = require(script.Parent.ClientState)
+local ClanUI = require(script.Parent.ClanUI)
 
 local CharacterCreator = {}
 
@@ -124,8 +126,61 @@ function CharacterCreator.IsOpen(): boolean
 	return root ~= nil and root.Visible
 end
 
+-- Clan rolling (first time only) --------------------------------------------------------------
+
+local clanBox, clanReel, clanPerks, clanCards, clanRollButton
+local clanOptions: { string } = {}
+local selectedClan: string? = nil
+local freeRolls = 0
+local rolling = false
+
+local function renderClan()
+	clanBox.Visible = firstTime
+	for _, child in clanCards:GetChildren() do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+	for index, id in clanOptions do
+		ClanUI.Card(id, id == selectedClan, index, clanCards, function()
+			selectedClan = id
+			clanReel.Text = string.upper(Clans.ById[id].name) .. "  -  " .. string.upper(Clans.ById[id].rarity)
+			clanReel.TextColor3 = Clans.RarityColors[Clans.ById[id].rarity]
+			renderClan()
+		end)
+	end
+	clanPerks.Text = ClanUI.Perks(selectedClan)
+	clanRollButton.Text = freeRolls > 0 and string.format("ROLL CLAN  (%d free roll%s left)", freeRolls, freeRolls == 1 and "" or "s") or "No free rolls left (reroll later at the shrine)"
+	clanRollButton.AutoButtonColor = freeRolls > 0
+end
+
+local function rollClan()
+	if rolling or freeRolls <= 0 then
+		return
+	end
+	rolling = true
+	local result = Remotes.Request:InvokeServer("RollClan")
+	if result and result.ok then
+		freeRolls = result.free or 0
+		ClanUI.Reel(clanReel, result.clan)
+		clanOptions = table.clone(result.options or { result.clan })
+		selectedClan = result.clan
+	else
+		clanReel.Text = (result and result.message) or "The bloodline is silent. Try again."
+	end
+	rolling = false
+	renderClan()
+end
+
 function CharacterCreator.Open(current, isFirstTime: boolean?)
 	firstTime = isFirstTime == true
+	if firstTime then
+		clanOptions = table.clone(ClientState.clanOptions or {})
+		freeRolls = ClientState.clanFreeRolls or 3
+		selectedClan = clanOptions[#clanOptions]
+		clanReel.Text = selectedClan and string.upper(Clans.ById[selectedClan].name) or "?"
+	end
+	renderClan()
 	look = Looks.Sanitize(current or Looks.Default())
 	saveButton.Text = firstTime and "BEGIN" or "SAVE"
 	root.Visible = true
@@ -142,8 +197,15 @@ local function save()
 	if busy then
 		return
 	end
+	if rolling then
+		return
+	end
 	busy = true
 	saveButton.Text = "..."
+	-- Keep the clan they picked (if they rolled none, the server rolls one for them).
+	if firstTime and selectedClan then
+		Remotes.Request:InvokeServer("ChooseClan", selectedClan)
+	end
 	local result = Remotes.Request:InvokeServer("SaveLook", look)
 	busy = false
 	if result and result.ok then
@@ -199,6 +261,25 @@ function CharacterCreator.Start()
 		AutomaticCanvasSize = Enum.AutomaticSize.Y,
 		Parent = panel,
 	}, { Ui.list(6), Ui.new("UIPadding", { PaddingRight = UDim.new(0, 10) }) })
+
+	-- The clan roller sits at the top of the options (first time only).
+	clanBox = Ui.new("Frame", {
+		Size = UDim2.new(1, 0, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = Color3.fromRGB(24, 18, 30),
+		LayoutOrder = -10,
+		Parent = options,
+	}, { Ui.corner(10), Ui.stroke(T.Gold, 1, 0.5), Ui.padding(10), Ui.list(6) })
+	Ui.label("YOUR CLAN", { Size = UDim2.new(1, 0, 0, 16), Font = T.Bold, TextSize = 13, TextColor3 = T.Gold, LayoutOrder = 1, Parent = clanBox })
+	Ui.label("Your family line gives you perks. Roll up to 3 times for free, then pick the one you want to keep.", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextSize = 12, TextColor3 = T.Muted, LayoutOrder = 2, Parent = clanBox })
+	clanReel = Ui.label("?", { Size = UDim2.new(1, 0, 0, 30), Font = T.Title, TextSize = 24, TextXAlignment = Enum.TextXAlignment.Center, LayoutOrder = 3, Parent = clanBox })
+	clanCards = Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1, LayoutOrder = 4, Parent = clanBox }, {
+		Ui.new("UIGridLayout", { CellSize = UDim2.fromOffset(150, 42), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	clanPerks = Ui.label("", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextSize = 12, LayoutOrder = 5, Parent = clanBox })
+	clanRollButton = Ui.button("ROLL CLAN", { Size = UDim2.new(1, 0, 0, 40), TextSize = 16, BackgroundColor3 = Color3.fromRGB(60, 44, 10), TextColor3 = T.Gold, LayoutOrder = 6, Parent = clanBox }, function()
+		task.spawn(rollClan)
+	end)
 
 	swatchRow("SKIN", Looks.Skin, "skin")
 	swatchRow("EYES", Figure.EyeColors, "eyes")

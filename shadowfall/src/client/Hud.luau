@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
+local Clans = require(ReplicatedStorage.Shared.Clans)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Areas = require(ReplicatedStorage.Shared.Areas)
 local Powers = require(ReplicatedStorage.Shared.Powers)
@@ -29,6 +30,8 @@ local gatherFeed, itemSlots = nil, {}
 local slots = {} -- [slot] = { frame, cover, timer, lock, name }
 local cooldownEnds = {}
 local flowLabel, flowFill
+local clanLabel, modePill
+local modeReadyAt, modeActiveUntil = 0, 0
 local flowEnds, flowDuration = 0, 1
 local bossFrame, bossName, bossFill
 local toastHolder
@@ -75,7 +78,7 @@ local function buildStatus()
 
 	ascendPill = Ui.button("FEAT EARNED - ASCEND  [M]", {
 		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 20, 1, -152),
+		Position = UDim2.new(0, 20, 1, -168),
 		Size = UDim2.new(0, 300, 0, 34),
 		BackgroundColor3 = Color3.fromRGB(60, 44, 10),
 		TextColor3 = T.Gold,
@@ -458,6 +461,47 @@ function Hud.Start()
 	buildToasts()
 	buildDialogue()
 
+	-- Clan name (above the status card) and the Mode pill for Mythic+ clans.
+	clanLabel = Ui.label("", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 22, 1, -146), Size = UDim2.new(0, 300, 0, 18), Font = T.Bold, TextSize = 13, TextStrokeTransparency = 0.5, Parent = gui })
+	modePill = Ui.button("", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 20, 1, -208), Size = UDim2.new(0, 300, 0, 32), TextSize = 14, Visible = false, Parent = gui }, function()
+		Remotes.Action:FireServer("Mode")
+	end)
+	local function refreshClan()
+		local clan = Clans.ById[player:GetAttribute("Clan") or ""]
+		if clan then
+			clanLabel.Text = string.format("%s clan  -  %s", clan.name, clan.rarity)
+			clanLabel.TextColor3 = Clans.RarityColors[clan.rarity] or T.Text
+		else
+			clanLabel.Text = "No clan yet  -  menu (M) > Clan"
+			clanLabel.TextColor3 = T.Muted
+		end
+		modePill.Visible = clan ~= nil and clan.mode ~= nil and player:GetAttribute("Act") == 2
+	end
+	player:GetAttributeChangedSignal("Clan"):Connect(refreshClan)
+	player:GetAttributeChangedSignal("Act"):Connect(refreshClan)
+	refreshClan()
+	RunService.RenderStepped:Connect(function()
+		if not modePill.Visible then
+			return
+		end
+		local clan = Clans.ById[player:GetAttribute("Clan") or ""]
+		local name = clan and clan.mode and string.upper(clan.mode.name) or "MODE"
+		local now = os.clock()
+		if now < modeActiveUntil then
+			modePill.Text = string.format("%s  ACTIVE  %ds", name, math.ceil(modeActiveUntil - now))
+			modePill.BackgroundColor3 = clan and clan.mode.color:Lerp(Color3.new(0, 0, 0), 0.55) or T.PanelLight
+			modePill.TextColor3 = Color3.new(1, 1, 1)
+		elseif now < modeReadyAt then
+			modePill.Text = string.format("%s  (%ds)", name, math.ceil(modeReadyAt - now))
+			modePill.BackgroundColor3 = T.PanelLight
+			modePill.TextColor3 = T.Muted
+		else
+			modePill.Text = name .. "  READY  [Y]"
+			modePill.BackgroundColor3 = Color3.fromRGB(60, 20, 30)
+			modePill.TextColor3 = clan and clan.mode.color or T.Gold
+		end
+	end)
+
 	-- Flow: chain different moves for bonus damage.
 	flowLabel = Ui.label("", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -150), Size = UDim2.new(0, 260, 0, 26), Font = T.Title, TextSize = 24, TextColor3 = Color3.fromRGB(255, 220, 140), TextXAlignment = Enum.TextXAlignment.Center, TextStrokeTransparency = 0.4, Visible = false, Parent = gui })
 	local flowBack = Ui.new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 1, 0), Size = UDim2.new(0, 160, 0, 4), BackgroundColor3 = Color3.fromRGB(40, 30, 20), BorderSizePixel = 0, Parent = flowLabel }, { Ui.corner(2) })
@@ -504,6 +548,9 @@ function Hud.Start()
 			featUnlocked(data)
 		elseif kind == "Cooldown" then
 			cooldownEnds[data.slot] = { time = os.clock() + data.duration, duration = data.duration }
+		elseif kind == "ModeCooldown" then
+			modeReadyAt = os.clock() + (data.duration or 0)
+			modeActiveUntil = os.clock() + (data.active or 0)
 		elseif kind == "Flow" then
 			if (data.stacks or 0) <= 0 then
 				flowEnds = 0

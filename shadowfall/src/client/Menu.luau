@@ -25,6 +25,8 @@ local BuildMode = require(script.Parent.BuildMode)
 local Cinematic = require(script.Parent.Cinematic)
 local CharacterCreator = require(script.Parent.CharacterCreator)
 local Passes = require(ReplicatedStorage.Shared.Passes)
+local Clans = require(ReplicatedStorage.Shared.Clans)
+local ClanUI = require(script.Parent.ClanUI)
 
 local Menu = {}
 
@@ -34,7 +36,7 @@ local gui, panel, content, tabButtons
 local currentTab = "Ascension"
 local busy = false
 
-local TABS = { "Ascension", "Feats", "Power", "Tokens", "Pack", "Build", "Base", "Journal", "Warp", "Look" }
+local TABS = { "Ascension", "Feats", "Power", "Clan", "Tokens", "Pack", "Build", "Base", "Journal", "Warp", "Look" }
 if Config.EnableStudioDevTools and RunService:IsStudio() then
 	table.insert(TABS, "Dev")
 end
@@ -737,6 +739,81 @@ function render.Tokens()
 	end
 end
 
+-- Clan: your family line, its perks, and rerolls ----------------------------------------------
+
+local clanRolling = false
+
+function render.Clan()
+	local clan = Clans.ById[player:GetAttribute("Clan") or ""]
+	local free = ClientState.clanFreeRolls or 0
+	heading("Clan")
+	if clan then
+		add(Ui.label(string.upper(clan.name) .. "  -  " .. clan.rarity, { Size = UDim2.new(1, 0, 0, 28), Font = T.Title, TextSize = 26, TextColor3 = Clans.RarityColors[clan.rarity] }))
+	else
+		add(Ui.label("NO CLAN YET", { Size = UDim2.new(1, 0, 0, 28), Font = T.Title, TextSize = 26, TextColor3 = T.Muted }))
+	end
+	paragraph(ClanUI.Perks(clan and clan.id), T.Text)
+
+	-- A reroll waiting for a decision: keep the current clan or take the new one.
+	local options = ClientState.clanOptions or {}
+	if #options > 0 then
+		add(Ui.label("CHOOSE YOUR CLAN", { Size = UDim2.new(1, 0, 0, 26), Font = T.Bold, TextSize = 14, TextColor3 = T.Gold }))
+		local grid = add(Ui.new("Frame", { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, BackgroundTransparency = 1 }, {
+			Ui.new("UIGridLayout", { CellSize = UDim2.fromOffset(170, 44), CellPadding = UDim2.fromOffset(8, 8), SortOrder = Enum.SortOrder.LayoutOrder }),
+		}))
+		for index, id in options do
+			ClanUI.Card(id, id == (clan and clan.id), index, grid, function()
+				local result = Remotes.Request:InvokeServer("ChooseClan", id)
+				if result and result.ok then
+					Hud.Toast("You are of the " .. Clans.ById[id].name .. " clan.", Clans.RarityColors[Clans.ById[id].rarity], 3)
+				end
+			end)
+		end
+		for _, id in options do
+			if id ~= (clan and clan.id) then
+				paragraph(Clans.ById[id].name .. ": " .. table.concat(Clans.Describe(id), ", "))
+			end
+		end
+	end
+
+	add(Ui.label("REROLL", { Size = UDim2.new(1, 0, 0, 26), Font = T.Bold, TextSize = 14, TextColor3 = T.Accent }))
+	local reel = add(Ui.label("", { Size = UDim2.new(1, 0, 0, 30), Font = T.Title, TextSize = 22, TextXAlignment = Enum.TextXAlignment.Center }))
+	local label = free > 0 and string.format("ROLL CLAN  (%d free)", free) or string.format("REROLL CLAN  (%d Essence)", Config.Clans.RerollCost)
+	add(Ui.button(label, { Size = UDim2.new(1, 0, 0, 44), TextSize = 17, BackgroundColor3 = Color3.fromRGB(60, 44, 10), TextColor3 = T.Gold }, function()
+		if clanRolling then
+			return
+		end
+		clanRolling = true
+		local result = Remotes.Request:InvokeServer("RollClan")
+		if result and result.ok then
+			ClanUI.Reel(reel, result.clan)
+			if not result.current then
+				-- First clan ever: take it straight away (you can still reroll).
+				Remotes.Request:InvokeServer("ChooseClan", result.clan)
+			end
+		else
+			Hud.Toast(result and result.message or "Can't roll right now.", T.Bad)
+		end
+		clanRolling = false
+		Menu.Render()
+	end))
+	paragraph(string.format("After a reroll you choose: keep your clan or take the new one. Guaranteed Legendary or better within %d rolls.", Config.Clans.PityAt))
+	add(Ui.label("ODDS", { Size = UDim2.new(1, 0, 0, 22), Font = T.Bold, TextSize = 13, TextColor3 = T.Muted }))
+	local total = 0
+	for _, rarity in Clans.RarityOrder do
+		total += Clans.Weights[rarity]
+	end
+	for _, rarity in Clans.RarityOrder do
+		local names = {}
+		for _, c in Clans.List do
+			if c.rarity == rarity then
+				table.insert(names, c.name)
+			end
+		end
+		add(Ui.label(string.format("%s  %.1f%%   (%s)", rarity, Clans.Weights[rarity] / total * 100, table.concat(names, ", ")), { Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, TextSize = 12, TextColor3 = Clans.RarityColors[rarity] }))
+	end
+end
+
 function render.Look()
 	heading("Look")
 	paragraph("Change how your character looks: skin, hair, shirt and trousers, or switch back to your own Roblox avatar. Everyone else sees it too.")
@@ -794,8 +871,8 @@ end
 -- Shell ------------------------------------------------------------------------------------
 
 function Menu.Render()
-	if not panel.Visible then
-		return
+	if not panel.Visible or (clanRolling and currentTab == "Clan") then
+		return -- (don't wipe the clan reel while it's spinning)
 	end
 	for name, button in tabButtons do
 		button.BackgroundColor3 = name == currentTab and Color3.fromRGB(46, 36, 70) or T.PanelLight
@@ -911,7 +988,7 @@ function Menu.Start()
 		return Enum.ContextActionResult.Sink
 	end, false, Enum.KeyCode.Tab)
 	ClientState.Changed:Connect(Menu.Render)
-	for _, name in { "Level", "Power", "Essence", "Tokens", "CanAscend", "Pity", "BasePlaced", "BaseLevel" } do
+	for _, name in { "Level", "Power", "Essence", "Tokens", "CanAscend", "Pity", "BasePlaced", "BaseLevel", "Clan" } do
 		player:GetAttributeChangedSignal(name):Connect(Menu.Render)
 	end
 end

@@ -40,6 +40,9 @@ local function nextTip(): string
 	if workspace:GetAttribute("Blackout") ~= nil then
 		return "BLACKOUT: get to the camp or your base, or turn your flashlight on (L) and keep it on the Hollow. Your powers can't hurt it."
 	end
+	if (player:GetAttribute("Clan") or "") == "" then
+		return "You don't have a clan yet. Open the menu (M) > Clan and use your free rolls: clans give big perks."
+	end
 	if player:GetAttribute("CanAscend") then
 		return "You earned a feat that lets you level up! Open the menu (M) and press Ascend."
 	end

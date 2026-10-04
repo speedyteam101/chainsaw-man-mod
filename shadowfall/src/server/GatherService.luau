@@ -14,6 +14,7 @@ local Registry = require(script.Parent.Registry)
 local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
 local PassService = require(script.Parent.PassService)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 local WorldBuilder = require(script.Parent.World.WorldBuilder)
 local B = require(script.Parent.World.Builders)
 
@@ -202,7 +203,8 @@ local function hit(player: Player, node)
 	local amount = def.perHit * toolMultiplier(player, def.material)
 	-- Builder's Belt: +50% on average. Amounts are whole numbers, so the fraction becomes a chance
 	-- of one extra (1 per hit becomes 1 or 2, half the time each).
-	local belt = PassService.GatherMultiplier(player)
+	local gatherData = PlayerData.Get(player)
+	local belt = PassService.GatherMultiplier(player) * (gatherData and Clans.Of(gatherData.clan).gather or 1)
 	local function withBelt(n: number): number
 		if belt == 1 then
 			return n

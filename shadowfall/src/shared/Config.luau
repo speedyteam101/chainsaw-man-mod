@@ -192,6 +192,13 @@ Config.Combos = {
 	UltimateRadius = 26,
 }
 
+-- Clans (see Clans.luau).
+Config.Clans = {
+	FreeRolls = 3, -- free clan rolls (used in the character creator)
+	RerollCost = 250, -- Essence per clan reroll after that
+	PityAt = 50, -- the 50th clan roll without Legendary-or-better is guaranteed Legendary-or-better
+}
+
 -- Help for new players.
 Config.Beginner = {
 	DamageTaken = 0.7, -- Beginner's Blessing: take 30% less damage...

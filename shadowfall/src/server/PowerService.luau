@@ -13,6 +13,7 @@ local PlayerData = require(script.Parent.PlayerData)
 local AllyService = require(script.Parent.AllyService)
 local InventoryService = require(script.Parent.InventoryService)
 local PassService = require(script.Parent.PassService)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 
 local PowerService = {}
 
@@ -57,7 +58,7 @@ function PowerService.AwakeningRoll(player: Player)
 	if data.power then
 		return Powers.ById[data.power]
 	end
-	local power = roll(data, PassService.RollLuck(player))
+	local power = roll(data, PassService.RollLuck(player) * (Clans.Of(data.clan).luck or 1))
 	data.power = power.id
 	PassService.Remember(player, power.id)
 	Registry.PowerRolled:Fire(player, power.id)
@@ -86,7 +87,7 @@ function PowerService.Reroll(player: Player, useDie: boolean?)
 		end
 		data.essence -= Config.Roll.RerollCost
 	end
-	local luck = (InventoryService.TakeItem(player, "StarShard") and 3 or 1) * PassService.RollLuck(player)
+	local luck = (InventoryService.TakeItem(player, "StarShard") and 3 or 1) * PassService.RollLuck(player) * (Clans.Of(data.clan).luck or 1)
 	local power = roll(data, luck)
 	pendingRolls[player] = power.id
 	-- With the Power Vault, every roll is kept forever, whichever one you choose to use now.
@@ -155,7 +156,7 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 	if now < state.stunUntil or state.blocking or now < (state.cooldowns[slot] or 0) then
 		return
 	end
-	local cooldownMult = now < state.awakenedUntil and Config.Combat.AwakeningCooldownMult or 1
+	local cooldownMult = (now < state.awakenedUntil and Config.Combat.AwakeningCooldownMult or 1) * (Clans.Of(data.clan).cooldown or 1)
 	state.cooldowns[slot] = now + move.cooldown * cooldownMult
 	Remotes.Notify:FireClient(player, "Cooldown", { slot = slot, duration = move.cooldown * cooldownMult })
 	Combat.AddFlow(player, slot)
@@ -163,8 +164,9 @@ function PowerService.UseMove(player: Player, slot: number, aim: Vector3?)
 	local origin = root.Position
 	local aimAt: Vector3 = if typeof(aim) == "Vector3" then aim else origin + root.CFrame.LookVector * 30
 	local direction = flatDirection(origin, aimAt, root.CFrame.LookVector)
-	local mult = Combat.DamageMultiplier(player)
-	local damage = (move.damage or 0) * mult
+	-- Clan affinity: e.g. Pyro gives fire powers 1.5x. Clan flat damage is added to every hit.
+	local mult = Combat.DamageMultiplier(player) * Clans.AffinityFor(data.clan, power.vfx)
+	local damage = (move.damage or 0) * mult + ((move.damage or 0) > 0 and Combat.FlatDamage(player) or 0)
 	local color = power.color
 	local effects = move.effect
 	local style = power.vfx

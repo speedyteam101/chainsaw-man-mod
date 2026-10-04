@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Config = require(ReplicatedStorage.Shared.Config)
 local Powers = require(ReplicatedStorage.Shared.Powers)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local ClientState = require(script.Parent.ClientState)
 
@@ -251,6 +252,15 @@ function CombatInput.Start()
 		end
 		return Enum.ContextActionResult.Sink
 	end, Enum.KeyCode.G, Enum.KeyCode.DPadUp)
+	-- Clan Mode (Mythic and Transcendent clans only; the server checks).
+	bind("ShadowfallClanMode", "Mode", function(state)
+		local clan = Clans.ById[player:GetAttribute("Clan") or ""]
+		if state == Enum.UserInputState.Begin and active() and clan and clan.mode then
+			Remotes.Action:FireServer("Mode")
+			return Enum.ContextActionResult.Sink
+		end
+		return Enum.ContextActionResult.Pass
+	end, Enum.KeyCode.Y, Enum.KeyCode.ButtonL1)
 
 	local function onAct()
 		setBound(player:GetAttribute("Act") == 2)
@@ -290,7 +300,7 @@ function CombatInput.Start()
 		if blocking then
 			speed = 8
 		end
-		humanoid.WalkSpeed = speed * passive * (tonumber(player:GetAttribute("SpeedBuff")) or 1) * (tonumber(player:GetAttribute("PassSpeed")) or 1)
+		humanoid.WalkSpeed = speed * passive * (tonumber(player:GetAttribute("SpeedBuff")) or 1) * (tonumber(player:GetAttribute("PassSpeed")) or 1) * (tonumber(player:GetAttribute("ClanSpeed")) or 1)
 	end)
 
 	player.CharacterAdded:Connect(function()

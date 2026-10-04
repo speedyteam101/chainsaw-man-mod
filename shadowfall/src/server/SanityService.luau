@@ -15,6 +15,7 @@ local DuckService = require(script.Parent.DuckService)
 local Act1Director = require(script.Parent.Act1Director)
 local PassService = require(script.Parent.PassService)
 local Passes = require(ReplicatedStorage.Shared.Passes)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 
 local SanityService = {}
 
@@ -60,7 +61,7 @@ local function update(player: Player)
 		return
 	end
 	local delta = 0
-	local drainMult = InventoryService.HasItem(player, "Lantern") and 0.6 or 1
+	local drainMult = (InventoryService.HasItem(player, "Lantern") and 0.6 or 1) * (Clans.Of(data.clan).sanity or 1)
 	if PassService.Has(player, "steady") then
 		drainMult *= Passes.SanityDrainMultiplier -- Steady Mind
 	end

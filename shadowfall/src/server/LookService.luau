@@ -77,10 +77,11 @@ function LookService.Spawn(player: Player): boolean
 end
 
 -- Blocks until a brand-new player has picked a look (or the timeout passes).
-function LookService.WaitForLook(player: Player)
+-- Returns true if the player went through the creator just now (a brand-new character).
+function LookService.WaitForLook(player: Player): boolean
 	local data = PlayerData.Get(player)
 	if not data or data.look or not player.Parent then
-		return -- (no Parent: they left while their data was loading)
+		return false -- (no Parent: they left while their data was loading)
 	end
 	player:SetAttribute("NeedsLook", true)
 	local me = coroutine.running()
@@ -96,6 +97,7 @@ function LookService.WaitForLook(player: Player)
 	if player.Parent then
 		player:SetAttribute("NeedsLook", nil)
 	end
+	return true
 end
 
 function LookService.Save(player: Player, raw)

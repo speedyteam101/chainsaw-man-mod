@@ -56,7 +56,7 @@ function AchievementService.Ascend(player: Player)
 	data.level = nextLevel
 	local _, humanoid = Combat.GetCharacter(player)
 	if humanoid then
-		humanoid.MaxHealth = Config.Act2.BaseMaxHealth + (data.level - 1) * Config.Act2.HealthPerLevel
+		humanoid.MaxHealth = Combat.MaxHealthFor(data)
 		humanoid.Health = humanoid.MaxHealth
 	end
 

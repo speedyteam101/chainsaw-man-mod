@@ -7,6 +7,7 @@ local Debris = game:GetService("Debris")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Areas = require(ReplicatedStorage.Shared.Areas)
+local Clans = require(ReplicatedStorage.Shared.Clans)
 local Config = require(ReplicatedStorage.Shared.Config)
 local Enemies = require(ReplicatedStorage.Shared.Enemies)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
@@ -619,9 +620,10 @@ local function onKilled(enemy, killer: Player?, damagers)
 		if player.Parent and (player == killer or dealt >= enemy.maxHp * 0.1) then
 			local data = PlayerData.Get(player)
 			if data then
-				data.essence += essence
+				local earned = math.floor(essence * (Clans.Of(data.clan).essence or 1) + 0.5)
+				data.essence += earned
 				player:SetAttribute("Essence", data.essence)
-				Remotes.Notify:FireClient(player, "Essence", { amount = essence, position = enemy.root.Position })
+				Remotes.Notify:FireClient(player, "Essence", { amount = earned, position = enemy.root.Position })
 			end
 		end
 	end

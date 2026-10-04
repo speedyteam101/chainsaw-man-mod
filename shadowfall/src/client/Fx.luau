@@ -636,6 +636,149 @@ local function dissolve(model: Model, color: Color3?, time: number)
 	end
 end
 
+-- Clan Modes (Mythic and Transcendent clans): a transformation burst, then an aura and clan
+-- features worn for the duration. Everything here is local and removed when the Mode ends.
+local function wearPart(character: Model, limbName: string, props, offset: CFrame): BasePart?
+	local limb = character:FindFirstChild(limbName)
+	if not limb or not limb:IsA("BasePart") then
+		return nil
+	end
+	local p = part(props)
+	p.Anchored = false
+	p.Massless = true
+	p.CFrame = limb.CFrame * offset
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = limb
+	weld.Part1 = p
+	weld.Parent = p
+	return p
+end
+
+local function auraEmitter(parent: Instance, color: Color3, texture: string?, rate: number, size: number, rise: number)
+	local e = Instance.new("ParticleEmitter")
+	e.Texture = texture or "rbxasset://textures/particles/sparkles_main.dds"
+	e.Color = ColorSequence.new(color)
+	e.LightEmission = 0.8
+	e.Size = NumberSequence.new(size, 0)
+	e.Transparency = NumberSequence.new(0.2, 1)
+	e.Lifetime = NumberRange.new(0.6, 1.2)
+	e.Rate = rate
+	e.Speed = NumberRange.new(0.5, 2)
+	e.Acceleration = Vector3.new(0, rise, 0)
+	e.SpreadAngle = Vector2.new(180, 180)
+	e.Parent = parent
+	return e
+end
+
+function handlers.ClanMode(d)
+	local character = d.character
+	local root = rootOf(character)
+	if not root then
+		return
+	end
+	local color = d.color or Color3.new(1, 1, 1)
+	local duration = d.duration or 15
+	local position = root.Position
+	-- The transformation: drawn in, then it bursts out.
+	VfxKit.Implode(position, 10, color)
+	task.delay(0.3, function()
+		sphere(position, 16, color, 0.6, 0.1)
+		ring(position - Vector3.new(0, 2.5, 0), 22, color, 0.7, 1)
+		VfxKit.Flash(position, color, 50, 10, 1, true)
+		VfxKit.Sparks(position, color, 50, 60)
+		local ground = VfxKit.Ground(position, 10)
+		if ground then
+			VfxKit.DustRing(ground.position, 18, ground.color)
+			VfxKit.Cracks(ground.position, 8, color)
+		end
+		CameraFx.ShakeAt(position, 0.9)
+	end)
+	floatingText(position + Vector3.new(0, 4, 0), string.upper(d.name or "MODE"), color, 34, 6)
+	if character == player.Character then
+		CameraFx.Flash(color, 0.5)
+		CameraFx.Kick(0.8)
+	end
+
+	local worn = {}
+	local function keep(instance)
+		if instance then
+			table.insert(worn, instance)
+		end
+		return instance
+	end
+	local torso = character:FindFirstChild("Torso")
+	if torso then
+		keep(auraEmitter(torso, color, nil, 30, 0.5, 4))
+	end
+	local clan = d.clan
+	if clan == "dragonblood" then
+		for _, limbName in { "Torso", "Left Arm", "Right Arm" } do
+			local limb = character:FindFirstChild(limbName)
+			if limb then
+				local fire = Instance.new("Fire")
+				fire.Color = Color3.fromRGB(255, 120, 20)
+				fire.SecondaryColor = Color3.fromRGB(255, 220, 80)
+				fire.Size = limbName == "Torso" and 5 or 3
+				fire.Heat = 6
+				fire.Parent = limb
+				keep(fire)
+			end
+		end
+	elseif clan == "moonshadow" then
+		if torso then
+			keep(auraEmitter(torso, Color3.fromRGB(40, 20, 80), "rbxasset://textures/particles/smoke_main.dds", 20, 2, 1))
+		end
+		task.spawn(function()
+			local ends = os.clock() + duration
+			while os.clock() < ends and character.Parent do
+				afterimage(character, color)
+				task.wait(0.35)
+			end
+		end)
+	elseif clan == "asura" then
+		-- Two more pairs of ghostly arms.
+		for _, offset in { CFrame.new(-1.6, 0.4, 0.5) * CFrame.Angles(0, 0, math.rad(-35)), CFrame.new(1.6, 0.4, 0.5) * CFrame.Angles(0, 0, math.rad(35)), CFrame.new(-1.7, -0.3, 0.6) * CFrame.Angles(0, 0, math.rad(-60)), CFrame.new(1.7, -0.3, 0.6) * CFrame.Angles(0, 0, math.rad(60)) } do
+			keep(wearPart(character, "Torso", { Size = Vector3.new(0.9, 2, 0.9), Color = color, Transparency = 0.4 }, offset))
+		end
+	elseif clan == "seraphim" then
+		for _, side in { -1, 1 } do
+			for i = 0, 2 do
+				keep(wearPart(character, "Torso", { Size = Vector3.new(0.2, 1.6 - i * 0.3, 3.4 - i * 0.6), Color = color, Transparency = 0.15 + i * 0.15 }, CFrame.new(side * (1.4 + i * 0.9), 0.8 + i * 0.35, 0.8) * CFrame.Angles(0, math.rad(side * 70), math.rad(side * -20))))
+			end
+		end
+		keep(wearPart(character, "Head", { Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.12, 1.6, 1.6), Color = Color3.fromRGB(255, 230, 150), Transparency = 0.1 }, CFrame.new(0, 1.1, 0) * CFrame.Angles(0, 0, math.pi / 2)))
+	elseif clan == "hollowcrown" then
+		for i = 0, 6 do
+			local a = i / 7 * math.pi * 2
+			keep(wearPart(character, "Head", { Size = Vector3.new(0.18, 0.7, 0.18), Color = Color3.fromRGB(200, 0, 40) }, CFrame.new(math.cos(a) * 0.6, 0.95, math.sin(a) * 0.6)))
+		end
+		if torso then
+			keep(auraEmitter(torso, Color3.fromRGB(10, 0, 5), "rbxasset://textures/particles/smoke_main.dds", 24, 2.2, 3))
+		end
+	elseif clan == "primordial" then
+		local emitter = torso and keep(auraEmitter(torso, color, nil, 40, 0.6, 5))
+		task.spawn(function()
+			local ends = os.clock() + duration
+			while os.clock() < ends and emitter and emitter.Parent do
+				emitter.Color = ColorSequence.new(Color3.fromHSV((os.clock() * 0.3) % 1, 0.6, 1))
+				task.wait(0.1)
+			end
+		end)
+	end
+	task.delay(duration, function()
+		for _, instance in worn do
+			if instance.Parent then
+				if instance:IsA("ParticleEmitter") or instance:IsA("Fire") then
+					instance.Enabled = false
+					Debris:AddItem(instance, 1.5)
+				else
+					instance:Destroy()
+				end
+			end
+		end
+	end)
+end
+
 -- A house coming down: a rolling wall of dust, splinters and rubble.
 function handlers.Demolish(d)
 	local position = d.position
