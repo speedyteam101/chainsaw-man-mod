@@ -51,14 +51,25 @@ local function buildMerchant(shop, cf: CFrame, parent: Instance)
 	parts.HumanoidRootPart.Anchored = true
 	local torso = parts.Torso
 	if shop.hooded then
-		-- A deep hood with two pale points of light inside it.
-		block(model, "Hood", Vector3.new(2.6, 2, 1.8), cf * CFrame.new(0, 4.7, 0.15), shop.shirt, Enum.Material.Fabric)
-		block(model, "Cloak", Vector3.new(2.6, 4.6, 1.4), cf * CFrame.new(0, 2.5, 0.2), shop.shirt, Enum.Material.Fabric)
+		-- A deep hood with two pale points of light inside it. Worn (welded), so it turns and moves
+		-- with the Stranger.
+		local function wear(p: BasePart, on: BasePart)
+			p.Anchored = false
+			p.CanCollide = false
+			p.CanQuery = false
+			p.Massless = true
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = on
+			weld.Part1 = p
+			weld.Parent = p
+		end
+		wear(block(model, "Hood", Vector3.new(2.6, 2, 1.8), cf * CFrame.new(0, 4.7, 0.15), shop.shirt, Enum.Material.Fabric), parts.Head)
+		wear(block(model, "Cloak", Vector3.new(2.6, 4.6, 1.4), cf * CFrame.new(0, 2.5, 0.2), shop.shirt, Enum.Material.Fabric), torso)
 		for _, x in { -0.35, 0.35 } do
-			local eye = block(model, "Eye", Vector3.new(0.18, 0.12, 0.05), cf * CFrame.new(x, 4.6, -0.78), Color3.fromRGB(220, 220, 255), Enum.Material.Neon)
-			eye.CanCollide = false
+			wear(block(model, "Eye", Vector3.new(0.18, 0.12, 0.05), cf * CFrame.new(x, 4.6, -0.78), Color3.fromRGB(220, 220, 255), Enum.Material.Neon), parts.Head)
 		end
 		local lantern = block(model, "Lantern", Vector3.new(0.8, 1.1, 0.8), cf * CFrame.new(1.6, 1.6, -0.6), Color3.fromRGB(180, 140, 255), Enum.Material.Neon)
+		wear(lantern, parts["Right Arm"])
 		local light = Instance.new("PointLight")
 		light.Color = Color3.fromRGB(180, 140, 255)
 		light.Range = 14

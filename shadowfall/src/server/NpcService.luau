@@ -26,6 +26,7 @@ type Npc = {
 	startedAt: number,
 	nextMove: number,
 	greeted: { [Player]: number },
+	rest: CFrame?,
 }
 
 local npcs: { [Model]: Npc } = {}
@@ -37,11 +38,26 @@ groundParams.IgnoreWater = true
 local TICK = 0.35
 local TALK_RANGE = 10
 
+local clearance = OverlapParams.new()
+clearance.FilterType = Enum.RaycastFilterType.Exclude
+
+-- Walkable ground only (floors and terrain, never a bench, tent, counter or car roof), with room
+-- to stand (nothing solid in the way, including walls people have built).
 local function groundAt(position: Vector3): Vector3?
 	local map = workspace:FindFirstChild("Map")
-	groundParams.FilterDescendantsInstances = map and { map, workspace.Terrain } or { workspace.Terrain }
+	local floors = map and map:FindFirstChild("Floors")
+	groundParams.FilterDescendantsInstances = floors and { floors, workspace.Terrain } or { workspace.Terrain }
 	local hit = workspace:Raycast(position + Vector3.new(0, 30, 0), Vector3.new(0, -60, 0), groundParams)
-	return hit and hit.Position or nil
+	if not hit then
+		return nil
+	end
+	clearance.FilterDescendantsInstances = floors and { floors, workspace.Terrain } or { workspace.Terrain }
+	for _, part in workspace:GetPartBoundsInBox(CFrame.new(hit.Position + Vector3.new(0, 3, 0)), Vector3.new(3, 5, 3), clearance) do
+		if part.CanCollide and part.Anchored then
+			return nil
+		end
+	end
+	return hit.Position
 end
 
 local function nearestPlayer(npc: Npc): (Player?, number)
@@ -82,8 +98,12 @@ local function faceTowards(npc: Npc, position: Vector3)
 end
 
 local function pickTarget(npc: Npc): Vector3?
-	for _ = 1, 6 do
-		local angle = rng:NextNumber(0, math.pi * 2)
+	-- Stay on roughly the same side of the middle (the bonfire / crystal) so the straight walk
+	-- there never cuts through it.
+	local offset = npc.root.Position - npc.home
+	local current = math.atan2(offset.Z, offset.X)
+	for _ = 1, 8 do
+		local angle = current + rng:NextNumber(-1.5, 1.5)
 		local distance = npc.minRadius + math.sqrt(rng:NextNumber()) * math.max(1, npc.radius - npc.minRadius)
 		local spot = npc.home + Vector3.new(math.cos(angle), 0, math.sin(angle)) * distance
 		local ground = groundAt(spot)
@@ -124,6 +144,10 @@ local function think(npc: Npc, now: number)
 	if npc.state == "talk" then
 		npc.state = "idle"
 		setActivity(npc, "")
+	end
+	-- Merchants turn back to their counter once you've gone.
+	if npc.stay and npc.rest then
+		npc.root.CFrame = npc.root.CFrame:Lerp(npc.rest, 0.35)
 	end
 
 	if npc.state == "walk" then
@@ -192,6 +216,7 @@ function NpcService.Register(model: Model, opts)
 		startedAt = 0,
 		nextMove = os.clock() + rng:NextNumber(1, 8),
 		greeted = {},
+		rest = opts.stay and root.CFrame or nil,
 	}
 	model:SetAttribute("Activity", "")
 end

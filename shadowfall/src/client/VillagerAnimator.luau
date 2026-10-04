@@ -59,7 +59,7 @@ end
 -- forward swing for a limb, plus sideways spread
 local function limb(rig, name: string, forward: number, spread: number, alpha: number)
 	local side = string.sub(name, 1, 5) == "Right" and 1 or -1
-	drive(rig, name, spread * side, 0, forward * side, alpha)
+	drive(rig, name, -spread, 0, forward * side, alpha)
 end
 
 local function lookYaw(model: Model, torso: BasePart): (number, number)

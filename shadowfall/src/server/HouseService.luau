@@ -18,7 +18,17 @@ local HOLD_SECONDS = 2.5
 local SALVAGE = { Wood = 12, Stone = 5, Scrap = 4 }
 local KEEP_MARGIN = 20 -- houses this close to your barrier stay demolished
 
-local houses = {} -- [id] = { id, model, center, size, alive, prompt }
+local houses = {} -- [key] = { key, model, center, size, alive, prompt }
+
+-- Houses are identified by where they stand (rounded), so saved lists survive map changes:
+-- a house that no longer exists at that spot is simply not found.
+local function keyOf(position: Vector3): string
+	return string.format("%d,%d", math.floor(position.X + 0.5), math.floor(position.Z + 0.5))
+end
+
+local function within(house, center: Vector3, radius: number): boolean
+	return Vector2.new(house.center.X - center.X, house.center.Z - center.Z).Magnitude <= radius + KEEP_MARGIN
+end
 local rng = Random.new()
 
 local function partsOf(house): { BasePart }
@@ -52,7 +62,7 @@ function HouseService.Demolish(house, player: Player?, quiet: boolean?)
 		return
 	end
 
-	Remotes.Fx:FireAllClients("Demolish", { position = house.center, size = house.size })
+	Remotes.Fx:FireAllClients("Demolish", { position = house.center, ground = house.center - Vector3.new(0, house.size.Y / 2, 0), size = house.size })
 	-- The floor goes at once; the rest collapses inwards and down under its own weight.
 	for _, p in parts do
 		if p.Name == "Floor" or p.Name == "Porch" or p.Name == "Step" or p.Name == "Walkway" then
@@ -84,40 +94,55 @@ function HouseService.Demolish(house, player: Player?, quiet: boolean?)
 		end
 		Remotes.Notify:FireClient(player, "Toast", { text = "Demolished. You salvage some wood, stone and scrap.", color = Color3.fromRGB(230, 200, 150) })
 		-- Inside (or right beside) your own base: keep it cleared for good.
-		local data = PlayerData.Get(player)
 		local center = player:GetAttribute("BaseCenter")
 		local radius = player:GetAttribute("BaseRadius") or 0
-		if data and typeof(center) == "Vector3" and radius > 0 then
-			local flat = Vector2.new(house.center.X - center.X, house.center.Z - center.Z).Magnitude
-			if flat <= radius + KEEP_MARGIN then
-				data.base.cleared = data.base.cleared or {}
-				data.base.cleared[tostring(house.id)] = true
-			end
+		if typeof(center) == "Vector3" and radius > 0 then
+			HouseService.Remember(player, center, radius)
 		end
 	end
 end
 
--- Called when a player's base is built (on join or after placing the crystal).
-function HouseService.ClearForBase(player: Player)
+-- Knocks down (quietly) the houses this player cleared around a base at `center`, and forgets any
+-- saved entries that aren't near it (e.g. after the base moved). Call before checking the spot.
+function HouseService.ClearAt(player: Player, center: Vector3, radius: number)
 	local data = PlayerData.Get(player)
-	if not data or not data.base.cleared then
+	if not data then
 		return
 	end
-	for key in data.base.cleared do
-		local house = houses[tonumber(key) or -1]
-		if house then
+	data.base.cleared = data.base.cleared or {}
+	for key in table.clone(data.base.cleared) do
+		local house = houses[key]
+		if house and within(house, center, radius) then
 			HouseService.Demolish(house, nil, true)
+		else
+			data.base.cleared[key] = nil
+		end
+	end
+end
+
+-- Saves every house that is already down around a base (whoever demolished it), so it stays down
+-- next time. Called when the crystal is placed, when the barrier grows, and after a demolition.
+function HouseService.Remember(player: Player, center: Vector3, radius: number)
+	local data = PlayerData.Get(player)
+	if not data then
+		return
+	end
+	data.base.cleared = data.base.cleared or {}
+	for key, house in houses do
+		if not house.alive and within(house, center, radius) then
+			data.base.cleared[key] = true
 		end
 	end
 end
 
 function HouseService.Start(world)
-	for id, entry in world.houses or {} do
+	for _, entry in world.houses or {} do
 		local model = entry.model
 		if model and model.Parent then
 			local cf, size = model:GetBoundingBox()
-			local house = { id = id, model = model, center = cf.Position, size = size, alive = true }
-			houses[id] = house
+			local key = keyOf(entry.cf and entry.cf.Position or cf.Position)
+			local house = { key = key, model = model, center = cf.Position, size = size, alive = true }
+			houses[key] = house
 			local anchor = Instance.new("Part")
 			anchor.Name = "DemolishPoint"
 			anchor.Anchored = true

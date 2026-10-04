@@ -258,16 +258,16 @@ end
 local GUARD = { right = 0.95, left = 0.95, spread = -0.38, time = 0.1, hold = 0.35 }
 local COMBO = {
 	{ -- jab
-		{ left = 1.72, right = 0.95, leftSpread = -0.08, rightSpread = -0.38, time = 0.05, hold = 0.05, twist = 0.28, style = Enum.EasingStyle.Back },
+		{ left = 1.72, right = 0.95, leftSpread = -0.08, rightSpread = -0.38, time = 0.05, hold = 0.05, twist = -0.28, style = Enum.EasingStyle.Back },
 		GUARD,
 	},
 	{ -- cross
-		{ right = 1.75, left = 0.9, rightSpread = -0.12, leftSpread = -0.38, time = 0.05, hold = 0.05, twist = -0.42, lean = 0.06, style = Enum.EasingStyle.Back },
+		{ right = 1.75, left = 0.9, rightSpread = -0.12, leftSpread = -0.38, time = 0.05, hold = 0.05, twist = 0.42, lean = 0.06, style = Enum.EasingStyle.Back },
 		GUARD,
 	},
 	{ -- hook: wind out, then sweep across
-		{ left = 1.35, right = 0.95, leftSpread = 0.65, rightSpread = -0.38, time = 0.05, twist = -0.15 },
-		{ left = 1.5, right = 0.95, leftSpread = -0.75, rightSpread = -0.38, time = 0.06, hold = 0.05, twist = 0.62 },
+		{ left = 1.35, right = 0.95, leftSpread = 0.65, rightSpread = -0.38, time = 0.05, twist = 0.15 },
+		{ left = 1.5, right = 0.95, leftSpread = -0.75, rightSpread = -0.38, time = 0.06, hold = 0.05, twist = -0.62 },
 		GUARD,
 	},
 	{ -- uppercut: dip, then drive up
@@ -341,7 +341,7 @@ end
 local function watchBlocking(character: Model)
 	character:GetAttributeChangedSignal("Blocking"):Connect(function()
 		if character:GetAttribute("Blocking") then
-			PowerVfx.PoseArms(character, { { right = 1.45, left = 1.45, spread = -0.6, time = 0.08, hold = 600, lean = 0.05 } })
+			PowerVfx.PoseArms(character, { PowerVfx.GUARD })
 		else
 			PowerVfx.PoseArms(character, { { right = 0.9, left = 0.9, spread = -0.3, time = 0.08 } })
 		end
@@ -640,8 +640,7 @@ end
 function handlers.Demolish(d)
 	local position = d.position
 	local size = d.size or Vector3.new(20, 12, 20)
-	local ground = VfxKit.Ground(position, size.Y + 10)
-	local base = ground and ground.position or position - Vector3.new(0, size.Y / 2, 0)
+	local base = d.ground or position - Vector3.new(0, size.Y / 2, 0)
 	local reach = math.max(size.X, size.Z)
 	VfxKit.Smoke(base + Vector3.new(0, 3, 0), reach * 0.35, Color3.fromRGB(140, 128, 116), 26, 2, 4)
 	VfxKit.DustRing(base, reach * 1.2, Color3.fromRGB(150, 138, 124))

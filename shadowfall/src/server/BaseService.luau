@@ -499,26 +499,30 @@ local function buildCrystal(player: Player, base)
 	Registry.Barriers[player] = { center = base.center, radius = radius }
 end
 
-local function validCrystalSpot(player: Player, position: Vector3): (boolean, string?, Vector3?)
+-- `saved` = re-checking an existing base on load: the keep-away rules (arena, gates, level)
+-- only apply to new placements, so rule changes never break an existing base.
+local function validCrystalSpot(player: Player, position: Vector3, saved: boolean?): (boolean, string?, Vector3?)
 	-- Anywhere in any area you've unlocked, except the camp, boss arenas and area entrances.
 	local area = Areas.At(position)
 	local data = PlayerData.Get(player)
 	if not area then
 		return false, "Your base has to be in the shadow world."
 	end
-	if data and data.level < area.level then
+	if not saved and data and data.level < area.level then
 		return false, area.name .. " needs level " .. area.level .. "."
 	end
-	if Vector2.new(position.X, position.Z).Magnitude < BC.MinDistanceFromCamp then
+	if not saved and Vector2.new(position.X, position.Z).Magnitude < BC.MinDistanceFromCamp then
 		return false, "Too close to the camp. Move further out."
 	end
 	local flat = Vector2.new(position.X, position.Z)
 	local arena = area.boss.arena
-	if (flat - Vector2.new(arena.X, arena.Z)).Magnitude < 60 then
-		return false, "Too close to where " .. area.name .. "'s guardian waits."
-	end
-	if (flat - Vector2.new(area.spawn.X, area.spawn.Z)).Magnitude < 30 or (area.gateX and math.abs(position.X - area.gateX) < 30) then
-		return false, "Don't block the way in. Move away from the gate."
+	if not saved then
+		if (flat - Vector2.new(arena.X, arena.Z)).Magnitude < 60 then
+			return false, "Too close to where " .. area.name .. "'s guardian waits."
+		end
+		if (flat - Vector2.new(area.spawn.X, area.spawn.Z)).Magnitude < 30 or (area.gateX and math.abs(position.X - area.gateX) < 30) then
+			return false, "Don't block the way in. Move away from the gate."
+		end
 	end
 	for other, base in bases do
 		if other ~= player and (Vector2.new(position.X, position.Z) - Vector2.new(base.center.X, base.center.Z)).Magnitude < BC.MinDistanceBetweenCrystals then
@@ -553,8 +557,9 @@ local function createBase(player: Player, center: Vector3)
 	npcFolder.Parent = folder
 	local base = { owner = player, center = center, level = data.base.level, folder = folder, npcFolder = npcFolder, structures = {}, nextId = 0 }
 	bases[player] = base
-	-- Houses this player demolished at their base stay down.
-	HouseService.ClearForBase(player)
+	-- Houses cleared around this spot stay down (and get remembered for next time).
+	HouseService.ClearAt(player, center, radiusOf(base.level))
+	HouseService.Remember(player, center, radiusOf(base.level))
 	buildCrystal(player, base)
 	-- Rebuild saved structures relative to the crystal.
 	for _, saved in data.base.structures do
@@ -665,12 +670,7 @@ function BaseService.Upgrade(player: Player)
 	base.level = nextLevel
 	data.base.level = nextLevel
 	buildCrystal(player, base)
-	-- Townsfolk get the extra room to wander.
-	for _, model in base.npcFolder:GetChildren() do
-		if model:IsA("Model") then
-			NpcService.SetArea(model, base.center, math.max(6, radiusOf(base.level) - 5))
-		end
-	end
+	HouseService.Remember(player, base.center, radiusOf(base.level))
 	BaseService.RefreshTownsfolk(player)
 	Remotes.Fx:FireAllClients("BarrierGrow", { position = base.center, radius = tier.radius })
 	if nextLevel >= 3 then
@@ -765,7 +765,9 @@ function BaseService.Load(player: Player)
 		return
 	end
 	local saved = Vector3.new(data.base.x, data.base.y, data.base.z)
-	local ok = validCrystalSpot(player, saved)
+	-- Knock down the houses that were cleared there before checking the spot is free.
+	HouseService.ClearAt(player, saved, radiusOf(data.base.level))
+	local ok = validCrystalSpot(player, saved, true)
 	if ok then
 		createBase(player, saved)
 	else

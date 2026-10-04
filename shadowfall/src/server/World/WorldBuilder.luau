@@ -109,6 +109,13 @@ local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random,
 	local scale = math.max(1, (sizeX * sizeZ) / (360 * 360)) -- clutter grows with the town's area
 	local xLines = streetLines(minX, maxX) -- roads running north-south, at these X
 	local zLines = streetLines(minZ, maxZ) -- roads running east-west, at these Z
+	-- A very small town still gets one street each way through the middle.
+	if #xLines == 0 then
+		xLines = { math.floor((minX + maxX) / 2) }
+	end
+	if #zLines == 0 then
+		zLines = { math.floor((minZ + maxZ) / 2) }
+	end
 
 	B.ground(parent, origin + middle, Vector2.new(sizeX, sizeZ), Color3.new(), Enum.Material.Grass, 24)
 	-- Patchy, overgrown lawns

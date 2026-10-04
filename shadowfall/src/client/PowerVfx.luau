@@ -257,8 +257,10 @@ local function poseArms(character: Model, keyframes)
 			task.wait(frame.time + (frame.hold or 0))
 		end
 		if poseToken[character] == token then
-			tween(right, 0.2, { C0 = restC0[right] })
-			tween(left, 0.2, { C0 = restC0[left] })
+			-- Still blocking (a punch or cast interrupted the guard)? Go back to the guard.
+			local guard = character:GetAttribute("Blocking") == true and PowerVfx.GUARD
+			tween(right, 0.2, { C0 = guard and restC0[right] * CFrame.Angles(-guard.spread, 0, guard.right) or restC0[right] })
+			tween(left, 0.2, { C0 = guard and restC0[left] * CFrame.Angles(-guard.spread, 0, -guard.left) or restC0[left] })
 			if torsoJoint then
 				tween(torsoJoint, 0.2, { C0 = ROOT_REST })
 			end
@@ -266,6 +268,8 @@ local function poseArms(character: Model, keyframes)
 	end)
 end
 PowerVfx.PoseArms = poseArms
+-- Arms up in front of the face while blocking.
+PowerVfx.GUARD = { right = 1.45, left = 1.45, spread = -0.6, time = 0.08 }
 
 local POSES = {
 	projectile = { { right = 1.7, left = 0, time = 0.07, hold = 0.18 } },
