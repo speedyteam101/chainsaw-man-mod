@@ -42,6 +42,13 @@ function B.block(parent: Instance, props: BlockProps): BasePart
 	end
 	if props.floor and B.Floors then
 		p.Parent = B.Floors
+		-- Remember which model owns this floor piece (so a house can be demolished completely).
+		if parent:IsA("Model") then
+			local ref = Instance.new("ObjectValue")
+			ref.Name = "FloorRef"
+			ref.Value = p
+			ref.Parent = parent
+		end
 	else
 		p.Parent = parent
 	end

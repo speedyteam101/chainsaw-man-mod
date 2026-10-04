@@ -172,15 +172,20 @@ local function update()
 		local cf = CFrame.new(position)
 		active.model:PivotTo(cf * CFrame.new(0, 0.75, 0))
 		active.cf = cf
+		-- Same rules as the server (BaseService validCrystalSpot): any unlocked area, away from the
+		-- camp, boss arenas and area entrances.
 		local area = Areas.At(position)
 		local flat = Vector2.new(position.X, position.Z)
-		local arena = Areas.ById.town.boss.arena
-		if not area or area.id ~= "town" then
-			reason = "Must be in Hollow Creek"
+		if not area then
+			reason = "Must be in the shadow world"
+		elseif (player:GetAttribute("Level") or 1) < area.level then
+			reason = area.name .. " needs level " .. area.level
 		elseif flat.Magnitude < Config.Base.MinDistanceFromCamp then
 			reason = "Too close to the camp"
-		elseif (flat - Vector2.new(arena.X, arena.Z)).Magnitude < 55 then
-			reason = "Too close to the churchyard"
+		elseif (flat - Vector2.new(area.boss.arena.X, area.boss.arena.Z)).Magnitude < 60 then
+			reason = "Too close to the boss arena"
+		elseif (flat - Vector2.new(area.spawn.X, area.spawn.Z)).Magnitude < 30 or (area.gateX and math.abs(position.X - area.gateX) < 30) then
+			reason = "Too close to the gate"
 		elseif overlapBlocked(cf * CFrame.new(0, 5.5, 0), Vector3.new(5.6, 10, 5.6)) then
 			reason = "Something is in the way"
 		end

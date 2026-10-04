@@ -13,7 +13,6 @@ local Audio = require(script.Parent.Audio)
 local CameraFx = require(script.Parent.CameraFx)
 local PowerVfx = require(script.Parent.PowerVfx)
 local VfxKit = require(script.Parent.VfxKit)
-local ShadowRig = require(ReplicatedStorage.Shared.ShadowRig)
 
 local Fx = {}
 
@@ -112,29 +111,6 @@ end
 
 local function rootOf(character: Instance?)
 	return character and character:FindFirstChild("HumanoidRootPart")
-end
-
--- Briefly swings a classic R6 arm (no-op for R15 avatars).
-local function swingArm(character: Model, right: boolean)
-	local torso = character:FindFirstChild("Torso")
-	local joint = torso and torso:FindFirstChild(right and "Right Shoulder" or "Left Shoulder")
-	if not joint or not joint:IsA("Motor6D") then
-		return
-	end
-	if joint:GetAttribute("Swinging") then
-		return
-	end
-	joint:SetAttribute("Swinging", true)
-	local base = ShadowRig.R6RestC0[joint.Name] or joint.C0
-	local angle = right and math.rad(95) or math.rad(-95)
-	Ui.tween(joint, 0.07, { C0 = base * CFrame.Angles(0, 0, angle) })
-	task.delay(0.16, function()
-		Ui.tween(joint, 0.12, { C0 = base })
-		task.delay(0.13, function()
-			joint.C0 = base
-			joint:SetAttribute("Swinging", nil)
-		end)
-	end)
 end
 
 local function afterimage(character: Model, color: Color3)
@@ -276,23 +252,102 @@ function handlers.Ultimate(d)
 	end)
 end
 
+-- The basic attack: a four-hit boxing combo. Jab (left), cross (right), hook (left), and a
+-- rising uppercut finisher (right). Each strike snaps out, twists the torso into it (seen by
+-- other players), leaves a short streak behind the fist, and settles back into a guard.
+local GUARD = { right = 0.95, left = 0.95, spread = -0.38, time = 0.1, hold = 0.35 }
+local COMBO = {
+	{ -- jab
+		{ left = 1.72, right = 0.95, leftSpread = -0.08, rightSpread = -0.38, time = 0.05, hold = 0.05, twist = 0.28, style = Enum.EasingStyle.Back },
+		GUARD,
+	},
+	{ -- cross
+		{ right = 1.75, left = 0.9, rightSpread = -0.12, leftSpread = -0.38, time = 0.05, hold = 0.05, twist = -0.42, lean = 0.06, style = Enum.EasingStyle.Back },
+		GUARD,
+	},
+	{ -- hook: wind out, then sweep across
+		{ left = 1.35, right = 0.95, leftSpread = 0.65, rightSpread = -0.38, time = 0.05, twist = -0.15 },
+		{ left = 1.5, right = 0.95, leftSpread = -0.75, rightSpread = -0.38, time = 0.06, hold = 0.05, twist = 0.62 },
+		GUARD,
+	},
+	{ -- uppercut: dip, then drive up
+		{ right = -0.35, left = 1.0, rightSpread = 0.1, leftSpread = -0.4, time = 0.07, lean = 0.22, twist = -0.25 },
+		{ right = 2.85, left = 0.6, rightSpread = -0.1, leftSpread = -0.3, time = 0.07, hold = 0.14, lean = -0.12, twist = 0.3, style = Enum.EasingStyle.Back },
+	},
+}
+
+-- A short streak behind the striking fist.
+local function fistTrail(character: Model, right: boolean, color: Color3)
+	local arm = character:FindFirstChild(right and "Right Arm" or "Left Arm")
+	if not arm or not arm:IsA("BasePart") then
+		return
+	end
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, -1, 0)
+	a0.Parent = arm
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, -0.35, 0)
+	a1.Parent = arm
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Lifetime = 0.14
+	trail.Color = ColorSequence.new(Color3.new(1, 1, 1), color)
+	trail.Transparency = NumberSequence.new(0.35, 1)
+	trail.LightEmission = 0.6
+	trail.FaceCamera = true
+	trail.Parent = arm
+	task.delay(0.32, function()
+		trail.Enabled = false
+		task.delay(0.2, function()
+			trail:Destroy()
+			a0:Destroy()
+			a1:Destroy()
+		end)
+	end)
+end
+
 function handlers.Swing(d)
 	local character = d.character
 	local root = rootOf(character)
 	if not root then
 		return
 	end
-	swingArm(character, d.combo % 2 == 1)
-	local arcCf = root.CFrame * CFrame.new(0, 0.5, -3.2) * CFrame.Angles(0, 0, math.rad(d.combo % 2 == 1 and -35 or 35))
-	local arc = part({ Size = Vector3.new(5, 0.15, 1.2), CFrame = arcCf, Color = d.color or Color3.new(1, 1, 1), Transparency = 0.3 })
-	fade(arc, 0.15, Vector3.new(7, 0.05, 2))
-	if d.combo == 4 then
-		ring(root.Position + root.CFrame.LookVector * 4, 4, d.color or Color3.new(1, 1, 1), 0.25)
+	local combo = math.clamp(d.combo or 1, 1, 4)
+	local color = d.color or Color3.new(1, 1, 1)
+	local right = combo % 2 == 0
+	PowerVfx.PoseArms(character, COMBO[combo])
+	task.delay(0.02, fistTrail, character, right, color)
+	-- The strike's arc in the air.
+	local reach = root.CFrame * CFrame.new(right and 0.6 or -0.6, 0.5, -3.2)
+	if combo == 3 then
+		local arc = part({ Size = Vector3.new(6, 0.12, 1.4), CFrame = root.CFrame * CFrame.new(0, 0.6, -3) * CFrame.Angles(0, 0, math.rad(8)), Color = color, Transparency = 0.35 })
+		fade(arc, 0.18, Vector3.new(8, 0.04, 2.2))
+	elseif combo == 4 then
+		local arc = part({ Size = Vector3.new(0.12, 6, 1.4), CFrame = root.CFrame * CFrame.new(0.5, 1, -3), Color = color, Transparency = 0.3 })
+		fade(arc, 0.2, Vector3.new(0.04, 9, 2.4))
+		ring(root.Position + root.CFrame.LookVector * 4, 4.5, color, 0.25)
+		VfxKit.DustRing(root.Position - Vector3.new(0, 2.6, 0) + root.CFrame.LookVector * 2, 6, Color3.fromRGB(130, 120, 110))
+	else
+		local streak = part({ Size = Vector3.new(0.5, 0.5, 3.2), CFrame = reach, Color = color, Transparency = 0.45 })
+		fade(streak, 0.12, Vector3.new(0.1, 0.1, 5))
 	end
 	if character == player.Character then
-		CameraFx.Kick(d.combo == 4 and 0.35 or 0.12)
+		CameraFx.Kick(combo == 4 and 0.4 or (combo == 3 and 0.2 or 0.12))
 	end
 end
+
+-- Guard up while blocking (watched for every character, so everyone sees it).
+local function watchBlocking(character: Model)
+	character:GetAttributeChangedSignal("Blocking"):Connect(function()
+		if character:GetAttribute("Blocking") then
+			PowerVfx.PoseArms(character, { { right = 1.45, left = 1.45, spread = -0.6, time = 0.08, hold = 600, lean = 0.05 } })
+		else
+			PowerVfx.PoseArms(character, { { right = 0.9, left = 0.9, spread = -0.3, time = 0.08 } })
+		end
+	end)
+end
+Fx.WatchBlocking = watchBlocking
 
 function handlers.Evade(d)
 	local character = d.character
@@ -334,6 +389,7 @@ end
 function handlers.Dodge(d)
 	if d.character then
 		afterimage(d.character, Color3.fromRGB(120, 120, 160))
+		PowerVfx.PoseArms(d.character, { { right = -0.5, left = -0.5, spread = 0.35, time = 0.05, hold = 0.22, lean = 0.3 } })
 	end
 end
 
@@ -580,6 +636,24 @@ local function dissolve(model: Model, color: Color3?, time: number)
 	end
 end
 
+-- A house coming down: a rolling wall of dust, splinters and rubble.
+function handlers.Demolish(d)
+	local position = d.position
+	local size = d.size or Vector3.new(20, 12, 20)
+	local ground = VfxKit.Ground(position, size.Y + 10)
+	local base = ground and ground.position or position - Vector3.new(0, size.Y / 2, 0)
+	local reach = math.max(size.X, size.Z)
+	VfxKit.Smoke(base + Vector3.new(0, 3, 0), reach * 0.35, Color3.fromRGB(140, 128, 116), 26, 2, 4)
+	VfxKit.DustRing(base, reach * 1.2, Color3.fromRGB(150, 138, 124))
+	VfxKit.Rubble(base + Vector3.new(0, 2, 0), 18, 26, Enum.Material.WoodPlanks, Color3.fromRGB(110, 84, 60))
+	VfxKit.Rubble(base + Vector3.new(0, 2, 0), 10, 20, Enum.Material.Concrete, Color3.fromRGB(120, 116, 110))
+	task.delay(0.6, function()
+		VfxKit.Smoke(base + Vector3.new(0, 1, 0), reach * 0.45, Color3.fromRGB(120, 110, 100), 18, 1, 5)
+	end)
+	CameraFx.ShakeAt(base, 0.8)
+	Audio.Play("Build", 0.8, 0.6, base)
+end
+
 function handlers.Dissolve(d)
 	local root = d.model and d.model.PrimaryPart
 	if root then
@@ -673,6 +747,16 @@ function Fx.Start()
 
 	PowerVfx.SetFolder(folder)
 	VfxKit.Start()
+	local function watchPlayer(other: Player)
+		if other.Character then
+			watchBlocking(other.Character)
+		end
+		other.CharacterAdded:Connect(watchBlocking)
+	end
+	for _, other in Players:GetPlayers() do
+		watchPlayer(other)
+	end
+	Players.PlayerAdded:Connect(watchPlayer)
 	Remotes.Fx.OnClientEvent:Connect(function(kind, data)
 		local handler = handlers[kind]
 		if handler then

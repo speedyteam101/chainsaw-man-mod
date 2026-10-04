@@ -130,12 +130,8 @@ end
 local function scatter(world, folder: Folder)
 	local sampler = Random.new(4242)
 	local function region(area)
-		local minX = (area.gateX or area.minX) + 14
-		local maxX = area.maxX - 6
-		if area.id == "town" then
-			minX, maxX = -172, 172
-		end
-		return Vector3.new(minX, 0, -165), Vector3.new(maxX, 0, 165)
+		local b = area.bounds
+		return Vector3.new(b.minX + 6, 0, b.minZ + 6), Vector3.new(b.maxX - 6, 0, b.maxZ - 6)
 	end
 	local function avoidFor(area)
 		local avoid = { { at = area.boss.arena, r = 45 }, { at = area.spawn, r = 20 } }
@@ -145,10 +141,10 @@ local function scatter(world, folder: Folder)
 		return avoid
 	end
 	local plan = {
-		town = { { "Rock", 22 }, { "Crate", 24 } },
-		woods = { { "Rock", 26 }, { "Crate", 8 } },
-		rift = { { "Rock", 10 } },
-		cathedral = { { "Rubble", 24 }, { "Crate", 12 } },
+		town = { { "Rock", 60 }, { "Crate", 70 } },
+		woods = { { "Rock", 55 }, { "Crate", 18 } },
+		rift = { { "Rock", 22 } },
+		cathedral = { { "Rubble", 50 }, { "Crate", 26 } },
 		heart = { { "Obsidian", 20 }, { "Rubble", 8 } },
 	}
 	for _, area in Areas.List do

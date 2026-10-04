@@ -15,6 +15,8 @@
 -- Every detail is placed relative to its limb, so poses (Build's `pose` option) carry them along.
 -- The head mesh is about 1.2 studs across; if a face feature looks slightly off, nudge it here.
 
+local CollectionService = game:GetService("CollectionService")
+
 local Looks = require(script.Parent.Looks)
 
 local Figure = {}
@@ -292,6 +294,85 @@ function Figure.Dress(character: Model, spec)
 	end
 	holder.Parent = character
 	return holder
+end
+
+-- A living, walking figure: the same person as Build, but as a real R6-jointed rig with a
+-- Humanoid so it can walk around (NpcService) and be animated (VillagerAnimator on the client).
+-- spec.cf = where the feet stand.
+function Figure.BuildRig(spec): (Model, { [string]: BasePart }, Humanoid)
+	local model = Instance.new("Model")
+	model.Name = spec.name or "Person"
+	local skin = spec.skin or Color3.fromRGB(225, 185, 150)
+	local shirt = spec.shirt or Color3.fromRGB(70, 90, 130)
+	local pants = spec.pants or Color3.fromRGB(45, 45, 55)
+	local rootCf = spec.cf * CFrame.new(0, 3, 0)
+	local function limb(name: string, size: Vector3, offset: CFrame, color: Color3): Part
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Size = size
+		p.CFrame = rootCf * offset
+		p.Color = color
+		p.Material = name == "Head" and Enum.Material.SmoothPlastic or Enum.Material.Fabric
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Massless = true
+		p.TopSurface = Enum.SurfaceType.Smooth
+		p.BottomSurface = Enum.SurfaceType.Smooth
+		p.Parent = model
+		return p
+	end
+	local root = limb("HumanoidRootPart", Vector3.new(2, 2, 1), CFrame.new(), Color3.new())
+	root.Transparency = 1
+	root.CanCollide = true
+	root.Massless = false
+	local parts = {
+		HumanoidRootPart = root,
+		Torso = limb("Torso", SIZES.Torso, CFrame.new(), shirt),
+		Head = limb("Head", SIZES.Head, CFrame.new(0, 1.5, 0), skin),
+		["Left Arm"] = limb("Left Arm", SIZES["Left Arm"], CFrame.new(-1.5, 0, 0), spec.sleeves == false and skin or shirt),
+		["Right Arm"] = limb("Right Arm", SIZES["Right Arm"], CFrame.new(1.5, 0, 0), spec.sleeves == false and skin or shirt),
+		["Left Leg"] = limb("Left Leg", SIZES["Left Leg"], CFrame.new(-0.5, -2, 0), pants),
+		["Right Leg"] = limb("Right Leg", SIZES["Right Leg"], CFrame.new(0.5, -2, 0), pants),
+	}
+	local mesh = Instance.new("SpecialMesh")
+	mesh.MeshType = Enum.MeshType.Head
+	mesh.Scale = Vector3.new(1.25, 1.25, 1.25)
+	mesh.Parent = parts.Head
+	-- The standard R6 joints (same C0/C1 as a Roblox R6 character).
+	local function motor(name: string, part0: BasePart, part1: BasePart, c0: CFrame, c1: CFrame)
+		local m = Instance.new("Motor6D")
+		m.Name = name
+		m.Part0 = part0
+		m.Part1 = part1
+		m.C0 = c0
+		m.C1 = c1
+		m.Parent = part0
+	end
+	motor("RootJoint", root, parts.Torso, CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0), CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0))
+	motor("Neck", parts.Torso, parts.Head, CFrame.new(0, 1, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0), CFrame.new(0, -0.5, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0))
+	motor("Right Shoulder", parts.Torso, parts["Right Arm"], CFrame.new(1, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0), CFrame.new(-0.5, 0.5, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0))
+	motor("Left Shoulder", parts.Torso, parts["Left Arm"], CFrame.new(-1, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0), CFrame.new(0.5, 0.5, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0))
+	motor("Right Hip", parts.Torso, parts["Right Leg"], CFrame.new(1, -1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0), CFrame.new(0.5, 1, 0, 0, 0, 1, 0, 1, 0, -1, 0, 0))
+	motor("Left Hip", parts.Torso, parts["Left Leg"], CFrame.new(-1, -1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0), CFrame.new(-0.5, 1, 0, 0, 0, -1, 0, 1, 0, 1, 0, 0))
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.RigType = Enum.HumanoidRigType.R15 -- R15 so HipHeight is honoured exactly (as ShadowRig does)
+	humanoid.HipHeight = 2
+	humanoid.WalkSpeed = spec.walkSpeed or 7
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+	humanoid.BreakJointsOnDeath = false
+	humanoid.RequiresNeck = false
+	for _, stateType in { Enum.HumanoidStateType.FallingDown, Enum.HumanoidStateType.Ragdoll, Enum.HumanoidStateType.Climbing, Enum.HumanoidStateType.Seated, Enum.HumanoidStateType.Dead } do
+		humanoid:SetStateEnabled(stateType, false)
+	end
+	humanoid.Parent = model
+	model.PrimaryPart = root
+
+	Figure.Dress(model, spec)
+	CollectionService:AddTag(model, "Villager")
+	return model, parts, humanoid
 end
 
 -- Turns a saved look (Looks.luau indexes) into a Figure spec.

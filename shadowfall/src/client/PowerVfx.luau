@@ -220,12 +220,26 @@ local function joints(character: Model)
 	return right, left
 end
 
--- angles: forward swing for each arm, plus sideways spread
+-- The torso joint, for twisting into punches and leaning. Only used on other players' characters
+-- (and NPCs): on your own, it would swing your first-person camera around.
+local ROOT_REST = CFrame.new(0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 1, 0)
+local function rootJoint(character: Model): Motor6D?
+	if character == Players.LocalPlayer.Character then
+		return nil
+	end
+	local root = character:FindFirstChild("HumanoidRootPart")
+	local joint = root and root:FindFirstChild("RootJoint")
+	return joint and joint:IsA("Motor6D") and joint or nil
+end
+
+-- keyframes: { right, left = forward swing of each arm; spread = outward (+) / across the chest
+-- (-); twist = torso turn (+ = turns left); lean = forward lean; time; hold; style }
 local function poseArms(character: Model, keyframes)
 	local right, left = joints(character)
 	if not right then
 		return
 	end
+	local torsoJoint = rootJoint(character)
 	poseToken[character] = (poseToken[character] or 0) + 1
 	local token = poseToken[character]
 	task.spawn(function()
@@ -234,16 +248,24 @@ local function poseArms(character: Model, keyframes)
 				return
 			end
 			local spread = frame.spread or 0
-			tween(right, frame.time, { C0 = restC0[right] * CFrame.Angles(-spread, 0, frame.right) }, Enum.EasingStyle.Quad)
-			tween(left, frame.time, { C0 = restC0[left] * CFrame.Angles(-spread, 0, -frame.left) }, Enum.EasingStyle.Quad)
+			local style = frame.style or Enum.EasingStyle.Quad
+			tween(right, frame.time, { C0 = restC0[right] * CFrame.Angles(-(frame.rightSpread or spread), 0, frame.right) }, style)
+			tween(left, frame.time, { C0 = restC0[left] * CFrame.Angles(-(frame.leftSpread or spread), 0, -frame.left) }, style)
+			if torsoJoint then
+				tween(torsoJoint, frame.time, { C0 = ROOT_REST * CFrame.Angles(frame.lean or 0, 0, frame.twist or 0) }, style)
+			end
 			task.wait(frame.time + (frame.hold or 0))
 		end
 		if poseToken[character] == token then
 			tween(right, 0.2, { C0 = restC0[right] })
 			tween(left, 0.2, { C0 = restC0[left] })
+			if torsoJoint then
+				tween(torsoJoint, 0.2, { C0 = ROOT_REST })
+			end
 		end
 	end)
 end
+PowerVfx.PoseArms = poseArms
 
 local POSES = {
 	projectile = { { right = 1.7, left = 0, time = 0.07, hold = 0.18 } },

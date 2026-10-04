@@ -42,7 +42,7 @@ local function defaults()
 		inventory = {}, -- [materialId] = count
 		items = {}, -- [recipeId] = count (tools/gear: 1, consumables: stack)
 		rescued = {}, -- [townsfolkId] = true
-		base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} },
+		base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {}, cleared = {} },
 		story = { chapter = 1, seen = {}, pages = {} },
 		tokens = 0,
 		essenceTraded = 0, -- lifetime Essence traded for Tokens (the newcomer rate uses this)

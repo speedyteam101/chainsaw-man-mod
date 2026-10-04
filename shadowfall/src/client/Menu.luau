@@ -425,7 +425,7 @@ function render.Build()
 		if ClientState.basePlaced then
 			paragraph("Your old base spot is taken. Place your crystal somewhere new and everything you built will move with it.", T.Gold)
 		else
-			paragraph("You don't have a base yet. Place your Base Crystal anywhere in Hollow Creek (away from the camp). It raises a barrier the shadows can't cross, and you can only build inside it.")
+			paragraph("You don't have a base yet. Place your Base Crystal anywhere in an area you've unlocked: the town, the Woods, the Rift, the Cathedral (away from the camp, boss arenas and gates). Houses in the way? Hold E on one to demolish it. It raises a barrier the shadows can't cross, and you can only build inside it.")
 		end
 		add(Ui.button("PLACE BASE CRYSTAL", { Size = UDim2.new(1, 0, 0, 48), Font = T.Title, TextSize = 20, BackgroundColor3 = Color3.fromRGB(30, 60, 80) }, function()
 			Menu.Close()

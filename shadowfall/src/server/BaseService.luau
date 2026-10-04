@@ -1,5 +1,5 @@
 --!nonstrict
--- Player bases. You place one Base Crystal in Hollow Creek; it raises a barrier shadows can't
+-- Player bases. You place one Base Crystal anywhere in an unlocked area; it raises a barrier shadows can't
 -- cross. Inside the barrier you place holographic blueprints and fill them with materials until
 -- they become real buildings. Upgrading the crystal grows the barrier (and your buildable area).
 -- Rescued townsfolk live at your base. Bases are saved relative to the crystal, so if your old
@@ -22,6 +22,8 @@ local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
 local AchievementService = require(script.Parent.AchievementService)
+local HouseService = require(script.Parent.HouseService)
+local NpcService = require(script.Parent.NpcService)
 
 local BaseService = {}
 
@@ -358,9 +360,17 @@ end
 
 -- Townsfolk at your base --------------------------------------------------------------------
 
-local function buildPerson(person, cf: CFrame, parent: Instance)
-	local model = Instance.new("Model")
-	model.Name = person.name
+local function roleOf(person): string
+	if table.find(person.roles, "Blacksmith") then
+		return "blacksmith"
+	elseif table.find(person.roles, "Carpenter") then
+		return "carpenter"
+	end
+	return "townsfolk"
+end
+
+-- A rescued townsperson: a living rig that wanders inside your barrier (NpcService).
+local function buildPerson(person, cf: CFrame, parent: Instance): Model
 	local blacksmith = table.find(person.roles, "Blacksmith") ~= nil
 	local carpenter = table.find(person.roles, "Carpenter") ~= nil
 	local spec = Figure.SpecFor(person.id, {
@@ -370,33 +380,33 @@ local function buildPerson(person, cf: CFrame, parent: Instance)
 	})
 	spec.cf = cf
 	spec.name = person.name
-	local built, parts = Figure.Build(spec)
-	for _, child in built:GetChildren() do
-		child.Parent = model
-	end
-	built:Destroy()
-	model.PrimaryPart = parts.Torso
+	local model, parts = Figure.BuildRig(spec)
 	local torso = parts.Torso
+	-- Tools held in the right hand (welded, so they swing with the arm).
+	local hand = parts["Right Arm"]
 	local function prop(name: string, size: Vector3, offset: CFrame, color: Color3, material: Enum.Material)
 		local p = Instance.new("Part")
 		p.Name = name
 		p.Size = size
-		p.CFrame = cf * offset
+		p.CFrame = hand.CFrame * offset
 		p.Color = color
 		p.Material = material
-		p.Anchored = true
 		p.CanCollide = false
 		p.CanQuery = false
 		p.CanTouch = false
+		p.Massless = true
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = hand
+		weld.Part1 = p
+		weld.Parent = p
 		p.Parent = model
 	end
 	if carpenter then
-		-- A hammer hanging from the hand.
-		prop("HammerHandle", Vector3.new(0.22, 1.5, 0.22), CFrame.new(1.5, 1.6, -0.55), Color3.fromRGB(120, 86, 52), Enum.Material.Wood)
-		prop("HammerHead", Vector3.new(0.35, 0.35, 0.8), CFrame.new(1.5, 0.9, -0.55), Color3.fromRGB(90, 90, 96), Enum.Material.Metal)
+		prop("HammerHandle", Vector3.new(0.22, 0.22, 1.5), CFrame.new(0, -1.05, -0.6), Color3.fromRGB(120, 86, 52), Enum.Material.Wood)
+		prop("HammerHead", Vector3.new(0.35, 0.8, 0.35), CFrame.new(0, -1.05, -1.3), Color3.fromRGB(90, 90, 96), Enum.Material.Metal)
 	end
 	if blacksmith then
-		prop("Tongs", Vector3.new(0.12, 1.6, 0.12), CFrame.new(1.5, 1.5, -0.55) * CFrame.Angles(0, 0, math.rad(8)), Color3.fromRGB(60, 60, 64), Enum.Material.Metal)
+		prop("Tongs", Vector3.new(0.12, 0.12, 1.6), CFrame.new(0, -1.05, -0.7), Color3.fromRGB(60, 60, 64), Enum.Material.Metal)
 	end
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 38)
@@ -441,7 +451,8 @@ function BaseService.RefreshTownsfolk(player: Player)
 	for index, person in rescued do
 		local angle = index / math.max(#rescued, 1) * math.pi * 2 + 0.4
 		local spot = base.center + Vector3.new(math.cos(angle), 0, math.sin(angle)) * 9
-		buildPerson(person, CFrame.lookAt(spot, Vector3.new(base.center.X, spot.Y, base.center.Z)), base.npcFolder)
+		local model = buildPerson(person, CFrame.lookAt(spot, Vector3.new(base.center.X, spot.Y, base.center.Z)), base.npcFolder)
+		NpcService.Register(model, { home = base.center, radius = math.max(6, radiusOf(base.level) - 5), role = roleOf(person) })
 	end
 end
 
@@ -489,16 +500,25 @@ local function buildCrystal(player: Player, base)
 end
 
 local function validCrystalSpot(player: Player, position: Vector3): (boolean, string?, Vector3?)
+	-- Anywhere in any area you've unlocked, except the camp, boss arenas and area entrances.
 	local area = Areas.At(position)
-	if not area or area.id ~= "town" then
-		return false, "Your base crystal has to go in Hollow Creek."
+	local data = PlayerData.Get(player)
+	if not area then
+		return false, "Your base has to be in the shadow world."
+	end
+	if data and data.level < area.level then
+		return false, area.name .. " needs level " .. area.level .. "."
 	end
 	if Vector2.new(position.X, position.Z).Magnitude < BC.MinDistanceFromCamp then
 		return false, "Too close to the camp. Move further out."
 	end
+	local flat = Vector2.new(position.X, position.Z)
 	local arena = area.boss.arena
-	if (Vector2.new(position.X, position.Z) - Vector2.new(arena.X, arena.Z)).Magnitude < 55 then
-		return false, "The Warden's churchyard is no place for a home."
+	if (flat - Vector2.new(arena.X, arena.Z)).Magnitude < 60 then
+		return false, "Too close to where " .. area.name .. "'s guardian waits."
+	end
+	if (flat - Vector2.new(area.spawn.X, area.spawn.Z)).Magnitude < 30 or (area.gateX and math.abs(position.X - area.gateX) < 30) then
+		return false, "Don't block the way in. Move away from the gate."
 	end
 	for other, base in bases do
 		if other ~= player and (Vector2.new(position.X, position.Z) - Vector2.new(base.center.X, base.center.Z)).Magnitude < BC.MinDistanceBetweenCrystals then
@@ -533,6 +553,8 @@ local function createBase(player: Player, center: Vector3)
 	npcFolder.Parent = folder
 	local base = { owner = player, center = center, level = data.base.level, folder = folder, npcFolder = npcFolder, structures = {}, nextId = 0 }
 	bases[player] = base
+	-- Houses this player demolished at their base stay down.
+	HouseService.ClearForBase(player)
 	buildCrystal(player, base)
 	-- Rebuild saved structures relative to the crystal.
 	for _, saved in data.base.structures do
@@ -643,6 +665,12 @@ function BaseService.Upgrade(player: Player)
 	base.level = nextLevel
 	data.base.level = nextLevel
 	buildCrystal(player, base)
+	-- Townsfolk get the extra room to wander.
+	for _, model in base.npcFolder:GetChildren() do
+		if model:IsA("Model") then
+			NpcService.SetArea(model, base.center, math.max(6, radiusOf(base.level) - 5))
+		end
+	end
 	BaseService.RefreshTownsfolk(player)
 	Remotes.Fx:FireAllClients("BarrierGrow", { position = base.center, radius = tier.radius })
 	if nextLevel >= 3 then
@@ -667,6 +695,7 @@ function BaseService.Abandon(player: Player)
 	BaseService.Unload(player)
 	data.base.placed = false
 	data.base.structures = {}
+	data.base.cleared = {}
 	syncAttributes(player)
 	PlayerData.Sync(player)
 	return { ok = true }

@@ -30,7 +30,6 @@ function WorldBuilder.GroundFilter(world)
 	return { world.floors, workspace.Terrain }
 end
 
-local STREETS = { -100, 0, 100 }
 
 type Reserved = { { at: Vector2, r: number } }
 
@@ -43,9 +42,42 @@ local function isReserved(reserved: Reserved, x: number, z: number, pad: number)
 	return false
 end
 
-local function nearestStreetDistance(value: number): (number, number)
+-- Street names, from the middle of town outwards.
+local EAST_WEST_NAMES = { [0] = "Main St", [-100] = "Elm St", [100] = "Oak St", [-200] = "Birch St", [200] = "Cedar St", [-300] = "Maple St", [300] = "Willow St", [-400] = "Ash St", [400] = "Hawthorn St" }
+local NORTH_SOUTH_NAMES = { [0] = "Church Rd", [-100] = "1st Ave", [100] = "Mill Rd", [-200] = "2nd Ave", [200] = "Quarry Rd", [-300] = "3rd Ave", [300] = "River Rd", [-400] = "4th Ave", [-500] = "5th Ave", [400] = "Old Post Rd" }
+
+-- Street lines every 100 studs that fit inside [min, max] with room for houses at the edge.
+local function streetLines(min: number, max: number): { number }
+	local lines = {}
+	for line = math.ceil((min + 40) / 100) * 100, max - 40, 100 do
+		table.insert(lines, line)
+	end
+	return lines
+end
+
+-- House plots along one axis: two per block between streets, and as many as fit at the edges.
+local function plotCoords(lines: { number }, min: number, max: number): { number }
+	local coords = {}
+	for i = 1, #lines - 1 do
+		table.insert(coords, lines[i] + 30)
+		table.insert(coords, lines[i + 1] - 30)
+	end
+	local c = lines[1] - 28
+	while c > min + 16 do
+		table.insert(coords, c)
+		c -= 34
+	end
+	c = lines[#lines] + 28
+	while c < max - 16 do
+		table.insert(coords, c)
+		c += 34
+	end
+	return coords
+end
+
+local function nearestLine(value: number, lines: { number }): (number, number)
 	local best, bestLine = math.huge, 0
-	for _, line in STREETS do
+	for _, line in lines do
 		local d = math.abs(value - line)
 		if d < best then
 			best, bestLine = d, line
@@ -54,30 +86,49 @@ local function nearestStreetDistance(value: number): (number, number)
 	return best, bestLine
 end
 
-local STREET_NAMES_X = { [-100] = "Elm St", [0] = "Main St", [100] = "Oak St" }
-local STREET_NAMES_Z = { [-100] = "1st Ave", [0] = "Church Rd", [100] = "Mill Rd" }
+-- Gaps between crossings along a road (so lane marks stop at intersections).
+local function segmentsAlong(crossings: { number }, min: number, max: number)
+	local segments = {}
+	local start = min
+	for _, c in crossings do
+		table.insert(segments, { start, c - 14 })
+		start = c + 14
+	end
+	table.insert(segments, { start, max })
+	return segments
+end
 
--- Lays out a 3x3 street grid with houses in the blocks. Coordinates are relative to `origin`.
--- The town sits on a thick slab of real terrain (grass lawns, rock cliffs where it was torn out of
--- the ground) with asphalt streets, painted lines, sidewalks, crosswalks, street lamps, power
--- lines, hydrants, bins and street signs.
-local function buildTown(parent: Instance, origin: Vector3, half: number, rng: Random, options)
+-- Lays out a street grid with houses in the blocks. `bounds` (relative to `origin`) is
+-- { minX, maxX, minZ, maxZ }. Streets run every 100 studs. The town sits on a thick slab of real
+-- terrain (grass lawns, rock cliffs where it was torn out of the ground).
+local function buildTown(parent: Instance, origin: Vector3, bounds, rng: Random, options)
 	local reserved: Reserved = options.reserved or {}
-	B.ground(parent, origin, Vector2.new(half * 2, half * 2), Color3.new(), Enum.Material.Grass, 24)
+	local minX, maxX, minZ, maxZ = bounds.minX, bounds.maxX, bounds.minZ, bounds.maxZ
+	local sizeX, sizeZ = maxX - minX, maxZ - minZ
+	local middle = Vector3.new((minX + maxX) / 2, 0, (minZ + maxZ) / 2)
+	local scale = math.max(1, (sizeX * sizeZ) / (360 * 360)) -- clutter grows with the town's area
+	local xLines = streetLines(minX, maxX) -- roads running north-south, at these X
+	local zLines = streetLines(minZ, maxZ) -- roads running east-west, at these Z
+
+	B.ground(parent, origin + middle, Vector2.new(sizeX, sizeZ), Color3.new(), Enum.Material.Grass, 24)
 	-- Patchy, overgrown lawns
-	for _ = 1, 24 do
-		local p = origin + Vector3.new(rng:NextNumber(-half, half), -1, rng:NextNumber(-half, half))
+	for _ = 1, math.floor(24 * scale) do
+		local p = origin + Vector3.new(rng:NextNumber(minX, maxX), -1, rng:NextNumber(minZ, maxZ))
 		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(12, 30), 2, rng:NextNumber(12, 30)), Enum.Material.LeafyGrass)
 	end
 
-	-- Streets: asphalt, a dashed centre line, and gaps for crossings
-	local segments = { { -half, -114 }, { -86, -14 }, { 14, 86 }, { 114, half } }
-	for _, line in STREETS do
-		B.road(parent, origin + Vector3.new(-half, 0, line), origin + Vector3.new(half, 0, line), 20)
-		B.road(parent, origin + Vector3.new(line, 0, -half), origin + Vector3.new(line, 0, half), 20)
-		for _, seg in segments do
-			for along = seg[1] + 3, seg[2] - 3, 10 do
-				for _, alongX in { true, false } do
+	-- Streets: asphalt, a dashed centre line, sidewalks, and gaps for crossings.
+	local function street(alongX: boolean, line: number)
+		local from, to = if alongX then minX else minZ, if alongX then maxX else maxZ
+		local crossings = if alongX then xLines else zLines
+		if alongX then
+			B.road(parent, origin + Vector3.new(from, 0, line), origin + Vector3.new(to, 0, line), 20)
+		else
+			B.road(parent, origin + Vector3.new(line, 0, from), origin + Vector3.new(line, 0, to), 20)
+		end
+		for _, seg in segmentsAlong(crossings, from, to) do
+			if seg[2] - seg[1] > 4 then
+				for along = seg[1] + 3, seg[2] - 3, 10 do
 					local x, z = if alongX then along else line, if alongX then line else along
 					B.block(parent, {
 						name = "LaneMark",
@@ -88,19 +139,27 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 						collide = false,
 					})
 				end
-			end
-			-- Sidewalks on both sides of each street
-			local length = seg[2] - seg[1]
-			local mid = (seg[1] + seg[2]) / 2
-			for _, side in { -1, 1 } do
-				B.block(parent, { name = "Sidewalk", size = Vector3.new(length, 0.7, 4), cf = CFrame.new(origin + Vector3.new(mid, 0.35, line + side * 12)), color = Color3.fromRGB(122, 120, 116), material = Enum.Material.Concrete, floor = true })
-				B.block(parent, { name = "Sidewalk", size = Vector3.new(4, 0.7, length), cf = CFrame.new(origin + Vector3.new(line + side * 12, 0.35, mid)), color = Color3.fromRGB(122, 120, 116), material = Enum.Material.Concrete, floor = true })
+				local length = seg[2] - seg[1]
+				local mid = (seg[1] + seg[2]) / 2
+				for _, side in { -1, 1 } do
+					if alongX then
+						B.block(parent, { name = "Sidewalk", size = Vector3.new(length, 0.7, 4), cf = CFrame.new(origin + Vector3.new(mid, 0.35, line + side * 12)), color = Color3.fromRGB(122, 120, 116), material = Enum.Material.Concrete, floor = true })
+					else
+						B.block(parent, { name = "Sidewalk", size = Vector3.new(4, 0.7, length), cf = CFrame.new(origin + Vector3.new(line + side * 12, 0.35, mid)), color = Color3.fromRGB(122, 120, 116), material = Enum.Material.Concrete, floor = true })
+					end
+				end
 			end
 		end
 	end
+	for _, line in zLines do
+		street(true, line)
+	end
+	for _, line in xLines do
+		street(false, line)
+	end
 	-- Sidewalk corners and crosswalks at every intersection
-	for _, lx in STREETS do
-		for _, lz in STREETS do
+	for _, lx in xLines do
+		for _, lz in zLines do
 			for _, sx in { -1, 1 } do
 				for _, sz in { -1, 1 } do
 					B.block(parent, { name = "Corner", size = Vector3.new(4, 0.7, 4), cf = CFrame.new(origin + Vector3.new(lx + sx * 12, 0.35, lz + sz * 12)), color = Color3.fromRGB(122, 120, 116), material = Enum.Material.Concrete, floor = true })
@@ -113,28 +172,23 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 				end
 			end
 			if not isReserved(reserved, lx + 13, lz + 13, 1) then
-				B.streetSign(parent, origin + Vector3.new(lx + 13, 0.7, lz + 13), STREET_NAMES_X[lz] .. " / " .. STREET_NAMES_Z[lx], rng)
+				B.streetSign(parent, origin + Vector3.new(lx + 13, 0.7, lz + 13), (EAST_WEST_NAMES[lz] or "Back Ln") .. " / " .. (NORTH_SOUTH_NAMES[lx] or "Farm Rd"), rng)
 			end
 		end
 	end
-	for _ = 1, 8 do
-		local line = STREETS[rng:NextInteger(1, 3)]
-		local along = rng:NextNumber(-half + 10, half - 10)
+	for _ = 1, math.floor(8 * scale) do
+		local line = zLines[rng:NextInteger(1, #zLines)]
+		local along = rng:NextNumber(minX + 10, maxX - 10)
 		B.block(parent, { name = "Manhole", size = Vector3.new(0.1, 3, 3), cf = CFrame.new(origin + Vector3.new(along, 0.42, line + rng:NextNumber(-5, 5))) * CFrame.Angles(0, 0, math.pi / 2), color = Color3.fromRGB(46, 46, 48), material = Enum.Material.DiamondPlate, shape = Enum.PartType.Cylinder, collide = false })
 	end
 
-	-- Houses
-	local coords = { -70, -30, 30, 70, -128, 128 }
-	if half >= 175 then
-		table.insert(coords, -162)
-		table.insert(coords, 162)
-	end
+	-- Houses. Further from the middle of town, more plots are empty lots or overgrown.
 	local houses = {}
-	for _, cx in coords do
-		for _, cz in coords do
+	for _, cx in plotCoords(xLines, minX, maxX) do
+		for _, cz in plotCoords(zLines, minZ, maxZ) do
 			if not isReserved(reserved, cx, cz, 14) then
-				local dx, lineX = nearestStreetDistance(cx)
-				local dz, lineZ = nearestStreetDistance(cz)
+				local dx, lineX = nearestLine(cx, xLines)
+				local dz, lineZ = nearestLine(cz, zLines)
 				local position = origin + Vector3.new(cx, 0, cz)
 				local look
 				if dx < dz then
@@ -144,7 +198,8 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 				end
 				local cf = CFrame.lookAt(position, position + look)
 				local yard = math.min(dx, dz) - 14
-				if rng:NextNumber() < 0.14 and not options.noEmptyLots then
+				local outskirts = math.clamp((Vector2.new(cx, cz).Magnitude - 200) / 300, 0, 1)
+				if rng:NextNumber() < 0.14 + outskirts * 0.22 and not options.noEmptyLots then
 					-- Empty lot: a dead tree, a broken fence and weeds.
 					local tree = B.tree(parent, position + Vector3.new(4, 0, 4), rng, true)
 					if options.nodes then
@@ -155,8 +210,8 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 						B.bush(parent, position + Vector3.new(rng:NextNumber(-8, 8), 0, rng:NextNumber(-8, 8)), rng)
 					end
 				else
-					local model, size = B.house(parent, cf, rng, { litWindows = options.litWindows, broken = rng:NextNumber() < 0.2, yard = yard })
-					table.insert(houses, { model = model, cf = cf })
+					local model, size = B.house(parent, cf, rng, { litWindows = options.litWindows, broken = rng:NextNumber() < 0.2 + outskirts * 0.3, yard = yard })
+					table.insert(houses, { model = model, cf = cf, size = size })
 					-- A yard tree beside some houses
 					if rng:NextNumber() < 0.45 then
 						local sideSign = rng:NextNumber() < 0.5 and -1 or 1
@@ -172,35 +227,38 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 	end
 
 	-- Street lamps every 40 studs on the sidewalks, alternating sides, facing the road.
-	for _, line in STREETS do
+	local function lampsAlong(alongX: boolean, line: number)
+		local from, to = if alongX then minX else minZ, if alongX then maxX else maxZ
+		local crossings = if alongX then xLines else zLines
 		local toggle = 1
-		for along = -half + 20, half - 20, 40 do
+		for along = from + 20, to - 20, 40 do
 			toggle = -toggle
-			local spots = {
-				{ Vector2.new(along, line + toggle * 12.5), Vector3.new(0, 0, -toggle) },
-				{ Vector2.new(line + toggle * 12.5, along), Vector3.new(-toggle, 0, 0) },
-			}
-			for _, spot in spots do
-				local p = spot[1]
-				local nearCrossing = false
-				for _, c in STREETS do
-					if math.abs(along - c) < 15 then
-						nearCrossing = true
-					end
+			local nearCrossing = false
+			for _, c in crossings do
+				if math.abs(along - c) < 15 then
+					nearCrossing = true
 				end
-				if not nearCrossing and not isReserved(reserved, p.X, p.Y, 2) and rng:NextNumber() < (options.lampChance or 0.8) then
-					B.lamp(parent, origin + Vector3.new(p.X, 0.7, p.Y), nil, options.lampStrength, true, spot[2])
-				end
+			end
+			local p = if alongX then Vector2.new(along, line + toggle * 12.5) else Vector2.new(line + toggle * 12.5, along)
+			local facing = if alongX then Vector3.new(0, 0, -toggle) else Vector3.new(-toggle, 0, 0)
+			if not nearCrossing and not isReserved(reserved, p.X, p.Y, 2) and rng:NextNumber() < (options.lampChance or 0.8) then
+				B.lamp(parent, origin + Vector3.new(p.X, 0.7, p.Y), nil, options.lampStrength, true, facing)
 			end
 		end
 	end
+	for _, line in zLines do
+		lampsAlong(true, line)
+	end
+	for _, line in xLines do
+		lampsAlong(false, line)
+	end
 
 	-- Power lines: wooden poles along the north edge of each east-west street, with sagging wires.
-	for _, line in STREETS do
+	for _, line in zLines do
 		local previous: Vector3? = nil
-		for along = -half + 10, half - 10, 36 do
+		for along = minX + 10, maxX - 10, 36 do
 			local clear = true
-			for _, c in STREETS do
+			for _, c in xLines do
 				if math.abs(along - c) < 16 then
 					clear = false
 				end
@@ -221,11 +279,12 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 	end
 
 	-- Hydrants and bins on the sidewalks
-	for i = 1, 22 do
-		local line = STREETS[rng:NextInteger(1, 3)]
-		local along = rng:NextNumber(-half + 16, half - 16)
-		local sideSign = rng:NextNumber() < 0.5 and -1 or 1
+	for i = 1, math.floor(22 * scale) do
 		local alongX = rng:NextNumber() < 0.5
+		local lines = if alongX then zLines else xLines
+		local line = lines[rng:NextInteger(1, #lines)]
+		local along = if alongX then rng:NextNumber(minX + 16, maxX - 16) else rng:NextNumber(minZ + 16, maxZ - 16)
+		local sideSign = rng:NextNumber() < 0.5 and -1 or 1
 		local x, z = if alongX then along else line + sideSign * 13, if alongX then line + sideSign * 13 else along
 		if not isReserved(reserved, x, z, 3) then
 			if i % 3 == 0 then
@@ -237,10 +296,11 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 	end
 
 	-- Abandoned cars, some slewed across the road where they stopped.
-	for _ = 1, options.cars or 10 do
-		local line = STREETS[rng:NextInteger(1, #STREETS)]
-		local along = rng:NextNumber(-half + 15, half - 15)
+	for _ = 1, math.floor((options.cars or 10) * math.max(1, scale * 0.7)) do
 		local alongX = rng:NextNumber() < 0.5
+		local lines = if alongX then zLines else xLines
+		local line = lines[rng:NextInteger(1, #lines)]
+		local along = if alongX then rng:NextNumber(minX + 15, maxX - 15) else rng:NextNumber(minZ + 15, maxZ - 15)
 		local lane = (rng:NextNumber() < 0.5 and -1 or 1) * rng:NextNumber(3.5, 6)
 		local x, z = if alongX then along else line + lane, if alongX then line + lane else along
 		if not isReserved(reserved, x, z, 6) then
@@ -254,34 +314,38 @@ local function buildTown(parent: Instance, origin: Vector3, half: number, rng: R
 
 	-- Torn edges: rock cliffs where the town was ripped out of the ground, with chunks and roots
 	-- dangling underneath.
-	for _ = 1, 70 do
+	local perimeter = 2 * (sizeX + sizeZ)
+	for _ = 1, math.floor(70 * math.max(1, perimeter / 1440)) do
 		local side = rng:NextInteger(1, 4)
-		local t = rng:NextNumber(-half, half)
-		local edge = ({ Vector3.new(half, 0, t), Vector3.new(-half, 0, t), Vector3.new(t, 0, half), Vector3.new(t, 0, -half) })[side]
-		B.terrainBall(origin + edge * rng:NextNumber(0.94, 1) + Vector3.new(0, -rng:NextNumber(10, 20), 0), rng:NextNumber(6, 11), Enum.Material.Rock)
+		local edge
+		if side == 1 then
+			edge = Vector3.new(maxX, 0, rng:NextNumber(minZ, maxZ))
+		elseif side == 2 then
+			edge = Vector3.new(minX, 0, rng:NextNumber(minZ, maxZ))
+		elseif side == 3 then
+			edge = Vector3.new(rng:NextNumber(minX, maxX), 0, maxZ)
+		else
+			edge = Vector3.new(rng:NextNumber(minX, maxX), 0, minZ)
+		end
+		local inward = middle + (edge - middle) * rng:NextNumber(0.94, 1)
+		B.terrainBall(origin + inward + Vector3.new(0, -rng:NextNumber(10, 20), 0), rng:NextNumber(6, 11), Enum.Material.Rock)
 		if rng:NextNumber() < 0.5 then
-			B.terrainBall(origin + edge * rng:NextNumber(0.75, 0.95) + Vector3.new(0, -rng:NextNumber(26, 40), 0), rng:NextNumber(4, 8), Enum.Material.Ground)
+			B.terrainBall(origin + middle + (edge - middle) * rng:NextNumber(0.75, 0.95) + Vector3.new(0, -rng:NextNumber(26, 40), 0), rng:NextNumber(4, 8), Enum.Material.Ground)
 		end
 	end
 	return houses
 end
 
 -- Classic blocky townsperson for the camp. Anchored, no humanoid; talks through a prompt.
+-- A camp survivor: a living, walking person (NpcService moves them, VillagerAnimator animates them).
 local function survivor(parent: Instance, cf: CFrame, name: string, shirt: Color3, pants: Color3, skin: Color3)
-	local model = Instance.new("Model")
-	model.Name = name
 	-- Outfits that fit who they are.
 	local outfit = string.find(name, "mechanic") and "overalls" or (string.find(name, "Tobias") and "coat" or nil)
 	local spec = Figure.SpecFor(name, { skin = skin, shirt = shirt, pants = pants, outfit = outfit })
 	spec.cf = cf
 	spec.name = name
-	spec.collide = true
-	local built, parts = Figure.Build(spec)
-	for _, child in built:GetChildren() do
-		child.Parent = model
-	end
-	built:Destroy()
-	model.PrimaryPart = parts.Torso
+	spec.walkSpeed = 6
+	local model, parts = Figure.BuildRig(spec)
 	local torso = parts.Torso
 	local gui = Instance.new("BillboardGui")
 	gui.Size = UDim2.fromOffset(200, 26)
@@ -443,8 +507,8 @@ local function buildCamp(parent: Instance, center: Vector3, rng: Random, info)
 		local a = (i - 1) / #SURVIVORS * math.pi * 2 + 0.3
 		local p = center + Vector3.new(math.cos(a), 0, math.sin(a)) * 16
 		local skinTones = { Color3.fromRGB(255, 220, 180), Color3.fromRGB(200, 150, 110), Color3.fromRGB(140, 95, 65), Color3.fromRGB(240, 200, 160) }
-		local _, prompt = survivor(camp, CFrame.lookAt(p, center), data.name, data.shirt, data.pants, skinTones[(i % #skinTones) + 1])
-		table.insert(info.survivors, { prompt = prompt, name = data.name, lines = data.lines })
+		local model, prompt = survivor(camp, CFrame.lookAt(p, center), data.name, data.shirt, data.pants, skinTones[(i % #skinTones) + 1])
+		table.insert(info.survivors, { model = model, prompt = prompt, name = data.name, lines = data.lines })
 	end
 
 	-- Roll shrine
@@ -535,7 +599,7 @@ local function buildAct1(map: Instance, rng: Random, info)
 	local playerHouseAt = Vector2.new(-70, 30)
 	local radioAt = Vector2.new(50, -70)
 	local towerAt = Vector2.new(-50, 128)
-	buildTown(folder, origin, 150, rng, {
+	buildTown(folder, origin, { minX = -150, maxX = 150, minZ = -150, maxZ = 150 }, rng, {
 		reserved = {
 			{ at = Vector2.new(0, 0), r = 30 },
 			{ at = playerHouseAt, r = 4 },
@@ -695,7 +759,8 @@ end
 
 local function buildHub(map: Instance, rng: Random, info)
 	local folder = B.folder(map, "HollowCreek")
-	buildTown(folder, Vector3.zero, 180, rng, {
+	-- Hollow Creek spreads west and north/south of the camp (the east edge meets the bridge).
+	info.houses = buildTown(folder, Vector3.zero, Areas.ById.town.bounds, rng, {
 		reserved = {
 			{ at = Vector2.new(0, 0), r = 44 },
 			{ at = Vector2.new(0, -135), r = 40 },
@@ -708,7 +773,7 @@ local function buildHub(map: Instance, rng: Random, info)
 	})
 	buildCamp(folder, Vector3.zero, rng, info)
 	buildChurchyard(folder, Areas.ById.town.boss.arena, rng)
-	B.debrisField(folder, Vector3.zero, 480, 50, rng)
+	B.debrisField(folder, Vector3.new(-180, 0, 0), 700, 90, rng)
 end
 
 local function buildWoods(map: Instance, rng: Random, info)
@@ -716,33 +781,33 @@ local function buildWoods(map: Instance, rng: Random, info)
 	local folder = B.folder(map, "WhisperingWoods")
 	local c = area.center
 	local clearing = area.boss.arena
-	B.ground(folder, c, Vector2.new(300, 300), Color3.new(), Enum.Material.Grass, 24)
+	B.ground(folder, c, Vector2.new(300, 700), Color3.new(), Enum.Material.Grass, 24)
 	-- Leaf litter, a muddy track, and gentle rises in the forest floor.
-	for _ = 1, 30 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), -1, rng:NextNumber(-140, 140))
+	for _ = 1, 66 do
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), -1, rng:NextNumber(-330, 330))
 		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(14, 34), 2, rng:NextNumber(14, 34)), Enum.Material.LeafyGrass)
 	end
 	B.terrainBlock(CFrame.new(c + Vector3.new(0, -1, 0)), Vector3.new(300, 2, 12), Enum.Material.Mud)
-	for _ = 1, 30 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-140, 140))
+	for _ = 1, 66 do
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-330, 330))
 		local farFromPaths = math.abs(p.Z - c.Z) > 20 and (Vector2.new(p.X, p.Z) - Vector2.new(clearing.X, clearing.Z)).Magnitude > 50 and (p - area.spawn).Magnitude > 30
 		if farFromPaths then
 			B.terrainBall(p - Vector3.new(0, rng:NextNumber(5, 7), 0), rng:NextNumber(7, 10), Enum.Material.Grass)
 		end
 	end
 	-- Mossy boulders half sunk in the ground
-	for _ = 1, 26 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-140, 140))
+	for _ = 1, 57 do
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-330, 330))
 		if math.abs(p.Z - c.Z) > 12 and (Vector2.new(p.X, p.Z) - Vector2.new(clearing.X, clearing.Z)).Magnitude > 44 then
 			B.terrainBall(p + Vector3.new(0, -0.5, 0), rng:NextNumber(1.8, 3.6), Enum.Material.Rock)
 		end
 	end
 	local placed = {}
-	for _ = 1, 340 do
-		if #placed >= 150 then
+	for _ = 1, 760 do
+		if #placed >= 330 then
 			break
 		end
-		local p = c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-145, 145))
+		local p = c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-335, 335))
 		local ok = math.abs(p.Z - c.Z) > 11 and (Vector2.new(p.X, p.Z) - Vector2.new(clearing.X, clearing.Z)).Magnitude > 40 and (p - area.spawn).Magnitude > 22
 		if ok then
 			for _, q in placed do
@@ -759,27 +824,29 @@ local function buildWoods(map: Instance, rng: Random, info)
 		end
 	end
 	-- Fallen logs, stumps and undergrowth
-	for _ = 1, 14 do
-		local p = groundAt(c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-140, 140)))
+	for _ = 1, 30 do
+		local p = groundAt(c + Vector3.new(rng:NextNumber(-140, 140), 0, rng:NextNumber(-330, 330)))
 		if math.abs(p.Z - c.Z) > 12 then
 			local length = rng:NextNumber(8, 16)
 			B.block(folder, { name = "FallenLog", size = Vector3.new(length, 2, 2), cf = CFrame.new(p + Vector3.new(0, 0.8, 0)) * CFrame.Angles(0, rng:NextNumber(0, 6), rng:NextNumber(-0.05, 0.05)), color = Color3.fromRGB(58, 44, 34), material = Enum.Material.Wood, shape = Enum.PartType.Cylinder })
 		end
 	end
-	for _ = 1, 50 do
-		local p = groundAt(c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-145, 145)))
+	for _ = 1, 110 do
+		local p = groundAt(c + Vector3.new(rng:NextNumber(-145, 145), 0, rng:NextNumber(-335, 335)))
 		if math.abs(p.Z - c.Z) > 9 then
 			B.bush(folder, p, rng)
 		end
 	end
 	-- Ruined cabins
-	for _, offset in { Vector3.new(-80, 0, 60), Vector3.new(40, 0, 90), Vector3.new(-30, 0, -100), Vector3.new(110, 0, 40) } do
+	for _, offset in { Vector3.new(-80, 0, 60), Vector3.new(40, 0, 90), Vector3.new(-30, 0, -100), Vector3.new(110, 0, 40), Vector3.new(-60, 0, 220), Vector3.new(70, 0, 280), Vector3.new(-90, 0, -230), Vector3.new(60, 0, -290), Vector3.new(100, 0, -180) } do
 		local p = groundAt(c + offset)
-		B.house(folder, CFrame.lookAt(p, Vector3.new(p.X, p.Y, c.Z)), rng, { width = 16, depth = 14, height = 10, broken = true, litWindows = 0.1, name = "Cabin" })
+		local cf = CFrame.lookAt(p, Vector3.new(p.X, p.Y, c.Z))
+		local cabin, size = B.house(folder, cf, rng, { width = 16, depth = 14, height = 10, broken = true, litWindows = 0.1, name = "Cabin" })
+		table.insert(info.houses, { model = cabin, cf = cf, size = size })
 	end
 	-- Will-o'-wisps
-	for _ = 1, 26 do
-		local p = c + Vector3.new(rng:NextNumber(-140, 140), rng:NextNumber(3, 9), rng:NextNumber(-140, 140))
+	for _ = 1, 55 do
+		local p = c + Vector3.new(rng:NextNumber(-140, 140), rng:NextNumber(3, 9), rng:NextNumber(-330, 330))
 		local wisp = B.block(folder, { name = "Wisp", size = Vector3.new(0.8, 0.8, 0.8), cf = CFrame.new(p), color = Color3.fromRGB(120, 255, 170), material = Enum.Material.Neon, collide = false, shape = Enum.PartType.Ball })
 		local l = Instance.new("PointLight")
 		l.Color = Color3.fromRGB(120, 255, 170)
@@ -795,7 +862,7 @@ local function buildWoods(map: Instance, rng: Random, info)
 		B.block(folder, { name = "Monolith", size = Vector3.new(4, rng:NextNumber(9, 14), 3), cf = CFrame.lookAt(p, clearing) * CFrame.new(0, 5, 0), color = Color3.fromRGB(56, 60, 58), material = Enum.Material.Slate })
 	end
 	B.block(folder, { name = "Altar", size = Vector3.new(8, 2, 5), cf = CFrame.new(clearing + Vector3.new(0, 1, 0)), color = Color3.fromRGB(46, 50, 48), material = Enum.Material.Slate })
-	B.debrisField(folder, c, 420, 35, rng)
+	B.debrisField(folder, c, 560, 60, rng)
 end
 
 local function buildRift(map: Instance, rng: Random, info)
@@ -811,6 +878,15 @@ local function buildRift(map: Instance, rng: Random, info)
 		{ p = Vector3.new(1045, 0, 0), r = 22 },
 		{ p = Vector3.new(1010, 0, -82), r = 20 },
 		{ p = Vector3.new(1012, 0, 84), r = 20 },
+		-- The Rift reaches much further north and south now.
+		{ p = Vector3.new(860, 0, -150), r = 24 },
+		{ p = Vector3.new(960, 0, -170), r = 26 },
+		{ p = Vector3.new(900, 0, -250), r = 24 },
+		{ p = Vector3.new(1010, 0, -250), r = 22 },
+		{ p = Vector3.new(860, 0, 150), r = 24 },
+		{ p = Vector3.new(960, 0, 170), r = 26 },
+		{ p = Vector3.new(900, 0, 250), r = 24 },
+		{ p = Vector3.new(1010, 0, 250), r = 22 },
 	}
 	for _, island in islands do
 		local _, crystals = B.island(folder, island.p, island.r, rng)
@@ -818,24 +894,24 @@ local function buildRift(map: Instance, rng: Random, info)
 			table.insert(info.nodes, { model = crystal, kind = "Crystal" })
 		end
 	end
-	local links = { { 1, 2 }, { 1, 3 }, { 2, 4 }, { 3, 5 }, { 4, 6 }, { 5, 6 }, { 2, 6 }, { 3, 6 }, { 6, 7 }, { 4, 8 }, { 8, 7 }, { 5, 9 }, { 9, 7 } }
+	local links = { { 1, 2 }, { 1, 3 }, { 2, 4 }, { 3, 5 }, { 4, 6 }, { 5, 6 }, { 2, 6 }, { 3, 6 }, { 6, 7 }, { 4, 8 }, { 8, 7 }, { 5, 9 }, { 9, 7 }, { 4, 10 }, { 4, 11 }, { 8, 11 }, { 10, 12 }, { 11, 13 }, { 12, 13 }, { 5, 14 }, { 5, 15 }, { 9, 15 }, { 14, 16 }, { 15, 17 }, { 16, 17 } }
 	for _, link in links do
 		local a, b = islands[link[1]], islands[link[2]]
 		local dir = (b.p - a.p).Unit
 		B.walkway(folder, a.p + dir * (a.r - 3), b.p - dir * (b.r - 3), 8)
 	end
-	B.debrisField(folder, area.center, 380, 90, rng)
+	B.debrisField(folder, area.center, 520, 130, rng)
 end
 
 local function buildCathedral(map: Instance, rng: Random)
 	local area = Areas.ById.cathedral
 	local folder = B.folder(map, "SunkenCathedral")
 	local c = area.center
-	B.ground(folder, c, Vector2.new(280, 280), Color3.new(), Enum.Material.Slate, 24)
+	B.ground(folder, c, Vector2.new(280, 690), Color3.new(), Enum.Material.Slate, 24)
 	-- Knee-deep flood water over everything
-	B.terrainBlock(CFrame.new(c + Vector3.new(0, 0.6, 0)), Vector3.new(280, 1.2, 280), Enum.Material.Water)
-	for _ = 1, 20 do
-		local p = c + Vector3.new(rng:NextNumber(-130, 130), -1, rng:NextNumber(-130, 130))
+	B.terrainBlock(CFrame.new(c + Vector3.new(0, 0.6, 0)), Vector3.new(280, 1.2, 690), Enum.Material.Water)
+	for _ = 1, 48 do
+		local p = c + Vector3.new(rng:NextNumber(-130, 130), -1, rng:NextNumber(-335, 335))
 		B.terrainBlock(CFrame.new(p) * CFrame.Angles(0, rng:NextNumber(0, 3), 0), Vector3.new(rng:NextNumber(10, 24), 2, rng:NextNumber(10, 24)), Enum.Material.Mud)
 	end
 	-- The nave
@@ -887,14 +963,14 @@ local function buildCathedral(map: Instance, rng: Random)
 		end
 	end
 	-- Graveyard and broken arches outside
-	for _ = 1, 40 do
-		local p = c + Vector3.new(rng:NextNumber(-130, -10), 0, rng:NextNumber(-130, 130))
+	for _ = 1, 100 do
+		local p = c + Vector3.new(rng:NextNumber(-130, -10), 0, rng:NextNumber(-330, 330))
 		if math.abs(p.Z) > 14 then
 			B.block(folder, { name = "Grave", size = Vector3.new(2.6, rng:NextNumber(2.5, 5), 0.8), cf = CFrame.new(p + Vector3.new(0, 1.6, 0)) * CFrame.Angles(math.rad(rng:NextNumber(-15, 15)), rng:NextNumber(0, 6), 0), color = Color3.fromRGB(64, 68, 74), material = Enum.Material.Slate })
 		end
 	end
-	for _ = 1, 10 do
-		local p = c + Vector3.new(rng:NextNumber(-130, 130), 0, rng:NextNumber(-130, 130))
+	for _ = 1, 26 do
+		local p = c + Vector3.new(rng:NextNumber(-130, 130), 0, rng:NextNumber(-330, 330))
 		if (Vector2.new(p.X, p.Z) - Vector2.new(nave.X, nave.Z)).Magnitude > 80 then
 			local yaw = rng:NextNumber(0, 6)
 			local cf = CFrame.new(p) * CFrame.Angles(0, yaw, 0)
@@ -905,7 +981,7 @@ local function buildCathedral(map: Instance, rng: Random)
 			end
 		end
 	end
-	B.debrisField(folder, c, 420, 40, rng)
+	B.debrisField(folder, c, 560, 70, rng)
 end
 
 local function buildHeart(map: Instance, rng: Random)

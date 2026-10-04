@@ -682,11 +682,7 @@ function EnemyService.Start(world)
 	-- Spawn points for each area.
 	local sampler = Random.new(99)
 	for _, area in Areas.List do
-		local minX = (area.gateX or area.minX) + 14
-		local maxX = area.maxX - 6
-		if area.id == "town" then
-			minX, maxX = -172, 172
-		end
+		local bounds = area.bounds
 		local avoid = {
 			{ at = area.boss.arena, r = 50 },
 			{ at = area.spawn, r = 30 },
@@ -694,7 +690,10 @@ function EnemyService.Start(world)
 		if area.id == "town" then
 			table.insert(avoid, { at = Vector3.zero, r = Config.Act2.CampRadius + 20 })
 		end
-		spawnPoints[area.id] = WorldBuilder.SamplePoints(world.floors, Vector3.new(minX, 0, -170), Vector3.new(maxX, 0, 170), 60, sampler, avoid)
+		-- More sample points for bigger areas.
+		local surface = (bounds.maxX - bounds.minX) * (bounds.maxZ - bounds.minZ)
+		local count = math.clamp(math.floor(surface / 1600), 60, 320)
+		spawnPoints[area.id] = WorldBuilder.SamplePoints(world.floors, Vector3.new(bounds.minX + 8, 0, bounds.minZ + 8), Vector3.new(bounds.maxX - 8, 0, bounds.maxZ - 8), count, sampler, avoid)
 	end
 
 	for _, area in Areas.List do

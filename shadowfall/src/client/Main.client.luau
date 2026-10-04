@@ -10,7 +10,7 @@ pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 end)
 
-for _, name in { "CameraFx", "FirstPerson", "CharacterCreator", "Atmosphere", "ShadowAnimator", "Fx", "Horror", "SanityFx", "DuckClient", "Hud", "Guide", "Dread", "Cinematic", "ShopUI", "BuildMode", "Menu", "CombatInput" } do
+for _, name in { "CameraFx", "FirstPerson", "CharacterCreator", "Atmosphere", "ShadowAnimator", "VillagerAnimator", "Fx", "Horror", "SanityFx", "DuckClient", "Hud", "Guide", "Dread", "Cinematic", "ShopUI", "BuildMode", "Menu", "CombatInput" } do
 	local ok, err = pcall(function()
 		require(Client:WaitForChild(name)).Start()
 	end)

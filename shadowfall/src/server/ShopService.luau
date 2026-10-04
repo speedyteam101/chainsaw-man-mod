@@ -7,6 +7,7 @@ local Areas = require(ReplicatedStorage.Shared.Areas)
 local Remotes = require(ReplicatedStorage.Shared.Remotes)
 local Shops = require(ReplicatedStorage.Shared.Shops)
 local Figure = require(ReplicatedStorage.Shared.Figure)
+local NpcService = require(script.Parent.NpcService)
 local Combat = require(script.Parent.Combat)
 local PlayerData = require(script.Parent.PlayerData)
 local InventoryService = require(script.Parent.InventoryService)
@@ -30,9 +31,9 @@ local function block(model: Model, name: string, size: Vector3, cf: CFrame, colo
 	return p
 end
 
+-- Merchants are living rigs too: they stay at their stall (anchored) but look around, wave and
+-- turn to face customers (NpcService + VillagerAnimator).
 local function buildMerchant(shop, cf: CFrame, parent: Instance)
-	local model = Instance.new("Model")
-	model.Name = shop.name
 	local spec = Figure.SpecFor(shop.id, {
 		shirt = shop.shirt,
 		pants = shop.pants,
@@ -46,13 +47,8 @@ local function buildMerchant(shop, cf: CFrame, parent: Instance)
 	end
 	spec.cf = cf
 	spec.name = shop.name
-	spec.collide = true
-	local built, parts = Figure.Build(spec)
-	for _, child in built:GetChildren() do
-		child.Parent = model
-	end
-	built:Destroy()
-	model.PrimaryPart = parts.Torso
+	local model, parts = Figure.BuildRig(spec)
+	parts.HumanoidRootPart.Anchored = true
 	local torso = parts.Torso
 	if shop.hooded then
 		-- A deep hood with two pale points of light inside it.
@@ -108,6 +104,7 @@ local function buildMerchant(shop, cf: CFrame, parent: Instance)
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = torso
 	model.Parent = parent
+	NpcService.Register(model, { stay = true, role = "merchant" })
 	return prompt
 end
 

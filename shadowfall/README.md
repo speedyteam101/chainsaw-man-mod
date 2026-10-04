@@ -117,6 +117,24 @@ Sanity runs from 0 to 100, and you'll see its bar in both acts.
 
 You wake up at the survivors' camp in the middle of what's left of Hollow Creek. The bonfire is a safe zone, and you heal fast there. The survivors give you hints, the shrine rerolls your power, and the board shows the Ascension rules.
 
+**A much bigger world.**
+
+* **Hollow Creek** is now about 720 × 760 studs: a 7 × 7 grid of named streets and roughly 150 houses. It's denser in the middle and emptier on the overgrown outskirts. The original was 360 × 360.
+* **The Whispering Woods** and **the Sunken Cathedral** stretch about 680 studs north to south. The original was about 300.
+* **The Rift** has eight more floating islands to the north and south.
+* There are more shadows, rocks and crates to match.
+* All the landmarks (camp, bosses, merchants, journal pages, cocoons) are where they were.
+
+**People who live here.** The camp survivors wander around the bonfire. Rescued townsfolk wander inside your base barrier, and merchants stand at their stalls. They're animated on each client:
+
+* a walk cycle that matches their speed, plus breathing
+* heads that turn to look at you when you're close
+* they stop and turn to face you, and wave the first time you come over
+* they gesture while you talk
+* survivors warm their hands at the fire, carpenters and blacksmiths hammer, and anyone might look around nervously
+
+They never body-block you.
+
 ### Controls
 
 | Action | Keyboard / mouse | Gamepad |
@@ -138,6 +156,11 @@ You wake up at the survivors' camp in the middle of what's left of Hollow Creek.
 On touch devices, ContextActionService adds on-screen buttons for these actions.
 
 ### Combat that rewards skill
+
+* **The basic attack is a boxing combo:** a left jab, a right cross, a left hook that sweeps across, and a rising right uppercut that kicks up dust.
+  * Each punch snaps out with a streak behind the fist and settles back into a guard.
+  * Other players see your torso twist into every punch. Your own view stays steady.
+  * Blocking raises a guard, and dodging leans you out of the way.
 
 * **Ultimate.** Activating Awakening (G) now detonates first:
   * everything is pulled in, a pillar of light comes down and the ground erupts
@@ -377,11 +400,14 @@ Shadows also drop Umbral Shards; bosses drop a lot. Depleted nodes grow back aft
 * Station recipes need that station **finished in your base** and you standing inside your barrier.
 
 ### Your base
-1. **Place your Base Crystal** (Build menu, B) anywhere in Hollow Creek, at least 75 studs from the camp. It raises a **barrier** that:
-   * shadows can't stay inside (they're pushed back out)
-   * you're safe inside
-   * heals you
-   * steadies your sanity
+1. **Place your Base Crystal** (Build menu, B) **anywhere in any area you've unlocked**: the town, the Woods, the Rift's islands or the Cathedral grounds. Keep it at least 75 studs from the camp and away from boss arenas and area gates.
+   * **Houses in the way?** Hold **E** on any house (or Woods cabin) to **demolish** it. It collapses in a cloud of dust and you salvage 12 Wood, 5 Stone and 4 Scrap.
+   * Houses you knock down inside or right next to your barrier stay down every time your base loads. Ones demolished elsewhere come back when the server restarts.
+   * The crystal raises a **barrier** that:
+     * shadows can't stay inside (they're pushed back out)
+     * you're safe inside
+     * heals you
+     * steadies your sanity
 2. **Building is only allowed inside your barrier.** **Upgrade the crystal** (Base menu, or press E at the crystal) to grow it:
 
    | Level | Radius | Upgrade cost |
@@ -466,6 +492,8 @@ shadowfall/
     RescueService.luau        cocoons, guards, freeing townsfolk
     PassService.luau          Essence -> Tokens, buying passes, Power Vault, game pass checks
     BlackoutService.luau      the Blackout event and the Hollow
+    HouseService.luau         demolishing houses (and keeping your base's plot clear)
+    NpcService.luau           survivors, townsfolk and merchants walking around and reacting to you
     LookService.luau          waits for new players to make a character, applies looks
     Projectiles.luau, PlayerData.luau, Registry.luau
   src/client/                 StarterPlayerScripts.Client
@@ -484,6 +512,7 @@ shadowfall/
     Guide.luau                Biscuit's Tip and the controls card
     VfxKit.luau               realistic effect building blocks (light, smoke, debris, sparks, marks)
     Dread.luau                Act 2 horror: darkness, flashlight, fear, Watchers, Blackout, jumpscare
+    VillagerAnimator.luau     procedural walk/idle/wave/talk/work animation for NPCs
   src/character/Health.server.luau   turns off Roblox's default regen (the server handles it)
 ```
 

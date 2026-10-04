@@ -33,6 +33,8 @@ local StoryService = require(Server.StoryService)
 local PassService = require(Server.PassService)
 local LookService = require(Server.LookService)
 local BlackoutService = require(Server.BlackoutService)
+local HouseService = require(Server.HouseService)
+local NpcService = require(Server.NpcService)
 local Townsfolk = require(ReplicatedStorage.Shared.Townsfolk)
 local Materials = require(ReplicatedStorage.Shared.Materials)
 
@@ -48,8 +50,17 @@ EnemyService.Start(world)
 Act1Director.Start(world)
 ZoneService.Start()
 DuckService.Start()
+NpcService.Start()
+-- The camp survivors wander around the bonfire.
+for _, survivor in world.survivors do
+	local root = survivor.model and survivor.model.PrimaryPart
+	if root then
+		NpcService.Register(survivor.model, { home = Vector3.new(0, root.Position.Y - 3, 0), radius = Config.Act2.CampRadius - 14, minRadius = 10, role = "survivor" })
+	end
+end
 SanityService.Start()
 GatherService.Start(world)
+HouseService.Start(world)
 BaseService.Start(world)
 RescueService.Start(world)
 AllyService.Start()
@@ -247,7 +258,7 @@ local function devCommand(player: Player, command)
 		data.duckSaved = false
 		data.stats = { kills = 0, parries = 0, perfectDodges = 0, bruteClean = 0, crafted = 0, built = 0 }
 		data.inventory, data.items, data.rescued = {}, {}, {}
-		data.base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {} }
+		data.base = { placed = false, level = 1, x = 0, y = 0, z = 0, structures = {}, cleared = {} }
 		data.story = { chapter = 1, seen = {}, pages = {} }
 		data.tokens, data.essenceTraded, data.welcomeTokens = 0, 0, false
 		data.passes, data.vault, data.duckOutfit, data.auraOn = {}, {}, 1, true
