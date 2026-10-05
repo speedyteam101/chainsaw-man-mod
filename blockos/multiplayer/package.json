@@ -1,0 +1,9 @@
+{
+  "name": "blockos-multiplayer",
+  "version": "1.0.0",
+  "description": "BlockOS game server: relays players' positions, events and quick-chat between computers",
+  "main": "relay.js",
+  "private": true,
+  "scripts": { "start": "node relay.js" },
+  "dependencies": { "ws": "8.22.0" }
+}

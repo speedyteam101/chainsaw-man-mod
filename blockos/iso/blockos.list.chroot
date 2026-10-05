@@ -25,3 +25,5 @@ fonts-dejavu-core
 xdg-utils
 spice-vdagent
 qemu-guest-agent
+nodejs
+node-ws

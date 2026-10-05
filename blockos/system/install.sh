@@ -65,7 +65,8 @@ PACKAGES=(
   dbus-user-session polkitd pipewire-audio fonts-noto-core fonts-dejavu-core xdg-utils
 )
 # Nice to have; skipped quietly if a Debian release doesn't have them.
-OPTIONAL=(xfce4-taskmanager galculator spice-vdagent qemu-guest-agent)
+# nodejs + node-ws run the game server for "Host a server" on the Play Online page.
+OPTIONAL=(xfce4-taskmanager galculator spice-vdagent qemu-guest-agent nodejs node-ws)
 
 export DEBIAN_FRONTEND=noninteractive
 # If another login manager (e.g. GNOME's gdm3) is installed, LightDM still takes over.
@@ -82,9 +83,10 @@ done
 # ------------------------------------------------------------------ files
 
 say "Copying the BlockOS desktop to /opt/blockos"
-rm -rf /opt/blockos/shell
-install -d /opt/blockos /etc/blockos
+rm -rf /opt/blockos/shell /opt/blockos/multiplayer
+install -d /opt/blockos /etc/blockos /opt/blockos/multiplayer
 cp -r "$BLOCKOS_DIR/shell" /opt/blockos/shell
+install -m 644 "$BLOCKOS_DIR/multiplayer/relay.js" "$BLOCKOS_DIR/multiplayer/package.json" /opt/blockos/multiplayer/
 find /opt/blockos/shell -type d -exec chmod 755 {} +
 find /opt/blockos/shell -type f -exec chmod 644 {} +
 install -m 755 "$BLOCKOS_DIR/system/blockos-session" /usr/local/bin/blockos-session

@@ -51,6 +51,11 @@ MAC_APPS = {
     "calculator": ["open", "-a", "Calculator"],
 }
 
+# The multiplayer game server (multiplayer/relay.js, run with Node.js) for "Host a server".
+RELAY = os.path.join(os.path.dirname(SHELL_DIR), "multiplayer", "relay.js")
+GAME_PORT = 8790
+relay_proc = None
+
 POWER = {
     "poweroff": ["systemctl", "poweroff"],
     "reboot": ["systemctl", "reboot"],
@@ -120,6 +125,46 @@ def system_info():
     }
 
 
+def lan_addresses():
+    """This computer's address on the local network, for friends to join."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 9))  # TEST-NET address: picks the outgoing interface, sends nothing
+        ip = s.getsockname()[0]
+        s.close()
+        return [ip] if not ip.startswith("127.") else []
+    except OSError:
+        return []
+
+
+def online_info():
+    hosting = relay_proc is not None and relay_proc.poll() is None
+    return {"hosting": hosting, "port": GAME_PORT, "addresses": lan_addresses() if hosting else []}
+
+
+def set_hosting(on):
+    global relay_proc
+    if on:
+        if relay_proc is None or relay_proc.poll() is not None:
+            node = shutil.which("node") or shutil.which("nodejs")
+            if not node:
+                raise RuntimeError("Node.js isn't installed")
+            env = dict(os.environ)
+            # Debian's node-ws package lives here.
+            env["NODE_PATH"] = ":".join(filter(None, ["/usr/share/nodejs", "/usr/lib/nodejs", env.get("NODE_PATH")]))
+            relay_proc = subprocess.Popen([node, RELAY, "--port", str(GAME_PORT)], env=env,
+                                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            time.sleep(0.6)
+            if relay_proc.poll() is not None:
+                err = relay_proc.stderr.read().decode("utf-8", "replace").strip().splitlines()
+                relay_proc = None
+                raise RuntimeError(err[-1] if err else "the game server stopped")
+    elif relay_proc is not None:
+        relay_proc.terminate()
+        relay_proc = None
+    return online_info()
+
+
 def spawn(cmd, dry_run):
     if dry_run:
         print("[dry-run] would run:", " ".join(cmd), file=sys.stderr)
@@ -169,6 +214,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json(403, {"error": "bad host"})
         if self.path == "/api/info":
             return self.send_json(200, system_info())
+        if self.path == "/api/online":
+            return self.send_json(200, online_info())
         if self.path == "/api/ping":
             Handler.last_seen = time.monotonic()
             return self.send_json(200, {"ok": True})
@@ -191,6 +238,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json(404, {"error": "app not installed"})
             spawn(cmd, self.dry_run)
             return self.send_json(200, {"ok": True})
+
+        if self.path == "/api/online":
+            try:
+                return self.send_json(200, set_hosting(bool(data.get("host"))))
+            except RuntimeError as e:
+                return self.send_json(500, {"error": str(e)})
 
         if self.path == "/api/power":
             if IS_MAC:

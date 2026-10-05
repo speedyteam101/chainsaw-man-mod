@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- Small example of the 3D kit (not listed in the game menu): a few parts, stairs, a moving platform, a kill brick, an NPC and online play. -->
+<html lang="en"><head><meta charset="utf-8"><title>3D example</title><link rel="stylesheet" href="../kit.css"></head>
+<body>
+<script src="../kit.js"></script>
+<script type="module">
+import { World } from "../kit3d.js";
+const world = new World({ sky: "#8fd3ff", health: true });
+world.baseplate(200);
+world.spawnPad([0, 0, 0]);
+world.part({ size: [8, 1, 8], pos: [0, 4, -16], color: "#ef4444" });
+world.part({ size: [8, 1, 8], pos: [0, 8, -30], color: "#3b82f6" });
+const mover = world.part({ size: [8, 1, 8], pos: [0, 8, -44], color: "#facc15", moving: true });
+world.part({ size: [8, 1, 30], pos: [16, 0.5, -30], color: "#ef4444", material: "neon", kill: true });
+for (let i = 0; i < 6; i++) world.part({ size: [4, 1, 4], pos: [-12, 0.5 + i * 1, -6 - i * 4], color: "#a855f7" }); // stairs
+world.label("BlockOS 3D", { pos: [0, 14, -30], height: 3 });
+const npc = world.character({ torso: "#ef4444", legs: "#1f2328", hat: "crown", face: "grin" }, "Helper Bot");
+npc.position.set(8, 0, -6);
+world.spawnPlayer({ pos: [0, 1, 0] });
+const net = Kit.net("test3d"); world.online(net); window.net = net;
+let t = 0;
+world.start((dt) => { t += dt; mover.position.x = Math.sin(t) * 12; npc.userData.animate(dt, 10, false); });
+window.world = world;
+</script>
+</body></html>

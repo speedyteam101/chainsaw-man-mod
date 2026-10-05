@@ -21,14 +21,16 @@ cd "$HERE"
 STAGE="$BUILD/stage"
 rm -rf "${BUILD:?}"
 mkdir -p "$STAGE/shell/games"
-cp main.js "$STAGE/"
+cp main.js "$ROOT/multiplayer/relay.js" "$STAGE/"
 node -e '
   const p = require("./package.json");
   delete p.devDependencies; delete p.scripts;
   require("fs").writeFileSync(process.argv[1], JSON.stringify(p, null, 2));
 ' "$STAGE/package.json"
+(cd "$STAGE" && npm install --omit=dev --no-audit --no-fund --silent)   # the game server's "ws" library
 (cd "$ROOT/shell" && cp -R index.html style.css app.js avatar.js assets "$STAGE/shell/")
-cp "$ROOT/shell/games/catalog.js" "$ROOT/shell/games/kit.js" "$ROOT/shell/games/kit.css" "$STAGE/shell/games/"
+cp "$ROOT/shell/games/catalog.js" "$ROOT/shell/games/kit.js" "$ROOT/shell/games/kit.css" "$ROOT/shell/games/kit3d.js" "$STAGE/shell/games/"
+cp -R "$ROOT/shell/games/lib" "$STAGE/shell/games/lib"
 node -e '
   global.window = {};
   require(process.argv[1]);

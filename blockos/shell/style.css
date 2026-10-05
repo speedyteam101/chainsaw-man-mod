@@ -354,3 +354,23 @@ select {
   .game-menu { grid-template-columns: 1fr; }
   .gm-side { display: none; }
 }
+
+/* ---------- online & badges ---------- */
+.online-pill {
+  height: 30px; padding: 0 12px 0 26px; border: 0; border-radius: 999px; font-weight: 800; font-size: 13px;
+  color: #fff; background: var(--green) radial-gradient(circle at 13px 50%, #fff 0 4px, transparent 5px);
+}
+.t-online, .t-3d { padding: 0 6px; border-radius: 5px; font-size: 11px; font-weight: 800; color: #fff; background: var(--green); }
+.t-3d { background: var(--accent); }
+.panel p { line-height: 1.5; margin: 0 0 12px; }
+.panel .hint { color: var(--muted); }
+.panel .ok { color: var(--green); }
+.panel code { background: var(--bg2); padding: 2px 6px; border-radius: 6px; font-weight: 800; }
+.join-row { display: flex; gap: 10px; }
+.join-row input { flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); }
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.badge-card { display: flex; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.badge-card svg { width: 40px; height: 40px; flex: none; color: var(--gold); }
+.badge-card small { display: block; color: var(--muted); font-weight: 700; }
+.badge-card p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.gd-stats { grid-template-columns: 1fr 1fr; }

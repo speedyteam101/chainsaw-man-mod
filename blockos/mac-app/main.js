@@ -12,6 +12,32 @@ const { pathToFileURL } = require("url");
 
 // Packaged: the desktop is copied next to this file. Running from the repo: use ../shell.
 const SHELL_DIR = app.isPackaged ? path.join(__dirname, "shell") : path.join(__dirname, "..", "shell");
+const relay = require(app.isPackaged ? "./relay.js" : "../multiplayer/relay.js");
+
+// "Host a server" on the Play Online page runs the game server inside the app.
+const GAME_PORT = 8790;
+let gameServer = null;
+
+function lanAddresses() {
+  return Object.values(os.networkInterfaces()).flat()
+    .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
+}
+
+function onlineInfo() {
+  return { hosting: !!gameServer, port: GAME_PORT, addresses: gameServer ? lanAddresses() : [] };
+}
+
+async function setHosting(on) {
+  if (on && !gameServer) {
+    const server = relay.start(GAME_PORT);
+    await server.ready;   // throws if the port is busy
+    gameServer = server;
+  } else if (!on && gameServer) {
+    await gameServer.close();
+    gameServer = null;
+  }
+  return onlineInfo();
+}
 
 // The Apps page opens the matching Mac apps.
 const MAC_APPS = {
@@ -48,11 +74,15 @@ function systemInfo() {
 async function handleApi(request, pathname) {
   if (pathname === "/api/info") return json(200, systemInfo());
   if (pathname === "/api/ping") return json(200, { ok: true });
+  if (pathname === "/api/online" && request.method !== "POST") return json(200, onlineInfo());
   if (request.method !== "POST") return json(404, { error: "not found" });
 
   let data = {};
   try { data = await request.json(); } catch (_) { return json(400, { error: "bad json" }); }
 
+  if (pathname === "/api/online") {
+    try { return json(200, await setHosting(!!data.host)); } catch (e) { return json(500, { error: e.message }); }
+  }
   if (pathname === "/api/launch") {
     const args = MAC_APPS[data.app];
     if (!args) return json(404, { error: "app not installed" });

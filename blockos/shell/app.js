@@ -67,6 +67,8 @@
     calculator: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/>',
     star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    online: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+    badge: '<circle cx="12" cy="9" r="6"/><path d="m8.5 13.5-1.5 7.5 5-3 5 3-1.5-7.5"/>',
   };
   const icon = (name) => `<svg viewBox="0 0 24 24">${ICON[name] || ""}</svg>`;
   const BRICK_SVG = $(".brick-icon").outerHTML;
@@ -171,7 +173,7 @@
     const plays = state.plays[g.id] || 0;
     return `<button class="tile" data-open="${g.id}">${thumb(g)}
       <div class="t-name">${esc(g.title)}</div>
-      <div class="t-meta"><span>${esc(g.genre)}</span><span>${plays ? plays + (plays === 1 ? " play" : " plays") : "New"}</span></div></button>`;
+      <div class="t-meta"><span>${esc(g.genre)}</span><span>${plays ? plays + (plays === 1 ? " play" : " plays") : "New"}</span>${g.multiplayer ? '<span class="t-online">Online</span>' : ""}${g.is3d ? '<span class="t-3d">3D</span>' : ""}</div></button>`;
   }
   function row(title, games, seeAll) {
     if (!games.length) return "";
@@ -193,6 +195,10 @@
   }
   const recent = () => GAMES.filter((g) => state.last[g.id]).sort((a, b) => state.last[b.id] - state.last[a.id]);
   const favorites = () => GAMES.filter((g) => isFav(g.id));
+  function allBadges() {
+    try { return JSON.parse(localStorage.getItem("blockos.badges")) || {}; } catch (_) { return {}; }
+  }
+  const badgesFor = (id) => Object.values(allBadges()).filter((b) => b.game === id);
 
   // ---------------------------------------------------------------- pages
 
@@ -200,6 +206,7 @@
     { id: "home", label: "Home" },
     { id: "discover", label: "Discover" },
     { id: "avatar", label: "Avatar" },
+    { id: "online", label: "Play Online" },
     { id: "apps", label: "Apps" },
     { id: "settings", label: "Settings" },
   ];
@@ -255,9 +262,14 @@
     },
 
     avatar() {
-      const tabs = [["colors", "Body Colors"], ["face", "Faces"], ["hat", "Hats"], ["shirt", "Shirts"]];
+      const tabs = [["colors", "Body Colors"], ["face", "Faces"], ["hat", "Hats"], ["shirt", "Shirts"], ["badges", "Badges"]];
       let body = "";
-      if (view.avatarTab === "colors") {
+      if (view.avatarTab === "badges") {
+        const list = Object.values(allBadges()).sort((a, b) => b.time - a.time);
+        body = list.length ? `<div class="badges">${list.map((b) => `<div class="badge-card">${icon("badge")}<div><b>${esc(b.name)}</b>
+          <small>${esc((GAME_BY_ID[b.game] || {}).title || b.game)}</small><p>${esc(b.desc)}</p></div></div>`).join("")}</div>`
+          : `<div class="empty">No badges yet. Play games to earn them; each badge also gives you 10 Bricks.</div>`;
+      } else if (view.avatarTab === "colors") {
         body = [["head", "Head"], ["torso", "Torso"], ["arms", "Arms"], ["legs", "Legs"]].map(([part, label]) =>
           `<div class="part-row"><h3>${label}</h3><div class="swatches">${Avatar.COLORS.map((c) =>
             `<button class="swatch ${state.avatar[part] === c ? "on" : ""}" style="background:${c}" data-part="${part}" data-color="${c}" title="${c}"></button>`).join("")}</div></div>`).join("");
@@ -281,6 +293,35 @@
         save();
         render();
       };
+    },
+
+    online() {
+      const addr = serverAddress();
+      const hosting = onlineInfo && onlineInfo.hosting;
+      const status = hosting
+        ? `<b class="ok">You're hosting a server.</b> Friends on the same Wi-Fi join with ${onlineInfo.addresses.length ? onlineInfo.addresses.map((a) => `<code>${esc(a)}</code>`).join(" or ") : "this computer's IP address"}.`
+        : addr ? `<b class="ok">Online.</b> Games that support it will put you on the server at <code>${esc(addr)}</code>.`
+        : `<b>You're offline.</b> Host a server or join a friend's to play together.`;
+      const online = GAMES.filter((g) => g.multiplayer);
+      page.innerHTML = `<h1 class="page-title">Play Online</h1>
+        <div class="panel"><h2>Status</h2><p>${status}</p>${addr ? '<button class="btn" id="goOffline">Go offline</button>' : ""}</div>
+        <div class="panel"><h2>Host a server</h2>
+          <p class="hint">Turns this computer into a game server. Your friends join it from their BlockOS using the address shown above.</p>
+          ${hosting ? '<button class="btn red" id="stopHost">Stop hosting</button>' : '<button class="btn green" id="startHost">Start hosting</button>'}</div>
+        <div class="panel"><h2>Join a server</h2>
+          <p class="hint">Type the address your friend sees on their Play Online page, or an internet server address (starting with wss://).</p>
+          <div class="join-row"><input type="text" id="joinAddr" placeholder="192.168.1.23 or wss://example.com" value="${hosting ? "" : esc(addr)}" spellcheck="false">
+          <button class="btn green" id="joinBtn">Join</button></div></div>
+        <div class="panel"><h2>Staying safe</h2><p class="hint">Chat only has ready-made phrases, so nobody can type messages to you. Only play with people you know.</p></div>
+        ${row("Games you can play online", online)}`;
+      const goOffline = $("#goOffline");
+      if (goOffline) goOffline.onclick = async () => { if (hosting) await setHosting(false); setServer(""); render(); };
+      const start = $("#startHost");
+      if (start) start.onclick = () => setHosting(true);
+      const stop = $("#stopHost");
+      if (stop) stop.onclick = async () => { await setHosting(false); setServer(""); render(); };
+      $("#joinBtn").onclick = () => joinServer($("#joinAddr").value);
+      $("#joinAddr").onkeydown = (e) => { if (e.key === "Enter") joinServer(e.target.value); };
     },
 
     apps() {
@@ -342,6 +383,61 @@
     return `<div class="panel"><h2>About BlockOS</h2><dl class="kv">${rows.filter(([, v]) => v !== null && v !== undefined && v !== "?").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>`;
   }
 
+  // ---------------------------------------------------------------- online play
+
+  let onlineInfo = null;
+  const DEFAULT_GAME_PORT = 8790;
+  function serverAddress() {
+    try { return localStorage.getItem("blockos.server") || ""; } catch (_) { return ""; }
+  }
+  function setServer(url) {
+    try { url ? localStorage.setItem("blockos.server", url) : localStorage.removeItem("blockos.server"); } catch (_) {}
+    updateOnlinePill();
+  }
+  function updateOnlinePill() {
+    $("#onlinePill").hidden = !serverAddress();
+  }
+  async function loadOnlineInfo() {
+    try { onlineInfo = await api("/api/online"); } catch (_) { onlineInfo = null; }
+  }
+  async function setHosting(on) {
+    try {
+      onlineInfo = await api("/api/online", { host: on });
+      if (on) {
+        setServer(`ws://127.0.0.1:${onlineInfo.port}`);
+        toast("You're hosting a server. Tell your friends the address on this page.");
+      }
+    } catch (e) {
+      toast(sysInfo ? `Couldn't ${on ? "start" : "stop"} the server: ${esc(e.message)}` : "Hosting works in the BlockOS app and on the BlockOS virtual machine.");
+    }
+    render();
+  }
+  function normalizeAddress(text) {
+    let a = String(text || "").trim();
+    if (!a) return "";
+    if (!/^wss?:\/\//i.test(a)) {
+      a = a.replace(/^https?:\/\//i, "");
+      a = "ws://" + (/:\d+$/.test(a) ? a : `${a}:${DEFAULT_GAME_PORT}`);
+    }
+    return a;
+  }
+  function joinServer(text) {
+    const url = normalizeAddress(text);
+    if (!url) return toast("Type a server address first.");
+    let ws;
+    try { ws = new WebSocket(url); } catch (_) { return toast("That doesn't look like a server address."); }
+    toast("Connecting...");
+    const timer = setTimeout(() => { ws.close(); toast("Couldn't reach that server. Check the address and that you're on the same Wi-Fi."); }, 4000);
+    ws.onopen = () => {
+      clearTimeout(timer);
+      ws.close();
+      setServer(url);
+      toast("Connected! Online games will now put you on this server.");
+      render();
+    };
+    ws.onerror = () => { clearTimeout(timer); toast("Couldn't reach that server. Check the address and that you're on the same Wi-Fi."); };
+  }
+
   function applyTheme() {
     document.documentElement.dataset.theme = state.theme;
     document.documentElement.style.setProperty("--accent", state.accent);
@@ -361,7 +457,9 @@
         <p>${esc(g.description)}</p>
         <div class="gd-controls"><b>Controls:</b> ${esc(g.controls)}</div>
         <div class="gd-stats"><div><small>${esc(g.scoreLabel || "Best")}</small><b>${esc(fmtBest)}</b></div>
-          <div><small>Times played</small><b>${state.plays[id] || 0}</b></div></div>
+          <div><small>Times played</small><b>${state.plays[id] || 0}</b></div>
+          <div><small>Badges earned</small><b>${badgesFor(id).length}</b></div>
+          <div><small>Online</small><b>${g.multiplayer ? (serverAddress() ? "Ready" : "Supported") : "Solo game"}</b></div></div>
         <div class="play-row">
           <button class="btn green play-btn" data-play="${id}" autofocus aria-label="Play">${icon("play")}</button>
           <button class="btn square-btn ${isFav(id) ? "on" : ""}" data-fav="${id}" title="Favorite">${icon("heart")}</button>
@@ -414,6 +512,12 @@
   window.addEventListener("message", (e) => {
     if (e.source !== frame.contentWindow || !e.data || typeof e.data !== "object") return;
     if (e.data.type === "blockos:escape") return togglePlayerMenu();
+    if (e.data.type === "blockos:badge" && e.data.game === playing) {
+      state.bricks += 10;
+      save();
+      $("#brickCount").textContent = state.bricks.toLocaleString();
+      return toast(`<b>Badge awarded: ${esc(e.data.name)}</b><br><small>${esc(e.data.desc || "")} (+10 Bricks)</small>`, true);
+    }
     if (e.data.type !== "blockos:score" || e.data.game !== playing) return;
     const id = playing;
     const now = Date.now();
@@ -582,6 +686,8 @@
   ping();
   setInterval(ping, 15000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+  updateOnlinePill();
+  loadOnlineInfo();
   loadSysInfo().then(() => { if (view.page === "apps" || view.page === "settings") render(); });
   setTimeout(() => $("#boot").classList.add("done"), 1300);
   setTimeout(() => $("#boot").remove(), 1900);
