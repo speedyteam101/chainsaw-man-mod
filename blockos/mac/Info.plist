@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>BlockOS</string>
+  <key>CFBundleDisplayName</key>
+  <string>BlockOS</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.speedyteam101.blockos</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleExecutable</key>
+  <string>BlockOS</string>
+  <key>CFBundleIconFile</key>
+  <string>BlockOS</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>10.15</string>
+  <!-- The launcher only starts things in the background; the BlockOS window belongs to the browser. -->
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>

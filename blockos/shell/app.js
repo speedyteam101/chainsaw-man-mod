@@ -332,12 +332,12 @@
     const gb = (b) => (b ? (b / 1073741824).toFixed(1) + " GB" : "?");
     const up = sysInfo.uptime ? Math.floor(sysInfo.uptime / 3600) + "h " + Math.floor((sysInfo.uptime % 3600) / 60) + "m" : "?";
     const rows = [
-      ["System", sysInfo.os], ["Debian version", sysInfo.debian || "?"], ["Kernel", sysInfo.kernel],
+      ["System", sysInfo.os], ["Debian version", sysInfo.debian], ["Kernel", sysInfo.kernel],
       ["Architecture", sysInfo.arch], ["Computer name", sysInfo.hostname], ["User", sysInfo.user],
       ["Processors", sysInfo.cpus], ["Memory", sysInfo.memory ? `${gb(sysInfo.memory.available)} free of ${gb(sysInfo.memory.total)}` : "?"],
       ["Uptime", up], ["Games installed", GAMES.length],
     ];
-    return `<div class="panel"><h2>About BlockOS</h2><dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>`;
+    return `<div class="panel"><h2>About BlockOS</h2><dl class="kv">${rows.filter(([, v]) => v !== null && v !== undefined && v !== "?").map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>`;
   }
 
   function applyTheme() {
@@ -575,6 +575,11 @@
   render();
   tick();
   setInterval(tick, 10000);
+  // Lets the Mac app's server know a BlockOS window is still open (see server.py --idle-exit).
+  const ping = () => fetch("/api/ping").catch(() => {});
+  ping();
+  setInterval(ping, 15000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
   loadSysInfo().then(() => { if (view.page === "apps" || view.page === "settings") render(); });
   setTimeout(() => $("#boot").classList.add("done"), 1300);
   setTimeout(() => $("#boot").remove(), 1900);

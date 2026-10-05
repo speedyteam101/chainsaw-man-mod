@@ -22,9 +22,35 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
 | Session | `system/blockos-session` | Starts Openbox, the shell server, and Chromium in full-screen kiosk mode showing the desktop. |
 | Installer | `system/install.sh` | Turns a plain Debian 12 or 13 install into BlockOS: installs packages, sets up auto-login, adds boot-menu branding. |
+| Mac app | `mac/make-app.sh` | Builds `BlockOS.app`, which runs the desktop on macOS without a VM. |
 | ISO builder | `iso/build-iso.sh` | Builds a bootable BlockOS live ISO with Debian `live-build` inside Docker. |
 
-## Run it on a Mac (recommended way)
+## Quickest: the BlockOS Mac app
+
+This turns the BlockOS desktop and games into an app you double-click on your Mac. No VM is needed.
+It isn't a real operating system: on the Apps page, Terminal, Files, Web Browser and the others open
+the matching Mac apps (Terminal, Finder, Safari, TextEdit, Activity Monitor, Calculator), and the
+Restart / Shut down buttons are turned off.
+
+In Terminal on your Mac:
+
+```sh
+git clone -b claude/gracious-shannon-5b5f3r https://github.com/speedyteam101/chainsaw-man-mod.git
+./chainsaw-man-mod/blockos/mac/make-app.sh
+open ~/Applications/BlockOS.app
+```
+
+After that, BlockOS is in your **Applications** folder (the one in your home folder), in Launchpad, and in
+Spotlight (Cmd+Space, type "BlockOS"). You can drag it to the Dock.
+
+- It needs **Python 3**. If it's missing, BlockOS asks macOS to install Apple's Command Line Tools.
+  Open BlockOS again once that's done.
+- If you have **Google Chrome**, Edge, Brave or Chromium, BlockOS opens in its own window.
+  Quit it with **Cmd+Q**. Otherwise it opens in Safari.
+- Progress (Bricks, avatar, best scores) is saved between launches.
+- Problems are logged to `~/Library/Application Support/BlockOS/blockos.log`.
+
+## Run the real OS on a Mac (VM)
 
 This installs normal Debian in a VM, then runs the BlockOS installer on it. Your progress (Bricks,
 avatar items, best scores) is kept between restarts.
@@ -42,7 +68,7 @@ avatar items, best scores) is kept between restarts.
    ```sh
    su -                      # become root (enter the root password from the installer)
    apt install -y git
-   git clone https://github.com/speedyteam101/chainsaw-man-mod.git
+   git clone -b claude/gracious-shannon-5b5f3r https://github.com/speedyteam101/chainsaw-man-mod.git
    ./chainsaw-man-mod/blockos/system/install.sh --user YOUR_USER_NAME
    reboot
    ```

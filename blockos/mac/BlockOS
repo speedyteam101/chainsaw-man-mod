@@ -1,0 +1,83 @@
+#!/bin/bash
+# BlockOS for Mac: starts the BlockOS shell server and opens the desktop in its own window.
+# This is the executable inside BlockOS.app (Contents/MacOS/BlockOS); make-app.sh puts it there.
+
+RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
+SUPPORT="$HOME/Library/Application Support/BlockOS"
+PORT=8737
+URL="http://127.0.0.1:$PORT/"
+# Apps opened from Finder get a minimal PATH; add the usual places python3 lives.
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+mkdir -p "$SUPPORT"
+exec >>"$SUPPORT/blockos.log" 2>&1
+echo "--- $(date) starting BlockOS"
+
+alert() {
+  osascript -e "display alert \"BlockOS\" message \"$1\"" >/dev/null 2>&1
+}
+
+server_up() {
+  curl -s -o /dev/null --max-time 1 "${URL}api/ping"
+}
+
+# A Chrome-family browser gives BlockOS its own app window; otherwise Safari is used.
+find_browser() {
+  local dir app
+  for app in "Google Chrome" "Microsoft Edge" "Brave Browser" "Chromium"; do
+    for dir in /Applications "$HOME/Applications"; do
+      if [ -x "$dir/$app.app/Contents/MacOS/$app" ]; then
+        echo "$dir/$app.app/Contents/MacOS/$app"
+        return
+      fi
+    done
+  done
+}
+
+BROWSER="$(find_browser)"
+
+open_window() {
+  if [ -n "$BROWSER" ]; then
+    # Its own browser profile, so BlockOS opens as a separate app window and keeps its own saves.
+    # This keeps running until you quit that window's app (Cmd+Q).
+    "$BROWSER" --app="$URL" --user-data-dir="$SUPPORT/browser" \
+      --no-first-run --no-default-browser-check --window-size=1280,820
+  else
+    open -a Safari "$URL"
+  fi
+}
+
+# Already running (opened twice)? Just show the window again.
+if server_up; then
+  open_window &
+  exit 0
+fi
+
+if ! python3 -c "" 2>/dev/null; then
+  alert "BlockOS needs Python 3, which comes with Apple's Command Line Tools. macOS will now offer to install them. When that's done, open BlockOS again."
+  xcode-select --install 2>/dev/null
+  exit 1
+fi
+
+# With Safari we can't tell when the window closes, so the server quits by itself
+# once no BlockOS page has checked in for 3 minutes.
+IDLE=()
+[ -z "$BROWSER" ] && IDLE=(--idle-exit 180)
+
+python3 "$RES/shell/server.py" --port "$PORT" "${IDLE[@]}" &
+SERVER=$!
+trap 'kill "$SERVER" 2>/dev/null' EXIT
+
+for _ in $(seq 50); do
+  server_up && break
+  sleep 0.1
+done
+if ! server_up; then
+  alert "BlockOS couldn't start. Is something else using port $PORT? Details are in ~/Library/Application Support/BlockOS/blockos.log"
+  exit 1
+fi
+
+open_window
+# Safari mode: open_window returned right away, so wait for the server's idle exit.
+[ -z "$BROWSER" ] && wait "$SERVER"
+exit 0

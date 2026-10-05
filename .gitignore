@@ -3,3 +3,5 @@ obj/
 .vs/
 *.user
 Properties/launchSettings.json
+__pycache__/
+blockos/iso/out/
