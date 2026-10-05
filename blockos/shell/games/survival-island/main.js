@@ -21,7 +21,9 @@ const TIER_NAME = { axe: ["", "Wood Axe", "Stone Axe", "Iron Axe"], pick: ["", "
 
 // ------------------------------------------------------------------ setup
 
-const world = new World({ sky: "#8fd3ff", health: true, fogNear: 170, fogFar: 460 });
+// Real-time shadows and point lights are too slow for software rendering: terrain uses baked lighting,
+// lights are glowing decals and characters get soft blob shadows.
+const world = new World({ sky: "#8fd3ff", health: true, fogNear: 170, fogFar: 460, shadows: false });
 world.camera.far = 1500;
 world.camera.updateProjectionMatrix();
 
@@ -41,7 +43,7 @@ const G = {
   days: 0, found: {}, bedId: null, rot: 0,
   gone: new Map(),       // resource id -> world clock when it grows back
   nightAlive: false, wasNight: false,
-  cool: 0, swingT: 0, showTool: null, showToolT: 0,
+  coolUntil: 0, swingT: 0, showTool: null, showToolT: 0,
   place: null, target: null, extra: {}, hostName: "",
   starve: 0, regen: 0, warnT: 0,
 };
@@ -82,14 +84,35 @@ const stars = (() => {
 const moon = new THREE.Mesh(new THREE.BoxGeometry(40, 40, 40), new THREE.MeshBasicMaterial({ color: "#f1f5ff", fog: false, transparent: true, opacity: 0 }));
 world.scene.add(moon);
 
-// Point lights for campfires, torches and lamps (a fixed number so shaders never recompile).
-const lightPool = [];
-for (let n = 0; n < 4; n++) {
-  const L = new THREE.PointLight(0xffa040, 0, 30, 1);
-  L.position.set(0, -500, 0);
-  world.scene.add(L);
-  lightPool.push(L);
+// Soft round textures for glows and blob shadows.
+function radialTexture(inner, outer) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, inner); grad.addColorStop(1, outer);
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
+const GLOW_TEX = radialTexture("rgba(255,255,255,1)", "rgba(255,255,255,0)");
+const SHADOW_TEX = radialTexture("rgba(0,0,0,0.42)", "rgba(0,0,0,0)");
+const flatGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+const shadowMat = new THREE.MeshBasicMaterial({ map: SHADOW_TEX, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+function blob(size) {
+  const m = new THREE.Mesh(flatGeo, shadowMat);
+  m.scale.set(size, 1, size);
+  m.renderOrder = 1;
+  return m;
+}
+shadowMat.userData.shared = true;
+Mob.blob = (size) => { const m = blob(size); m.position.y = 0.06; return m; };
+const myShadow = blob(3.2);
+world.scene.add(myShadow);
+const torchGlow = new THREE.Mesh(flatGeo, new THREE.MeshBasicMaterial({ map: GLOW_TEX, color: "#ff9a40", transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+torchGlow.scale.set(26, 1, 26);
+world.scene.add(torchGlow);
 
 // Highlight box around the thing you're aiming at, and the build ghost.
 const selBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.85 }));
@@ -210,9 +233,13 @@ world.updateCamera = () => {
   const dist = dir.length();
   if (dist < 0.01) return;
   dir.divideScalar(dist);
+  const near = island.resourcesNear(target.x + dir.x * dist * 0.5, target.z + dir.z * dist * 0.5, dist * 0.5 + 8);
+  const boxes = near.map((r) => island.pickBox(r, new THREE.Box3()).expandByScalar(0.4));
+  const pt = new V3();
   for (let t = 0.6; t <= dist; t += 0.4) {
     const x = target.x + dir.x * t, y = target.y + dir.y * t, z = target.z + dir.z * t;
-    if (island.solidAt(x, y, z) || buildSolidAt(x, y, z)) {
+    pt.set(x, y, z);
+    if (island.solidAt(x, y, z) || buildSolidAt(x, y, z) || boxes.some((bx) => bx.containsPoint(pt))) {
       cam.copy(target).addScaledVector(dir, Math.max(1, t - 0.7));
       world.camera.lookAt(target);
       break;
@@ -371,18 +398,18 @@ function worldInfo() {
 // ------------------------------------------------------------------ time of day
 
 const phase = () => ((G.clock % DAY) + DAY) % DAY / DAY;
-const dayNum = () => Math.floor(G.clock / DAY) + 1;
+const dayNum = () => Math.floor(G.clock / DAY + (1 - NIGHT_END)) + 1;   // a new day starts at dawn
 const isNight = () => { const p = phase(); return p >= NIGHT_START && p < NIGHT_END; };
 const SKY = [
-  [0.00, "#ffc996", "#ffe2bf", 1.0, 0.8],
-  [0.07, "#8fd3ff", "#ffffff", 1.6, 1.15],
-  [0.57, "#8fd3ff", "#ffffff", 1.6, 1.15],
-  [0.64, "#f0915f", "#ffb27a", 0.95, 0.78],
-  [0.71, "#0c1533", "#8ea2ff", 0.22, 0.34],
-  [0.94, "#0c1533", "#8ea2ff", 0.22, 0.34],
-  [1.00, "#ffc996", "#ffe2bf", 1.0, 0.8],
+  [0.00, "#ffc996", "#ffe2bf", 1.0, 0.8, "#e8c7a8"],
+  [0.07, "#8fd3ff", "#ffffff", 1.6, 1.15, "#ffffff"],
+  [0.57, "#8fd3ff", "#ffffff", 1.6, 1.15, "#ffffff"],
+  [0.64, "#f0915f", "#ffb27a", 0.95, 0.78, "#e0ad8c"],
+  [0.71, "#0c1533", "#8ea2ff", 0.22, 0.34, "#46527e"],
+  [0.94, "#0c1533", "#8ea2ff", 0.22, 0.34, "#46527e"],
+  [1.00, "#ffc996", "#ffe2bf", 1.0, 0.8, "#e8c7a8"],
 ];
-const cA = new THREE.Color(), cB = new THREE.Color(), cC = new THREE.Color(), cD = new THREE.Color();
+const cA = new THREE.Color(), cB = new THREE.Color(), cC = new THREE.Color(), cD = new THREE.Color(), cE = new THREE.Color();
 let darkness = 0;
 function updateSky() {
   const p = phase();
@@ -397,35 +424,27 @@ function updateSky() {
   world.sun.intensity = a[3] + (b[3] - a[3]) * f;
   world.hemi.intensity = a[4] + (b[4] - a[4]) * f;
   darkness = Math.max(0, Math.min(1, (1.15 - world.hemi.intensity) / 0.8));
-  stars.material.opacity = Math.max(0, darkness - 0.3) * 1.3;
+  cE.set(a[5]).lerp(cD.set(b[5]), f);
+  island.setLight(cE);
+  stars.material.opacity = Math.max(0, darkness - 0.55) * 2.2;
   stars.position.copy(world.camera.position);
   moon.material.opacity = Math.max(0, darkness - 0.4) * 1.6;
   moon.position.set(world.camera.position.x - 500, world.camera.position.y + 420, world.camera.position.z - 600);
 }
 
 function updateLights() {
-  const cands = [];
-  for (const b of builds.lights) {
-    const d = Math.hypot(b.x - me.pos.x, b.z - me.pos.z);
-    if (d < 110) cands.push([d, b]);
-  }
-  cands.sort((x, y) => x[0] - y[0]);
+  builds.setGlow(0.12 + 0.88 * darkness);
   const holdingTorch = G.inv[G.sel] && G.inv[G.sel].id === "torch" && me.alive;
-  let n = 0;
-  const level = 0.15 + 0.85 * darkness;
+  torchGlow.visible = holdingTorch;
   if (holdingTorch) {
-    const L = lightPool[n++];
-    L.color.setHex(0xffb060); L.distance = 24; L.intensity = 1.6 * level;
-    L.position.set(me.pos.x, me.pos.y + 5, me.pos.z);
+    torchGlow.material.opacity = (0.1 + 0.6 * darkness) * (0.92 + Math.sin(performance.now() / 90) * 0.08);
+    torchGlow.position.set(me.pos.x, builds.groundAt(me.pos.x, me.pos.z, me.pos.y + 0.5) + 0.12, me.pos.z);
   }
-  for (const [, b] of cands) {
-    if (n >= lightPool.length) break;
-    const L = lightPool[n++];
-    L.color.setHex(b.light.color); L.distance = b.light.range;
-    L.intensity = b.light.power * level * (b.flames ? 0.92 + Math.sin(performance.now() / 90 + b.x) * 0.08 : 1);
-    L.position.set(b.x, b.y + 3, b.z);
-  }
-  for (; n < lightPool.length; n++) lightPool[n].intensity = 0;
+  myShadow.visible = me.alive;
+  myShadow.position.set(me.pos.x, builds.groundAt(me.pos.x, me.pos.z, me.pos.y + 0.5) + 0.06, me.pos.z);
+  const lift = Math.max(0, me.pos.y - myShadow.position.y);
+  myShadow.scale.setScalar(3.2 / (1 + lift * 0.08));
+  myShadow.scale.y = 1;
 }
 
 // ------------------------------------------------------------------ aiming
@@ -608,7 +627,7 @@ function placeBuild() {
   if (SAVE.stats.placed >= 20) Kit.badge(GAME, "house", "Home Builder", "Place 20 builds on the island.");
   if (b.type === "bed") { G.bedId = b.id; world.checkpoint(spawnPoint()); ui.pickup("Spawn point set at your bed", "#ef4444"); }
   island.lastCell = -1;
-  G.cool = 0.18;
+  G.coolUntil = performance.now() + 180;
   return true;
 }
 
@@ -692,12 +711,12 @@ function attack(m) {
 }
 
 function onAct(fromHold) {
-  if (!G.started || !me.alive || G.cool > 0 || ui.isOpen()) return;
+  if (!G.started || !me.alive || performance.now() < G.coolUntil || ui.isOpen()) return;
   const t = G.target;
   if (!fromHold && G.place && G.place.ok && !(t && (t.kind === "res" || t.kind === "mob") && t.dist !== undefined && t.dist < 6)) {
     if (placeBuild()) return;
   }
-  G.cool = 0.36;
+  G.coolUntil = performance.now() + 360;
   if (!t) { if (!fromHold) swingArm(); return; }
   if (t.kind === "res") gather(t.r);
   else if (t.kind === "mob") attack(t.m);
@@ -793,7 +812,7 @@ function isHost() { return !net || !net.online || net.isHost; }
 
 function removeMob(m) {
   world.scene.remove(m.model);
-  m.model.traverse((o) => { if (o.isMesh) { const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach((x) => x.dispose()); } });
+  m.model.traverse((o) => { if (o.isMesh) { const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach((x) => { if (!x.userData.shared) x.dispose(); }); } });
   mobs.delete(m.id);
 }
 
@@ -1172,7 +1191,7 @@ function updateHud() {
   const p = phase();
   const left = isNight() ? (NIGHT_END - p) * DAY : ((p < NIGHT_START ? NIGHT_START : 1 + NIGHT_START) - p) * DAY;
   const mm = Math.floor(left / 60), ss = String(Math.floor(left % 60)).padStart(2, "0");
-  const label = isNight() ? "Night" : p < 0.25 ? "Morning" : p < 0.58 ? "Afternoon" : "Evening";
+  const label = isNight() ? "Night" : p >= NIGHT_END || p < 0.25 ? "Morning" : p < 0.58 ? "Afternoon" : "Evening";
   Kit.hud(`Day ${dayNum()}<small>${label} · ${isNight() ? "dawn" : "night"} in ${mm}:${ss}</small>`);
   ui.setFood(G.hunger);
   ui.setHealth(me.health);
@@ -1224,7 +1243,7 @@ world.start((dt) => {
   if (isHost() && G.synced && G.started) simMobs(dt);
   for (const m of mobs.values()) m.draw(dt, !(isHost() && G.synced));
 
-  G.cool -= dt; G.swingT = Math.max(0, G.swingT - dt); G.showToolT -= dt; G.warnT -= dt;
+  G.swingT = Math.max(0, G.swingT - dt); G.showToolT -= dt; G.warnT -= dt;
   island.updateColliders(me.pos.x, me.pos.z);
 
   // aiming, highlight and ghost
@@ -1310,4 +1329,4 @@ ui.title({
   if (!count("wood") && !G.inv.some(Boolean)) ui.announce("Welcome to Survival Island", "Hit trees to collect wood, then press C to craft.");
   saveNow();
 });
-window.game.api = { give, craft: (id) => craft(RECIPES.find((r) => r.out === id)), setPhase: (p) => { G.clock = Math.floor(G.clock / DAY) * DAY + p * DAY; }, count, teleport, spawnMob, saveNow, recipeState, placeBuild, eat, isHost, pickPointer };
+window.game.api = { give, gather, newWorld, craft: (id) => craft(RECIPES.find((r) => r.out === id)), setPhase: (p) => { G.clock = Math.floor(G.clock / DAY) * DAY + p * DAY; }, count, teleport, spawnMob, saveNow, recipeState, placeBuild, eat, isHost, pickPointer };

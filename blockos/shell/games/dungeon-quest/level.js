@@ -19,6 +19,7 @@ export class Zone {
     this.rooms = [];
     this.hazards = [];
     this.gates = [];
+    this.decor = [];          // small things to hide when the camera gets too close
   }
 
   part(o, room) {
@@ -27,6 +28,7 @@ export class Zone {
     if (Array.isArray(m.material)) m.material = m.material[2];
     if (this.kind === "dungeon") m.castShadow = false;   // only characters cast shadows down here (much faster)
     if (o.wall) this.walls.push(m);
+    if (o.decor) this.decor.push(m);
     this.track(m, room);
     this.parts.push(m);
     return m;
@@ -56,6 +58,7 @@ export class Zone {
   label(text, opts, room) {
     const s = this.world.label(text, opts);
     this.objs.push(s);
+    this.decor.push(s);
     this.track(s, room);
     return s;
   }
@@ -68,7 +71,19 @@ export class Zone {
       const vis = Math.hypot(r.x - x, r.z - z) < range + r.size / 2;
       if (list.vis === vis) continue;
       list.vis = vis;
-      for (const o of list) o.visible = vis;
+      for (const o of list) { o.userData.roomVis = vis; o.visible = vis && !o.userData.near; }
+    }
+  }
+
+  // Hide decorations and signs right in front of the camera so they never fill the screen.
+  hideNear(cam) {
+    for (const o of this.decor) {
+      const info = o.userData.part;
+      const d = info ? info.box.distanceToPoint(cam) : o.position.distanceTo(cam) - 6;
+      const near = d < 4.5;
+      if (near === !!o.userData.near) continue;
+      o.userData.near = near;
+      o.visible = !near && o.userData.roomVis !== false;
     }
   }
 
@@ -82,7 +97,7 @@ export class Zone {
 // A portal arch with a glowing panel you walk into.
 export function portal(zone, x, z, yaw, color, frame, onTouch, room, locked) {
   const along = Math.abs(Math.sin(yaw)) > 0.5;   // arch spans along z when facing +-x
-  const P = (size, pos, o) => zone.part(Object.assign({ size: along ? [size[2], size[1], size[0]] : size, pos: along ? [x + pos[2], pos[1], z + pos[0]] : [x + pos[0], pos[1], z + pos[2]], color: frame, studs: false }, o || {}), room);
+  const P = (size, pos, o) => zone.part(Object.assign({ size: along ? [size[2], size[1], size[0]] : size, pos: along ? [x + pos[2], pos[1], z + pos[0]] : [x + pos[0], pos[1], z + pos[2]], color: frame, studs: false, decor: zone.kind === "dungeon" }, o || {}), room);
   P([14, 1, 8], [0, 0.5, 0], { studs: true });
   P([2, 13, 2], [-5, 7, 0]);
   P([2, 13, 2], [5, 7, 0]);
@@ -251,7 +266,12 @@ export function buildDungeon(zone, plan, def, hooks) {
   const R = rng(plan.seed ^ 0x5bd1e995);
   zone.rooms = plan.rooms;
   const H = WALL_H;
-  const wallPart = (size, pos, room, color) => zone.part({ size, pos, color: color || def.wall, studs: false, wall: true }, room);
+  const wallPart = (size, pos, room, color) => {
+    const m = zone.part({ size, pos, color: color || def.wall, studs: false, wall: true }, room);
+    // a darker cap along the top makes the walls read clearly from above
+    zone.part({ size: [size[0] + 0.4, 0.7, size[2] + 0.4], pos: [pos[0], pos[1] + size[1] / 2 + 0.35, pos[2]], color: def.trim, studs: false, collide: false, decor: true }, room);
+    return m;
+  };
 
   for (const r of plan.rooms) {
     const s = r.size, q = s / 2, i = r.i;
@@ -283,8 +303,8 @@ export function buildDungeon(zone, plan, def, hooks) {
       const off = q * 0.55;
       const tx = dz !== 0 ? r.x + off : r.x + dx * (q - 0.2);
       const tz = dz !== 0 ? r.z + dz * (q - 0.2) : r.z - off;
-      zone.part({ size: [0.9, 1.4, 0.9], pos: [tx, 5.2, tz], color: def.torch, material: "neon", collide: false, studs: false }, i);
-      zone.part({ size: [0.5, 1.2, 0.5], pos: [tx, 4.1, tz], color: def.trim, collide: false, studs: false, shadow: false }, i);
+      zone.part({ size: [0.9, 1.4, 0.9], pos: [tx, 5.2, tz], color: def.torch, material: "neon", collide: false, studs: false, decor: true }, i);
+      zone.part({ size: [0.5, 1.2, 0.5], pos: [tx, 4.1, tz], color: def.trim, collide: false, studs: false, decor: true }, i);
     }
     decorate(zone, r, def, R, hooks);
   }
@@ -324,7 +344,7 @@ export function buildDungeon(zone, plan, def, hooks) {
 function decorate(zone, r, def, R, hooks) {
   const q = r.size / 2, i = r.i;
   const solid = (size, pos, color, o) => {
-    const m = zone.part(Object.assign({ size, pos: [r.x + pos[0], pos[1], r.z + pos[2]], color, studs: false }, o || {}), i);
+    const m = zone.part(Object.assign({ size, pos: [r.x + pos[0], pos[1], r.z + pos[2]], color, studs: false, decor: true }, o || {}), i);
     if (!o || o.collide !== false) r.solids.push({ x0: r.x + pos[0] - size[0] / 2, x1: r.x + pos[0] + size[0] / 2, z0: r.z + pos[2] - size[2] / 2, z1: r.z + pos[2] + size[2] / 2, y1: pos[1] + size[1] / 2 });
     return m;
   };
@@ -336,18 +356,18 @@ function decorate(zone, r, def, R, hooks) {
   };
   switch (r.template) {
     case "entrance": {
-      const back = Object.keys(DIRS).find((k) => DIRS[k][0] === -DIRS[r.exit][0] && DIRS[k][1] === -DIRS[r.exit][1]);
-      const [bx, bz] = DIRS[back];
-      const px = r.x + bx * (q - 5), pz = r.z + bz * (q - 5);
+      const [bx, bz] = [DIRS[r.exit][1], DIRS[r.exit][0]];   // a side wall, so it's never behind the camera
+      const [ex, ez] = DIRS[r.exit];
+      const px = r.x + bx * (q - 5) + ex * 6, pz = r.z + bz * (q - 5) + ez * 6;
       const yaw = Math.atan2(bx, bz);
-      hooks.entrancePortal = portal(zone, px, pz, yaw, "#facc15", def.trim, hooks.onExit, i);
-      zone.label("Back to town", { pos: [px, 17, pz], height: 1.4, color: "#fde68a" }, i);
+      hooks.entrancePortal = portal(zone, px, pz, yaw, "#f59e0b", def.trim, hooks.onExit, i);
+      zone.label("Back to town", { pos: [px, 16.2, pz], height: 1.3, color: "#fde68a" }, i);
       zone.label(def.name, { pos: [r.x, 12, r.z], height: 2.6, color: def.torch }, i);
       break;
     }
     case "pillars":
       for (const [u, v] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) solid([3.4, WALL_H + 2, 3.4], [u * q * 0.45, (WALL_H + 2) / 2, v * q * 0.45], def.trim);
-      for (const [u, v] of [[-1, -1], [1, 1]]) zone.part({ size: [1, 1, 1], pos: [r.x + u * q * 0.45, WALL_H + 2.6, r.z + v * q * 0.45], color: def.torch, material: "neon", collide: false, studs: false }, i);
+      for (const [u, v] of [[-1, -1], [1, 1]]) zone.part({ size: [1, 1, 1], pos: [r.x + u * q * 0.45, WALL_H + 2.6, r.z + v * q * 0.45], color: def.torch, material: "neon", collide: false, studs: false, decor: true }, i);
       break;
     case "pool": {
       zone.part({ size: [12, 0.3, 12], pos: [r.x, 0.15, r.z], color: def.hazard, material: "neon", collide: false, studs: false, shadow: false }, i);
@@ -360,15 +380,15 @@ function decorate(zone, r, def, R, hooks) {
       for (let k = 0; k < n; k++) {
         const [u, v] = quad(7);
         solid([3, 3, 3], [u, 1.5, v], "#8b5a2b", { material: "wood" });
-        if (R() < 0.4) zone.part({ size: [2.2, 2.2, 2.2], pos: [r.x + u, 4.1, r.z + v], color: "#a16207", material: "wood", studs: false }, i);
+        if (R() < 0.4) zone.part({ size: [2.2, 2.2, 2.2], pos: [r.x + u, 4.1, r.z + v], color: "#a16207", material: "wood", studs: false, decor: true }, i);
       }
       break;
     }
     case "altar":
       solid([14, 1, 14], [0, 0.5, 0], def.trim, { studs: true });
       for (const [u, v] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-        zone.part({ size: [1.4, 2, 1.4], pos: [r.x + u * 5.6, 2, r.z + v * 5.6], color: def.wall, studs: false }, i);
-        zone.part({ size: [1, 0.9, 1], pos: [r.x + u * 5.6, 3.45, r.z + v * 5.6], color: def.torch, material: "neon", collide: false, studs: false }, i);
+        zone.part({ size: [1.4, 2, 1.4], pos: [r.x + u * 5.6, 2, r.z + v * 5.6], color: def.wall, studs: false, decor: true }, i);
+        zone.part({ size: [1, 0.9, 1], pos: [r.x + u * 5.6, 3.45, r.z + v * 5.6], color: def.torch, material: "neon", collide: false, studs: false, decor: true }, i);
       }
       r.solids.length = 0;   // the dais is walkable for monsters too
       break;
@@ -382,13 +402,13 @@ function decorate(zone, r, def, R, hooks) {
     }
     case "boss": {
       for (const [u, v] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-        solid([4.5, WALL_H + 5, 4.5], [u * q * 0.62, (WALL_H + 5) / 2, v * q * 0.62], def.trim);
-        zone.part({ size: [1.6, 1.6, 1.6], pos: [r.x + u * q * 0.62, WALL_H + 6, r.z + v * q * 0.62], color: def.torch, material: "neon", collide: false, studs: false }, i);
+        solid([4.5, WALL_H + 1, 4.5], [u * q * 0.62, (WALL_H + 1) / 2, v * q * 0.62], def.trim);
+        zone.part({ size: [1.6, 1.6, 1.6], pos: [r.x + u * q * 0.62, WALL_H + 1.8, r.z + v * q * 0.62], color: def.torch, material: "neon", collide: false, studs: false, decor: true }, i);
       }
       const [ex, ez] = DIRS[r.entry];
       const tx = -ex * (q - 3), tz = -ez * (q - 3);
       const along = ex !== 0;
-      zone.part({ size: along ? [4, 9, 9] : [9, 9, 4], pos: [r.x + tx, 4.5, r.z + tz], color: def.accent, studs: false }, i);
+      zone.part({ size: along ? [4, 9, 9] : [9, 9, 4], pos: [r.x + tx, 4.5, r.z + tz], color: def.accent, studs: false, decor: true }, i);
       zone.part({ size: along ? [6, 1, 12] : [12, 1, 6], pos: [r.x + tx * 0.93, 0.5, r.z + tz * 0.93], color: def.trim }, i);
       zone.part({ size: [26, 0.12, 26], pos: [r.x, 0.12, r.z], color: def.trim, collide: false, shadow: false, studs: false }, i);
       break;

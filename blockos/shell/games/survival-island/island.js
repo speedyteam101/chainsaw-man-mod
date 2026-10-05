@@ -25,6 +25,26 @@ const TOP_COL = { [SEABED]: "#c9b27a", [SAND]: "#ead38f", [GRASS]: "#5cab45", [F
 const SIDE_COL = { [SEABED]: "#b89e66", [SAND]: "#d4b978", [GRASS]: "#8a6239", [FOREST]: "#7c5733", [ROCK]: "#767a80", [CAVE]: "#55585e" };
 const DEEP = new THREE.Color("#1f5876");
 
+// Light is baked into vertex colors (cheap for software rendering): tops are brightest, sides darker.
+export function faceShade(n) {
+  if (n[1] > 0.5) return 1;
+  if (n[1] < -0.5) return 0.5;
+  if (n[0] > 0.5) return 0.82;
+  if (n[0] < -0.5) return 0.66;
+  if (n[2] > 0.5) return 0.74;
+  return 0.6;
+}
+
+// A unit box whose faces carry the baked shading as vertex colors.
+function shadedBox() {
+  const g = new THREE.BoxGeometry(1, 1, 1);
+  const nrm = g.attributes.normal;
+  const col = [];
+  for (let v = 0; v < nrm.count; v++) { const f = faceShade([nrm.getX(v), nrm.getY(v), nrm.getZ(v)]); col.push(f, f, f); }
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  return g;
+}
+
 class GeoBuf {
   constructor(uv) { this.p = []; this.n = []; this.c = []; this.u = uv ? [] : null; }
   // v = 4 corners; n = outward normal; uvs optional 4 pairs
@@ -34,10 +54,11 @@ class GeoBuf {
     const e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
     if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0) { [b, d] = [d, b]; [ub, ud] = [ud, ub]; }
+    const f = faceShade(n);
     for (const [vv, uu] of [[a, ua], [b, ub], [c, uc], [a, ua], [c, uc], [d, ud]]) {
       this.p.push(vv[0], vv[1], vv[2]);
       this.n.push(n[0], n[1], n[2]);
-      this.c.push(col.r, col.g, col.b);
+      this.c.push(col.r * f, col.g * f, col.b * f);
       if (this.u) this.u.push(uu ? uu[0] : 0, uu ? uu[1] : 0);
     }
   }
@@ -203,28 +224,35 @@ export class Island {
       }
     }
     const tex = studTexture();
-    const topMesh = new THREE.Mesh(tops.geometry(), new THREE.MeshLambertMaterial({ vertexColors: true, map: tex }));
-    const sideMesh = new THREE.Mesh(sides.geometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
-    topMesh.receiveShadow = sideMesh.receiveShadow = true;
+    const topMat = new THREE.MeshBasicMaterial({ vertexColors: true, map: tex });
+    const sideMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    this.litMaterials = [topMat, sideMat];
+    const topMesh = new THREE.Mesh(tops.geometry(), topMat);
+    const sideMesh = new THREE.Mesh(sides.geometry(), sideMat);
     this.group.add(topMesh, sideMesh);
-    if (roofs.p.length) {
-      const roofMesh = new THREE.Mesh(roofs.geometry(), new THREE.MeshLambertMaterial({ vertexColors: true, map: tex }));
-      roofMesh.castShadow = roofMesh.receiveShadow = true;
-      this.group.add(roofMesh);
-    }
+    if (roofs.p.length) this.group.add(new THREE.Mesh(roofs.geometry(), topMat));
     this.terrainMeshes = [topMesh, sideMesh];
   }
 
   buildWater() {
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshLambertMaterial({ color: "#2f8fd6", transparent: true, opacity: 0.62, depthWrite: false }));
+    const water = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: "#3a9ae0", transparent: true, opacity: 0.6, depthWrite: false }));
+    water.userData.base = new THREE.Color("#3a9ae0");
     water.rotation.x = -Math.PI / 2;
     water.position.y = WATER_Y;
     water.renderOrder = 2;
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), new THREE.MeshBasicMaterial({ color: "#1b4f6b" }));
+    floor.userData.base = new THREE.Color("#1b4f6b");
+    this.tinted = [water, floor];
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = FLOOR_MIN + 1.5;
     this.water = water;
     this.group.add(water, floor);
+  }
+
+  // Day/night: tint everything that has baked lighting.
+  setLight(color) {
+    for (const m of this.litMaterials) m.color.copy(color);
+    for (const o of this.tinted) o.material.color.copy(o.userData.base).multiply(color);
   }
 
   // ---------------------------------------------------------------- resources
@@ -237,7 +265,7 @@ export class Island {
       r.def = def; r.hp = def.hp; r.alive = true; r.comps = [];
       for (const c of components(r)) (c.glow ? glow : solid).push([r, c]);
     }
-    const box = new THREE.BoxGeometry(1, 1, 1);
+    const box = shadedBox();
     const make = (items, mat) => {
       const mesh = new THREE.InstancedMesh(box, mat, Math.max(1, items.length));
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3(), color = new THREE.Color();
@@ -254,14 +282,14 @@ export class Island {
         r.comps.push({ mesh, n, base: m.clone() });
       });
       mesh.count = items.length;
-      mesh.castShadow = mat.type !== "MeshBasicMaterial";
-      mesh.receiveShadow = true;
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       this.group.add(mesh);
       return mesh;
     };
-    this.resSolid = make(solid, new THREE.MeshLambertMaterial({ color: "#ffffff" }));
+    const resMat = new THREE.MeshBasicMaterial({ color: "#ffffff", vertexColors: true });
+    this.litMaterials.push(resMat);
+    this.resSolid = make(solid, resMat);
     this.resGlow = make(glow, new THREE.MeshBasicMaterial({ color: "#ffffff" }));
     this.resByCell = new Map();
     for (const r of list) this.resByCell.set(idx(r.i, r.k), r);

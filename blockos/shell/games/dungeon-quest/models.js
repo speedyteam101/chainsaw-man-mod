@@ -262,8 +262,8 @@ export class Effects {
     else if (a.s === "cone") geo = this.coneGeo(a.a);
     else geo = this.planeGeo;
     const color = a.c || "#ef4444";
-    const outer = new THREE.Mesh(geo, this.teleMat(color, 0.22));
-    const inner = new THREE.Mesh(geo, this.teleMat(color, 0.4));
+    const outer = new THREE.Mesh(geo, this.teleMat(color, 0.3));
+    const inner = new THREE.Mesh(geo, this.teleMat(color, 0.5));
     const g = new THREE.Group();
     g.add(outer, inner);
     g.position.set(a.x, (y || 0) + 0.12, a.z);

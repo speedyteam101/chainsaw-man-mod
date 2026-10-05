@@ -27,21 +27,21 @@ export const RARITIES = [
 export const DUNGEONS = [
   {
     id: "mossy-crypt", name: "Mossy Crypt", tier: 1, rec: 1, rooms: 4,
-    floor: "#56634b", floor2: "#4a5640", wall: "#6f786a", trim: "#454f40", accent: "#84cc16", hazard: "#4d7c0f", gate: "#a3e635", torch: "#bef264",
+    floor: "#3d4834", floor2: "#4d5b41", wall: "#86917c", trim: "#2f3a28", accent: "#84cc16", hazard: "#4d7c0f", gate: "#a3e635", torch: "#bef264",
     sky: "#0b120a", hemiSky: 0xc8e6b4, hemiGround: 0x3a4a30, sun: 0xdcefc4,
     enemies: ["zombie", "bonecaster", "mossbrute"], boss: "rotking",
     blurb: "Shambling zombies and bone casters haunt these damp halls.",
   },
   {
     id: "lava-forge", name: "Lava Forge", tier: 2, rec: 4, rooms: 5,
-    floor: "#4a3f3c", floor2: "#3d3431", wall: "#5d4b45", trim: "#2f2623", accent: "#f97316", hazard: "#ea580c", gate: "#fb923c", torch: "#fdba74",
+    floor: "#2e2522", floor2: "#3d312c", wall: "#7a5d52", trim: "#211916", accent: "#f97316", hazard: "#ea580c", gate: "#fb923c", torch: "#fdba74",
     sky: "#170805", hemiSky: 0xffc9a8, hemiGround: 0x5a2a18, sun: 0xffd0a0,
     enemies: ["imp", "pyromancer", "golem"], boss: "forgelord",
     blurb: "Fire imps and magma golems guard the ancient forge.",
   },
   {
     id: "frost-keep", name: "Frost Keep", tier: 3, rec: 8, rooms: 6,
-    floor: "#9fb3c8", floor2: "#8aa0b8", wall: "#c3d3e3", trim: "#7189a3", accent: "#38bdf8", hazard: "#7dd3fc", gate: "#67e8f9", torch: "#a5f3fc",
+    floor: "#6f86a0", floor2: "#8197b0", wall: "#dbe7f3", trim: "#4f6884", accent: "#38bdf8", hazard: "#7dd3fc", gate: "#67e8f9", torch: "#a5f3fc",
     sky: "#08101c", hemiSky: 0xd6ecff, hemiGround: 0x2a3f5a, sun: 0xe0f0ff,
     enemies: ["ghoul", "frostmage", "yeti"], boss: "frostqueen",
     blurb: "Ice ghouls, frost mages and yetis serve the Frost Queen.",

@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Sword Arena</title><link rel="stylesheet" href="../kit.css">
+<style>
+  #banner { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 16; display: none; text-align: center;
+    background: rgba(20, 22, 25, .86); border: 2px solid #3a3f46; padding: 6px 20px; border-radius: 12px; font-weight: 800; font-size: 19px; }
+  #banner small { display: block; font-size: 12px; color: #a7adb4; font-weight: 700; }
+  #banner.big { font-size: 26px; border-color: #facc15; }
+  #feed { position: fixed; left: 12px; bottom: 14px; z-index: 15; display: flex; flex-direction: column; gap: 3px; font-size: 13px; font-weight: 800; }
+  #feed div { background: rgba(20, 22, 25, .75); padding: 3px 10px; border-radius: 6px; transition: opacity .6s; }
+  #feed div.old { opacity: 0; }
+  #feed b { color: #facc15; }
+  #lunge { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 20; width: 220px; height: 6px; border-radius: 3px;
+    background: rgba(0, 0, 0, .5); overflow: hidden; }
+  #lunge i { display: block; height: 100%; width: 100%; background: #38bdf8; }
+  #lungeLbl { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); z-index: 20; font-size: 11px; font-weight: 800; color: #bae6fd; text-shadow: 0 1px 2px #000; letter-spacing: 1px; }
+  #flash { position: fixed; inset: 0; z-index: 12; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(239, 68, 68, 0) 40%, rgba(239, 68, 68, .55) 100%); transition: opacity .25s; }
+  #cross { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(255, 255, 255, .7); z-index: 11; pointer-events: none; display: none; }
+</style>
+</head>
+<body>
+<div id="banner"></div>
+<div id="feed"></div>
+<div id="lungeLbl">LUNGE</div>
+<div id="lunge"><i></i></div>
+<div id="flash"></div>
+<div id="cross"></div>
+<script src="../kit.js"></script>
+<script type="module">
+import { World, THREE } from "../kit3d.js";
+
+const ID = "sword-arena";
+const world = new World({ sky: "#9bd4ff", health: true, voidY: -50, cameraButton: "right", fogNear: 230, fogFar: 620 });
+window.world = world;
+const net = Kit.net(ID, { room: "main" });
+window.net = net;
+const now = () => performance.now();
+const $ = (id) => document.getElementById(id);
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const save = (k, v) => { try { localStorage.setItem("sword-arena." + k, JSON.stringify(v)); } catch (_) {} };
+const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem("sword-arena." + k)); return v == null ? d : v; } catch (_) { return d; } };
+
+const ROUND_LEN = 180, INTER = 8;
+const SLASH = { dmg: 10, range: 6.8, arc: 1.25, kbH: 20, kbV: 20 };
+const LUNGE = { dmg: 25, range: 7.6, arc: 0.9, kbH: 44, kbV: 30, time: 0.3, speed: 40, cd: 1.4 };
+
+let actx = null;
+function tone(freqs, len, type, vol, gap, slide) {
+  try { if (localStorage.getItem("blockos.muted") === "1") return; } catch (_) {}
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    let t = actx.currentTime;
+    for (const f of freqs) {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "sine"; o.frequency.setValueAtTime(f, t);
+      if (slide) o.frequency.exponentialRampToValueAtTime(f * slide, t + len);
+      g.gain.setValueAtTime(vol || 0.08, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      o.connect(g).connect(actx.destination);
+      o.start(t); o.stop(t + len);
+      t += gap || 0;
+    }
+  } catch (_) {}
+}
+const swish = () => tone([900], 0.12, "sawtooth", 0.035, 0, 0.35);
+
+// ======================================================================= the islands
+const P = (size, pos, color, o) => world.part(Object.assign({ size, pos, color }, o || {}));
+const deco = (size, pos, color, o) => P(size, pos, color, Object.assign({ collide: false, studs: false, shadow: false }, o));
+function island(cx, cz, w, d, top, grass) {
+  P([w, 2, d], [cx, top - 1, cz], grass || "#4caf50");
+  P([w - 2, 4, d - 2], [cx, top - 4, cz], "#8b5a2b");
+  P([w - 8, 6, d - 8], [cx, top - 9, cz], "#6b7280");
+  if (w > 18 && d > 18) P([w - 16, 6, d - 16], [cx, top - 15, cz], "#4b5563");
+}
+island(0, 0, 44, 44, 0, "#4caf50");
+island(0, -75, 28, 28, 0, "#65a30d");
+island(0, 75, 28, 28, 0, "#65a30d");
+island(75, 0, 28, 28, 0, "#16a34a");
+island(-75, 0, 28, 28, 0, "#16a34a");
+// bridges (no railings!)
+P([6, 1.2, 39], [0, -0.6, -41.5], "#a0522d", { material: "wood" });
+P([6, 1.2, 39], [0, -0.6, 41.5], "#a0522d", { material: "wood" });
+P([39, 1.2, 6], [41.5, -0.6, 0], "#a0522d", { material: "wood" });
+P([39, 1.2, 6], [-41.5, -0.6, 0], "#a0522d", { material: "wood" });
+// rope posts at the bridge ends
+for (const [x, z] of [[-3.4, -21.6], [3.4, -21.6], [-3.4, 21.6], [3.4, 21.6], [-3.4, -61.4], [3.4, -61.4], [-3.4, 61.4], [3.4, 61.4],
+  [21.6, -3.4], [21.6, 3.4], [-21.6, -3.4], [-21.6, 3.4], [61.4, -3.4], [61.4, 3.4], [-61.4, -3.4], [-61.4, 3.4]]) P([0.8, 2.4, 0.8], [x, 1.2, z], "#78350f", { material: "wood" });
+// center: a stepped platform and four lantern pillars
+P([16, 1, 16], [0, 0.5, 0], "#9ca3af"); P([12, 1, 12], [0, 1.5, 0], "#a8a29e"); P([8, 1, 8], [0, 2.5, 0], "#d6d3d1");
+for (const [x, z] of [[14, 14], [-14, 14], [14, -14], [-14, -14]]) {
+  P([2.5, 9, 2.5], [x, 4.5, z], "#78716c");
+  P([3.2, 0.6, 3.2], [x, 9.3, z], "#57534e");
+  deco([1.4, 1.4, 1.4], [x, 10.3, z], "#fde047", { material: "neon" });
+}
+// north: a stepped tower
+P([10, 4, 10], [0, 2, -80], "#64748b");
+for (let k = 1; k <= 3; k++) P([4, k, 2], [0, k / 2, -74 + (3 - k) * 2], "#94a3b8");
+P([10, 0.6, 0.6], [0, 4.9, -84.7], "#475569"); P([0.6, 0.6, 10], [-4.7, 4.9, -80], "#475569"); P([0.6, 0.6, 10], [4.7, 4.9, -80], "#475569");
+// south: crates
+for (const [x, z, h] of [[-6, 70, 3], [6, 80, 3], [-5, 82, 4], [7, 69, 2], [0, 76, 2]]) P([3.5, h, 3.5], [x, h / 2, z], "#b45309", { material: "wood" });
+// east: low walls
+P([1, 2.6, 10], [70, 1.3, -4], "#a8a29e"); P([1, 2.6, 10], [80, 1.3, 4], "#a8a29e"); P([8, 2.6, 1], [75, 1.3, 9], "#a8a29e");
+// west: a ruined arch
+P([2, 9, 2], [-75, 4.5, -5], "#9ca3af"); P([2, 9, 2], [-75, 4.5, 5], "#9ca3af"); P([2, 2, 12], [-75, 10, 0], "#78716c");
+P([2, 3, 2], [-80, 1.5, 8], "#9ca3af"); P([2, 1.5, 2], [-70, 0.75, -9], "#9ca3af");
+// corner islets reached by stepping stones, each with a health pickup
+const pickups = [];
+for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+  [[28, 0.5], [35, 1.5], [42, 2.5]].forEach(([d, top]) => P([4, 2, 4], [sx * d, top - 1, sz * d], "#a8a29e"));
+  island(sx * 52, sz * 52, 12, 12, 3, "#84cc16");
+  const m = deco([1.6, 1.6, 1.6], [sx * 52, 5, sz * 52], "#22c55e", { material: "neon" });
+  pickups.push({ m, x: sx * 52, z: sz * 52, y: 3, readyAt: 0 });
+}
+// far-away scenery & a cloud layer below
+for (let i = 0; i < 7; i++) {
+  const a = (i / 7) * Math.PI * 2 + 0.3, r = 170 + (i % 3) * 30, y = -10 + (i % 4) * 9;
+  const x = Math.cos(a) * r, z = Math.sin(a) * r, s = 10 + (i % 3) * 5;
+  deco([s, 2, s], [x, y, z], "#4caf50"); deco([s - 3, 5, s - 3], [x, y - 3.5, z], "#8b5a2b"); deco([s - 7, 6, s - 7], [x, y - 9, z], "#6b7280");
+  deco([1.4, 6, 1.4], [x, y + 4, z], "#7c4a23"); deco([5, 4, 5], [x, y + 8, z], "#2f8f3a");
+}
+for (const [x, z, w, d] of [[-60, -40, 70, 40], [50, 50, 80, 50], [-40, 70, 60, 40], [80, -60, 60, 50], [0, 0, 50, 40], [-110, 20, 50, 60], [120, 10, 50, 70]]) {
+  deco([w, 3, d], [x, -32, z], "#ffffff", { material: "glass" });
+}
+world.label("SWORD ARENA", { pos: [0, 16, 0], height: 3, color: "#fde68a" });
+
+const SPAWNS = [[0, -75], [0, 75], [75, 0], [-75, 0], [10, -70], [-10, 72], [70, 10], [-70, -10]];
+function randomSpawn() { const [x, z] = Kit.pick(SPAWNS); return [x + Kit.rand(-3, 3), 0.5, z + Kit.rand(-3, 3)]; }
+
+// ======================================================================= swords, health bars, force fields
+const bladeMat = new THREE.MeshLambertMaterial({ color: "#e5e7eb" });
+const guardMat = new THREE.MeshLambertMaterial({ color: "#eab308" });
+const gripMat = new THREE.MeshLambertMaterial({ color: "#5b3a1e" });
+const G_BLADE = new THREE.BoxGeometry(0.22, 3.6, 0.6), G_GUARD = new THREE.BoxGeometry(1.2, 0.22, 0.4), G_GRIP = new THREE.BoxGeometry(0.26, 0.9, 0.26), G_TIP = new THREE.BoxGeometry(0.22, 0.45, 0.42);
+function makeSword() {
+  const g = new THREE.Group();
+  const add = (geo, mat, y) => { const m = new THREE.Mesh(geo, mat); m.position.y = y; m.castShadow = true; g.add(m); return m; };
+  add(G_GRIP, gripMat, 0); add(G_GUARD, guardMat, 0.5); add(G_BLADE, bladeMat, 2.4); add(G_TIP, bladeMat, 4.4).scale.set(1, 1, 0.6);
+  return g;
+}
+const ffMat = new THREE.MeshBasicMaterial({ color: "#60a5fa", transparent: true, opacity: 0.22, depthWrite: false });
+const G_FF = new THREE.SphereGeometry(3.4, 16, 12);
+const barBack = new THREE.MeshBasicMaterial({ color: "#111827" });
+const barMats = ["#22c55e", "#facc15", "#ef4444"].map((c) => new THREE.MeshBasicMaterial({ color: c }));
+const G_BAR = new THREE.PlaneGeometry(3, 0.32), G_FILL = new THREE.PlaneGeometry(2.84, 0.2).translate(1.42, 0, 0);
+const billboards = [];
+function healthBar(model) {
+  const g = new THREE.Group();
+  const back = new THREE.Mesh(G_BAR, barBack);
+  const fill = new THREE.Mesh(G_FILL, barMats[0]);
+  fill.position.set(-1.42, 0, 0.01);
+  g.add(back, fill);
+  g.position.y = 7;
+  g.userData.noBreak = true;
+  back.userData.noBreak = fill.userData.noBreak = true;
+  model.add(g);
+  billboards.push(g);
+  return (hp) => {
+    const f = Kit.clamp(hp / 100, 0, 1);
+    fill.scale.x = Math.max(0.001, f);
+    fill.material = barMats[f > 0.5 ? 0 : f > 0.25 ? 1 : 2];
+  };
+}
+// Gives a character a sword and the attack poses. fx.atk: 0 idle, 1 slash, 2 lunge.
+function arm(model) {
+  if (model.userData.fx) return model.userData.fx;
+  const L = model.userData.limbs;
+  const sword = makeSword();
+  sword.position.set(0, -1.9, 0);
+  L.armR.add(sword);
+  const ff = new THREE.Mesh(G_FF, ffMat);
+  ff.position.y = 2.6; ff.visible = false; ff.userData.noBreak = true;
+  model.add(ff);
+  const fx = { atk: 0, t: 9, seq: null, sword, L, ff, setHp: null };
+  model.userData.fx = fx;
+  const orig = model.userData.animate;
+  model.userData.animate = (dt, speed, air) => {
+    orig(dt, speed, air);
+    fx.t += dt;
+    L.armR.rotation.z = 0;
+    if (fx.atk === 1 && fx.t < 0.32) {
+      const u = fx.t / 0.32, e = 1 - (1 - u) * (1 - u);
+      L.armR.rotation.x = Math.PI * 1.05 - e * Math.PI * 0.8;
+      L.armR.rotation.z = Math.sin(u * Math.PI) * 0.3;
+      sword.rotation.x = -Math.PI * 0.5;
+    } else if (fx.atk === 2 && fx.t < 0.45) {
+      L.armR.rotation.x = Math.PI / 2;
+      L.armL.rotation.x = -0.7;
+      sword.rotation.x = -Math.PI;
+    } else {
+      fx.atk = 0;
+      L.armR.rotation.x = Math.PI * 0.42;
+      sword.rotation.x = -Math.PI * 0.62;
+    }
+  };
+  return fx;
+}
+// Breaks a character into flying pieces (for bots and other players).
+const debris = [];
+function breakApart(model) {
+  model.updateMatrixWorld(true);
+  model.traverse((m) => {
+    if (!m.isMesh || m.userData.noBreak || !m.visible) return;
+    const c = new THREE.Mesh(m.geometry, m.material);
+    m.getWorldPosition(c.position); m.getWorldQuaternion(c.quaternion);
+    world.scene.add(c);
+    debris.push({ m: c, v: new THREE.Vector3(Kit.rand(-11, 11), Kit.rand(6, 22), Kit.rand(-11, 11)), s: new THREE.Vector3(Kit.rand(0, 6), Kit.rand(0, 6), 0), life: 2 });
+  });
+}
+// Hit sparks.
+const sparkGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5), sparkMat = new THREE.MeshBasicMaterial({ color: "#fde047" });
+const sparks = [];
+function spark(x, y, z) {
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(sparkGeo, sparkMat);
+    m.position.set(x, y, z);
+    world.scene.add(m);
+    sparks.push({ m, v: new THREE.Vector3(Kit.rand(-10, 10), Kit.rand(2, 12), Kit.rand(-10, 10)), life: 0.35 });
+  }
+}
+
+// ======================================================================= the player
+const me = world.spawnPlayer({ pos: randomSpawn() });
+window.me = me;
+const myFx = arm(me.group);
+world.checkpoint(randomSpawn());
+const kb = new THREE.Vector2();
+let started = false;
+let invulnUntil = 0, lastHitBy = null, lastHitAt = -1e9, lastHitLunge = false, lastDamageAt = -1e9, regenT = 0;
+let slashReady = 0, lungeReady = 0, lastPress = -1e9, lungeT = 0, slashHitAt = 0, atkSeq = 0;
+const lungeHit = new Set();
+let myKOs = 0, myWO = 0, streak = 0, totalKOs = load("total", 0);
+const myKey = () => (net.online ? net.me.id : "me");
+const fwdOf = (yaw) => ({ x: -Math.sin(yaw), z: -Math.cos(yaw) });
+
+// ======================================================================= bots
+const BOTS = [
+  ["Knight Kip", { head: "#f5cd30", torso: "#2563eb", arms: "#94a3b8", legs: "#1e3a8a", face: "determined", hat: "cap" }],
+  ["Blade Bree", { head: "#fda4af", torso: "#db2777", arms: "#fda4af", legs: "#4c0519", face: "wink", hat: "crown" }],
+  ["Sir Brick", { head: "#d6d3d1", torso: "#b91c1c", arms: "#d6d3d1", legs: "#292524", face: "cool", hat: "tophat" }],
+  ["Rogue Rae", { head: "#a7f3d0", torso: "#065f46", arms: "#a7f3d0", legs: "#1f2937", face: "grin", hat: "wizard" }],
+];
+const bots = BOTS.map(([name, look], i) => {
+  const model = world.character(look, name);
+  const fx = arm(model);
+  fx.setHp = healthBar(model);
+  const [x, y, z] = randomSpawn();
+  return { key: "b" + i, name, model, fx, pos: new THREE.Vector3(x, y, z), vy: 0, onGround: false, hp: 100, alive: true, respawnAt: 0,
+    kb: new THREE.Vector2(), target: null, retarget: 0, strafe: i % 2 ? 1 : -1, strafeT: 0, nextAtk: 0, lungeReady: 0, lungeT: 0, hitAt: 0,
+    lunged: new Set(), lastHitBy: null, lastHitAt: -1e9, lastHitLunge: false, kos: 0, wo: 0, invuln: 0, yaw: 0, solids: world.solids,
+    skill: [0.75, 0.7, 0.85, 0.65][i] };
+});
+const botsActive = () => !(net.online && net.players.size > 0);
+const botByKey = (k) => bots.find((b) => b.key === k);
+function nameOf(k) {
+  if (k === myKey()) return "You";
+  const b = botByKey(k);
+  if (b) return b.name;
+  const p = net.players.get(k);
+  return p ? p.name : "Someone";
+}
+function groundBelow(x, z, y) {
+  for (const m of world.solids) {
+    const b = m.userData.part.box;
+    if (x > b.min.x - 0.2 && x < b.max.x + 0.2 && z > b.min.z - 0.2 && z < b.max.z + 0.2 && b.max.y <= y + 1.6 && b.max.y > y - 10) return true;
+  }
+  return false;
+}
+function npcCollide(n, axis) {
+  let hit = false;
+  for (const m of n.solids) {
+    const b = m.userData.part.box;
+    if (n.pos.x + 0.95 <= b.min.x || n.pos.x - 0.95 >= b.max.x || n.pos.y + 5.2 <= b.min.y || n.pos.y >= b.max.y || n.pos.z + 0.95 <= b.min.z || n.pos.z - 0.95 >= b.max.z) continue;
+    if (axis === "y") {
+      if (n.vy > 0) n.pos.y = b.min.y - 5.2; else { n.pos.y = b.max.y; n.onGround = true; }
+      n.vy = 0;
+    } else {
+      const rise = b.max.y - n.pos.y;
+      if (rise > 0 && rise <= 1.1 && n.onGround) { n.pos.y = b.max.y; continue; }
+      if (axis === "x") n.pos.x = n.pos.x > (b.min.x + b.max.x) / 2 ? b.max.x + 0.951 : b.min.x - 0.951;
+      else n.pos.z = n.pos.z > (b.min.z + b.max.z) / 2 ? b.max.z + 0.951 : b.min.z - 0.951;
+      hit = true;
+    }
+  }
+  return hit;
+}
+function npcMove(n, vx, vz, dt) {
+  const steps = Math.ceil(dt / (1 / 60));
+  let blocked = false;
+  for (let i = 0; i < steps; i++) {
+    const h = dt / steps;
+    n.vy = Math.max(-160, n.vy - 196.2 * h);
+    n.pos.x += vx * h; if (npcCollide(n, "x")) blocked = true;
+    n.pos.z += vz * h; if (npcCollide(n, "z")) blocked = true;
+    n.onGround = false;
+    n.pos.y += n.vy * h; npcCollide(n, "y");
+  }
+  return blocked;
+}
+
+// ======================================================================= combat
+function targets() {
+  const out = [];
+  if (me.alive && started) out.push({ key: myKey(), pos: me.pos, ff: now() < invulnUntil });
+  if (botsActive()) for (const b of bots) if (b.alive) out.push({ key: b.key, pos: b.pos, ff: now() < b.invuln, bot: b });
+  for (const [id, r] of world.remotes) if (r.model.visible) { const pl = net.players.get(id); out.push({ key: id, pos: r.model.position, ff: !!(pl && pl.state && pl.state.ff), remote: r }); }
+  return out;
+}
+const fighting = () => round.phase !== "inter";
+function inArc(from, yaw, to, range, arc) {
+  const dx = to.x - from.x, dz = to.z - from.z, d = Math.hypot(dx, dz);
+  if (d > range || Math.abs(to.y - from.y) > 5) return false;
+  if (d < 1.6) return true;
+  const f = fwdOf(yaw);
+  return (dx * f.x + dz * f.z) / d > Math.cos(arc);
+}
+// Deal damage from attacker `by` (positioned at `from`) to target t.
+function strike(byKey, from, t, a, isLunge) {
+  const dx = t.pos.x - from.x, dz = t.pos.z - from.z, d = Math.hypot(dx, dz) || 1;
+  const k = [+(dx / d * a.kbH).toFixed(1), a.kbV, +(dz / d * a.kbH).toFixed(1)];
+  spark(t.pos.x, t.pos.y + 3.5, t.pos.z);
+  if (t.key === myKey()) hurtMe(a.dmg, k, byKey, isLunge);
+  else if (t.bot) hurtBot(t.bot, a.dmg, k, byKey, isLunge);
+  else if (t.remote && byKey === myKey()) net.event({ k: "hit", to: t.key, d: a.dmg, kb: k, l: isLunge ? 1 : 0 });
+  if (byKey === myKey()) Kit.sfx("hit");
+}
+function hurtMe(dmg, k, by, isLunge) {
+  if (!me.alive || now() < invulnUntil || !fighting()) return;
+  lastHitBy = by; lastHitAt = now(); lastHitLunge = !!isLunge; lastDamageAt = now();
+  kb.set(k[0], k[2]);
+  me.vel.y = Math.max(me.vel.y, k[1]); me.onGround = false;
+  $("flash").style.transition = "none"; $("flash").style.opacity = 1;
+  requestAnimationFrame(() => { $("flash").style.transition = "opacity .5s"; $("flash").style.opacity = 0; });
+  world.damage(dmg);
+}
+function hurtBot(b, dmg, k, by, isLunge) {
+  if (!b.alive || now() < b.invuln || !fighting()) return;
+  b.lastHitBy = by; b.lastHitAt = now(); b.lastHitLunge = !!isLunge;
+  b.kb.set(k[0], k[2]); b.vy = Math.max(b.vy, k[1]); b.onGround = false;
+  b.hp -= dmg;
+  b.fx.setHp(b.hp);
+  if (b.hp <= 0) botDie(b, false);
+  // fight back against whoever hit you
+  if (by !== b.key) { b.target = by; b.retarget = now() + 2500; }
+}
+function botDie(b, isVoid) {
+  b.alive = false;
+  b.respawnAt = now() + 3000;
+  b.wo++;
+  breakApart(b.model);
+  b.model.visible = false;
+  const by = now() - b.lastHitAt < 8000 ? b.lastHitBy : null;
+  koFeed(by, b.key, isVoid);
+  if (by === myKey()) creditKO(isVoid, b.lastHitLunge);
+  else { const k = botByKey(by); if (k) k.kos++; }
+}
+function creditKO(isVoid, isLunge) {
+  myKOs++; streak++; totalKOs++;
+  save("total", totalKOs);
+  Kit.sfx("score");
+  badge("first-ko", "First KO", "Knocked out your first opponent in Sword Arena.");
+  if (totalKOs >= 10) badge("ko-10", "Sword Master", "Got 10 KOs in Sword Arena.");
+  if (streak >= 5) badge("streak-5", "Unstoppable", "Got 5 KOs in a row without being knocked out.");
+  if (isVoid) badge("void-ko", "Into the Void", "Knocked an opponent off the islands into the void.");
+  if (isLunge) badge("lunge-ko", "Lunge Master", "Finished an opponent with a lunge.");
+}
+function koFeed(by, victim, isVoid) {
+  const line = document.createElement("div");
+  const b1 = document.createElement("b");
+  if (by !== null && by !== undefined) {
+    b1.textContent = nameOf(by);
+    line.append(b1, document.createTextNode(isVoid ? " knocked " : " KO'd "), Object.assign(document.createElement("b"), { textContent: nameOf(victim) }), document.createTextNode(isVoid ? " into the void" : ""));
+  } else {
+    b1.textContent = nameOf(victim);
+    line.append(b1, document.createTextNode(victim === myKey() ? " fell into the void" : " fell into the void"));
+  }
+  const feed = $("feed");
+  feed.appendChild(line);
+  while (feed.children.length > 5) feed.firstChild.remove();
+  setTimeout(() => line.classList.add("old"), 6000);
+  setTimeout(() => line.remove(), 6800);
+}
+// my attacks
+function press() {
+  if (!started || !me.alive) return;
+  const t = now();
+  if (t - lastPress < 450 && t > lungeReady && lungeT <= 0) startLunge();
+  else if (t > slashReady && lungeT <= 0) startSlash();
+  lastPress = t;
+}
+function aimAssist() {
+  let best = null, bd = 10;
+  for (const tg of targets()) {
+    if (tg.key === myKey()) continue;
+    const d = Math.hypot(tg.pos.x - me.pos.x, tg.pos.z - me.pos.z);
+    if (d < bd && inArc(me.pos, me.yaw, tg.pos, 10, 1.6)) { bd = d; best = tg; }
+  }
+  if (best && !world.cam.shiftLock) me.yaw = Math.atan2(-(best.pos.x - me.pos.x), -(best.pos.z - me.pos.z));
+}
+function startSlash() {
+  aimAssist();
+  slashReady = now() + 330;
+  slashHitAt = now() + 110;
+  myFx.atk = 1; myFx.t = 0; atkSeq++;
+  swish();
+}
+function startLunge() {
+  aimAssist();
+  lungeReady = now() + LUNGE.cd * 1000;
+  slashReady = now() + 450;
+  lungeT = LUNGE.time;
+  lungeHit.clear();
+  myFx.atk = 2; myFx.t = 0; atkSeq++;
+  if (me.onGround) { me.vel.y = 16; me.onGround = false; }
+  tone([500], 0.2, "sawtooth", 0.05, 0, 0.3);
+}
+function myCombat(dt) {
+  const t = now();
+  if (slashHitAt && t >= slashHitAt) {
+    slashHitAt = 0;
+    for (const tg of targets()) if (tg.key !== myKey() && !tg.ff && inArc(me.pos, me.yaw, tg.pos, SLASH.range, SLASH.arc)) strike(myKey(), me.pos, tg, SLASH, false);
+  }
+  if (lungeT > 0) {
+    lungeT -= dt;
+    const f = fwdOf(me.yaw);
+    me.pos.x += f.x * LUNGE.speed * dt; me.pos.z += f.z * LUNGE.speed * dt;
+    for (const tg of targets()) {
+      if (tg.key === myKey() || tg.ff || lungeHit.has(tg.key) || !inArc(me.pos, me.yaw, tg.pos, LUNGE.range, LUNGE.arc)) continue;
+      lungeHit.add(tg.key);
+      strike(myKey(), me.pos, tg, LUNGE, true);
+    }
+  }
+}
+
+// ---------------- bot brains
+function botStep(b, dt) {
+  const t = now();
+  if (!b.alive) {
+    if (t > b.respawnAt) {
+      const [x, y, z] = randomSpawn();
+      b.pos.set(x, y + 0.5, z); b.vy = 0; b.kb.set(0, 0); b.hp = 100; b.fx.setHp(100);
+      b.alive = true; b.invuln = t + 3000; b.model.visible = true; b.lastHitBy = null;
+    }
+    return;
+  }
+  b.fx.ff.visible = t < b.invuln;
+  // pick a target: whoever hit me recently, else the nearest fighter (players a bit more likely)
+  const all = targets().filter((x) => x.key !== b.key);
+  let tg = b.target !== null && t < b.retarget ? all.find((x) => x.key === b.target) : null;
+  if (!tg) {
+    let bd = 1e9;
+    for (const x of all) {
+      const d = Math.hypot(x.pos.x - b.pos.x, x.pos.z - b.pos.z) * (x.bot ? 1.25 : 1);
+      if (d < bd) { bd = d; tg = x; }
+    }
+    b.target = tg ? tg.key : null; b.retarget = t + 1500;
+  }
+  let vx = 0, vz = 0;
+  if (tg && started) {
+    const dx = tg.pos.x - b.pos.x, dz = tg.pos.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
+    const ux = dx / d, uz = dz / d;
+    let mx, mz, sp;
+    if (t > b.strafeT) { b.strafe = Math.random() < 0.5 ? -1 : 1; b.strafeT = t + Kit.rand(1200, 2600); }
+    if (d > 6) { mx = ux; mz = uz; sp = 13 + b.skill * 2; }
+    else if (d < 3.5) { mx = -ux; mz = -uz; sp = 8; }
+    else { mx = -uz * b.strafe + ux * 0.2; mz = ux * b.strafe + uz * 0.2; sp = 8; }
+    // don't walk off edges
+    const ok = (x, z) => groundBelow(b.pos.x + x * 3.2, b.pos.z + z * 3.2, b.pos.y);
+    if (!ok(mx, mz)) {
+      if (ok(-uz * b.strafe, ux * b.strafe)) { mx = -uz * b.strafe; mz = ux * b.strafe; }
+      else if (ok(uz * b.strafe, -ux * b.strafe)) { mx = uz * b.strafe; mz = -ux * b.strafe; b.strafe = -b.strafe; }
+      else { mx = mz = 0; }
+    }
+    vx = mx * sp; vz = mz * sp;
+    // face the target and attack
+    b.yaw = Math.atan2(-ux, -uz);
+    if (b.lungeT <= 0 && t > b.nextAtk && d < 6.4 && Math.abs(tg.pos.y - b.pos.y) < 4) {
+      b.fx.atk = 1; b.fx.t = 0; b.hitAt = t + 120; b.hitKey = tg.key;
+      b.nextAtk = t + Kit.rand(700, 1300) / (0.6 + b.skill * 0.5);
+    } else if (b.lungeT <= 0 && t > b.lungeReady && d > 7 && d < 11 && Math.random() < dt * 0.8 && ok(ux, uz)) {
+      b.lungeT = LUNGE.time; b.lungeReady = t + 3500; b.lunged.clear();
+      b.fx.atk = 2; b.fx.t = 0; b.vy = Math.max(b.vy, 16);
+    }
+  } else if (!started) {
+    b.yaw += dt * 0.5;
+  }
+  if (b.hitAt && t >= b.hitAt) {
+    b.hitAt = 0;
+    const victim = targets().find((x) => x.key === b.hitKey);
+    if (victim && !victim.ff && Math.random() < b.skill && inArc(b.pos, b.yaw, victim.pos, SLASH.range, SLASH.arc)) strike(b.key, b.pos, victim, SLASH, false);
+  }
+  if (b.lungeT > 0) {
+    b.lungeT -= dt;
+    const f = fwdOf(b.yaw);
+    vx += f.x * LUNGE.speed; vz += f.z * LUNGE.speed;
+    for (const v of targets()) {
+      if (v.key === b.key || v.ff || b.lunged.has(v.key) || !inArc(b.pos, b.yaw, v.pos, LUNGE.range, LUNGE.arc)) continue;
+      b.lunged.add(v.key);
+      strike(b.key, b.pos, v, LUNGE, true);
+    }
+  }
+  const blocked = npcMove(b, vx + b.kb.x, vz + b.kb.y, dt);
+  b.kb.multiplyScalar(Math.exp(-(b.onGround ? 6 : 1.2) * dt));
+  if (blocked && b.onGround && Math.random() < 0.05) b.vy = 52;
+  if (b.pos.y < world.voidY) { botDie(b, true); return; }
+  if (b.hp < 100 && t - b.lastHitAt > 5000) { b.hp = Math.min(100, b.hp + 3 * dt); b.fx.setHp(b.hp); }
+  b.model.position.copy(b.pos);
+  let dy = b.yaw - b.model.rotation.y;
+  dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+  b.model.rotation.y += dy * Math.min(1, dt * 12);
+  b.model.userData.animate(dt, Math.hypot(vx, vz), !b.onGround);
+}
+
+// ======================================================================= rounds
+const round = { n: 0, phase: "wait", end: 0, interEnd: 0, sync: 0 };
+function startRound(n, leftMs, broadcast) {
+  round.n = n; round.phase = "fight"; round.end = now() + leftMs;
+  myKOs = 0; myWO = 0;
+  for (const b of bots) { b.kos = 0; b.wo = 0; }
+  if (broadcast && net.online) net.event({ k: "r", n, left: Math.round(leftMs) });
+  if (leftMs > (ROUND_LEN - 5) * 1000) {
+    // fresh round: everyone back to a spawn with full health
+    if (!me.alive) world.respawn();
+    const [x, y, z] = randomSpawn();
+    me.pos.set(x, y, z); me.vel.set(0, 0, 0); kb.set(0, 0);
+    world.heal(100);
+    invulnUntil = now() + 3000;
+    for (const b of bots) { if (!b.alive) b.respawnAt = 0; else { b.hp = 100; b.fx.setHp(100); } }
+  }
+  showBanner(`Round ${n}`, "Fight! Most KOs wins", 2200, true);
+  Kit.sfx("win");
+}
+function boardRows() {
+  const rows = [{ key: myKey(), name: me.name, values: [myKOs, myWO], me: true }];
+  for (const pl of net.players.values()) {
+    const s = pl.state || {};
+    const same = s.rn === round.n;
+    rows.push({ key: pl.id, name: pl.name, values: [same ? +s.ko || 0 : 0, same ? +s.wo || 0 : 0] });
+  }
+  if (botsActive()) for (const b of bots) rows.push({ key: b.key, name: b.name, values: [b.kos, b.wo] });
+  rows.sort((a, b) => b.values[0] - a.values[0] || a.values[1] - b.values[1]);
+  return rows;
+}
+function endRound() {
+  round.phase = "inter";
+  round.interEnd = now() + INTER * 1000;
+  const rows = boardRows();
+  const top = rows[0];
+  const iWin = top.me && myKOs > 0 && !(rows[1] && rows[1].values[0] === myKOs);
+  if (iWin) { badge("round-win", "Arena Champion", "Won a round of Sword Arena with the most KOs."); Kit.sfx("win"); }
+  if (myKOs >= 3 && myWO === 0) badge("untouchable", "Untouchable", "Finished a round with 3 or more KOs and no wipeouts.");
+  showBanner(iWin ? "You win the round!" : `${top.name} wins the round!`, `You: ${myKOs} KOs, ${myWO} wipeouts  -  next round soon`, INTER * 1000, true);
+  Kit.finish(ID, myKOs);
+}
+function roundStep() {
+  const t = now();
+  if (net.isHost && started) {
+    if (round.phase === "wait" || (round.phase === "inter" && t > round.interEnd)) startRound(round.n + 1, ROUND_LEN * 1000, true);
+    else if (round.phase === "fight" && net.online && net.players.size > 0 && t > round.sync) {
+      round.sync = t + 5000;
+      net.event({ k: "r", n: round.n, left: Math.round(round.end - t) });
+    }
+  }
+  if (round.phase === "fight" && t > round.end) endRound();
+}
+
+// ======================================================================= banner & HUD
+let bannerUntil = 0;
+function showBanner(text, small, ms, big) {
+  const el = $("banner");
+  el.innerHTML = "";
+  el.append(document.createTextNode(text));
+  if (small) { const s = document.createElement("small"); s.textContent = small; el.append(s); }
+  el.className = big ? "big" : "";
+  el.style.display = "block";
+  bannerUntil = now() + (ms || 2000);
+}
+
+// ======================================================================= death & respawn
+world.onDeath(() => {
+  const isVoid = me.pos.y < world.voidY + 2;
+  const by = now() - lastHitAt < 8000 ? lastHitBy : null;
+  if (fighting()) { myWO++; streak = 0; }
+  lungeT = 0; kb.set(0, 0);
+  koFeed(by, myKey(), isVoid);
+  const b = botByKey(by);
+  if (b && fighting()) b.kos++;
+  if (net.online) net.event({ k: "ko", by, v: isVoid ? 1 : 0, l: lastHitLunge ? 1 : 0 });
+  lastHitBy = null; lastHitAt = -1e9;
+  world.checkpoint(randomSpawn());
+});
+world.onRespawn(() => { invulnUntil = now() + 3000; kb.set(0, 0); });
+
+// ======================================================================= online
+world.online(net);
+const rawState = net.state;
+net.state = (o) => rawState(Object.assign(o, { at: myFx.atk, as: atkSeq, hp: Math.round(me.health), ko: myKOs, wo: myWO, ff: now() < invulnUntil ? 1 : 0, rn: round.n }));
+function armRemote(id) {
+  const r = world.remotes.get(id);
+  if (!r) return null;
+  if (!r.model.userData.fx) { const fx = arm(r.model); fx.setHp = healthBar(r.model); fx.dead = false; }
+  return r.model.userData.fx;
+}
+net.on("join", (pl) => {
+  armRemote(pl.id);
+  if (net.isHost && round.phase === "fight") net.event({ k: "r", n: round.n, left: Math.round(round.end - now()) });
+});
+net.on("state", (pl) => {
+  const fx = armRemote(pl.id), s = pl.state;
+  if (!fx || !s) return;
+  if (s.as !== fx.seq) { if (fx.seq !== null && (s.at === 1 || s.at === 2)) { fx.atk = s.at; fx.t = 0; } fx.seq = s.as; }
+  fx.setHp(+s.hp || 0);
+  fx.ff.visible = !!s.ff;
+  const r = world.remotes.get(pl.id);
+  if (s.dead && !fx.dead) { r.model.visible = true; breakApart(r.model); r.model.visible = false; }
+  fx.dead = !!s.dead;
+});
+net.on("event", (pl, e) => {
+  if (!e || typeof e !== "object") return;
+  if (e.k === "hit" && e.to === net.me.id && Array.isArray(e.kb)) {
+    const d = Kit.clamp(+e.d || 0, 0, 30);
+    const k = e.kb.slice(0, 3).map((v) => Kit.clamp(+v || 0, -60, 60));
+    const r = world.remotes.get(pl.id);
+    if (r) spark(me.pos.x, me.pos.y + 3.5, me.pos.z);
+    hurtMe(d, k, pl.id, !!e.l);
+  } else if (e.k === "ko") {
+    koFeed(e.by ?? null, pl.id, !!e.v);
+    if (e.by === net.me.id && fighting()) creditKO(!!e.v, !!e.l);
+  } else if (e.k === "r" && Number.isFinite(e.n) && Number.isFinite(e.left)) {
+    const left = Kit.clamp(e.left, 0, ROUND_LEN * 1000);
+    if (e.n !== round.n || round.phase !== "fight") { if (e.n > round.n || round.phase === "wait") startRound(e.n, left, false); }
+    else if (Math.abs(round.end - now() - left) > 1500) round.end = now() + left;
+  }
+});
+
+// ======================================================================= input
+world.renderer.domElement.addEventListener("pointerdown", (e) => { if (e.button === 0) press(); });
+Kit.onKey((code) => { if (code === "KeyF") press(); });
+
+// ======================================================================= main loop
+let hudT = 0;
+const camQ = new THREE.Quaternion(), tmpQ = new THREE.Quaternion();
+function update(dt) {
+  const t = now();
+  me.frozen = !started;
+  roundStep();
+  if (me.alive) {
+    // knockback slides you; much less grip in the air
+    me.pos.x += kb.x * dt; me.pos.z += kb.y * dt;
+    kb.multiplyScalar(Math.exp(-(me.onGround ? 7 : 1.1) * dt));
+    myCombat(dt);
+    if (t - lastDamageAt > 5000 && me.health < 100 && (regenT += dt) > 0.5) { regenT = 0; world.heal(2); }
+  }
+  myFx.ff.visible = me.alive && t < invulnUntil;
+  // health pickups on the corner islets
+  for (const pk of pickups) {
+    pk.m.visible = t > pk.readyAt;
+    pk.m.rotation.y += dt * 2; pk.m.position.y = pk.y + 2 + Math.sin(t / 300) * 0.3;
+    if (pk.m.visible && me.alive && Math.hypot(me.pos.x - pk.x, me.pos.z - pk.z) < 2.6 && Math.abs(me.pos.y - pk.y) < 3) {
+      pk.readyAt = t + 20000; world.heal(40); Kit.sfx("coin");
+    }
+  }
+  const active = botsActive();
+  for (const b of bots) {
+    if (!active) { b.model.visible = false; continue; }
+    if (b.alive) b.model.visible = true;
+    botStep(b, dt);
+  }
+  // debris & sparks
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i];
+    d.v.y -= 70 * dt; d.m.position.addScaledVector(d.v, dt); d.m.rotation.x += d.s.x * dt; d.m.rotation.y += d.s.y * dt;
+    if ((d.life -= dt) <= 0) { world.scene.remove(d.m); debris.splice(i, 1); }
+  }
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const s = sparks[i];
+    s.m.position.addScaledVector(s.v, dt); s.m.scale.setScalar(Math.max(0.05, s.life / 0.35));
+    if ((s.life -= dt) <= 0) { world.scene.remove(s.m); sparks.splice(i, 1); }
+  }
+  camQ.copy(world.camera.quaternion);
+  for (const g of billboards) g.quaternion.copy(camQ).premultiply(tmpQ.copy(g.parent.quaternion).invert());
+  // lunge meter
+  const lf = Kit.clamp(1 - (lungeReady - t) / (LUNGE.cd * 1000), 0, 1);
+  $("lunge").firstChild.style.width = lf * 100 + "%";
+  $("lunge").firstChild.style.background = lf >= 1 ? "#38bdf8" : "#475569";
+  $("cross").style.display = world.cam.shiftLock ? "block" : "none";
+  if (bannerUntil && t > bannerUntil) { bannerUntil = 0; $("banner").style.display = "none"; }
+  if ((hudT += dt) > 0.25) {
+    hudT = 0;
+    let clock = "--:--";
+    if (round.phase === "fight") { const s = Math.max(0, Math.ceil((round.end - t) / 1000)); clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; }
+    else if (round.phase === "inter") clock = "Next round...";
+    Kit.hud(`Round ${round.n || 1}  ${clock}<small>KOs ${myKOs}  -  Streak ${streak}</small>`);
+    Kit.leaderboard(["KOs", "Wipeouts"], boardRows());
+  }
+}
+world.start(update);
+window.game = { bots, round, me, press, startRound, get myKOs() { return myKOs; }, get streak() { return streak; }, targets, hurtMe, get lungeReady() { return lungeReady; } };
+
+Kit.overlay("Sword Arena",
+  "Classic sword fights on floating islands!\n\n" +
+  "WASD move, Space jump, right-drag to turn the camera, Shift lock\n" +
+  "Click or F to slash (10 damage)\n" +
+  "Press twice quickly to lunge forward (25 damage, big knockback)\n" +
+  "Knock rivals off the bridges into the void. Most KOs in 3 minutes wins!\n" +
+  "Green cubes on the small islands heal you.", "Fight!").then(() => { started = true; invulnUntil = now() + 2000; });
+</script>
+</body></html>

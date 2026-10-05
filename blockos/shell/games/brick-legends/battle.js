@@ -564,12 +564,15 @@ async function afterKO() {
 async function transformBoss() {
   const u = B.transform;
   B.transform = null;
+  B.transforming = true;
   await bmsg("The Hollow King: Enough! You will face my true form!", 1400);
   Music.sfx("thunder");
   await anim(700, (p) => { B.flashScreen = p; u.alpha = 1 - p; });
   const d = ENEMIES.king2;
   Object.assign(u, { kind: "king2", d, name: d.name, hp: d.hp, maxHp: d.hp, atk: d.atk, def: d.def, mag: d.mag, spd: d.spd, st: {}, s: 17, turns: 0 });
   await anim(700, (p) => { B.flashScreen = 1 - p; u.alpha = p; });
+  B.transforming = false;
+  B.flashScreen = 0;
   B.shake = 0.6;
   await bmsg("The Hollow King Unbound rises, wreathed in shadow!", 1200);
 }
@@ -578,6 +581,7 @@ async function transformBoss() {
 async function finish(r) {
   B.active = null;
   B.party.forEach((p) => { p.st = {}; p.defending = false; });
+  B.msg = "";
   if (r === "win") {
     Music.stop();
     Kit.sfx("win");

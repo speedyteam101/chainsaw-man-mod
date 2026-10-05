@@ -98,6 +98,7 @@ export class Mob {
     this.speed = 0;
     this.stuck = 0;
     this.model = mobModel(world, type);
+    if (Mob.blob) this.model.add(Mob.blob(type === "shade" ? 3 : type === "chicken" ? 1.8 : 3.4));
     this.model.position.set(x, y, z);
     // materials are shared by mobs of the same kind; give each its own so hit flashes stay local
     this.model.traverse((m) => { if (m.isMesh && m.material && !Array.isArray(m.material) && m.material.emissive) m.material = m.material.clone(); else if (m.isMesh && Array.isArray(m.material)) m.material = m.material.map((x) => x.clone()); });

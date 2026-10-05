@@ -15,6 +15,25 @@ function basic(color) {
   return matCache.get(key);
 }
 const BOX = new THREE.BoxGeometry(1, 1, 1);
+const FLAT = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+let GLOW_TEX = null;
+function glowTexture() {
+  if (GLOW_TEX) return GLOW_TEX;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255,255,255,1)"); grad.addColorStop(0.45, "rgba(255,255,255,.45)"); grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  GLOW_TEX = new THREE.CanvasTexture(c);
+  GLOW_TEX.colorSpace = THREE.SRGBColorSpace;
+  return GLOW_TEX;
+}
+const glowMats = new Map();
+function glowMat(color) {
+  if (!glowMats.has(color)) glowMats.set(color, new THREE.MeshBasicMaterial({ map: glowTexture(), color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.2 }));
+  return glowMats.get(color);
+}
 function box(group, sx, sy, sz, x, y, z, mat, shadow) {
   const m = new THREE.Mesh(BOX, mat);
   m.scale.set(sx, sy, sz);
@@ -200,7 +219,7 @@ export class Builds {
         const f2 = box(g, 0.7, 1.0, 0.7, 0.1, 1.5, 0.1, basic("#fde047"), false);
         this.flames.push(f1, f2);
         b.flames = [f1, f2];
-        b.light = { color: 0xffa040, range: 34, power: 2.2 };
+        b.light = { glow: "#ff8a30", range: 30 };
         break;
       }
       case "torch": {
@@ -209,7 +228,7 @@ export class Builds {
         const f2 = box(g, 0.4, 0.5, 0.4, 0, 3.15, 0, basic("#fde047"), false);
         this.flames.push(f, f2);
         b.flames = [f, f2];
-        b.light = { color: 0xffb060, range: 26, power: 1.7 };
+        b.light = { glow: "#ff9a40", range: 20 };
         break;
       }
       case "lamp": {
@@ -217,9 +236,17 @@ export class Builds {
         box(g, 0.4, 2.4, 0.4, 0, 1.6, 0, lambert("#9ca3af"));
         const c = box(g, 1.0, 1.4, 1.0, 0, 3.3, 0, basic("#5eead4"), false);
         c.rotation.y = Math.PI / 4;
-        b.light = { color: 0x7ff5e6, range: 44, power: 2.6 };
+        b.light = { glow: "#5eead4", range: 36 };
         break;
       }
+    }
+    if (b.light) {
+      // light shows as a soft glow on the ground (no real-time lights: too slow in software rendering)
+      const glow = new THREE.Mesh(FLAT, glowMat(b.light.glow));
+      glow.scale.set(b.light.range, 1, b.light.range);
+      glow.position.set(0, 0.12, 0);
+      glow.renderOrder = 2;
+      g.add(glow);
     }
     if (g.children.length) { this.world.scene.add(g); b.group = g; }
     if (b.light) this.lights.push(b);
@@ -251,6 +278,10 @@ export class Builds {
     const i = solids.indexOf(b.doorPart);
     if (open && i >= 0) solids.splice(i, 1);
     if (!open && i < 0) solids.push(b.doorPart);
+  }
+
+  setGlow(level) {
+    for (const m of glowMats.values()) m.opacity = level * 0.75;
   }
 
   animate(t) {

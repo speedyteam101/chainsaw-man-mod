@@ -14,7 +14,7 @@ const EL_NAME = { fire: "Fire", ice: "Ice", thunder: "Thunder" };
 const CLASSES = {
   hero: {
     title: "Hero",
-    base: { hp: 42, mp: 10, atk: 9, def: 6, mag: 4, spd: 7 },
+    base: { hp: 50, mp: 10, atk: 9, def: 6, mag: 4, spd: 7 },
     grow: { hp: 9, mp: 2, atk: 2.3, def: 1.6, mag: 0.8, spd: 1.1 },
     skills: [[1, "power"], [4, "flameblade"], [7, "whirl"], [10, "thunderblade"], [14, "herostrike"]],
     start: { weapon: "twig", armor: "tunic", acc: null },
@@ -22,7 +22,7 @@ const CLASSES = {
   nova: {
     title: "Mage", name: "Nova",
     look: { head: "#ffc9a3", torso: "#a855f7", arms: "#ffc9a3", legs: "#1e3a8a", face: "wink", hat: "wizard", shirt: "star", hair: "#facc15", hairLong: false },
-    base: { hp: 30, mp: 22, atk: 5, def: 4, mag: 10, spd: 8 },
+    base: { hp: 32, mp: 22, atk: 5, def: 4, mag: 10, spd: 8 },
     grow: { hp: 6, mp: 4, atk: 1, def: 1.1, mag: 2.6, spd: 1.2 },
     skills: [[1, "fire"], [1, "ice"], [1, "thunder"], [5, "lullaby"], [8, "inferno"], [10, "blizzard"], [12, "storm"], [16, "meteor"]],
     start: { weapon: "wand", armor: "tunic", acc: null },
@@ -30,7 +30,7 @@ const CLASSES = {
   mira: {
     title: "Healer", name: "Mira",
     look: { head: "#a0693f", torso: "#14b8a6", arms: "#a0693f", legs: "#f2f4f5", face: "smile", hat: "none", shirt: "stripes", hair: "#2b1a10", hairLong: true },
-    base: { hp: 34, mp: 18, atk: 6, def: 5, mag: 8, spd: 6 },
+    base: { hp: 38, mp: 18, atk: 6, def: 5, mag: 8, spd: 6 },
     grow: { hp: 7, mp: 3.5, atk: 1.2, def: 1.4, mag: 2.0, spd: 0.9 },
     skills: [[1, "heal"], [1, "cure"], [3, "shield"], [6, "revive"], [8, "healall"], [10, "holy"], [13, "shieldall"], [16, "fullheal"]],
     start: { weapon: "staff", armor: "tunic", acc: null },
@@ -126,17 +126,17 @@ const SHOPS = {
 // ------------------------------------------------------------------ enemies
 // art: drawing routine in art.js; col: palette. big: takes more room in battle.
 const ENEMIES = {
-  slime:     { name: "Green Slime", art: "slime", col: ["#4ade80", "#15803d"], hp: 18, atk: 7, def: 2, mag: 2, spd: 4, xp: 5, gold: 4, weak: ["fire"], drops: [["potion", 0.12]] },
-  bat:       { name: "Buzz Bat", art: "bat", col: ["#7c5cbf", "#3b2a5a"], hp: 13, atk: 8, def: 1, mag: 2, spd: 12, xp: 6, gold: 5, weak: ["thunder"], drops: [["antidote", 0.1]] },
-  rat:       { name: "Brick Rat", art: "rat", col: ["#b7791f", "#713f12"], hp: 22, atk: 9, def: 3, mag: 1, spd: 8, xp: 7, gold: 7, weak: ["ice"], drops: [["potion", 0.1]] },
-  shroom:    { name: "Shroomling", art: "shroom", col: ["#ef4444", "#fde68a"], hp: 24, atk: 7, def: 4, mag: 7, spd: 3, xp: 9, gold: 7, weak: ["fire"], skills: [["spores", 2]], drops: [["bell", 0.15]] },
-  toad:      { name: "Venom Toad", art: "toad", col: ["#84cc16", "#3f6212"], hp: 42, atk: 14, def: 6, mag: 6, spd: 6, xp: 15, gold: 11, weak: ["ice"], skills: [["spit", 2]], drops: [["antidote", 0.2]] },
-  wolf:      { name: "Timber Wolf", art: "wolf", col: ["#8a817c", "#44403c"], hp: 48, atk: 16, def: 6, mag: 2, spd: 14, xp: 17, gold: 12, weak: ["fire"], skills: [["bite", 1]], drops: [["potion", 0.15]] },
-  sprite:    { name: "Thorn Sprite", art: "sprite", col: ["#22c55e", "#ec4899"], hp: 36, atk: 11, def: 5, mag: 14, spd: 10, xp: 16, gold: 12, weak: ["fire"], resist: ["thunder"], skills: [["leafstorm", 2]], drops: [["ether", 0.06]] },
-  scorpion:  { name: "Sand Scorpion", art: "scorpion", col: ["#d97706", "#92400e"], hp: 85, atk: 25, def: 14, mag: 6, spd: 11, xp: 32, gold: 22, weak: ["ice"], skills: [["sting", 2]], drops: [["antidote", 0.2]] },
-  cactus:    { name: "Cactus Brute", art: "cactus", col: ["#65a30d", "#365314"], hp: 100, atk: 27, def: 12, mag: 8, spd: 6, xp: 35, gold: 24, weak: ["fire"], skills: [["needles", 2]], drops: [["hipotion", 0.08]] },
-  mummy:     { name: "Brick Mummy", art: "mummy", col: ["#e7e5e4", "#a8a29e"], hp: 95, atk: 23, def: 10, mag: 18, spd: 5, xp: 37, gold: 26, weak: ["fire"], resist: ["ice"], skills: [["wrap", 2]], drops: [["bell", 0.2]] },
-  magma:     { name: "Magma Slime", art: "slime", col: ["#f97316", "#b91c1c"], hp: 75, atk: 20, def: 10, mag: 24, spd: 8, xp: 31, gold: 28, weak: ["ice"], resist: ["fire"], skills: [["fireball", 2]], drops: [["firebomb", 0.2]] },
+  slime:     { name: "Green Slime", art: "slime", col: ["#4ade80", "#15803d"], hp: 16, atk: 5, def: 2, mag: 2, spd: 4, xp: 5, gold: 4, weak: ["fire"], drops: [["potion", 0.12]] },
+  bat:       { name: "Buzz Bat", art: "bat", col: ["#7c5cbf", "#3b2a5a"], hp: 12, atk: 5, def: 1, mag: 2, spd: 12, xp: 6, gold: 5, weak: ["thunder"], drops: [["antidote", 0.1]] },
+  rat:       { name: "Brick Rat", art: "rat", col: ["#b7791f", "#713f12"], hp: 20, atk: 6, def: 3, mag: 1, spd: 8, xp: 7, gold: 7, weak: ["ice"], drops: [["potion", 0.1]] },
+  shroom:    { name: "Shroomling", art: "shroom", col: ["#ef4444", "#fde68a"], hp: 22, atk: 5, def: 4, mag: 6, spd: 3, xp: 9, gold: 7, weak: ["fire"], skills: [["spores", 2]], drops: [["bell", 0.15]] },
+  toad:      { name: "Venom Toad", art: "toad", col: ["#84cc16", "#3f6212"], hp: 40, atk: 12, def: 6, mag: 6, spd: 6, xp: 15, gold: 11, weak: ["ice"], skills: [["spit", 2]], drops: [["antidote", 0.2]] },
+  wolf:      { name: "Timber Wolf", art: "wolf", col: ["#8a817c", "#44403c"], hp: 46, atk: 13, def: 6, mag: 2, spd: 14, xp: 17, gold: 12, weak: ["fire"], skills: [["bite", 1]], drops: [["potion", 0.15]] },
+  sprite:    { name: "Thorn Sprite", art: "sprite", col: ["#22c55e", "#ec4899"], hp: 36, atk: 10, def: 5, mag: 12, spd: 10, xp: 16, gold: 12, weak: ["fire"], resist: ["thunder"], skills: [["leafstorm", 2]], drops: [["ether", 0.06]] },
+  scorpion:  { name: "Sand Scorpion", art: "scorpion", col: ["#d97706", "#92400e"], hp: 85, atk: 22, def: 14, mag: 6, spd: 11, xp: 32, gold: 22, weak: ["ice"], skills: [["sting", 2]], drops: [["antidote", 0.2]] },
+  cactus:    { name: "Cactus Brute", art: "cactus", col: ["#65a30d", "#365314"], hp: 100, atk: 23, def: 12, mag: 8, spd: 6, xp: 35, gold: 24, weak: ["fire"], skills: [["needles", 2]], drops: [["hipotion", 0.08]] },
+  mummy:     { name: "Brick Mummy", art: "mummy", col: ["#e7e5e4", "#a8a29e"], hp: 95, atk: 20, def: 10, mag: 18, spd: 5, xp: 37, gold: 26, weak: ["fire"], resist: ["ice"], skills: [["wrap", 2]], drops: [["bell", 0.2]] },
+  magma:     { name: "Magma Slime", art: "slime", col: ["#f97316", "#b91c1c"], hp: 75, atk: 18, def: 10, mag: 22, spd: 8, xp: 31, gold: 28, weak: ["ice"], resist: ["fire"], skills: [["fireball", 2]], drops: [["firebomb", 0.2]] },
   frostslime:{ name: "Frost Slime", art: "slime", col: ["#7dd3fc", "#0369a1"], hp: 125, atk: 31, def: 18, mag: 30, spd: 9, xp: 60, gold: 40, weak: ["fire"], resist: ["ice"], skills: [["iceshard", 2]], drops: [["ether", 0.1]] },
   snowwolf:  { name: "Snow Wolf", art: "wolf", col: ["#f1f5f9", "#94a3b8"], hp: 145, atk: 39, def: 18, mag: 4, spd: 17, xp: 66, gold: 42, weak: ["fire"], skills: [["bite", 1]], drops: [["hipotion", 0.12]] },
   frostbat:  { name: "Frost Bat", art: "bat", col: ["#38bdf8", "#1e40af"], hp: 105, atk: 35, def: 14, mag: 20, spd: 19, xp: 58, gold: 38, weak: ["thunder"], resist: ["ice"], skills: [["chill", 1]], drops: [["remedy", 0.1]] },

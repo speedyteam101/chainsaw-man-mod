@@ -467,6 +467,13 @@ export function boot(World) {
     badge(D.BOSS_BADGE[def.id]);
     banner("Dungeon cleared!", def.name + " is safe again. Open the chest, then take the portal home.");
     Kit.sfx("win");
+    // the boss's helpers crumble away
+    for (const e of [...enemies.values()]) {
+      if (e.room !== r.i) continue;
+      deadIds.add(e.id);
+      fx.burst(new THREE.Vector3(e.pos.x, 2.5, e.pos.z), e.def.torso, 8, 12, 0.6);
+      removeEnemy(e);
+    }
     spawnChest(r, true);
     victoryPortal();
     world.checkpoint([r.x, 1, r.z + 6]);
@@ -1508,7 +1515,7 @@ export function boot(World) {
           <div class="grid">${save.inv.map((it) => `<div class="cell${it.id === selected ? " sel" : ""}" style="--rc:${rarCol(it)}" data-act="sel" data-id="${it.id}"><b>${itemName(it)}</b><span>${it.slot === "weapon" ? Math.round(it.dmg * (1 + 0.1 * it.upg)) + " dmg" : "+" + Math.round(it.hp * (1 + 0.1 * it.upg)) + " hp"}</span></div>`).join("")}
           ${Array.from({ length: Math.max(0, D.INV_SIZE - save.inv.length) }, () => `<div class="cell none"></div>`).join("")}</div>
           <div class="detail">${sel ? `<b style="color:${rarCol(sel)}">${itemName(sel)}</b> <em>${D.RARITIES[sel.rar].name} ${sel.slot}</em><div>${D.itemStatLine(sel)}</div><div class="cmp">${compare(sel)}</div>
-            <button class="btn" data-act="equip" data-primary>Equip</button> <button class="btn red" data-act="sell">Sell for ${D.sellValue(sel)} gold</button>` : `<span class="muted">${save.inv.length}/${D.INV_SIZE} items. Click an item to compare, equip or sell it.</span>`}</div>
+            <div class="row"><button class="btn" data-act="equip" data-primary>Equip</button> <button class="btn red" data-act="sell">Sell for ${D.sellValue(sel)} gold</button></div>` : `<span class="muted">${save.inv.length}/${D.INV_SIZE} items. Click an item to compare, equip or sell it.</span>`}</div>
           <div class="foot"><button class="btn small" data-act="sellcommon">Sell all common items</button>
           ${confirmReset ? `<span class="warn">Erase all progress?</span> <button class="btn small red" data-act="reset2">Yes, start over</button> <button class="btn small" data-act="reset0">No</button>` : `<button class="btn small ghost" data-act="reset1">Start over</button>`}</div>
         </div>
@@ -1746,6 +1753,7 @@ export function boot(World) {
       if (!online()) pendingHits = [];
       cullT -= dt;
       if (cullT <= 0) { cullT = 0.25; zone.cull(me.pos.x, me.pos.z, 120); }
+      zone.hideNear(world.camera.position);
       // boss bar visibility
       const boss = [...enemies.values()].find((e) => e.role === "boss");
       if (!boss && !$("boss").hidden) { $("boss").hidden = true; bossShown = null; }

@@ -22,7 +22,7 @@ function walkable(m, x, y, self) {
   if (x < 0 || y < 0 || x >= m.w || y >= m.h) return false;
   if (SOLID.has(tileAt(m, x, y))) return false;
   if (npcsHere().some((n) => n !== self && n.x === x && n.y === y)) return false;
-  if (objsHere().some((o) => objBlocks(o) && o.x === x && o.y === y && !(o.type === "chest" && false))) return false;
+  if (objsHere().some((o) => objBlocks(o) && o.x === x && o.y === y)) return false;
   if (self && G.p && ((G.p.x === x && G.p.y === y) || (G.p.fx === x && G.p.fy === y))) return false;
   return true;
 }
@@ -130,8 +130,9 @@ async function battleFlow(group, o) {
   Kit.sfx("jump");
   G.trans = 0;
   await anim(550, (p) => { G.trans = p; });
-  const r = await startBattle(group, o || {});
+  const pr = startBattle(group, o || {});
   G.trans = 0;
+  const r = await pr;
   if (r === "lose") { await defeatFlow(); G.busy = false; return r; }
   G.scene = "field";
   Music.play(fieldMusic());
@@ -204,7 +205,9 @@ function interactTarget() {
     const n = npcsHere().find((n) => n.counter && Math.abs(n.x - fx) <= 2 && Math.abs(n.y - fy) <= 1);
     if (n) return { npc: n };
   }
-  if (tileAt(m, fx, fy) === "n") return { door: true };
+  const tc = tileAt(m, fx, fy);
+  if (tc === "n") return { door: true };
+  if (tc === "b" || tc === "v" || tc === "g") return { barrier: tc };
   return null;
 }
 async function interact() {
@@ -223,6 +226,10 @@ async function interact() {
       if (n.fixedDir) n.dir = old;
     } else if (t.obj) {
       await t.obj.use(t.obj);
+    } else if (t.barrier) {
+      await notice({ b: "A cursed boulder blocks the bridge. Dark energy pulses inside it... Maybe a crystal's light could break the curse.",
+        v: "A thick wall of magic ice seals the pass. It would take the warmth of the sun to melt it.",
+        g: "A wall of living shadow seals the bridge. Only the light of all three crystals could break it." }[t.barrier]);
     } else if (t.door) {
       await notice("The door is locked. Nobody seems to be home.");
     }
@@ -274,9 +281,9 @@ function drawField(ctx) {
     if (!m2) return;
     const fx = (f.fx + (f.x - f.fx) * p.t) * TILE - cam.x, fy = (f.fy + (f.y - f.fy) * p.t) * TILE - cam.y;
     const still = f.fx === f.x && f.fy === f.y;
-    sprites.push({ y: f.fy + (f.y - f.fy) * p.t - 0.01 * (i + 1), draw: () => drawWalker(ctx, memberLook(m2), fx + 16, fy + 29, f.dir, still ? 0 : p.phase, 30) });
+    sprites.push({ y: f.fy + (f.y - f.fy) * p.t - 0.01 * (i + 1), draw: () => drawWalker(ctx, memberLook(m2), fx + 16, fy + 29, f.dir, still ? 0 : p.phase, 34) });
   });
-  sprites.push({ y: p.fy + (p.y - p.fy) * p.t + 0.001, draw: () => drawWalker(ctx, G.heroLook, cam.px - cam.x + 16, cam.py - cam.y + 29, p.dir, p.moving ? p.phase : 0, 30) });
+  sprites.push({ y: p.fy + (p.y - p.fy) * p.t + 0.001, draw: () => drawWalker(ctx, G.heroLook, cam.px - cam.x + 16, cam.py - cam.y + 29, p.dir, p.moving ? p.phase : 0, 34) });
   sprites.sort((a, b) => a.y - b.y).forEach((s) => s.draw());
   // interaction hint
   if (canControl() && !p.moving) {
@@ -318,7 +325,7 @@ function drawField(ctx) {
 }
 function drawNpc(ctx, n, x, y) {
   if (n.art) { drawMonster(ctx, n.art, n.col, x, y + 2, n.scale || 3, G.T); return; }
-  drawWalker(ctx, n.look, x, y, n.dir, n.t < 1 ? n.phase : 0, n.h || 30);
+  drawWalker(ctx, n.look, x, y, n.dir, n.t < 1 ? n.phase : 0, n.h || 34);
 }
 function drawObj(ctx, o, sx, sy) {
   const T = G.T;
