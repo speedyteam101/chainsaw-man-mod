@@ -22,33 +22,36 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
 | Session | `system/blockos-session` | Starts Openbox, the shell server, and Chromium in full-screen kiosk mode showing the desktop. |
 | Installer | `system/install.sh` | Turns a plain Debian 12 or 13 install into BlockOS: installs packages, sets up auto-login, adds boot-menu branding. |
-| Mac app | `mac/make-app.sh` | Builds `BlockOS.app`, which runs the desktop on macOS without a VM. |
+| Mac app | `mac-app/` | Builds `BlockOS.app` (Electron), which runs the desktop in its own window on macOS without a VM. |
 | ISO builder | `iso/build-iso.sh` | Builds a bootable BlockOS live ISO with Debian `live-build` inside Docker. |
 
 ## Quickest: the BlockOS Mac app
 
-This turns the BlockOS desktop and games into an app you double-click on your Mac. No VM is needed.
-It isn't a real operating system: on the Apps page, Terminal, Files, Web Browser and the others open
-the matching Mac apps (Terminal, Finder, Safari, TextEdit, Activity Monitor, Calculator), and the
-Restart / Shut down buttons are turned off.
+`BlockOS.app` is a real Mac app with its own window and Dock icon. It runs the BlockOS desktop and games
+without a VM. It isn't a real operating system:
 
-In Terminal on your Mac:
+- On the Apps page, Terminal, Files, Web Browser and the others open the matching Mac apps
+  (Terminal, Finder, Safari, TextEdit, Activity Monitor, Calculator).
+- "Shut down" closes BlockOS, and "Restart" restarts BlockOS, not your Mac.
+
+**Install it:** unzip `BlockOS-mac-arm64.zip` (Apple Silicon Macs) or `BlockOS-mac-x64.zip` (Intel Macs)
+and drag `BlockOS.app` into Applications. The app isn't signed by a registered Apple developer, so
+the first time you open it macOS blocks it. Go to **System Settings → Privacy & Security** and click
+**Open Anyway**. If macOS still refuses, run `xattr -dr com.apple.quarantine /Applications/BlockOS.app`.
+
+**Build it yourself** (needs Node.js; works on macOS or Linux):
 
 ```sh
-git clone -b claude/gracious-shannon-5b5f3r https://github.com/speedyteam101/chainsaw-man-mod.git
-./chainsaw-man-mod/blockos/mac/make-app.sh
-open ~/Applications/BlockOS.app
+cd blockos/mac-app
+./build.sh            # makes build/BlockOS-mac-arm64.zip and build/BlockOS-mac-x64.zip
+npm start             # or just run it from the repo without packaging
 ```
 
-After that, BlockOS is in your **Applications** folder (the one in your home folder), in Launchpad, and in
-Spotlight (Cmd+Space, type "BlockOS"). You can drag it to the Dock.
+The app is built with [Electron](https://www.electronjs.org/) (`mac-app/main.js`). It serves the desktop
+from `shell/` and answers the same small `/api/*` that `server.py` provides on the VM.
 
-- It needs **Python 3**. If it's missing, BlockOS asks macOS to install Apple's Command Line Tools.
-  Open BlockOS again once that's done.
-- If you have **Google Chrome**, Edge, Brave or Chromium, BlockOS opens in its own window.
-  Quit it with **Cmd+Q**. Otherwise it opens in Safari.
-- Progress (Bricks, avatar, best scores) is saved between launches.
-- Problems are logged to `~/Library/Application Support/BlockOS/blockos.log`.
+`mac/make-app.sh` builds an older, lighter launcher instead. It opens BlockOS in a browser window
+and needs Python 3.
 
 ## Run the real OS on a Mac (VM)
 

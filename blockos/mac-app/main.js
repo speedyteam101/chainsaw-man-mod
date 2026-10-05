@@ -1,0 +1,115 @@
+// BlockOS as a Mac app: the BlockOS desktop in its own window, built with Electron.
+// The desktop's files are served from a private "blockos://" address so saves
+// (Bricks, avatar, best scores) persist, and the small /api/* that server.py
+// provides on the VM is answered here instead.
+"use strict";
+
+const { app, BrowserWindow, protocol, net, shell } = require("electron");
+const { execFile } = require("child_process");
+const os = require("os");
+const path = require("path");
+const { pathToFileURL } = require("url");
+
+// Packaged: the desktop is copied next to this file. Running from the repo: use ../shell.
+const SHELL_DIR = app.isPackaged ? path.join(__dirname, "shell") : path.join(__dirname, "..", "shell");
+
+// The Apps page opens the matching Mac apps.
+const MAC_APPS = {
+  terminal: ["-a", "Terminal"],
+  files: [os.homedir()],
+  browser: ["-a", "Safari"],
+  editor: ["-a", "TextEdit"],
+  taskmanager: ["-a", "Activity Monitor"],
+  calculator: ["-a", "Calculator"],
+};
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: "blockos", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
+
+const json = (status, body) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+function systemInfo() {
+  return {
+    hostname: os.hostname(),
+    os: "macOS " + process.getSystemVersion(),
+    debian: null,
+    kernel: os.release(),
+    arch: os.arch(),
+    cpus: os.cpus().length,
+    memory: { total: os.totalmem(), available: os.freemem() },
+    uptime: os.uptime(),
+    user: os.userInfo().username,
+    apps: Object.fromEntries(Object.keys(MAC_APPS).map((k) => [k, true])),
+  };
+}
+
+async function handleApi(request, pathname) {
+  if (pathname === "/api/info") return json(200, systemInfo());
+  if (pathname === "/api/ping") return json(200, { ok: true });
+  if (request.method !== "POST") return json(404, { error: "not found" });
+
+  let data = {};
+  try { data = await request.json(); } catch (_) { return json(400, { error: "bad json" }); }
+
+  if (pathname === "/api/launch") {
+    const args = MAC_APPS[data.app];
+    if (!args) return json(404, { error: "app not installed" });
+    execFile("open", args, () => {});
+    return json(200, { ok: true });
+  }
+  if (pathname === "/api/power") {
+    // On a Mac, "Shut down" closes BlockOS and "Restart" restarts BlockOS (not the Mac).
+    if (data.action === "poweroff") setTimeout(() => app.quit(), 300);
+    else if (data.action === "reboot") setTimeout(() => { app.relaunch(); app.quit(); }, 300);
+    else return json(400, { error: "unknown action" });
+    return json(200, { ok: true });
+  }
+  return json(404, { error: "not found" });
+}
+
+function serveFiles() {
+  protocol.handle("blockos", (request) => {
+    const url = new URL(request.url);
+    const pathname = decodeURIComponent(url.pathname);
+    if (pathname.startsWith("/api/")) return handleApi(request, pathname);
+
+    const file = path.normalize(path.join(SHELL_DIR, pathname === "/" ? "index.html" : pathname));
+    if (!file.startsWith(SHELL_DIR + path.sep)) return new Response("forbidden", { status: 403 });
+    return net.fetch(pathToFileURL(file).toString());
+  });
+}
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 800,
+    minHeight: 560,
+    title: "BlockOS",
+    backgroundColor: "#16181b",
+    show: false,
+    webPreferences: { contextIsolation: true, sandbox: true },
+  });
+  win.once("ready-to-show", () => win.show());
+  // Links to real websites open in the normal browser instead of inside BlockOS.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https:") || url.startsWith("http:")) shell.openExternal(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (event, url) => {
+    if (!url.startsWith("blockos://")) event.preventDefault();
+  });
+  win.loadURL("blockos://app/");
+}
+
+app.setName("BlockOS");
+app.whenReady().then(() => {
+  serveFiles();
+  createWindow();
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+app.on("window-all-closed", () => app.quit());

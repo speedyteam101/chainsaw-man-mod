@@ -1,0 +1,15 @@
+{
+  "name": "blockos",
+  "productName": "BlockOS",
+  "version": "1.0.0",
+  "description": "The BlockOS game desktop as a Mac app",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "44.5.1"
+  }
+}
