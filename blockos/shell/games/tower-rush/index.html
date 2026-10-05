@@ -235,8 +235,9 @@ const SECTIONS = {
   },
   pillar(S) {
     const H = 21, w = 2 - S.d * 0.4, e = 4.5 + w / 2, lo = -4.5 - w, hi = 4.5 + w;
-    S.F.part({ at: [0, (12.5 + H - 1) / 2, 0], size: [9, H - 1 - 12.5, 9], color: "#475569" });
-    // six ledges hugging the pillar, each starting after the previous one's corner
+    // a pillar in the middle (thin enough that the ledges around it never bump your head)
+    S.F.part({ at: [0, (12.5 + H - 1) / 2, 0], size: [7, H - 1 - 12.5, 7], color: "#475569" });
+    // six ledges circling the pillar, each starting after the previous one's corner
     const faces = [
       [[lo, hi], e, true], [[3.5, lo], e, false], [[3.5, lo], -e, true],
       [[-3.5, hi], -e, false], [[-3.5, hi], e, true], [[3.5, lo], e, false],
@@ -260,10 +261,10 @@ const SECTIONS = {
   },
   killSteps(S) {
     for (let k = 0; k < 9; k++) {
-      const s = 5 + k * 6.5, top = 2.3 * (k + 1), [x, f] = L(s), [ox, of] = outward(s);
-      S.F.blk(x, top, f, 5, 5, S.c);
+      const s = 5 + k * 7, top = 2.3 * (k + 1), [x, f] = L(s), [ox, of] = outward(s);
+      S.F.blk(x, top, f, 6, 6, S.c);
       const side = k % 2 ? -1 : 1;   // the outer half is red, then the inner half...
-      S.F.part({ at: [x + ox * side * 1.35, top + 0.15, f + of * side * 1.35], size: alongX(s) ? [5, 0.3, 2.3] : [2.3, 0.3, 5], color: "#ff2d2d", material: "neon", kill: true, studs: false });
+      S.F.part({ at: [x + ox * side * 1.8, top + 0.15, f + of * side * 1.8], size: alongX(s) ? [6, 0.3, 2.4] : [2.4, 0.3, 6], color: "#ff2d2d", material: "neon", kill: true, studs: false });
     }
     return 2.3 * 10;
   },
@@ -306,7 +307,7 @@ const SECTIONS = {
       const m = blkAt(S, 3 + k * 5.6, 2.4 * (k + 1), size, S.c);
       m.userData.part.onTouch = () => dropBlock(m);
       world.touchers.push(m);
-      fallers.push({ m, state: 0, time: 0, mats: m.material, delay: 0.6 - S.d * 0.2 });
+      fallers.push({ m, state: 0, time: 0, mats: m.material, delay: 0.75 - S.d * 0.25 });
     }
     return 2.4 * (n + 1);
   },
