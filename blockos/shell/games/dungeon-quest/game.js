@@ -214,7 +214,14 @@ export function boot(World) {
   const chests = [];
   let pendingHits = [];
 
+  function shadowSize(n) {
+    const sh = world.sun.shadow;
+    if (sh.mapSize.x === n) return;
+    sh.mapSize.set(n, n);
+    if (sh.map) { sh.map.dispose(); sh.map = null; }
+  }
   function setLighting(kind, def) {
+    shadowSize(kind === "town" ? 2048 : 1024);
     if (kind === "town") {
       scene.background.set("#8fd3ff");
       scene.fog.color.set("#8fd3ff"); scene.fog.near = 220; scene.fog.far = 600;

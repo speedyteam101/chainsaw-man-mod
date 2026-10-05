@@ -25,6 +25,7 @@ export class Zone {
     const m = this.world.part(o);
     // One material per part = one draw call (kit parts use 6 face materials).
     if (Array.isArray(m.material)) m.material = m.material[2];
+    if (this.kind === "dungeon") m.castShadow = false;   // only characters cast shadows down here (much faster)
     if (o.wall) this.walls.push(m);
     this.track(m, room);
     this.parts.push(m);
@@ -122,7 +123,7 @@ export function buildTown(zone, o) {
   smith.rotation.y = -Math.PI / 2;
   zone.objs.push(smith);
   P({ size: [6, 0.3, 6], pos: [bx + 12.5, 0.2, bz], color: "#fbbf24", material: "neon", collide: false, studs: false, onTouch: o.onSmith });
-  zone.label("Upgrade gear", { pos: [bx + 12.5, 3, bz], height: 1.1, color: "#fde68a" });
+  zone.label("Upgrade gear", { pos: [bx + 12.5, 3.2, bz], height: 1.7, color: "#fde68a" });
 
   // potion shop (east, facing west)
   const sx = 34, sz = -6;
@@ -144,7 +145,7 @@ export function buildTown(zone, o) {
   alch.rotation.y = Math.PI / 2;
   zone.objs.push(alch);
   P({ size: [6, 0.3, 6], pos: [sx - 12.5, 0.2, sz], color: "#c084fc", material: "neon", collide: false, studs: false, onTouch: o.onShop });
-  zone.label("Buy potions", { pos: [sx - 12.5, 3, sz], height: 1.1, color: "#f5d0fe" });
+  zone.label("Buy potions", { pos: [sx - 12.5, 3.2, sz], height: 1.7, color: "#f5d0fe" });
 
   // portals (north)
   o.dungeons.forEach((d, i) => {
@@ -209,7 +210,7 @@ export function planDungeon(def, seed) {
     const templ = TEMPLATES.slice().sort(() => R() - 0.5);
     const rooms = cells.map(([cx, cz], i) => {
       const kind = i === 0 ? "entrance" : i === n - 1 ? "boss" : "combat";
-      const size = kind === "entrance" ? 30 : kind === "boss" ? 56 : [34, 38, 42][Math.floor(R() * 3)];
+      const size = kind === "entrance" ? 34 : kind === "boss" ? 56 : [34, 38, 42][Math.floor(R() * 3)];
       return { i, cx, cz, x: cx * CELL, z: cz * CELL, size, kind, template: kind === "combat" ? templ[(i - 1) % templ.length] : kind, doors: {}, waves: [], solids: [] };
     });
     for (let i = 0; i < n - 1; i++) {
@@ -317,7 +318,7 @@ export function buildDungeon(zone, plan, def, hooks) {
   }
   const e = plan.rooms[0];
   const [ex, ez] = DIRS[e.exit];
-  return { spawn: [e.x - ex * 4, 0.5, e.z - ez * 4], yaw: Math.atan2(-ex, -ez) };
+  return { spawn: [e.x + ex * 7, 0.5, e.z + ez * 7], yaw: Math.atan2(-ex, -ez) };
 }
 
 function decorate(zone, r, def, R, hooks) {
