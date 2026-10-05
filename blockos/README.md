@@ -26,7 +26,7 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
 | Session | `system/blockos-session` | Starts Openbox, the shell server, and Chromium in full-screen kiosk mode showing the desktop. |
 | Installer | `system/install.sh` | Turns a plain Debian 12 or 13 install into BlockOS: installs packages, sets up auto-login, adds boot-menu branding. |
-| Mac app | `mac-app/` | Builds `BlockOS.app` (Electron), which runs the desktop in its own window on macOS without a VM. |
+| Mac & Windows app | `mac-app/` | Builds the BlockOS app (Electron) for macOS and Windows: the desktop in its own window, no VM needed. |
 | ISO builder | `iso/build-iso.sh` | Builds a bootable BlockOS live ISO with Debian `live-build` inside Docker. |
 
 ## Quickest: the BlockOS Mac app
@@ -56,6 +56,23 @@ from `shell/` and answers the same small `/api/*` that `server.py` provides on t
 
 `mac/make-app.sh` builds an older, lighter launcher instead. It opens BlockOS in a browser window
 and needs Python 3.
+
+## BlockOS for Windows
+
+The same app runs on Windows 10 and 11. On the Apps page, Terminal, Files, Web Browser and the others
+open PowerShell, File Explorer, Edge, Notepad, Task Manager and Calculator.
+
+1. Download **BlockOS-windows-x64.zip** from the
+   [download page](https://github.com/speedyteam101/chainsaw-man-mod/releases/tag/blockos)
+   (or **BlockOS-windows-arm64.zip** for a Windows-on-ARM PC).
+2. Right-click the zip → **Extract All**. Don't run it from inside the zip.
+3. Open the **BlockOS** folder and double-click **BlockOS.exe**. Right-click it → **Show more options →
+   Send to → Desktop (create shortcut)** to get a desktop shortcut.
+4. The app isn't signed, so the first time Windows SmartScreen may say "Windows protected your PC".
+   Click **More info → Run anyway**. When you host a server, Windows Firewall may ask about network
+   access; allow it on private networks.
+
+Build it yourself with `cd blockos/mac-app && ./build.sh --win` (works on Windows, Mac or Linux).
 
 ## Run the real OS on a Mac (VM)
 

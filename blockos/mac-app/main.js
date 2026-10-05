@@ -1,4 +1,4 @@
-// BlockOS as a Mac app: the BlockOS desktop in its own window, built with Electron.
+// BlockOS as a Mac and Windows app: the BlockOS desktop in its own window, built with Electron.
 // The desktop's files are served from a private "blockos://" address so saves
 // (Bricks, avatar, best scores) persist, and the small /api/* that server.py
 // provides on the VM is answered here instead.
@@ -39,15 +39,25 @@ async function setHosting(on) {
   return onlineInfo();
 }
 
-// The Apps page opens the matching Mac apps.
-const MAC_APPS = {
-  terminal: ["-a", "Terminal"],
-  files: [os.homedir()],
-  browser: ["-a", "Safari"],
-  editor: ["-a", "TextEdit"],
-  taskmanager: ["-a", "Activity Monitor"],
-  calculator: ["-a", "Calculator"],
-};
+// The Apps page opens the matching apps of the computer BlockOS runs on: [program, args].
+const IS_WINDOWS = process.platform === "win32";
+const NATIVE_APPS = IS_WINDOWS
+  ? {
+      terminal: ["cmd.exe", ["/c", "start", "", "powershell.exe"]],
+      files: ["explorer.exe", [os.homedir()]],
+      browser: ["cmd.exe", ["/c", "start", "", "msedge"]],
+      editor: ["notepad.exe", []],
+      taskmanager: ["taskmgr.exe", []],
+      calculator: ["calc.exe", []],
+    }
+  : {
+      terminal: ["open", ["-a", "Terminal"]],
+      files: ["open", [os.homedir()]],
+      browser: ["open", ["-a", "Safari"]],
+      editor: ["open", ["-a", "TextEdit"]],
+      taskmanager: ["open", ["-a", "Activity Monitor"]],
+      calculator: ["open", ["-a", "Calculator"]],
+    };
 
 protocol.registerSchemesAsPrivileged([
   { scheme: "blockos", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
@@ -59,7 +69,7 @@ const json = (status, body) =>
 function systemInfo() {
   return {
     hostname: os.hostname(),
-    os: "macOS " + process.getSystemVersion(),
+    os: (IS_WINDOWS ? "Windows " : "macOS ") + process.getSystemVersion(),
     debian: null,
     kernel: os.release(),
     arch: os.arch(),
@@ -67,7 +77,7 @@ function systemInfo() {
     memory: { total: os.totalmem(), available: os.freemem() },
     uptime: os.uptime(),
     user: os.userInfo().username,
-    apps: Object.fromEntries(Object.keys(MAC_APPS).map((k) => [k, true])),
+    apps: Object.fromEntries(Object.keys(NATIVE_APPS).map((k) => [k, true])),
   };
 }
 
@@ -84,13 +94,13 @@ async function handleApi(request, pathname) {
     try { return json(200, await setHosting(!!data.host)); } catch (e) { return json(500, { error: e.message }); }
   }
   if (pathname === "/api/launch") {
-    const args = MAC_APPS[data.app];
-    if (!args) return json(404, { error: "app not installed" });
-    execFile("open", args, () => {});
+    const cmd = NATIVE_APPS[data.app];
+    if (!cmd) return json(404, { error: "app not installed" });
+    execFile(cmd[0], cmd[1], { windowsHide: true }, () => {});
     return json(200, { ok: true });
   }
   if (pathname === "/api/power") {
-    // On a Mac, "Shut down" closes BlockOS and "Restart" restarts BlockOS (not the Mac).
+    // In the app, "Shut down" closes BlockOS and "Restart" restarts BlockOS (not the computer).
     if (data.action === "poweroff") setTimeout(() => app.quit(), 300);
     else if (data.action === "reboot") setTimeout(() => { app.relaunch(); app.quit(); }, 300);
     else return json(400, { error: "unknown action" });
@@ -119,6 +129,7 @@ function createWindow() {
     minHeight: 560,
     title: "BlockOS",
     backgroundColor: "#16181b",
+    autoHideMenuBar: true,   // Windows: no File/Edit/View bar over the desktop (Alt shows it)
     show: false,
     webPreferences: { contextIsolation: true, sandbox: true },
   });

@@ -113,8 +113,8 @@
 
   function power(action) {
     const label = action === "reboot" ? "Restart" : "Shut down";
-    const onMac = sysInfo && /^macOS/.test(sysInfo.os);
-    const text = action === "reboot" ? "BlockOS will restart." : onMac ? "BlockOS will close." : "BlockOS will turn off.";
+    const inApp = sysInfo && /^(macOS|Windows)/.test(sysInfo.os);   // the Mac/Windows app, not the VM
+    const text = action === "reboot" ? "BlockOS will restart." : inApp ? "BlockOS will close." : "BlockOS will turn off.";
     confirmDialog(`${label}?`, text, label, async () => {
       if (!sysInfo) return toast("Power controls work when BlockOS runs on its virtual machine.");
       try { await api("/api/power", { action }); toast(`${label}...`); } catch (e) { toast(e.message); }

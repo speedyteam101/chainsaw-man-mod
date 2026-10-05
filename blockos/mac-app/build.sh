@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
-# Builds BlockOS.app for macOS (Apple Silicon and Intel) and zips each one.
-# Runs on macOS or Linux; needs Node.js. Signs the app ad hoc with codesign on a Mac,
-# or with rcodesign (https://github.com/indygreg/apple-platform-rs) if it's on the PATH.
+# Builds the BlockOS app with Electron and zips it.
 #
-#   ./build.sh               # both arm64 and x64
-#   ./build.sh arm64         # just one
+#   ./build.sh                    # Mac: Apple Silicon (arm64) and Intel (x64)
+#   ./build.sh --mac arm64        # Mac, one architecture
+#   ./build.sh --win x64 arm64    # Windows (build this on Windows, e.g. GitHub's windows runner,
+#                                 # so the .exe gets its icon; elsewhere it needs Wine)
+#
+# Mac builds are signed ad hoc with codesign on a Mac, or with rcodesign
+# (https://github.com/indygreg/apple-platform-rs) if it's on the PATH.
+# Output: build/BlockOS-mac-<arch>.zip or build/BlockOS-windows-<arch>.zip
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 BUILD="$HERE/build"
-if [ $# -gt 0 ]; then ARCHES=("$@"); else ARCHES=(arm64 x64); fi
+PLATFORM=darwin
+case "${1:-}" in
+  --mac) PLATFORM=darwin; shift ;;
+  --win) PLATFORM=win32; shift ;;
+esac
+if [ $# -gt 0 ]; then ARCHES=("$@"); elif [ "$PLATFORM" = win32 ]; then ARCHES=(x64 arm64); else ARCHES=(arm64 x64); fi
 ELECTRON_VERSION="$(node -p "require('$HERE/package.json').devDependencies.electron")"
 
 cd "$HERE"
@@ -40,7 +49,28 @@ node -e '
 done
 
 for arch in "${ARCHES[@]}"; do
-  echo "==> Packaging BlockOS for $arch"
+  echo "==> Packaging BlockOS for $PLATFORM $arch"
+  if [ "$PLATFORM" = win32 ]; then
+    npx --no-install electron-packager "$STAGE" BlockOS \
+      --platform=win32 --arch="$arch" --electron-version="$ELECTRON_VERSION" \
+      --icon="$HERE/BlockOS.ico" --app-copyright="BlockOS" \
+      --win32metadata.CompanyName="BlockOS" --win32metadata.ProductName="BlockOS" \
+      --win32metadata.FileDescription="BlockOS" \
+      --no-asar --out="$BUILD" --overwrite --quiet
+    # Zip as a folder called "BlockOS" with BlockOS.exe inside.
+    rm -rf "$BUILD/win-$arch"
+    mkdir -p "$BUILD/win-$arch"
+    mv "$BUILD/BlockOS-win32-$arch" "$BUILD/win-$arch/BlockOS"
+    ZIP="$BUILD/BlockOS-windows-$arch.zip"
+    if command -v 7z >/dev/null 2>&1; then
+      (cd "$BUILD/win-$arch" && 7z a -tzip -bd -y "$ZIP" BlockOS >/dev/null)
+    else
+      (cd "$BUILD/win-$arch" && zip -qry "$ZIP" BlockOS)
+    fi
+    echo "    $ZIP"
+    continue
+  fi
+
   npx --no-install electron-packager "$STAGE" BlockOS \
     --platform=darwin --arch="$arch" --electron-version="$ELECTRON_VERSION" \
     --icon="$ROOT/mac/BlockOS.icns" --app-bundle-id=io.github.speedyteam101.blockos \
