@@ -30,6 +30,7 @@ export class UI {
     this.tips = $("div", "si-tips", document.body);
     this.tips.innerHTML = "<b>F</b> / click gather &amp; use &nbsp; <b>C</b> craft &nbsp; <b>E</b> eat &nbsp; <b>R</b> rotate &nbsp; <b>X</b> remove build &nbsp; <b>1-9</b> items";
     this.feed = $("div", "si-feed", document.body);
+    this.goal = $("div", "si-goal", document.body);
     this.banner = $("div", "si-banner", document.body);
     this.cross = $("div", "si-cross", document.body);
     this.vignette = $("div", "si-hurt", document.body);
@@ -92,6 +93,14 @@ export class UI {
     this.vignette.classList.remove("on");
     void this.vignette.offsetWidth;
     this.vignette.classList.add("on");
+  }
+
+  setGoal(text) {
+    if (this.goal.dataset.t === text) return;
+    this.goal.dataset.t = text;
+    this.goal.innerHTML = "";
+    $("small", "", this.goal, "Goal");
+    $("span", "", this.goal, text);
   }
 
   showCross(on) { this.cross.hidden = !on; }

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Survival Island</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  /* health (kit) and food bars sit side by side above the hotbar */
+  .kit-health { left: calc(50% - 186px); bottom: 78px; transform: none; width: 180px; height: 16px; }
+  .si-hp-label, .si-food b {
+    position: fixed; bottom: 78px; z-index: 21; width: 180px; height: 16px; line-height: 16px; text-align: center;
+    font-size: 11px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none;
+  }
+  .si-hp-label { left: calc(50% - 186px); }
+  .si-food { position: fixed; left: calc(50% + 6px); bottom: 78px; width: 180px; height: 16px; z-index: 20; border-radius: 8px;
+    background: rgba(0, 0, 0, .55); border: 2px solid rgba(255, 255, 255, .25); overflow: hidden; }
+  .si-food i { display: block; height: 100%; width: 100%; background: #f59e0b; transition: width .3s; }
+  .si-food b { position: absolute; left: 0; top: -2px; bottom: auto; }
+
+  .si-hotbar { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 5px; z-index: 22;
+    padding: 5px; border-radius: 12px; background: rgba(15, 17, 20, .55); }
+  .si-slot { position: relative; width: 52px; height: 52px; border-radius: 9px; background: rgba(255, 255, 255, .08);
+    border: 2px solid rgba(255, 255, 255, .14); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .si-slot img { width: 40px; height: 40px; image-rendering: pixelated; pointer-events: none; }
+  .si-slot.sel { border-color: #facc15; background: rgba(250, 204, 21, .18); box-shadow: 0 0 0 2px rgba(250, 204, 21, .35); }
+  .si-num { position: absolute; left: 4px; top: 1px; font-size: 10px; font-weight: 800; color: rgba(255, 255, 255, .6); }
+  .si-cnt { position: absolute; right: 4px; bottom: 1px; font-size: 13px; font-weight: 800; text-shadow: 0 1px 2px #000; }
+  .si-held { position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); font-size: 13px; font-weight: 700;
+    color: #e5e7eb; text-shadow: 0 1px 3px #000; z-index: 21; pointer-events: none; white-space: nowrap; }
+  .si-target { position: fixed; left: 50%; top: 58%; transform: translateX(-50%); padding: 5px 12px; border-radius: 8px;
+    background: rgba(15, 17, 20, .6); font-size: 14px; font-weight: 800; z-index: 21; pointer-events: none; white-space: nowrap; }
+  .si-target.warn { color: #fca5a5; }
+  .si-target[hidden] { display: none; }
+  .si-tips { position: fixed; left: 12px; bottom: 12px; font-size: 12px; color: #d1d5db; text-shadow: 0 1px 2px #000; z-index: 20;
+    max-width: calc(50% - 270px); line-height: 1.6; pointer-events: none; }
+  .si-tips b { color: #facc15; }
+  .si-goal { position: fixed; left: 12px; bottom: 72px; z-index: 20; max-width: min(320px, calc(50% - 270px)); padding: 7px 11px; border-radius: 9px;
+    background: rgba(15, 17, 20, .62); border-left: 4px solid #22c55e; font-size: 13px; font-weight: 700; pointer-events: none; }
+  .si-goal small { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #86efac; }
+  .si-feed { position: fixed; left: 12px; bottom: 150px; display: flex; flex-direction: column; gap: 4px; z-index: 20; pointer-events: none; }
+  .si-feed div { padding: 4px 10px; border-radius: 7px; background: rgba(15, 17, 20, .65); border-left: 4px solid #facc15;
+    font-size: 13px; font-weight: 700; transition: opacity .5s, transform .5s; }
+  .si-feed div.out { opacity: 0; transform: translateX(-20px); }
+  .si-banner { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); text-align: center; z-index: 25; pointer-events: none; opacity: 0; }
+  .si-banner b { display: block; font-size: 40px; font-weight: 900; text-shadow: 0 3px 0 #000, 0 0 20px rgba(0, 0, 0, .5); }
+  .si-banner span { display: block; margin-top: 4px; font-size: 17px; font-weight: 700; color: #e5e7eb; text-shadow: 0 2px 4px #000; }
+  .si-banner.show { animation: si-banner 4.5s ease forwards; }
+  @keyframes si-banner { 0% { opacity: 0; transform: translate(-50%, 10px); } 8% { opacity: 1; transform: translate(-50%, 0); } 80% { opacity: 1; } 100% { opacity: 0; } }
+  .si-cross { position: fixed; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 0 2px rgba(0, 0, 0, .5); z-index: 21; pointer-events: none; }
+  .si-cross[hidden] { display: none; }
+  .si-hurt { position: fixed; inset: 0; pointer-events: none; z-index: 19; box-shadow: inset 0 0 120px rgba(239, 68, 68, .75); opacity: 0; }
+  .si-hurt.on { animation: si-hurt .5s ease; }
+  @keyframes si-hurt { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  .si-panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -52%); width: min(920px, 94vw); max-height: min(600px, 80vh);
+    display: flex; flex-direction: column; background: rgba(28, 31, 36, .96); border: 2px solid var(--line); border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .55); z-index: 40; }
+  .si-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .si-panel-head h2 { margin: 0; font-size: 22px; font-weight: 900; }
+  .si-x { border: 0; border-radius: 8px; padding: 7px 14px; font: inherit; font-weight: 800; color: #fff; background: #3a3f46; cursor: pointer; }
+  .si-x:hover { background: #ef4444; }
+  .si-panel-body { padding: 12px 16px 16px; overflow: hidden; display: flex; min-height: 0; flex: 1; }
+  .si-cols { display: flex; gap: 18px; width: 100%; min-height: 0; }
+  .si-recipes { flex: 1.5; overflow-y: auto; padding-right: 6px; max-height: calc(min(600px, 80vh) - 90px); }
+  .si-side { flex: 1; overflow-y: auto; max-height: calc(min(600px, 80vh) - 90px); }
+  .si-panel h3 { margin: 10px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  .si-stations { font-size: 13px; color: var(--muted); }
+  .si-stations b { margin-left: 6px; padding: 2px 8px; border-radius: 6px; background: #3a3f46; color: #9ca3af; }
+  .si-stations b.on { background: #166534; color: #bbf7d0; }
+  .si-rlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px; }
+  .si-recipe { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 9px; background: #2b2f35; border: 2px solid transparent; }
+  .si-recipe.ok { border-color: rgba(34, 197, 94, .5); }
+  .si-recipe.locked { opacity: .5; }
+  .si-recipe img { width: 36px; height: 36px; flex: none; }
+  .si-rinfo { flex: 1; min-width: 0; }
+  .si-rinfo b { display: block; font-size: 14px; }
+  .si-cost { display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: 11px; color: var(--muted); }
+  .si-cost .have { color: #86efac; }
+  .si-cost .need { color: #fca5a5; }
+  .si-craft { flex: none; border: 0; border-radius: 8px; padding: 7px 12px; font: inherit; font-weight: 800; font-size: 13px; color: #fff;
+    background: var(--green); box-shadow: 0 3px 0 #0b7a47; cursor: pointer; }
+  .si-craft:disabled { background: #4b5058; box-shadow: none; color: #9ca3af; cursor: default; }
+  .si-inv { display: grid; grid-template-columns: repeat(auto-fill, 46px); gap: 5px; }
+  .si-slot.small { width: 46px; height: 46px; }
+  .si-slot.small img { width: 34px; height: 34px; }
+  .si-slot.hot { background: rgba(250, 204, 21, .07); }
+  .si-slot.picked { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59, 130, 246, .5); }
+  .si-hint { margin: 2px 0 8px; font-size: 12px; color: var(--muted); }
+  .si-world { margin-top: 14px; padding: 9px 11px; border-radius: 9px; background: #23262b; font-size: 13px; line-height: 1.5; color: #d1d5db; }
+  .si-new { margin-top: 10px; border: 0; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; font-weight: 800; color: #fff; background: #7f1d1d; cursor: pointer; }
+  .si-new:hover { background: #b91c1c; }
+
+  .si-title .kit-panel { max-width: 560px; }
+  .si-tinfo { color: #facc15 !important; font-weight: 800; }
+  .si-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 14px; margin: 12px 0 2px; text-align: left; font-size: 13px; color: var(--muted); }
+  .si-controls b { color: #fff; }
+  .si-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .si-alt { background: #3a3f46; box-shadow: 0 4px 0 #23262b; }
+  @media (max-width: 900px) { .si-tips { display: none; } .si-goal { bottom: 150px; } .si-feed { bottom: 210px; } }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script type="module">
+import { World, THREE } from "../kit3d.js";
+import "./main.js";
+</script>
+</body>
+</html>

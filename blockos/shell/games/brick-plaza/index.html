@@ -413,7 +413,7 @@ P([0.5, 4, 0.5], [81, 2.2, -103], "#374151"); P([6, 3, 0.4], [81, 5.5, -103], "#
 world.label("TAG", { pos: [81, 5.5, -102.6], height: 2 });
 addInteract([81, 0.2, -101], 4.5, "Start a round of Tag", () => requestTag());
 world.label("TAG COURT", { pos: [105, 8, -64], height: 2.6 });
-const COURT_SPOTS = [[84, -70], [84, -100], [127, -69], [127, -101], [100, -68], [112, -102], [97, -86], [114, -86]];
+const COURT_SPOTS = [[84, -70], [90, -100], [127, -69], [127, -101], [100, -68], [112, -102], [97, -86], [114, -86]];
 
 // ---------------- sky: stars for the night
 const starGeo = new THREE.BufferGeometry();
@@ -1088,14 +1088,16 @@ function rampStep(dt) {
   if (seat) return;
   for (const r of ramps) {
     const a = r.axis === "x" ? me.pos.x : me.pos.z, c = r.axis === "x" ? me.pos.z : me.pos.x;
-    if (c < r.c0 || c > r.c1) continue;
+    if (c < r.c0 - 0.8 || c > r.c1 + 0.8) continue;
     const t = (a - r.a0) / (r.a1 - r.a0);
     if (t < 0 || t > 1) continue;
     const h = r.h0 + (r.h1 - r.h0) * t;
     if (me.pos.y > h + 0.8 || me.pos.y < h - 2.2 || me.vel.y > 2) continue;
     me.pos.y = h; me.vel.y = 0;
     const dir = Math.sign(r.a1 - r.a0);
-    if (r.axis === "x") me.pos.x += dir * 26 * dt; else me.pos.z += dir * 26 * dt;
+    const mid = (r.c0 + r.c1) / 2, k = Math.min(1, dt * 8);   // the slide's rails keep you in the middle
+    if (r.axis === "x") { me.pos.x += dir * 26 * dt; me.pos.z += (mid - me.pos.z) * k; }
+    else { me.pos.z += dir * 26 * dt; me.pos.x += (mid - me.pos.x) * k; }
     sliding = true;
     if (Kit.key("Space")) me.vel.y = 40;
   }
@@ -1225,7 +1227,8 @@ function update(dt) {
   }
 }
 world.start(update);
-window.game = { tag, bots, me, emote, arcade, interacts, setEmote, requestTag, teleport, get dayT() { return dayT; }, set dayT(v) { dayT = v; }, myFx, visited, startArcade, arcPress };
+window.net = net;
+window.game = { get bellSwing() { return bellSwing; }, get myTags() { return myTags; }, tag, bots, me, emote, arcade, interacts, setEmote, requestTag, teleport, get dayT() { return dayT; }, set dayT(v) { dayT = v; }, myFx, visited, startArcade, arcPress };
 
 Kit.overlay("Brick Plaza",
   "Hang out with friends in a blocky town!\n\n" +

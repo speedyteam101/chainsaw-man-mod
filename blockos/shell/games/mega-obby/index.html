@@ -268,13 +268,13 @@ const B = {
   },
   trampolines(F, d, c) {
     F.blk(0, 0, 2.5, 5, 5, "#475569");
-    launchPad(F, 0, 0, 2.5, 3.6, 13);
+    launchPad(F, 0, 0, 2.5, 3.6, 15);
     let f = 5, y = 0;
     for (let k = 0; k < 4; k++) {
-      f += 7 + d * 2;
+      f += 4 + d * 1.5;
       y += 6;
-      F.blk(k % 2 ? -2.5 : 2.5, y, f + 2.5, 5, 5, c);
-      launchPad(F, k % 2 ? -2.5 : 2.5, y, f + 2.5, 3.6, 13);
+      F.blk(k % 2 ? -1.5 : 1.5, y, f + 2.5, 5, 5, c);
+      launchPad(F, k % 2 ? -1.5 : 1.5, y, f + 2.5, 3.6, 15);
       f += 5;
     }
     f += 7;
@@ -295,14 +295,14 @@ const B = {
     }
     for (let r = 0; r < rows; r++) {
       for (let k = 0; k < cols; k++) {
-        const x = (k - 1.5) * s, f = 1 + r * s + s / 2;
+        const x = (k - 1.5) * s, f = 3 + r * s + s / 2;
         if (safe[r].has(k)) F.blk(x, 0, f, s, s, c);
         else F.part({ at: [x, -0.4, f], size: [s, 1, s], color: "#ff2d2d", material: "neon", kill: true, studs: false });
       }
     }
-    F.blk(0, 0, 0.5, cols * s, 1, "#64748b");
-    F.blk(0, 0, 1 + rows * s + 0.5, cols * s, 1, "#64748b");
-    return { len: 2 + rows * s, rise: 0 };
+    F.blk(0, 0, 1.5, cols * s, 3, "#64748b");
+    F.blk(0, 0, 3 + rows * s + 1.5, cols * s, 3, "#64748b");
+    return { len: 6 + rows * s, rise: 0 };
   },
   windmill(F, d, c) {
     const L = 30, w = 1.1 + d * 0.6;
@@ -732,7 +732,7 @@ world.start((dt) => {
     const c = new THREE.Vector3(p.pos.x, p.pos.y + 2.6, p.pos.z);
     let low = false;
     for (const z of lowZones) if (z.containsPoint(c)) low = true;
-    if (low) { p.vel.y += G * 0.7 * dt; if (p.vel.y < -40) p.vel.y = -40; }
+    if (low && !p.onGround) { p.vel.y += G * 0.7 * dt; if (p.vel.y < -40) p.vel.y = -40; }
     // sliding walls push you sideways (the kit would resolve them along x first)
     for (const pu of pushers) {
       const m = pu.m, s = m.userData.part.size, q = m.position;
