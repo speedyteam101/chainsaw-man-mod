@@ -29,7 +29,7 @@
  * world.online(net) shows other players (from Kit.net) as avatars with name tags and chat bubbles,
  *   and shares your own position. world.bubble(model, text) shows a chat bubble over any model.
  * world.label(text, opts) -> a sprite with text (signs, floating labels).
- * world.start(update) starts the game loop; update(dt) runs every frame before physics.
+ * world.start(update) starts the game loop; update(dt) runs every frame before physics (dt is at most 0.1 s).
  * world.onDeath(fn), world.onRespawn(fn)
  * world.camera, world.scene, world.renderer are the three.js objects if you need more.
  */
@@ -785,15 +785,27 @@ export class World {
     let slow = 0;
     const frame = (t) => {
       requestAnimationFrame(frame);
-      const dt = Math.max(0, Math.min(0.05, (t - last) / 1000));
+      // Up to 0.1 s per frame keeps game time at normal speed on slow computers; physics still
+      // runs in small steps below.
+      const dt = Math.max(0, Math.min(0.1, (t - last) / 1000));
       last = t;
-      // Lower the resolution if the computer can't keep up (common in virtual machines).
+      // If the computer can't keep up (common in virtual machines without 3D acceleration),
+      // first lower the resolution, then turn off shadows.
       if (dt > 1 / 32) slow += dt; else slow = Math.max(0, slow - dt * 0.5);
-      if (slow > 2 && this.pixelRatio > 0.5) {
-        this.pixelRatio = Math.max(0.5, this.pixelRatio - 0.25);
-        this.renderer.setPixelRatio(this.pixelRatio);
-        this.renderer.setSize(innerWidth, innerHeight);
+      if (slow > 2) {
         slow = 0;
+        if (this.pixelRatio > 0.5) {
+          this.pixelRatio = Math.max(0.5, this.pixelRatio - 0.25);
+          this.renderer.setPixelRatio(this.pixelRatio);
+          this.renderer.setSize(innerWidth, innerHeight);
+        } else if (this.renderer.shadowMap.enabled) {
+          this.renderer.shadowMap.enabled = false;
+          this.sun.castShadow = false;
+          this.scene.traverse((o) => {
+            if (!o.material) return;
+            for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
+          });
+        }
       }
       for (const mesh of this.movers) {
         const info = mesh.userData.part;

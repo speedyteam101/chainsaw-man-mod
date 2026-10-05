@@ -134,15 +134,19 @@ export function boot(World) {
     if (len < 0.01) return;
     ray.direction.divideScalar(len);
     let best = len;
-    for (const w of zone.walls) {
-      if (!w.visible) continue;
-      const b = w.userData.part.box;
-      if (ray.intersectBox(b, hitP)) {
-        const d = hitP.distanceTo(camTarget);
-        if (d < best) best = d;
+    // test from the head and from the waist so walls never hide your body
+    for (const lift of [0, 2.5]) {
+      ray.origin.set(camTarget.x, camTarget.y - lift, camTarget.z);
+      for (const w of zone.walls) {
+        if (!w.visible) continue;
+        const b = w.userData.part.box;
+        if (ray.intersectBox(b, hitP)) {
+          const d = hitP.distanceTo(ray.origin);
+          if (d < best) best = d;
+        }
       }
     }
-    if (best < len) cam.copy(camTarget).addScaledVector(ray.direction, Math.max(2.5, best - 0.8));
+    if (best < len) cam.copy(camTarget).addScaledVector(ray.direction, Math.max(3, best - 0.8));
   };
 
   // ================================================================ online

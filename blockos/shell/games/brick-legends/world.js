@@ -228,7 +228,10 @@ function buildTown(id, name, themeId, exitTo) {
   trees.forEach(([x, y]) => { if (m.t[y][x] === "e") setT(m, x, y, th.tree); });
   const rng = mulberry32(id.length * 977);
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++)
-    if (m.t[y][x] === "e" && rng() < 0.12) setT(m, x, y, th.deco === "," ? "," : (rng() < 0.4 ? th.deco : ","));
+    if (m.t[y][x] === "e" && rng() < 0.12) {
+      if (th.ground === "snow") { if (rng() < 0.25) setT(m, x, y, "r"); }
+      else setT(m, x, y, th.deco === "," ? "," : (rng() < 0.4 ? th.deco : ","));
+    }
   m.labels.push({ x: 5.5, y: 3.6, text: "INN" }, { x: 25.5, y: 10.5, text: "ITEMS", small: true }, { x: 25.5, y: 15.5, text: "GEAR", small: true });
   return m;
 }

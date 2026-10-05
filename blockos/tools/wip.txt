@@ -2,5 +2,4 @@
 mega-obby
 tower-rush
 dungeon-quest
-survival-island
 brick-legends

@@ -69,9 +69,9 @@ const SKILLS = {
 // use: heal | mp | cure | revive | elixir | bomb ; key items can't be used
 const ITEMS = {
   potion:    { name: "Potion", price: 12, use: "heal", amt: 50, desc: "Restores 50 HP to one ally." },
-  hipotion:  { name: "Hi-Potion", price: 45, use: "heal", amt: 150, desc: "Restores 150 HP to one ally." },
-  megapotion:{ name: "Mega Potion", price: 120, use: "heal", amt: 400, desc: "Restores 400 HP to one ally." },
-  ether:     { name: "Ether", price: 40, use: "mp", amt: 25, desc: "Restores 25 MP to one ally." },
+  hipotion:  { name: "Big Potion", price: 45, use: "heal", amt: 150, desc: "Restores 150 HP to one ally." },
+  megapotion:{ name: "Grand Potion", price: 120, use: "heal", amt: 400, desc: "Restores 400 HP to one ally." },
+  ether:     { name: "Mana Drop", price: 40, use: "mp", amt: 25, desc: "Restores 25 MP to one ally." },
   antidote:  { name: "Antidote", price: 8, use: "cure", status: ["poison"], desc: "Cures poison (battle only)." },
   bell:      { name: "Wake Bell", price: 10, use: "cure", status: ["sleep"], desc: "Wakes a sleeping ally (battle only)." },
   remedy:    { name: "Remedy", price: 30, use: "cure", status: ["poison", "sleep"], desc: "Cures poison and sleep (battle only)." },

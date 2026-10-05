@@ -4,7 +4,7 @@ import { rng } from "./data.js";
 import { disposeGroup } from "./models.js";
 
 export const CELL = 64;     // distance between room centers
-export const WALL_H = 8;
+export const WALL_H = 7;
 const DOOR = 10;
 
 // Everything one area adds to the world, so it can be torn down when you leave.
