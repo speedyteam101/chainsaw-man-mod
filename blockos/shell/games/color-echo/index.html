@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Color Echo</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "color-echo";
+const FONT = '"Noto Sans","DejaVu Sans",system-ui,sans-serif';
+const { canvas, ctx, W, H } = Kit.stage(800, 600);
+const CX = 400, CY = 308;
+
+// Four pads in a cross so the arrow keys map naturally: up, right, down, left.
+const PADS = [
+  { name: "up",    key: "1", x: CX - 85,  y: CY - 245, w: 170, h: 140, color: "#22c55e", dim: "#14532d", glow: "#86efac", freq: 392.0 },
+  { name: "right", key: "2", x: CX + 105, y: CY - 70,  w: 170, h: 140, color: "#ef4444", dim: "#7f1d1d", glow: "#fca5a5", freq: 523.25 },
+  { name: "down",  key: "3", x: CX - 85,  y: CY + 105, w: 170, h: 140, color: "#3b82f6", dim: "#1e3a8a", glow: "#93c5fd", freq: 659.25 },
+  { name: "left",  key: "4", x: CX - 275, y: CY - 70,  w: 170, h: 140, color: "#facc15", dim: "#713f12", glow: "#fde68a", freq: 783.99 },
+];
+const KEYMAP = {
+  Digit1: 0, Numpad1: 0, ArrowUp: 0, KeyW: 0,
+  Digit2: 1, Numpad2: 1, ArrowRight: 1, KeyD: 1,
+  Digit3: 2, Numpad3: 2, ArrowDown: 2, KeyS: 2,
+  Digit4: 3, Numpad4: 3, ArrowLeft: 3, KeyA: 3,
+};
+const INPUT_TIME = 4; // seconds allowed between presses
+
+// ---------- tones (Kit.sfx has no musical notes, so each pad gets its own) ----------
+let audio = null;
+function muted() {
+  try { return localStorage.getItem("blockos.muted") === "1"; } catch (_) { return false; }
+}
+function tone(freq, len, type, vol) {
+  if (muted()) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    if (audio.state === "suspended") audio.resume();
+    const t = audio.currentTime;
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.12, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    g.connect(audio.destination);
+    // a soft body plus a quiet octave on top for a bell-like chime
+    for (const [mult, kind, level] of [[1, type || "triangle", 1], [2, "sine", 0.3]]) {
+      const o = audio.createOscillator();
+      const og = audio.createGain();
+      o.type = kind;
+      o.frequency.value = freq * mult;
+      og.gain.value = level;
+      o.connect(og).connect(g);
+      o.start(t);
+      o.stop(t + len + 0.02);
+    }
+  } catch (_) {}
+}
+const padTone = (i, len) => tone(PADS[i].freq, Math.max(0.2, len), "triangle", 0.13);
+const buzz = () => tone(110, 0.55, "sawtooth", 0.09);
+
+// ---------- game state ----------
+let seq, round, state, stepIdx, timer, inputLeft, best;
+let light = [0, 0, 0, 0];  // 0..1 brightness per pad
+let ripples = [], parts = [], message = "", messageColor = "#fff", shake = 0, flashWrong = -1;
+
+function reset() {
+  seq = [];
+  round = 0;
+  state = "pause";
+  timer = 0.8;
+  stepIdx = 0;
+  ripples = [];
+  parts = [];
+  flashWrong = -1;
+  message = "Get ready";
+  messageColor = "#e5e7eb";
+  best = Kit.best(ID) ?? 0;
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Round ${round}<small>Best ${best}</small>`);
+}
+
+// Playback speeds up as the sequence grows.
+const onTime = () => Math.max(0.2, 0.52 - round * 0.018);
+const gapTime = () => Math.max(0.08, 0.2 - round * 0.006);
+
+function nextRound() {
+  // avoid the same pad three times in a row, which reads as a stutter
+  let p;
+  do p = Kit.randInt(0, 3);
+  while (seq.length >= 2 && seq[seq.length - 1] === p && seq[seq.length - 2] === p);
+  seq.push(p);
+  state = "show";
+  stepIdx = 0;
+  timer = 0.5;
+  message = "Watch...";
+  messageColor = "#e5e7eb";
+}
+
+function lightPad(i, len) {
+  light[i] = 1;
+  padTone(i, len);
+  const pad = PADS[i];
+  ripples.push({ pad, grow: 0, life: 1 });
+}
+
+function press(i) {
+  if (state !== "input") {
+    return;
+  }
+  if (seq[stepIdx] !== i) return fail(i);
+  lightPad(i, 0.3);
+  const pad = PADS[i];
+  stepIdx++;
+  inputLeft = INPUT_TIME;
+  for (let k = 0; k < 6; k++) spark(pad.x + pad.w / 2, pad.y + pad.h / 2, pad.glow, 220);
+  if (stepIdx === seq.length) {
+    round = seq.length;
+    updateHud();
+    state = "pause";
+    timer = 0.9;
+    if (round % 5 === 0) {
+      message = `Round ${round}! Amazing!`;
+      messageColor = "#facc15";
+      Kit.sfx("win");
+      for (let k = 0; k < 50; k++) spark(CX, CY, Kit.pick(PADS).color, 420);
+      timer = 1.4;
+    } else {
+      message = Kit.pick(["Nice!", "Great!", "Perfect!", "Yes!", "Echoed!"]);
+      messageColor = "#86efac";
+      setTimeout(() => Kit.sfx("score"), 180);
+    }
+  }
+}
+
+function spark(x, y, color, speed) {
+  const a = Math.random() * Math.PI * 2, s = Kit.rand(speed * 0.3, speed);
+  parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.4, 0.9), color, size: Kit.rand(4, 8) });
+}
+
+async function fail(pressed) {
+  state = "over";
+  flashWrong = seq[stepIdx];
+  shake = 0.4;
+  buzz();
+  message = pressed === -1 ? "Too slow!" : "Oops!";
+  messageColor = "#fca5a5";
+  // show which pad was correct for a moment before the results
+  await new Promise((r) => setTimeout(r, 1100));
+  game.stop();
+  const score = round;
+  best = Kit.finish(ID, score);
+  Kit.sfx("lose");
+  await Kit.overlay(
+    pressed === -1 ? "Time's up!" : "Echo broken!",
+    `You repeated ${score} ${score === 1 ? "round" : "rounds"}.\nBest: ${best}`,
+    "Play again");
+  reset();
+  game.start();
+}
+
+function update(dt) {
+  for (let i = 0; i < 4; i++) light[i] = Math.max(0, light[i] - dt * (state === "show" ? 0 : 3.5));
+  for (const r of ripples) { r.grow += 70 * dt; r.life -= dt * 2.2; }
+  ripples = ripples.filter((r) => r.life > 0);
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt; }
+  parts = parts.filter((p) => p.life > 0);
+  shake = Math.max(0, shake - dt);
+
+  if (state === "pause") {
+    timer -= dt;
+    if (timer <= 0) nextRound();
+  } else if (state === "show") {
+    timer -= dt;
+    if (timer <= 0) {
+      if (light.some((v) => v > 0)) {
+        // a pad is lit: turn it off and wait the gap
+        light = [0, 0, 0, 0];
+        timer = gapTime();
+        stepIdx++;
+        if (stepIdx >= seq.length) {
+          state = "input";
+          stepIdx = 0;
+          inputLeft = INPUT_TIME;
+          message = "Your turn!";
+          messageColor = "#93c5fd";
+        }
+      } else {
+        lightPad(seq[stepIdx], onTime());
+        timer = onTime();
+      }
+    }
+  } else if (state === "input") {
+    inputLeft -= dt;
+    if (inputLeft <= 0) fail(-1);
+  }
+}
+
+// ---------- drawing ----------
+function text(str, x, y, size, color, weight) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function arrow(x, y, dir, size, color) {
+  const a = [-Math.PI / 2, 0, Math.PI / 2, Math.PI][dir];
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(size, 0);
+  ctx.lineTo(-size * 0.6, -size * 0.8);
+  ctx.lineTo(-size * 0.6, size * 0.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPad(i) {
+  const p = PADS[i];
+  const l = light[i];
+  const wrong = state === "over" && flashWrong === i && Math.floor(performance.now() / 160) % 2 === 0;
+  const lit = Math.max(l, wrong ? 1 : 0);
+  const push = l * 5;
+  // base shadow
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath();
+  ctx.roundRect(p.x, p.y + 10, p.w, p.h, 16);
+  ctx.fill();
+  if (lit) {
+    ctx.save();
+    ctx.shadowColor = p.glow;
+    ctx.shadowBlur = 40 * lit;
+    Kit.brick(ctx, p.x, p.y + push, p.w, p.h, p.color, 16);
+    ctx.restore();
+  } else {
+    Kit.brick(ctx, p.x, p.y, p.w, p.h, p.dim, 16);
+  }
+  // studs on top of the brick
+  for (let k = 0; k < 3; k++) {
+    const sx = p.x + p.w / 2 + (k - 1) * 46, sy = p.y + push + 30;
+    ctx.fillStyle = lit ? "rgba(255,255,255,.28)" : "rgba(255,255,255,.08)";
+    ctx.beginPath();
+    ctx.arc(sx, sy, 13, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (lit) {
+    ctx.fillStyle = `rgba(255,255,255,${0.25 * lit})`;
+    ctx.beginPath();
+    ctx.roundRect(p.x + 6, p.y + push + 6, p.w - 12, p.h - 12, 12);
+    ctx.fill();
+  }
+  // key hint
+  const hy = p.y + push + p.h - 42;
+  Kit.brick(ctx, p.x + p.w / 2 - 44, hy, 40, 30, "rgba(0,0,0,.35)", 6);
+  text(p.key, p.x + p.w / 2 - 24, hy + 16, 17, lit ? "#fff" : "rgba(255,255,255,.6)");
+  Kit.brick(ctx, p.x + p.w / 2 + 4, hy, 40, 30, "rgba(0,0,0,.35)", 6);
+  arrow(p.x + p.w / 2 + 24, hy + 15, i, 8, lit ? "#fff" : "rgba(255,255,255,.6)");
+}
+
+function draw() {
+  ctx.save();
+  if (shake) ctx.translate(Kit.rand(-8, 8) * shake, Kit.rand(-8, 8) * shake);
+  ctx.fillStyle = "#15131f";
+  ctx.fillRect(-10, -10, W + 20, H + 20);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 15; y < H; y += 30)
+    for (let x = 15; x < W; x += 30) {
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  for (const r of ripples) {
+    const p = r.pad, g = r.grow;
+    ctx.strokeStyle = p.glow;
+    ctx.globalAlpha = Math.max(0, r.life) * 0.6;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(p.x - g, p.y - g, p.w + g * 2, p.h + g * 2, 16 + g);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  PADS.forEach((_, i) => drawPad(i));
+
+  // center hub
+  Kit.brick(ctx, CX - 70, CY - 60, 140, 120, "#2b2840", 18);
+  text(String(round), CX, CY - 8, 50, "#fff");
+  text("ROUND", CX, CY + 34, 13, "#a7a3c2", 700);
+  if (state === "input") {
+    // timer ring around the hub
+    const pct = Math.max(0, inputLeft / INPUT_TIME);
+    ctx.strokeStyle = pct < 0.35 ? "#ef4444" : "#93c5fd";
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.roundRect(CX - 78, CY - 68, 156, 136, 22);
+    ctx.save();
+    ctx.setLineDash([pct * 520, 1000]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  for (const p of parts) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // title + status
+  text("COLOR ECHO", 120, 34, 22, "#e9d5ff");
+  text(message, 120, 64, 18, messageColor, 700);
+
+  // progress bricks: how much of the sequence has been echoed this round
+  if (seq.length) {
+    const n = seq.length, size = Math.min(20, 560 / n), total = n * size;
+    const x0 = CX - total / 2;
+    for (let k = 0; k < n; k++) {
+      const done = state === "input" ? k < stepIdx : state === "show" ? k < stepIdx : true;
+      const c = done ? (state === "show" ? PADS[seq[k]].color : "#a78bfa") : "#2b2840";
+      Kit.brick(ctx, x0 + k * size + 1, H - 30, size - 2, 16, c, 3);
+    }
+  }
+}
+
+// ---------- input ----------
+Kit.onKey((code) => {
+  if (code in KEYMAP) press(KEYMAP[code]);
+});
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  PADS.forEach((pad, i) => {
+    if (p.x >= pad.x && p.x <= pad.x + pad.w && p.y >= pad.y && p.y <= pad.y + pad.h) press(i);
+  });
+});
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  const over = PADS.some((pad) => p.x >= pad.x && p.x <= pad.x + pad.w && p.y >= pad.y && p.y <= pad.y + pad.h);
+  canvas.style.cursor = over && state === "input" ? "pointer" : "default";
+});
+
+const game = Kit.loop(update, draw);
+reset();
+draw();
+Kit.overlay("Color Echo",
+  "Watch the brick pads light up, then echo the same pattern back.\nEach round adds one more step and plays a little faster.\n\nClick the pads, or use keys 1-4, arrow keys or WASD.",
+  "Play").then(() => game.start());
+</script>
+</body>
+</html>

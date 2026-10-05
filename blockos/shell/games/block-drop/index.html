@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block Drop</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "block-drop";
+const COLS = 10, ROWS = 20, CELL = 26;
+const BX = 140, BY = 20;                 // top-left corner of the well on the canvas
+const { ctx, W, H } = Kit.stage(540, 560);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+// Piece shapes in their spawn orientation, as [x, y] cells inside a size x size box.
+const SHAPES = {
+  I: { color: "#22d3ee", size: 4, cells: [[0, 1], [1, 1], [2, 1], [3, 1]] },
+  O: { color: "#facc15", size: 2, cells: [[0, 0], [1, 0], [0, 1], [1, 1]] },
+  T: { color: "#a855f7", size: 3, cells: [[1, 0], [0, 1], [1, 1], [2, 1]] },
+  S: { color: "#22c55e", size: 3, cells: [[1, 0], [2, 0], [0, 1], [1, 1]] },
+  Z: { color: "#ef4444", size: 3, cells: [[0, 0], [1, 0], [1, 1], [2, 1]] },
+  J: { color: "#3b82f6", size: 3, cells: [[0, 0], [0, 1], [1, 1], [2, 1]] },
+  L: { color: "#fb923c", size: 3, cells: [[2, 0], [0, 1], [1, 1], [2, 1]] },
+};
+const TYPES = Object.keys(SHAPES);
+
+// Precompute the four rotations of every shape (clockwise box rotation).
+const ROT = {};
+for (const t of TYPES) {
+  const { size, cells } = SHAPES[t];
+  ROT[t] = [cells];
+  for (let r = 1; r < 4; r++) ROT[t].push(ROT[t][r - 1].map(([x, y]) => [size - 1 - y, x]));
+}
+
+// Wall kick offsets, tried in order. Written with y pointing UP, as is customary.
+const KICKS = {
+  "01": [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+  "10": [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+  "12": [[0, 0], [1, 0], [1, -1], [0, 2], [1, 2]],
+  "21": [[0, 0], [-1, 0], [-1, 1], [0, -2], [-1, -2]],
+  "23": [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+  "32": [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+  "30": [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],
+  "03": [[0, 0], [1, 0], [1, 1], [0, -2], [1, -2]],
+};
+const KICKS_I = {
+  "01": [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+  "10": [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+  "12": [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
+  "21": [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+  "23": [[0, 0], [2, 0], [-1, 0], [2, 1], [-1, -2]],
+  "32": [[0, 0], [-2, 0], [1, 0], [-2, -1], [1, 2]],
+  "30": [[0, 0], [1, 0], [-2, 0], [1, -2], [-2, 1]],
+  "03": [[0, 0], [-1, 0], [2, 0], [-1, 2], [2, -1]],
+};
+
+const LINE_POINTS = [0, 100, 300, 500, 800];
+const LINE_NAMES = ["", "Single", "Double", "Triple", "Quad!"];
+const LOCK_DELAY = 0.5, MAX_LOCK_RESETS = 15;
+const DAS = 0.16, ARR = 0.045;          // auto-shift delay and repeat rate (seconds)
+const CLEAR_TIME = 0.32;
+
+let board, piece, bag, queue, hold, holdUsed;
+let score, lines, level, combo;
+let dropTimer, lockTimer, lockResets;
+let clearing, particles, popups, shake;
+let playing = false, paused = false;
+const shift = { dir: 0, t: 0 };
+
+function reset() {
+  board = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  bag = [];
+  queue = [];
+  while (queue.length < 5) queue.push(nextFromBag());
+  hold = null;
+  score = 0; lines = 0; level = 1; combo = -1;
+  clearing = null; particles = []; popups = []; shake = 0;
+  paused = false;
+  spawn();
+  updateHud();
+}
+
+// 7-bag randomizer: every piece appears once per bag of seven.
+function nextFromBag() {
+  if (!bag.length) {
+    bag = TYPES.slice();
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Kit.randInt(0, i);
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+  }
+  return bag.pop();
+}
+
+function spawn(type) {
+  type = type || queue.shift();
+  if (queue.length < 5) queue.push(nextFromBag());
+  piece = { type, r: 0, x: type === "O" ? 4 : 3, y: type === "I" ? -1 : 0 };
+  holdUsed = false;
+  dropTimer = 0; lockTimer = 0; lockResets = 0;
+  if (!fits(piece.type, piece.r, piece.x, piece.y)) {
+    if (fits(piece.type, piece.r, piece.x, piece.y - 1)) piece.y--;
+    else gameOver();
+  }
+}
+
+function fits(type, r, x, y) {
+  for (const [dx, dy] of ROT[type][r]) {
+    const cx = x + dx, cy = y + dy;
+    if (cx < 0 || cx >= COLS || cy >= ROWS) return false;
+    if (cy >= 0 && board[cy][cx]) return false;
+  }
+  return true;
+}
+
+const grounded = () => !fits(piece.type, piece.r, piece.x, piece.y + 1);
+
+// Moving or rotating a piece that rests on the stack buys it a little more time.
+function touchLock() {
+  if (grounded() && lockResets < MAX_LOCK_RESETS) { lockTimer = 0; lockResets++; }
+}
+
+function move(dx) {
+  if (!fits(piece.type, piece.r, piece.x + dx, piece.y)) return false;
+  piece.x += dx;
+  touchLock();
+  return true;
+}
+
+function rotate(dir) {
+  if (piece.type === "O") return;
+  const from = piece.r, to = (from + dir + 4) % 4;
+  const table = (piece.type === "I" ? KICKS_I : KICKS)["" + from + to];
+  for (const [kx, ky] of table) {
+    if (fits(piece.type, to, piece.x + kx, piece.y - ky)) {
+      piece.x += kx; piece.y -= ky; piece.r = to;
+      touchLock();
+      Kit.sfx("click");
+      return;
+    }
+  }
+}
+
+function ghostY() {
+  let y = piece.y;
+  while (fits(piece.type, piece.r, piece.x, y + 1)) y++;
+  return y;
+}
+
+function hardDrop() {
+  const gy = ghostY();
+  score += (gy - piece.y) * 2;
+  piece.y = gy;
+  shake = 0.12;
+  lock();
+}
+
+function holdPiece() {
+  if (holdUsed) return;
+  const cur = piece.type;
+  if (hold) spawn(hold); else spawn();
+  hold = cur;
+  holdUsed = true;
+  Kit.sfx("jump");
+}
+
+function lock() {
+  let above = true;
+  for (const [dx, dy] of ROT[piece.type][piece.r]) {
+    const cx = piece.x + dx, cy = piece.y + dy;
+    if (cy >= 0) { board[cy][cx] = SHAPES[piece.type].color; above = false; }
+  }
+  // A piece that locks entirely above the well ends the game.
+  if (above) return gameOver();
+  piece = null;
+  const full = [];
+  for (let y = 0; y < ROWS; y++) if (board[y].every(Boolean)) full.push(y);
+  if (full.length) {
+    combo++;
+    const gained = LINE_POINTS[full.length] * level + (combo > 0 ? 50 * combo * level : 0);
+    score += gained;
+    clearing = { rows: full, t: 0 };
+    for (const y of full)
+      for (let x = 0; x < COLS; x++) burst(BX + x * CELL + CELL / 2, BY + y * CELL + CELL / 2, board[y][x]);
+    const label = LINE_NAMES[full.length] + (combo > 0 ? `  Combo x${combo + 1}` : "");
+    popups.push({ text: label, sub: "+" + gained, y: BY + full[0] * CELL, t: 0 });
+    Kit.sfx(full.length === 4 ? "win" : "score");
+  } else {
+    combo = -1;
+    Kit.sfx("hit");
+    spawn();
+  }
+  updateHud();
+}
+
+function finishClear() {
+  const rows = clearing.rows;
+  board = board.filter((_, y) => !rows.includes(y));
+  while (board.length < ROWS) board.unshift(Array(COLS).fill(null));
+  lines += rows.length;
+  const newLevel = Math.min(20, 1 + Math.floor(lines / 10));
+  if (newLevel > level) {
+    level = newLevel;
+    popups.push({ text: "Level " + level, sub: "Faster!", y: BY + 200, t: 0 });
+    Kit.sfx("coin");
+  }
+  clearing = null;
+  spawn();
+  updateHud();
+}
+
+function burst(x, y, color) {
+  for (let i = 0; i < 3; i++)
+    particles.push({ x, y, vx: Kit.rand(-160, 160), vy: Kit.rand(-260, -40), life: Kit.rand(0.4, 0.8), color, s: Kit.rand(4, 8) });
+}
+
+// Seconds per row of gravity; gets much faster as levels go up.
+const gravity = () => Math.pow(0.8 - (level - 1) * 0.007, level - 1);
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+async function gameOver() {
+  playing = false;
+  game.stop();
+  piece = null;
+  draw();
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, score);
+  await Kit.overlay("Topped out!", `Score: ${score}\nLines: ${lines}   Level: ${level}\nBest: ${best}`, "Play again");
+  reset();
+  playing = true;
+  game.start();
+}
+
+Kit.onKey((code) => {
+  if (!playing) return;
+  if (code === "KeyP") { paused = !paused; Kit.sfx("click"); return; }
+  if (paused || !piece) return;
+  switch (code) {
+    case "ArrowLeft": case "KeyA": move(-1); shift.dir = -1; shift.t = 0; break;
+    case "ArrowRight": case "KeyD": move(1); shift.dir = 1; shift.t = 0; break;
+    case "ArrowUp": case "KeyW": case "KeyX": rotate(1); break;
+    case "KeyZ": case "KeyQ": case "ControlLeft": rotate(-1); break;
+    case "Space": hardDrop(); break;
+    case "KeyC": case "ShiftLeft": case "ShiftRight": holdPiece(); break;
+  }
+});
+addEventListener("blur", () => { if (playing) paused = true; });
+
+const leftHeld = () => Kit.key("ArrowLeft") || Kit.key("KeyA");
+const rightHeld = () => Kit.key("ArrowRight") || Kit.key("KeyD");
+
+function update(dt) {
+  shake = Math.max(0, shake - dt);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 900 * dt; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const p of popups) p.t += dt;
+  popups = popups.filter((p) => p.t < 1.2);
+  if (paused) return;
+
+  if (clearing) {
+    clearing.t += dt;
+    if (clearing.t >= CLEAR_TIME) finishClear();
+    return;
+  }
+  if (!piece) return;
+
+  // Auto-repeat sideways movement while a direction is held.
+  const held = shift.dir < 0 ? leftHeld() : shift.dir > 0 ? rightHeld() : false;
+  if (!held) {
+    shift.dir = leftHeld() ? -1 : rightHeld() ? 1 : 0;
+    shift.t = 0;
+  } else {
+    shift.t += dt;
+    while (shift.t >= DAS) { shift.t -= ARR; if (!move(shift.dir)) { shift.t = DAS - ARR; break; } }
+  }
+
+  const soft = Kit.key("ArrowDown") || Kit.key("KeyS");
+  const interval = soft ? Math.min(gravity(), 0.035) : gravity();
+  dropTimer += dt;
+  while (dropTimer >= interval) {
+    dropTimer -= interval;
+    if (grounded()) { dropTimer = 0; break; }
+    piece.y++;
+    if (soft) { score++; updateHud(); }
+  }
+  if (grounded()) {
+    lockTimer += dt;
+    if (lockTimer >= LOCK_DELAY) lock();
+  } else {
+    lockTimer = 0;
+  }
+}
+
+// ---------- drawing ----------
+
+function cell(x, y, size, color) {
+  Kit.brick(ctx, x + 1, y + 1, size - 2, size - 2, color, Math.max(2, size * 0.16));
+  ctx.fillStyle = "rgba(255,255,255,.16)";
+  ctx.beginPath();
+  ctx.arc(x + size / 2, y + size / 2, size * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function label(text, x, y, align, size, color) {
+  ctx.font = `800 ${size || 14}px ${FONT}`;
+  ctx.textAlign = align || "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = color || "#a7adb4";
+  ctx.fillText(text, x, y);
+}
+
+// Draws a small piece centered inside a box (used by hold and next panels).
+function miniPiece(type, cx, cy, size, dim) {
+  const cells = ROT[type][0];
+  const xs = cells.map((c) => c[0]), ys = cells.map((c) => c[1]);
+  const w = Math.max(...xs) - Math.min(...xs) + 1, h = Math.max(...ys) - Math.min(...ys) + 1;
+  const ox = cx - (w * size) / 2 - Math.min(...xs) * size, oy = cy - (h * size) / 2 - Math.min(...ys) * size;
+  ctx.globalAlpha = dim ? 0.35 : 1;
+  for (const [x, y] of cells) cell(ox + x * size, oy + y * size, size, SHAPES[type].color);
+  ctx.globalAlpha = 1;
+}
+
+function panel(x, y, w, h) {
+  ctx.fillStyle = "#1b1e23";
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 10);
+  ctx.fill();
+  ctx.strokeStyle = "#2f343b";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
+function draw() {
+  ctx.fillStyle = "#111317";
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  if (shake > 0) ctx.translate(0, Math.sin(shake * 80) * shake * 20);
+
+  // hold panel + stats
+  panel(14, BY, 112, 96);
+  label("HOLD", 70, BY + 20, "center", 13);
+  if (hold) miniPiece(hold, 70, BY + 58, 20, holdUsed);
+  panel(14, BY + 112, 112, 210);
+  const stats = [["SCORE", score], ["LEVEL", level], ["LINES", lines], ["BEST", Kit.best(ID) ?? 0]];
+  stats.forEach(([k, v], i) => {
+    label(k, 70, BY + 138 + i * 50, "center", 12);
+    label(String(v), 70, BY + 160 + i * 50, "center", 20, "#f2f4f5");
+  });
+
+  // next queue
+  panel(414, BY, 112, 300);
+  label("NEXT", 470, BY + 20, "center", 13);
+  queue.slice(0, 5).forEach((t, i) => miniPiece(t, 470, BY + 58 + i * 54, i === 0 ? 20 : 15));
+
+  // controls reminder
+  ctx.globalAlpha = 0.8;
+  ["Up  rotate", "Space  drop", "C  hold", "P  pause"].forEach((s, i) => label(s, 470, BY + 345 + i * 20, "center", 11, "#6b7280"));
+  ctx.globalAlpha = 1;
+
+  // the well
+  ctx.fillStyle = "#0b0d10";
+  ctx.fillRect(BX - 4, BY - 4, COLS * CELL + 8, ROWS * CELL + 8);
+  ctx.fillStyle = "#14171c";
+  ctx.fillRect(BX, BY, COLS * CELL, ROWS * CELL);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) {
+      ctx.beginPath();
+      ctx.arc(BX + x * CELL + CELL / 2, BY + y * CELL + CELL / 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (board[y][x]) cell(BX + x * CELL, BY + y * CELL, CELL, board[y][x]);
+
+  if (clearing) {
+    const k = clearing.t / CLEAR_TIME;
+    for (const y of clearing.rows) {
+      ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - k)})`;
+      const shrink = k * COLS * CELL / 2;
+      ctx.fillRect(BX + shrink, BY + y * CELL, COLS * CELL - shrink * 2, CELL);
+    }
+  }
+
+  if (piece) {
+    const color = SHAPES[piece.type].color;
+    const gy = ghostY();
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.55;
+    for (const [dx, dy] of ROT[piece.type][piece.r]) {
+      const py = gy + dy;
+      if (py < 0) continue;
+      ctx.beginPath();
+      ctx.roundRect(BX + (piece.x + dx) * CELL + 3, BY + py * CELL + 3, CELL - 6, CELL - 6, 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+    // fade slightly while the lock delay runs out
+    ctx.globalAlpha = grounded() ? 1 - 0.35 * (lockTimer / LOCK_DELAY) : 1;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(BX, BY, COLS * CELL, ROWS * CELL);
+    ctx.clip();
+    for (const [dx, dy] of ROT[piece.type][piece.r])
+      cell(BX + (piece.x + dx) * CELL, BY + (piece.y + dy) * CELL, CELL, color);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.s / 2, p.y - p.s / 2, p.s, p.s);
+  }
+  ctx.globalAlpha = 1;
+
+  for (const p of popups) {
+    const a = Math.min(1, (1.2 - p.t) * 3);
+    ctx.globalAlpha = a;
+    const y = p.y - p.t * 30;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#000";
+    ctx.font = `900 24px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.strokeText(p.text, BX + COLS * CELL / 2, y);
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(p.text, BX + COLS * CELL / 2, y);
+    ctx.font = `800 16px ${FONT}`;
+    ctx.strokeText(p.sub, BX + COLS * CELL / 2, y + 22);
+    ctx.fillStyle = "#f2f4f5";
+    ctx.fillText(p.sub, BX + COLS * CELL / 2, y + 22);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (paused) {
+    ctx.fillStyle = "rgba(10,11,13,.7)";
+    ctx.fillRect(BX, BY, COLS * CELL, ROWS * CELL);
+    label("PAUSED", BX + COLS * CELL / 2, BY + ROWS * CELL / 2, "center", 30, "#f2f4f5");
+    label("Press P to resume", BX + COLS * CELL / 2, BY + ROWS * CELL / 2 + 28, "center", 14);
+  }
+}
+
+const game = Kit.loop(update, draw);
+reset();
+draw();
+Kit.overlay(
+  "Block Drop",
+  "Stack the falling blocks and fill rows to clear them.\nEvery 10 lines the drop speeds up.\n\n" +
+  "Left / Right or A / D: move\nDown or S: soft drop\nSpace: hard drop\nUp, W or X: rotate (Z or Q: rotate back)\nC or Shift: hold\nP: pause",
+  "Play"
+).then(() => { playing = true; game.start(); });
+</script>
+</body>
+</html>

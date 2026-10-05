@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mine Sweep</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .ms-choices { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .ms-choices .kit-btn { margin: 0; width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 12px 20px; }
+  .ms-choices .kit-btn small { font-size: 13px; font-weight: 700; opacity: .85; }
+  .ms-choices .kit-btn:focus-visible, .ms-choices .kit-btn.is-current { outline: 3px solid #f2f4f5; outline-offset: 2px; }
+  .ms-easy { background: #12b76a !important; box-shadow: 0 4px 0 #0b7a47 !important; }
+  .ms-medium { background: #f59e0b !important; box-shadow: 0 4px 0 #b45309 !important; }
+  .ms-hard { background: #ef4444 !important; box-shadow: 0 4px 0 #b91c1c !important; }
+  .kit-stage canvas:focus { outline: none; }
+  .ms-best { color: var(--muted); font-size: 13px; margin-top: 12px; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "mine-sweep";
+const { canvas, ctx, W, H } = Kit.stage(800, 600);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const TOP = 72;
+
+const DIFFS = {
+  easy: { label: "Easy", cols: 9, rows: 9, mines: 10 },
+  medium: { label: "Medium", cols: 16, rows: 16, mines: 40 },
+  hard: { label: "Hard", cols: 30, rows: 16, mines: 99 },
+};
+const NUM_COLORS = ["", "#60a5fa", "#4ade80", "#f87171", "#c084fc", "#fb923c", "#2dd4bf", "#f2f4f5", "#9ca3af"];
+const FACE = { x: W / 2 - 24, y: 12, w: 48, h: 48 };
+
+let diff = "easy", cfg, cells, size, ox, oy;
+let state = "menu";               // menu | ready | playing | won | lost
+let gameId = 0, startTime = 0, endTime = 0, flags = 0, revealedCount = 0;
+let hover = null, pressed = null, cursor = { r: 0, c: 0 }, showCursor = false, shake = 0;
+
+function newGame(d) {
+  diff = d || diff;
+  gameId++;
+  cfg = DIFFS[diff];
+  cells = [];
+  for (let r = 0; r < cfg.rows; r++)
+    for (let c = 0; c < cfg.cols; c++)
+      cells.push({ r, c, mine: false, n: 0, open: false, flag: false, at: 0, boom: false });
+  size = Math.floor(Math.min((W - 40) / cfg.cols, (H - TOP - 16) / cfg.rows, 48));
+  ox = Math.floor((W - size * cfg.cols) / 2);
+  oy = TOP + Math.floor((H - TOP - 8 - size * cfg.rows) / 2);
+  flags = 0;
+  revealedCount = 0;
+  startTime = endTime = 0;
+  cursor = { r: cfg.rows >> 1, c: cfg.cols >> 1 };
+  state = "ready";
+  updateHud();
+}
+
+const cellAt = (r, c) => (r >= 0 && c >= 0 && r < cfg.rows && c < cfg.cols ? cells[r * cfg.cols + c] : null);
+function neighbors(cell) {
+  const out = [];
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      const n = cellAt(cell.r + dr, cell.c + dc);
+      if (n) out.push(n);
+    }
+  return out;
+}
+
+// Mines are placed after the first click, away from it, so the first click always opens an area.
+function placeMines(safe) {
+  const keepClear = new Set([safe, ...neighbors(safe)]);
+  // on tiny boards, only guarantee the clicked cell itself
+  const pool = cells.filter((c) => (cells.length - keepClear.size >= cfg.mines ? !keepClear.has(c) : c !== safe));
+  for (let i = 0; i < cfg.mines; i++) {
+    const j = Kit.randInt(i, pool.length - 1);
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+    pool[i].mine = true;
+  }
+  for (const c of cells) c.n = neighbors(c).filter((n) => n.mine).length;
+}
+
+const elapsed = () => (state === "playing" ? (performance.now() - startTime) / 1000 : (endTime - startTime) / 1000 || 0);
+
+function updateHud() {
+  const best = Kit.best(`${ID}-${diff}`, undefined, true);
+  Kit.hud(`${cfg ? cfg.label : ""}<small>Best ${best === null ? "--" : best.toFixed(1) + "s"}</small>`);
+}
+
+// ---------- actions ----------
+
+function reveal(cell) {
+  if (cell.open || cell.flag) return;
+  if (state === "ready") {
+    placeMines(cell);
+    state = "playing";
+    startTime = performance.now();
+  }
+  if (state !== "playing") return;
+  if (cell.mine) return lose(cell);
+
+  // flood fill outward from empty cells; reveal time ripples with distance
+  const now = performance.now();
+  const queue = [[cell, 0]];
+  cell.open = true;
+  while (queue.length) {
+    const [cur, depth] = queue.shift();
+    cur.at = now + depth * 22;
+    revealedCount++;
+    if (cur.n === 0)
+      for (const n of neighbors(cur))
+        if (!n.open && !n.flag) { n.open = true; queue.push([n, depth + 1]); }
+  }
+  Kit.sfx(revealedCount > 1 && cell.n === 0 ? "jump" : "click");
+  if (revealedCount === cells.length - cfg.mines) win();
+}
+
+// Clicking an opened number with the right count of flags around it opens the rest.
+function chord(cell) {
+  if (state !== "playing" || !cell.open || !cell.n) return;
+  const around = neighbors(cell);
+  if (around.filter((n) => n.flag).length !== cell.n) return;
+  for (const n of around) if (!n.open && !n.flag) { reveal(n); if (state !== "playing") return; }
+}
+
+function toggleFlag(cell) {
+  if ((state !== "playing" && state !== "ready") || cell.open) return;
+  cell.flag = !cell.flag;
+  flags += cell.flag ? 1 : -1;
+  Kit.sfx(cell.flag ? "coin" : "click");
+}
+
+function act(cell) {
+  if (cell.open) chord(cell); else reveal(cell);
+}
+
+function lose(cell) {
+  state = "lost";
+  endTime = performance.now();
+  cell.boom = true;
+  shake = 0.35;
+  const now = performance.now();
+  cells.filter((c) => c.mine && !c.flag).forEach((c) => {
+    c.open = true;
+    c.at = c === cell ? now : now + 150 + Math.hypot(c.r - cell.r, c.c - cell.c) * 35;
+  });
+  Kit.sfx("hit");
+  const id = gameId;
+  setTimeout(() => { if (id === gameId) Kit.sfx("lose"); }, 250);
+  setTimeout(() => id === gameId && showMenu("Boom!", `You hit a mine after ${elapsed().toFixed(1)} seconds.\nPick a board to try again.`), 1400);
+}
+
+function win() {
+  state = "won";
+  endTime = performance.now();
+  const t = Math.round(elapsed() * 10) / 10;
+  for (const c of cells) if (c.mine && !c.flag) { c.flag = true; flags++; }
+  const prev = Kit.best(`${ID}-${diff}`, undefined, true);
+  Kit.best(`${ID}-${diff}`, t, true);
+  Kit.finish(ID, t, true);
+  updateHud();
+  Kit.sfx("win");
+  const record = prev === null || t < prev;
+  const id = gameId;
+  setTimeout(() => id === gameId && showMenu("Cleared!", `${cfg.label} board cleared in ${t.toFixed(1)} seconds.${record ? "\nNew best time!" : `\nBest: ${prev.toFixed(1)}s`}`), 900);
+}
+
+// ---------- difficulty menu (custom overlay with three buttons) ----------
+
+function showMenu(title, text) {
+  state = "menu";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  const panel = document.createElement("div");
+  panel.className = "kit-panel";
+  const h = document.createElement("h1");
+  h.textContent = title;
+  const p = document.createElement("p");
+  p.textContent = text;
+  const box = document.createElement("div");
+  box.className = "ms-choices";
+  const buttons = Object.entries(DIFFS).map(([key, d], i) => {
+    const b = document.createElement("button");
+    b.className = `kit-btn ms-${key}` + (key === diff ? " is-current" : "");
+    b.innerHTML = `<span>${i + 1}. ${d.label}</span><small>${d.cols} x ${d.rows}, ${d.mines} mines</small>`;
+    b.addEventListener("click", () => choose(key));
+    box.appendChild(b);
+    return b;
+  });
+  const bestLine = document.createElement("div");
+  bestLine.className = "ms-best";
+  bestLine.textContent = "Best times: " + Object.entries(DIFFS).map(([key, d]) => {
+    const b = Kit.best(`${ID}-${key}`, undefined, true);
+    return `${d.label} ${b === null ? "--" : b.toFixed(1) + "s"}`;
+  }).join("   ");
+  panel.append(h, p, box, bestLine);
+  o.appendChild(panel);
+  document.body.appendChild(o);
+  const keys = Object.keys(DIFFS);
+  let focus = keys.indexOf(diff);
+  buttons[focus].focus();
+  const shownAt = performance.now();
+
+  function choose(key) {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    newGame(key);
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function onKey(e) {
+    if (performance.now() - shownAt < 350) return;
+    const n = ["Digit1", "Digit2", "Digit3", "Numpad1", "Numpad2", "Numpad3"].indexOf(e.code);
+    let handled = true;
+    if (n >= 0) choose(keys[n % 3]);
+    else if (e.code === "Enter" || e.code === "Space") choose(keys[focus]);
+    else if (["ArrowUp", "ArrowLeft", "KeyW", "KeyA"].includes(e.code)) focus = (focus + 2) % 3;
+    else if (["ArrowDown", "ArrowRight", "KeyS", "KeyD", "Tab"].includes(e.code)) focus = (focus + 1) % 3;
+    else handled = false;
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (o.isConnected) buttons[focus].focus();
+    }
+  }
+  addEventListener("keydown", onKey, true);
+}
+
+// ---------- input ----------
+
+function cellFromEvent(e) {
+  const p = Kit.pointer(canvas, e);
+  if (p.x < ox || p.y < oy) return null;
+  return cellAt(Math.floor((p.y - oy) / size), Math.floor((p.x - ox) / size));
+}
+function onFace(e) {
+  const p = Kit.pointer(canvas, e);
+  return p.x >= FACE.x && p.x <= FACE.x + FACE.w && p.y >= FACE.y && p.y <= FACE.y + FACE.h;
+}
+
+let longPress = 0;
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.style.touchAction = "none";
+canvas.addEventListener("pointerdown", (e) => {
+  if (state === "menu") return;
+  if (onFace(e) && e.button === 0) { Kit.sfx("click"); newGame(); return; }
+  const cell = cellFromEvent(e);
+  showCursor = false;
+  if (!cell) return;
+  if (e.button === 2) {
+    // right button while left is held (or right on an opened number) = chord
+    if (e.buttons & 1 || cell.open) chord(cell); else toggleFlag(cell);
+    pressed = null;
+    return;
+  }
+  if (e.button === 1) { chord(cell); return; }
+  pressed = cell;
+  canvas.setPointerCapture(e.pointerId);
+  if (e.pointerType === "touch") {
+    clearTimeout(longPress);
+    longPress = setTimeout(() => { if (pressed === cell) { toggleFlag(cell); pressed = null; } }, 420);
+  }
+});
+canvas.addEventListener("pointermove", (e) => {
+  hover = cellFromEvent(e);
+  showCursor = false;
+  if (pressed && hover !== pressed) pressed = hover && e.buttons & 1 ? hover : pressed;
+});
+canvas.addEventListener("pointerup", (e) => {
+  clearTimeout(longPress);
+  if (e.button !== 0 || !pressed) return;
+  const cell = cellFromEvent(e);
+  if (cell === pressed && state !== "menu") act(cell);
+  pressed = null;
+});
+canvas.addEventListener("pointerleave", () => { hover = null; });
+canvas.addEventListener("pointercancel", () => { pressed = null; clearTimeout(longPress); });
+
+const MOVES = {
+  ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0],
+  ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1],
+};
+Kit.onKey((code) => {
+  if (state === "menu") return;
+  if (code === "KeyR") { Kit.sfx("click"); newGame(); return; }
+  const m = MOVES[code];
+  if (m) {
+    if (showCursor) {
+      cursor.r = Kit.clamp(cursor.r + m[0], 0, cfg.rows - 1);
+      cursor.c = Kit.clamp(cursor.c + m[1], 0, cfg.cols - 1);
+    } else if (hover) {
+      cursor = { r: hover.r, c: hover.c };
+    }
+    showCursor = true;
+    return;
+  }
+  const cell = cellAt(cursor.r, cursor.c);
+  if (code === "Space" || code === "Enter") { showCursor = true; act(cell); }
+  if (code === "KeyF" || code === "KeyE") { showCursor = true; toggleFlag(cell); }
+});
+
+// ---------- drawing ----------
+
+function drawMine(x, y, s) {
+  const cx = x + s / 2, cy = y + s / 2, r = s * 0.24;
+  ctx.strokeStyle = "#0b0d10";
+  ctx.lineWidth = Math.max(2, s * 0.08);
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 4;
+    ctx.moveTo(cx + Math.cos(a) * r * 1.55, cy + Math.sin(a) * r * 1.55);
+    ctx.lineTo(cx - Math.cos(a) * r * 1.55, cy - Math.sin(a) * r * 1.55);
+  }
+  ctx.stroke();
+  ctx.fillStyle = "#0b0d10";
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.7)";
+  ctx.fillRect(cx - r * 0.5, cy - r * 0.5, r * 0.45, r * 0.45);
+}
+
+function drawFlag(x, y, s) {
+  const cx = x + s / 2;
+  const px = cx - s * 0.12;
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(px, y + s * 0.16, Math.max(2, s * 0.08), s * 0.62);
+  ctx.fillRect(px - s * 0.14, y + s * 0.72, s * 0.4, Math.max(3, s * 0.1));
+  ctx.fillStyle = "#ef4444";
+  ctx.beginPath();
+  ctx.moveTo(px + s * 0.06, y + s * 0.14);
+  ctx.lineTo(px + s * 0.44, y + s * 0.32);
+  ctx.lineTo(px + s * 0.06, y + s * 0.5);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHidden(x, y, s, cell, scale) {
+  const lit = (cell === hover && state !== "lost" && state !== "won") || (cell === pressed);
+  ctx.save();
+  if (scale !== 1) {
+    ctx.translate(x + s / 2, y + s / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-x - s / 2, -y - s / 2);
+  }
+  const shade = (cell.r + cell.c) % 2 ? "#5b6b82" : "#617390";
+  if (cell === pressed && !cell.flag) {
+    ctx.fillStyle = "#3d4757";
+    ctx.beginPath(); ctx.roundRect(x + 1, y + 1, s - 2, s - 2, 4); ctx.fill();
+  } else {
+    Kit.brick(ctx, x + 1, y + 1, s - 2, s - 2, lit ? "#7b8ca8" : shade, Math.max(2, s * 0.14));
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.2, 0, Math.PI * 2); ctx.fill();
+  }
+  if (cell.flag) drawFlag(x, y, s);
+  ctx.restore();
+}
+
+function drawCell(cell, now) {
+  const x = ox + cell.c * size, y = oy + cell.r * size, s = size;
+  const visible = cell.open && now >= cell.at;
+  if (!visible) return drawHidden(x, y, s, cell, 1);
+
+  ctx.fillStyle = cell.boom ? "#dc2626" : "#1c2027";
+  ctx.fillRect(x, y, s, s);
+  ctx.strokeStyle = "#262b33";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+  if (cell.mine) drawMine(x, y, s);
+  else if (cell.n) {
+    ctx.font = `900 ${Math.round(s * 0.6)}px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = NUM_COLORS[cell.n];
+    ctx.fillText(cell.n, x + s / 2, y + s / 2 + 1);
+  }
+  // the brick shrinks away for a moment after it opens
+  const k = (now - cell.at) / 120;
+  if (k < 1) drawHidden(x, y, s, cell, 1 - k);
+}
+
+function drawFace() {
+  const { x, y, w, h } = FACE;
+  Kit.brick(ctx, x, y, w, h, "#facc15", 8);
+  ctx.fillStyle = "#1f2328";
+  ctx.strokeStyle = "#1f2328";
+  ctx.lineWidth = 3;
+  const cx = x + w / 2, ey = y + 20;
+  if (state === "lost") {
+    for (const ex of [cx - 9, cx + 9]) {
+      ctx.beginPath();
+      ctx.moveTo(ex - 4, ey - 4); ctx.lineTo(ex + 4, ey + 4);
+      ctx.moveTo(ex + 4, ey - 4); ctx.lineTo(ex - 4, ey + 4);
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(cx, y + 37, 7, Math.PI * 1.15, Math.PI * 1.85); ctx.stroke();
+  } else if (state === "won") {
+    ctx.fillRect(cx - 17, ey - 5, 15, 9);
+    ctx.fillRect(cx + 2, ey - 5, 15, 9);
+    ctx.fillRect(cx - 4, ey - 3, 8, 3);
+    ctx.beginPath(); ctx.arc(cx, y + 27, 9, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+  } else {
+    ctx.fillRect(cx - 12, ey - 4, 6, 7);
+    ctx.fillRect(cx + 6, ey - 4, 6, 7);
+    if (pressed) { ctx.beginPath(); ctx.arc(cx, y + 34, 5, 0, Math.PI * 2); ctx.stroke(); }
+    else { ctx.beginPath(); ctx.arc(cx, y + 26, 9, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+  }
+}
+
+function counter(x, label, value, color) {
+  ctx.fillStyle = "#0b0d10";
+  ctx.beginPath(); ctx.roundRect(x, 14, 130, 44, 8); ctx.fill();
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#6b7280";
+  ctx.fillText(label, x + 10, 36);
+  ctx.font = `900 26px ${FONT}`;
+  ctx.textAlign = "right";
+  ctx.fillStyle = color;
+  ctx.fillText(value, x + 120, 37);
+}
+
+function draw() {
+  const now = performance.now();
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (!cfg) return;
+  ctx.save();
+  if (shake > 0) ctx.translate(Math.sin(now / 18) * shake * 14, Math.cos(now / 23) * shake * 8);
+
+  ctx.fillStyle = "#22252a";
+  ctx.fillRect(0, 0, W, TOP - 6);
+  counter(20, "MINES", String(cfg.mines - flags), "#ef4444");
+  counter(W - 150, "TIME", String(Math.min(999, Math.floor(elapsed()))), "#facc15");
+  drawFace();
+  ctx.font = `700 13px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#6b7280";
+  ctx.fillText(`${cfg.label}  ${cfg.cols} x ${cfg.rows}`, W / 2 - 150, 36);
+  ctx.fillText(state === "ready" ? "Click a brick to start" : "R: restart", W / 2 + 150, 36);
+
+  ctx.fillStyle = "#0b0d10";
+  ctx.fillRect(ox - 6, oy - 6, size * cfg.cols + 12, size * cfg.rows + 12);
+  for (const cell of cells) drawCell(cell, now);
+
+  // wrong flags are crossed out once the game is lost
+  if (state === "lost" || (state === "menu" && cells.some((c) => c.boom))) {
+    for (const cell of cells) if (cell.flag && !cell.mine) {
+      const x = ox + cell.c * size, y = oy + cell.r * size;
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x + 5, y + 5); ctx.lineTo(x + size - 5, y + size - 5);
+      ctx.moveTo(x + size - 5, y + 5); ctx.lineTo(x + 5, y + size - 5);
+      ctx.stroke();
+    }
+  }
+  if (showCursor && (state === "playing" || state === "ready")) {
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(ox + cursor.c * size + 1.5, oy + cursor.r * size + 1.5, size - 3, size - 3, 5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+const game = Kit.loop((dt) => { shake = Math.max(0, shake - dt); }, draw);
+newGame("easy");
+game.start();
+showMenu("Mine Sweep",
+  "Open every brick that doesn't hide a mine. Numbers tell how many mines touch that brick.\n\n" +
+  "Left click: open    Right click: flag\nClick a number with all its flags placed to open around it\n" +
+  "Keys: arrows move, Space opens, F flags, R restarts\n\nChoose a board:");
+</script>
+</body>
+</html>

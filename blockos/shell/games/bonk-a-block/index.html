@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bonk-a-Block</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "bonk-a-block";
+const FONT = '"Noto Sans","DejaVu Sans",system-ui,sans-serif';
+const ROUND_TIME = 60;
+const { canvas, ctx, W, H } = Kit.stage(900, 600);
+
+// Key layouts: QWE/ASD/ZXC (plus numpad) for 3x3, 1234/QWER/ASDF/ZXCV for 4x4.
+const KEYS3 = [["KeyQ", "KeyW", "KeyE"], ["KeyA", "KeyS", "KeyD"], ["KeyZ", "KeyX", "KeyC"]];
+const NUMPAD3 = [["Numpad7", "Numpad8", "Numpad9"], ["Numpad4", "Numpad5", "Numpad6"], ["Numpad1", "Numpad2", "Numpad3"]];
+const KEYS4 = [["Digit1", "Digit2", "Digit3", "Digit4"], ["KeyQ", "KeyW", "KeyE", "KeyR"], ["KeyA", "KeyS", "KeyD", "KeyF"], ["KeyZ", "KeyX", "KeyC", "KeyV"]];
+const keyLabel = (code) => code.replace(/^(Key|Digit)/, "");
+
+const TYPES = {
+  bob:  { pts: 10, stay: 1.0, color: "#facc15", hp: 1 },
+  zip:  { pts: 20, stay: 0.6, color: "#2dd4bf", hp: 1 },
+  tank: { pts: 30, stay: 1.5, color: "#fb923c", hp: 2 },
+  gold: { pts: 50, stay: 0.8, color: "#fde047", hp: 1 },
+  bomb: { pts: 0,  stay: 1.3, color: "#27272a", hp: 1 },
+};
+
+let holes, size, scale, critters, score, combo, bestCombo, bonks, swings, timeLeft, spawnT, grace, running;
+let parts = [], floats = [], banner = null, shake = 0, mallet = { x: 450, y: 330, swing: 0 }, mouseIn = false;
+
+function layout(n) {
+  size = n;
+  scale = n === 3 ? 1 : 0.82;
+  holes = [];
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const x = n === 3 ? 450 + (c - 1) * 205 : 450 + (c - 1.5) * 172;
+      const y = n === 3 ? 222 + r * 138 : 190 + r * 112;
+      const keys = [(n === 3 ? KEYS3 : KEYS4)[r][c]];
+      if (n === 3) keys.push(NUMPAD3[r][c]);
+      holes.push({ x, y, keys });
+    }
+  critters = holes.map(() => null);
+}
+
+function reset() {
+  layout(3);
+  score = 0;
+  combo = 0;
+  bestCombo = 0;
+  bonks = 0;
+  swings = 0;
+  timeLeft = ROUND_TIME;
+  spawnT = 0.6;
+  grace = 0;
+  parts = [];
+  floats = [];
+  banner = { text: "BONK!", life: 1 };
+  running = true;
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+const comboMult = () => 1 + Math.min(3, Math.floor(combo / 5) * 0.5);
+
+function pickType(progress) {
+  const table = [
+    ["bob", 60],
+    ["zip", progress > 0.15 ? 15 + progress * 15 : 0],
+    ["tank", 12],
+    ["gold", 4],
+    ["bomb", 10 + progress * 14],
+  ];
+  let roll = Math.random() * table.reduce((s, t) => s + t[1], 0);
+  for (const [name, w] of table) if ((roll -= w) < 0) return name;
+  return "bob";
+}
+
+function spawn() {
+  const progress = 1 - timeLeft / ROUND_TIME;
+  const active = critters.filter(Boolean).length;
+  const maxUp = (size === 3 ? 2 : 3) + Math.floor(progress * 3);
+  if (active >= maxUp) return;
+  const free = critters.map((c, i) => (c ? -1 : i)).filter((i) => i >= 0);
+  if (!free.length) return;
+  const i = Kit.pick(free);
+  const type = pickType(progress);
+  const t = TYPES[type];
+  critters[i] = { type, hp: t.hp, state: "rising", rise: 0, stay: t.stay * (1.15 - 0.5 * progress) * Kit.rand(0.85, 1.15), hit: 0, blink: Math.random() * 3 };
+}
+
+function burst(x, y, colors, n, speed, grav) {
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(speed * 0.3, speed);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - speed * 0.3, life: Kit.rand(0.4, 0.9), color: Kit.pick(colors), size: Kit.rand(4, 9), grav: grav ?? 700 });
+  }
+}
+
+function floatText(x, y, str, color, sizePx) {
+  floats.push({ x, y, text: str, color, life: 1, size: sizePx || 24 });
+}
+
+function bonk(i) {
+  if (!running) return;
+  const h = holes[i];
+  mallet.x = h.x;
+  mallet.y = h.y - 40 * scale;
+  mallet.swing = 1;
+  swings++;
+  const c = critters[i];
+  if (!c || c.state === "bonked" || c.state === "hiding" || c.rise < 0.35) {
+    // whiff: hitting an empty hole breaks the combo
+    if (combo >= 5) floatText(h.x, h.y - 30, "Combo lost", "#d6d3d1", 16);
+    combo = 0;
+    burst(h.x, h.y, ["#78350f", "#92400e", "#a16207"], 5, 160);
+    Kit.sfx("click");
+    return;
+  }
+  const t = TYPES[c.type];
+  if (c.type === "bomb") {
+    c.state = "bonked";
+    c.hit = 1;
+    score = Math.max(0, score - 25);
+    timeLeft = Math.max(0, timeLeft - 3);
+    combo = 0;
+    shake = 0.5;
+    burst(h.x, h.y - 40 * scale, ["#f97316", "#facc15", "#ef4444", "#52525b", "#a1a1aa"], 30, 420);
+    floatText(h.x, h.y - 90 * scale, "-25  -3s", "#fca5a5", 26);
+    Kit.sfx("hit");
+    updateHud();
+    return;
+  }
+  c.hp--;
+  c.hit = 1;
+  if (c.hp > 0) {
+    // knocked the helmet off: it stays up a little longer
+    c.stay = Math.max(c.stay, 0.45);
+    burst(h.x, h.y - 80 * scale, ["#9ca3af", "#d1d5db"], 8, 220);
+    Kit.sfx("hit");
+    return;
+  }
+  c.state = "bonked";
+  combo++;
+  bestCombo = Math.max(bestCombo, combo);
+  bonks++;
+  const pts = Math.round(t.pts * comboMult());
+  score += pts;
+  burst(h.x, h.y - 60 * scale, ["#fef08a", "#fde047", "#ffffff"], 10, 260, 300);
+  if (c.type === "gold") {
+    timeLeft = Math.min(ROUND_TIME, timeLeft + 2);
+    floatText(h.x, h.y - 100 * scale, `+${pts}  +2s`, "#fde047", 28);
+    Kit.sfx("coin");
+  } else {
+    floatText(h.x, h.y - 100 * scale, "+" + pts, "#ffffff", 24);
+    Kit.sfx(combo % 5 === 0 ? "coin" : "score");
+  }
+  if (combo > 0 && combo % 5 === 0) banner = { text: `COMBO x${comboMult().toFixed(1)}`, life: 1 };
+  updateHud();
+}
+
+function update(dt) {
+  if (running) {
+    timeLeft -= dt;
+    if (size === 3 && timeLeft <= ROUND_TIME / 2) {
+      // halfway: the field grows to 4x4
+      holes.forEach((h, i) => critters[i] && burst(h.x, h.y - 30, ["#78350f", "#a16207"], 6, 150));
+      layout(4);
+      grace = 1.2;
+      banner = { text: "BIGGER FIELD!", life: 1.6 };
+      Kit.sfx("jump");
+    }
+    if (timeLeft <= 0) {
+      timeLeft = 0;
+      return endRound();
+    }
+    if (grace > 0) grace -= dt;
+    else {
+      spawnT -= dt;
+      if (spawnT <= 0) {
+        const progress = 1 - timeLeft / ROUND_TIME;
+        spawnT = (0.8 - 0.42 * progress) * Kit.rand(0.7, 1.3);
+        spawn();
+      }
+    }
+  }
+
+  critters.forEach((c, i) => {
+    if (!c) return;
+    c.hit = Math.max(0, c.hit - dt * 4);
+    c.blink += dt;
+    if (c.state === "rising") {
+      c.rise += dt / 0.13;
+      if (c.rise >= 1) { c.rise = 1; c.state = "up"; }
+    } else if (c.state === "up") {
+      c.stay -= dt;
+      if (c.stay <= 0) c.state = "hiding";
+    } else if (c.state === "hiding") {
+      c.rise -= dt / 0.16;
+      if (c.rise <= 0) {
+        critters[i] = null;
+        if (c.type !== "bomb" && running) {
+          if (combo >= 5) floatText(holes[i].x, holes[i].y - 30, "Missed!", "#d6d3d1", 16);
+          combo = 0;
+        }
+      }
+    } else if (c.state === "bonked") {
+      c.rise -= dt / (c.type === "bomb" ? 0.2 : 0.35);
+      if (c.rise <= 0) critters[i] = null;
+    }
+  });
+
+  for (const p of parts) { p.vy += p.grav * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  parts = parts.filter((p) => p.life > 0);
+  for (const f of floats) { f.y -= 50 * dt; f.life -= dt * 1.1; }
+  floats = floats.filter((f) => f.life > 0);
+  if (banner) { banner.life -= dt * 0.8; if (banner.life <= 0) banner = null; }
+  mallet.swing = Math.max(0, mallet.swing - dt * 6);
+  shake = Math.max(0, shake - dt);
+}
+
+async function endRound() {
+  running = false;
+  critters = critters.map(() => null);
+  game.stop();
+  draw();
+  Kit.sfx("win");
+  const best = Kit.finish(ID, score);
+  const acc = swings ? Math.round((bonks / swings) * 100) : 0;
+  await Kit.overlay("Time's up!", `Score: ${score}\nBest: ${best}\n\nBonks: ${bonks}   Best combo: ${bestCombo}   Accuracy: ${acc}%`, "Play again");
+  reset();
+  game.start();
+}
+
+// ---------- drawing ----------
+function text(str, x, y, sizePx, color, align, weight) {
+  ctx.font = `${weight || 800} ${sizePx}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawCritter(c, h) {
+  const t = TYPES[c.type];
+  const bw = 84 * scale, bh = 88 * scale;
+  const squash = c.state === "bonked" ? 0.75 : 1 - c.hit * 0.12;
+  const top = h.y - bh * c.rise * squash;
+  const x = h.x - bw / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(h.x - 90 * scale, h.y - 200, 180 * scale, 200);
+  ctx.clip();
+  const flash = c.hit > 0.5 && c.type !== "bomb";
+  Kit.brick(ctx, x, top, bw, bh + 20, flash ? "#ffffff" : t.color, 10 * scale);
+  const s = scale;
+  if (c.type === "bomb") {
+    // fuse and spark
+    ctx.strokeStyle = "#a8a29e";
+    ctx.lineWidth = 4 * s;
+    ctx.beginPath();
+    ctx.moveTo(h.x, top);
+    ctx.quadraticCurveTo(h.x + 12 * s, top - 14 * s, h.x + 6 * s, top - 22 * s);
+    ctx.stroke();
+    ctx.fillStyle = Math.floor(c.blink * 12) % 2 ? "#facc15" : "#f97316";
+    ctx.fillRect(h.x + 1 * s, top - 30 * s, 10 * s, 10 * s);
+    // warning stripe and angry face
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(x + 6 * s, top + 52 * s, bw - 12 * s, 10 * s);
+    ctx.fillStyle = Math.floor(c.blink * 4) % 2 ? "#ef4444" : "#fca5a5";
+    ctx.fillRect(h.x - 22 * s, top + 22 * s, 12 * s, 9 * s);
+    ctx.fillRect(h.x + 10 * s, top + 22 * s, 12 * s, 9 * s);
+  } else {
+    const ko = c.state === "bonked";
+    const ey = top + 26 * s;
+    if (ko) {
+      ctx.strokeStyle = "#1c1917";
+      ctx.lineWidth = 4 * s;
+      for (const ex of [h.x - 18 * s, h.x + 18 * s]) {
+        ctx.beginPath();
+        ctx.moveTo(ex - 7 * s, ey - 7 * s); ctx.lineTo(ex + 7 * s, ey + 7 * s);
+        ctx.moveTo(ex + 7 * s, ey - 7 * s); ctx.lineTo(ex - 7 * s, ey + 7 * s);
+        ctx.stroke();
+      }
+    } else {
+      const blink = c.blink % 2.6 < 0.12;
+      for (const ex of [h.x - 18 * s, h.x + 18 * s]) {
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(ex - 9 * s, ey - (blink ? 2 : 9) * s, 18 * s, (blink ? 4 : 18) * s);
+        if (!blink) {
+          ctx.fillStyle = "#111";
+          ctx.fillRect(ex - 3 * s, ey - 3 * s, 8 * s, 9 * s);
+        }
+      }
+      if (c.type === "zip") {
+        // goggles strap
+        ctx.fillStyle = "#0f766e";
+        ctx.fillRect(x, ey - 2 * s, 8 * s, 6 * s);
+        ctx.fillRect(x + bw - 8 * s, ey - 2 * s, 8 * s, 6 * s);
+      }
+    }
+    // mouth
+    ctx.fillStyle = "#1c1917";
+    if (ko) ctx.fillRect(h.x - 8 * s, top + 50 * s, 16 * s, 10 * s);
+    else ctx.fillRect(h.x - 14 * s, top + 50 * s, 28 * s, 6 * s);
+    // cheeks
+    ctx.fillStyle = "rgba(244,114,182,.55)";
+    ctx.fillRect(x + 8 * s, top + 42 * s, 12 * s, 7 * s);
+    ctx.fillRect(x + bw - 20 * s, top + 42 * s, 12 * s, 7 * s);
+    if (c.type === "tank" && c.hp > 1) {
+      Kit.brick(ctx, x - 6 * s, top - 14 * s, bw + 12 * s, 24 * s, "#6b7280", 6 * s);
+      ctx.fillStyle = "#9ca3af";
+      ctx.fillRect(h.x - 6 * s, top - 24 * s, 12 * s, 12 * s);
+    }
+    if (c.type === "gold") {
+      ctx.fillStyle = "#fff";
+      const tw = (Math.sin(c.blink * 8) + 1) / 2;
+      ctx.globalAlpha = tw;
+      ctx.fillRect(x + bw - 14 * s, top + 6 * s, 6 * s, 6 * s);
+      ctx.globalAlpha = 1 - tw;
+      ctx.fillRect(x + 8 * s, top + 10 * s, 5 * s, 5 * s);
+      ctx.globalAlpha = 1;
+      // crown studs
+      ctx.fillStyle = "#f59e0b";
+      for (let k = -1; k <= 1; k++) ctx.fillRect(h.x + k * 22 * s - 6 * s, top - 10 * s, 12 * s, 12 * s);
+    }
+  }
+  ctx.restore();
+  if (c.state === "bonked" && c.type !== "bomb") {
+    // little stars circling the head
+    const a = performance.now() / 150;
+    ctx.fillStyle = "#fde047";
+    for (let k = 0; k < 3; k++) {
+      const ang = a + (k * Math.PI * 2) / 3;
+      ctx.fillRect(h.x + Math.cos(ang) * 34 * s - 4, top - 6 * s + Math.sin(ang) * 8 * s - 4, 8, 8);
+    }
+  }
+}
+
+function drawHole(h, i) {
+  const rx = 66 * scale, ry = 22 * scale;
+  // dirt ring
+  ctx.fillStyle = "#7c4a1e";
+  ctx.beginPath();
+  ctx.ellipse(h.x, h.y + 4, rx + 12, ry + 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1c120a";
+  ctx.beginPath();
+  ctx.ellipse(h.x, h.y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (critters[i]) drawCritter(critters[i], h);
+  // key cap under the hole
+  const ky = h.y + ry + 22;
+  const label = keyLabel(h.keys[0]);
+  Kit.brick(ctx, h.x - 15, ky - 13, 30, 26, "rgba(0,0,0,.35)", 6);
+  text(label, h.x, ky + 1, 15, "rgba(255,255,255,.85)");
+}
+
+function drawMallet() {
+  const gx = mallet.x + 46, gy = mallet.y + 58;
+  const a0 = Math.atan2(mallet.y - gy, mallet.x - gx);
+  const a = a0 - 0.55 + mallet.swing * 0.55;
+  ctx.save();
+  ctx.translate(gx, gy);
+  ctx.rotate(a);
+  const len = Math.hypot(mallet.x - gx, mallet.y - gy);
+  ctx.fillStyle = "#92400e";
+  ctx.fillRect(0, -5, len, 10);
+  ctx.fillStyle = "#b45309";
+  ctx.fillRect(0, -5, len, 3);
+  ctx.rotate(Math.PI / 2);
+  Kit.brick(ctx, -30, -len - 18, 60, 36, "#ef4444", 7);
+  ctx.fillStyle = "#991b1b";
+  ctx.fillRect(-30, -len - 4, 60, 8);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.save();
+  if (shake) ctx.translate(Kit.rand(-10, 10) * shake, Kit.rand(-10, 10) * shake);
+  // grassy baseplate
+  ctx.fillStyle = "#3f8f3f";
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.fillStyle = "rgba(255,255,255,.06)";
+  for (let y = 84; y < H; y += 28)
+    for (let x = 14; x < W; x += 28) {
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  holes.forEach(drawHole);
+  for (const p of parts) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const f of floats) {
+    ctx.globalAlpha = Math.min(1, f.life * 2);
+    text(f.text, f.x + 2, f.y + 2, f.size, "rgba(0,0,0,.5)");
+    text(f.text, f.x, f.y, f.size, f.color);
+  }
+  ctx.globalAlpha = 1;
+  if (running && (mouseIn || mallet.swing > 0)) drawMallet();
+  ctx.restore();
+
+  // top bar
+  ctx.fillStyle = "#14532d";
+  ctx.fillRect(0, 0, W, 66);
+  ctx.fillStyle = "#0f3d21";
+  ctx.fillRect(0, 62, W, 4);
+  text("TIME", 20, 33, 14, "#bbf7d0", "left");
+  ctx.fillStyle = "#0b2a17";
+  ctx.beginPath();
+  ctx.roundRect(66, 21, 250, 24, 8);
+  ctx.fill();
+  const pct = timeLeft / ROUND_TIME;
+  Kit.brick(ctx, 68, 23, Math.max(10, 246 * pct), 20, pct < 0.2 ? "#ef4444" : pct < 0.5 ? "#facc15" : "#22c55e", 6);
+  text(Math.ceil(timeLeft) + "s", 330, 33, 18, "#fff", "left");
+  text("SCORE " + score, 400, 33, 20, "#fff", "left");
+  if (combo >= 2) {
+    text(`COMBO ${combo}`, 560, 26, 16, "#fde047", "left");
+    text(`x${comboMult().toFixed(1)} points`, 560, 46, 12, "#bbf7d0", "left", 700);
+  }
+
+  if (banner) {
+    ctx.globalAlpha = Math.min(1, banner.life * 2);
+    const sc = 1 + (1 - Math.min(1, banner.life)) * 0.1;
+    text(banner.text, W / 2 + 3, 116 + 3, 40 * sc, "rgba(0,0,0,.4)");
+    text(banner.text, W / 2, 116, 40 * sc, "#fde047");
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- input ----------
+function holeAt(p) {
+  const rx = 70 * scale, bh = 96 * scale;
+  for (let i = 0; i < holes.length; i++) {
+    const h = holes[i];
+    const c = critters[i];
+    const top = c ? h.y - bh * Math.max(0.3, c.rise) - 14 : h.y - 30;
+    if (p.x >= h.x - rx && p.x <= h.x + rx && p.y >= top && p.y <= h.y + 28 * scale) return i;
+  }
+  return -1;
+}
+
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  mallet.x = p.x;
+  mallet.y = p.y;
+  mouseIn = true;
+  canvas.style.cursor = running ? "none" : "default";
+});
+canvas.addEventListener("pointerleave", () => (mouseIn = false));
+canvas.addEventListener("pointerdown", (e) => {
+  if (!running) return;
+  const p = Kit.pointer(canvas, e);
+  mallet.x = p.x;
+  mallet.y = p.y;
+  const i = holeAt(p);
+  if (i >= 0) bonk(i);
+  else mallet.swing = 1;
+});
+Kit.onKey((code) => {
+  if (!running) return;
+  const i = holes.findIndex((h) => h.keys.includes(code));
+  if (i >= 0) bonk(i);
+});
+
+const game = Kit.loop(update, draw);
+reset();
+running = false;
+draw();
+Kit.overlay("Bonk-a-Block",
+  "Bonk the block critters before they hide! Chain bonks for a combo multiplier.\nHelmets take two bonks, gold critters add time.\nDon't bonk the bombs, and don't swing at empty holes.\nAt 30 seconds the field grows to 4x4.\n\nClick, or press the key shown under each hole\n(QWE / ASD / ZXC or numpad).",
+  "Play").then(() => {
+  reset();
+  game.start();
+});
+</script>
+</body>
+</html>

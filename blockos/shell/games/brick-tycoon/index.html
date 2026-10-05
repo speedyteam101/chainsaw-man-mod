@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brick Tycoon</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .ty-choice { display: flex; gap: 12px; justify-content: center; }
+  .kit-btn.ty-alt { background: #4b5563; box-shadow: 0 4px 0 #2b313a; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "brick-tycoon";
+const SAVE_KEY = "blockos.brick-tycoon.save";
+const OFFLINE_CAP = 2 * 3600;   // offline earnings are capped at two hours
+const DROP_PERIOD = 2;          // seconds between drops for a dropper at belt level 0
+const MAX_BELT = 20, MAX_POLISH = 15;
+const FONT = '"Noto Sans","DejaVu Sans",system-ui,sans-serif';
+const { canvas, ctx, W, H } = Kit.stage(960, 600);
+
+const TIERS = [
+  { name: "Clay Dropper",    cost: 15,     value: 1,    color: "#c2410c" },
+  { name: "Stone Dropper",   cost: 150,    value: 6,    color: "#9ca3af" },
+  { name: "Steel Dropper",   cost: 1600,   value: 40,   color: "#3b82f6" },
+  { name: "Gold Dropper",    cost: 20000,  value: 300,  color: "#facc15" },
+  { name: "Crystal Dropper", cost: 300000, value: 2500, color: "#c084fc" },
+];
+
+// ---------- layout ----------
+const DROP_X = [72, 152, 232, 312, 392];   // dropper centers
+const HOPPER_Y = 84, HOPPER_BOTTOM = 182;
+const BELT_X0 = 20, BELT_X1 = 506, BELT_Y = 262, BELT_H = 22;
+const POLISH_X = 452;
+const BIN = { x: 508, y: 232, w: 90, h: 82 };
+const PRESS = { x: 110, y: 322, w: 380, h: 266, cx: 300 };
+const SHOP = { x: 612, y: 70, w: 338, rowY: 108, rowH: 50, gap: 4 };
+
+// ---------- save state ----------
+function fresh() {
+  return { cash: 0, run: 0, total: 0, rebirths: 0, owned: [0, 0, 0, 0, 0], belt: 0, polish: 0, press: 0, savedAt: Date.now() };
+}
+function load() {
+  const s = fresh();
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || "null");
+    if (d && typeof d === "object") {
+      for (const k of ["cash", "run", "total", "rebirths", "belt", "polish", "press", "savedAt"])
+        if (typeof d[k] === "number" && isFinite(d[k]) && d[k] >= 0) s[k] = d[k];
+      if (Array.isArray(d.owned)) s.owned = TIERS.map((_, i) => Math.max(0, Math.floor(Number(d.owned[i]) || 0)));
+    }
+  } catch (_) {}
+  s.belt = Math.min(MAX_BELT, s.belt);
+  s.polish = Math.min(MAX_POLISH, s.polish);
+  return s;
+}
+function save() {
+  S.savedAt = Date.now();
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (_) {}
+}
+const S = load();
+
+// ---------- economy ----------
+const rebirthMult = () => 1 + S.rebirths;
+const beltRate = () => 1 + 0.25 * S.belt;
+const polishMult = () => Math.pow(1.5, S.polish);
+const beltSpeed = () => 80 + 10 * S.belt; // pixels per second, purely visual
+function incomePerSec() {
+  let base = 0;
+  TIERS.forEach((t, i) => (base += t.value * S.owned[i]));
+  return (base * polishMult() * rebirthMult() * beltRate()) / DROP_PERIOD;
+}
+const clickValue = () => (1 + 2 * S.press) * rebirthMult() + incomePerSec() * 0.05;
+const dropperCost = (i) => Math.ceil(TIERS[i].cost * Math.pow(1.15, S.owned[i]));
+const beltCost = () => Math.ceil(100 * Math.pow(2.2, S.belt));
+const polishCost = () => Math.ceil(500 * Math.pow(4, S.polish));
+const pressCost = () => Math.ceil(25 * Math.pow(1.6, S.press));
+const rebirthNeed = () => 250000 * Math.pow(4, S.rebirths);
+
+function earn(v) {
+  S.cash += v;
+  S.run += v;
+  S.total += v;
+}
+
+const SUFFIX = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"];
+function fmt(n, decimals) {
+  if (!isFinite(n)) return "lots";
+  if (n < 1000) return decimals && n < 100 && n % 1 ? n.toFixed(1) : String(Math.floor(n));
+  let i = 0;
+  while (n >= 1000 && i < SUFFIX.length - 1) { n /= 1000; i++; }
+  return (n < 10 ? n.toFixed(2) : n < 100 ? n.toFixed(1) : Math.floor(n)) + SUFFIX[i];
+}
+const money = (n, decimals) => "$" + fmt(n, decimals);
+
+// ---------- shop ----------
+const shop = [
+  ...TIERS.map((t, i) => ({
+    key: String(i + 1),
+    color: t.color,
+    title: () => t.name,
+    info: () => `Owned ${S.owned[i]}   +${money((t.value * polishMult() * rebirthMult() * beltRate()) / DROP_PERIOD, true)}/s each`,
+    cost: () => dropperCost(i),
+    locked: () => i > 0 && S.owned[i - 1] === 0 && S.owned[i] === 0,
+    maxed: () => false,
+    buy: () => S.owned[i]++,
+  })),
+  {
+    key: "6", color: "#14b8a6",
+    title: () => "Faster Belt",
+    info: () => `Lv ${S.belt}   +25% drop speed`,
+    cost: beltCost,
+    locked: () => S.owned[0] === 0 && S.belt === 0,
+    maxed: () => S.belt >= MAX_BELT,
+    buy: () => S.belt++,
+  },
+  {
+    key: "7", color: "#ec4899",
+    title: () => "Polisher",
+    info: () => `Lv ${S.polish}   x1.5 brick value`,
+    cost: polishCost,
+    locked: () => S.owned[1] === 0 && S.polish === 0,
+    maxed: () => S.polish >= MAX_POLISH,
+    buy: () => S.polish++,
+  },
+  {
+    key: "8", color: "#ef4444",
+    title: () => "Press Power",
+    info: () => `Lv ${S.press}   ${money(clickValue(), true)} per press`,
+    cost: pressCost,
+    locked: () => false,
+    maxed: () => false,
+    buy: () => S.press++,
+  },
+];
+const rowY = (r) => SHOP.rowY + r * (SHOP.rowH + SHOP.gap);
+const REBIRTH_ROW = shop.length;
+const rowFlash = new Array(shop.length + 1).fill(0);
+const rowFlashColor = new Array(shop.length + 1).fill("#22c55e");
+
+function tryBuy(r, many) {
+  const item = shop[r];
+  if (!item || item.locked() || item.maxed() || S.cash < item.cost()) {
+    rowFlash[r] = 1;
+    rowFlashColor[r] = "#ef4444";
+    Kit.sfx("hit");
+    return;
+  }
+  let n = 0;
+  do {
+    S.cash -= item.cost();
+    item.buy();
+    n++;
+  } while (many && n < 10 && !item.maxed() && S.cash >= item.cost());
+  rowFlash[r] = 1;
+  rowFlashColor[r] = "#22c55e";
+  Kit.sfx("coin");
+  const fx = SHOP.x + SHOP.w - 60;
+  floats.push({ x: fx, y: rowY(r) + 10, text: n > 1 ? `x${n}` : "Bought!", color: "#86efac", life: 0.9, size: 15 });
+  save();
+}
+
+// ---------- effects and moving bricks ----------
+let bricks = [];      // bricks dropped by droppers, riding the belt
+let flyers = [];      // bricks flung from the press into the collector
+let floats = [];      // floating "+$" texts
+let parts = [];       // particles
+const dropT = [0, 0.4, 0.8, 1.2, 1.6];
+const dropFlash = [0, 0, 0, 0, 0];
+let beltPhase = 0, pressAnim = 0, binPulse = 0, polishSpin = 0;
+let binAcc = 0, binTimer = 0, saveTimer = 0, rebirthFlash = 0;
+let toast = null; // { text, life }
+let mouse = { x: -1, y: -1 };
+let modal = true; // true while an overlay is up: game input is ignored
+
+function burst(x, y, color, n, speed) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(speed * 0.4, speed);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - speed * 0.4, life: Kit.rand(0.4, 0.8), color, size: Kit.rand(3, 6) });
+  }
+}
+
+function press() {
+  const v = clickValue();
+  earn(v);
+  pressAnim = 1;
+  Kit.sfx("click");
+  floats.push({ x: PRESS.cx + Kit.rand(-40, 40), y: 440, text: "+" + money(v, true), color: "#fde68a", life: 1, size: 22 });
+  burst(PRESS.cx, 470, "#f97316", 6, 160);
+  flyers.push({ t: 0, x0: PRESS.cx, y0: 470, x1: BIN.x + BIN.w / 2, y1: BIN.y + 20 });
+}
+
+function spawnBrick(i) {
+  const count = S.owned[i];
+  const w = 16 + Math.min(12, Math.log2(count) * 2.5);
+  bricks.push({ x: DROP_X[i], y: HOPPER_BOTTOM, vy: 0, w, h: w * 0.6, tier: i, value: TIERS[i].value * count * rebirthMult(), polished: false, landed: false });
+  dropFlash[i] = 1;
+}
+
+function grantAway(seconds) {
+  const secs = Math.min(OFFLINE_CAP, seconds);
+  const v = incomePerSec() * secs;
+  if (v > 0) earn(v);
+  return v;
+}
+
+function update(dt) {
+  // droppers
+  TIERS.forEach((_, i) => {
+    dropFlash[i] = Math.max(0, dropFlash[i] - dt * 4);
+    if (!S.owned[i]) return;
+    dropT[i] += dt * beltRate();
+    if (dropT[i] >= DROP_PERIOD) {
+      dropT[i] -= DROP_PERIOD;
+      spawnBrick(i);
+    }
+  });
+
+  const speed = beltSpeed();
+  beltPhase = (beltPhase + speed * dt) % 24;
+  polishSpin += dt * (S.polish ? 8 + S.polish : 1);
+
+  for (const b of bricks) {
+    if (!b.landed) {
+      b.vy += 1500 * dt;
+      b.y += b.vy * dt;
+      if (b.y >= BELT_Y - b.h) {
+        b.y = BELT_Y - b.h;
+        b.landed = true;
+      }
+      continue;
+    }
+    b.x += speed * dt;
+    if (!b.polished && b.x >= POLISH_X) {
+      b.polished = true;
+      b.value *= polishMult();
+      if (S.polish) burst(POLISH_X, BELT_Y - 10, "#fdf2f8", 3, 90);
+    }
+    if (b.x >= BIN.x + 14) {
+      b.done = true;
+      earn(b.value);
+      binAcc += b.value;
+      binPulse = 1;
+    }
+  }
+  bricks = bricks.filter((b) => !b.done);
+
+  for (const f of flyers) {
+    f.t += dt / 0.6;
+    if (f.t >= 1) { f.done = true; binPulse = 1; }
+  }
+  flyers = flyers.filter((f) => !f.done);
+
+  binTimer += dt;
+  if (binTimer > 0.6) {
+    binTimer = 0;
+    if (binAcc > 0) {
+      floats.push({ x: BIN.x + BIN.w / 2, y: BIN.y - 8, text: "+" + money(binAcc, true), color: "#86efac", life: 1, size: 16 });
+      binAcc = 0;
+    }
+  }
+
+  for (const f of floats) { f.y -= 40 * dt; f.life -= dt; }
+  floats = floats.filter((f) => f.life > 0);
+  for (const p of parts) { p.vy += 500 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  parts = parts.filter((p) => p.life > 0);
+
+  pressAnim = Math.max(0, pressAnim - dt * 5);
+  binPulse = Math.max(0, binPulse - dt * 3);
+  rebirthFlash = Math.max(0, rebirthFlash - dt * 1.2);
+  for (let i = 0; i < rowFlash.length; i++) rowFlash[i] = Math.max(0, rowFlash[i] - dt * 3);
+  if (toast) { toast.life -= dt; if (toast.life <= 0) toast = null; }
+
+  saveTimer += dt;
+  if (saveTimer > 5) { saveTimer = 0; save(); updateHud(); }
+}
+
+// ---------- drawing ----------
+function text(str, x, y, size, color, align, weight) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawBackground() {
+  ctx.fillStyle = "#1a1e23";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 80; y < H; y += 26)
+    for (let x = 13; x < 600; x += 26) {
+      ctx.beginPath();
+      ctx.arc(x, y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+}
+
+function drawTopBar() {
+  ctx.fillStyle = "#111418";
+  ctx.fillRect(0, 0, W, 64);
+  ctx.fillStyle = "#2b3038";
+  ctx.fillRect(0, 62, W, 3);
+  Kit.brick(ctx, 14, 12, 40, 40, "#22c55e", 6);
+  text("$", 34, 33, 26, "#fff");
+  text(money(S.cash), 66, 25, 30, "#f2f4f5");
+  text(`+${money(incomePerSec(), true)} / sec`, 68, 50, 14, "#86efac", "left", 700);
+  if (S.rebirths) {
+    Kit.brick(ctx, 330, 16, 128, 32, "#a855f7", 8);
+    text(`REBIRTH x${rebirthMult()}`, 394, 33, 15, "#fff", "center");
+  }
+}
+
+function drawDropper(i) {
+  const x = DROP_X[i], owned = S.owned[i], t = TIERS[i];
+  if (!owned) {
+    ctx.strokeStyle = "rgba(255,255,255,.14)";
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - 30, HOPPER_Y, 60, 64);
+    ctx.setLineDash([]);
+    text("?", x, HOPPER_Y + 32, 26, "rgba(255,255,255,.2)", "center");
+    return;
+  }
+  const squish = dropFlash[i] * 4;
+  // pipe down toward the belt
+  ctx.fillStyle = "#3f4650";
+  ctx.fillRect(x - 9, HOPPER_Y + 80, 18, HOPPER_BOTTOM - HOPPER_Y - 80);
+  ctx.fillStyle = "#2a2f36";
+  ctx.fillRect(x - 13, HOPPER_BOTTOM - 6, 26, 8);
+  // funnel
+  ctx.fillStyle = "#4b5563";
+  ctx.beginPath();
+  ctx.moveTo(x - 30, HOPPER_Y + 60);
+  ctx.lineTo(x + 30, HOPPER_Y + 60);
+  ctx.lineTo(x + 11, HOPPER_Y + 84);
+  ctx.lineTo(x - 11, HOPPER_Y + 84);
+  ctx.closePath();
+  ctx.fill();
+  // hopper body
+  Kit.brick(ctx, x - 30 - squish / 2, HOPPER_Y + squish, 60 + squish, 62 - squish, t.color, 6);
+  // little bricks piled on top
+  for (let k = 0; k < Math.min(3, owned); k++) Kit.brick(ctx, x - 24 + k * 16, HOPPER_Y - 9 + squish, 14, 10, t.color, 2);
+  text("x" + owned, x, HOPPER_Y + 34 + squish / 2, owned > 999 ? 13 : 16, "#fff", "center");
+}
+
+function drawBelt() {
+  // legs
+  ctx.fillStyle = "#2d333b";
+  for (let x = 50; x < BELT_X1; x += 110) ctx.fillRect(x, BELT_Y + BELT_H, 10, 30);
+  ctx.fillStyle = "#30363e";
+  ctx.beginPath();
+  ctx.roundRect(BELT_X0, BELT_Y, BELT_X1 - BELT_X0, BELT_H, 11);
+  ctx.fill();
+  // moving chevrons
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(BELT_X0 + 4, BELT_Y + 3, BELT_X1 - BELT_X0 - 8, BELT_H - 6, 8);
+  ctx.clip();
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(BELT_X0, BELT_Y, BELT_X1 - BELT_X0, BELT_H);
+  ctx.strokeStyle = "#facc15";
+  ctx.globalAlpha = 0.35;
+  ctx.lineWidth = 3;
+  for (let x = BELT_X0 - 24 + beltPhase; x < BELT_X1; x += 24) {
+    ctx.beginPath();
+    ctx.moveTo(x, BELT_Y + 5);
+    ctx.lineTo(x + 7, BELT_Y + BELT_H / 2);
+    ctx.lineTo(x, BELT_Y + BELT_H - 5);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  // rollers
+  for (const x of [BELT_X0 + 11, BELT_X1 - 11]) {
+    ctx.fillStyle = "#6b7280";
+    ctx.beginPath();
+    ctx.arc(x, BELT_Y + BELT_H / 2, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#374151";
+    ctx.save();
+    ctx.translate(x, BELT_Y + BELT_H / 2);
+    ctx.rotate(beltPhase / 4);
+    ctx.fillRect(-7, -1.5, 14, 3);
+    ctx.restore();
+  }
+}
+
+function drawPolisher() {
+  const active = S.polish > 0;
+  const x = POLISH_X;
+  ctx.fillStyle = active ? "#9d174d" : "#3a3f46";
+  ctx.fillRect(x - 28, 196, 8, 66);
+  ctx.fillRect(x + 20, 196, 8, 66);
+  Kit.brick(ctx, x - 32, 186, 64, 20, active ? "#ec4899" : "#4b5563", 5);
+  // spinning brush
+  ctx.save();
+  ctx.translate(x, 226);
+  ctx.rotate(polishSpin);
+  ctx.strokeStyle = active ? "#fbcfe8" : "#6b7280";
+  ctx.lineWidth = 3;
+  for (let k = 0; k < 6; k++) {
+    ctx.rotate(Math.PI / 3);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 14);
+    ctx.stroke();
+  }
+  ctx.restore();
+  text(active ? "x" + fmt(polishMult(), true) : "OFF", x, 196, 11, "#fff", "center");
+}
+
+function drawBin() {
+  const glow = binPulse;
+  if (glow) {
+    ctx.fillStyle = `rgba(34,197,94,${0.25 * glow})`;
+    ctx.fillRect(BIN.x - 6, BIN.y - 6, BIN.w + 12, BIN.h + 12);
+  }
+  Kit.brick(ctx, BIN.x, BIN.y + 20, BIN.w, BIN.h - 20, "#15803d", 8);
+  ctx.fillStyle = "#0d3b20";
+  ctx.fillRect(BIN.x + 8, BIN.y + 22, BIN.w - 16, 10);
+  Kit.brick(ctx, BIN.x - 4, BIN.y + 12, BIN.w + 8, 14, "#22c55e", 4);
+  text("COLLECT", BIN.x + BIN.w / 2, BIN.y + 56, 13, "#dcfce7", "center");
+  text("$", BIN.x + BIN.w / 2, BIN.y + 76 - glow * 4, 16 + glow * 6, "#bbf7d0", "center");
+}
+
+function drawBrick(b) {
+  Kit.brick(ctx, b.x - b.w / 2, b.y, b.w, b.h, TIERS[b.tier].color, 3);
+  if (b.polished && S.polish) {
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    ctx.fillRect(b.x - b.w / 2 + 3, b.y + 2, 3, b.h - 4);
+    ctx.fillRect(b.x - b.w / 2 + 8, b.y + 2, 2, b.h - 4);
+  }
+}
+
+function drawPress() {
+  const hover = !modal && inRect(mouse, PRESS);
+  const push = Math.sin(pressAnim * Math.PI) * (pressAnim > 0.5 ? 1 : pressAnim * 2);
+  const cx = PRESS.cx;
+  if (hover) {
+    ctx.strokeStyle = "rgba(250,204,21,.35)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(PRESS.x, PRESS.y, PRESS.w, PRESS.h, 14);
+    ctx.stroke();
+  }
+  // frame
+  Kit.brick(ctx, 140, 550, 320, 30, "#4b5563", 6);
+  Kit.brick(ctx, 160, 372, 30, 182, "#6b7280", 5);
+  Kit.brick(ctx, 410, 372, 30, 182, "#6b7280", 5);
+  Kit.brick(ctx, 146, 336, 308, 44, "#ef4444", 8);
+  text("BRICK PRESS", cx, 358, 18, "#fff", "center");
+  // piston
+  const headY = 392 + push * 60;
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillRect(cx - 12, 380, 24, headY - 380);
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillRect(cx - 12, 380, 6, headY - 380);
+  Kit.brick(ctx, cx - 90, headY, 180, 34, "#f59e0b", 6);
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  for (let k = -70; k <= 60; k += 30) ctx.fillRect(cx + k, headY + 8, 10, 18);
+  // anvil and the clay brick being pressed
+  Kit.brick(ctx, cx - 90, 506, 180, 46, "#374151", 6);
+  const squash = push * 10;
+  Kit.brick(ctx, cx - 44 - squash, 484 + squash, 88 + squash * 2, 22 - squash, "#c2410c", 4);
+  if (!S.total) text("CLICK!", cx, 530, 16, "#facc15", "center");
+  else text(`+${money(clickValue(), true)}`, cx, 530, 15, "#e5e7eb", "center");
+}
+
+function drawShop() {
+  ctx.fillStyle = "#111418";
+  ctx.beginPath();
+  ctx.roundRect(SHOP.x - 6, SHOP.y, SHOP.w + 12, H - SHOP.y - 6, 12);
+  ctx.fill();
+  text("SHOP", SHOP.x + 8, SHOP.y + 20, 17, "#e5e7eb");
+  text("Shift = buy 10", SHOP.x + 70, SHOP.y + 21, 12, "#6b7280", "left", 600);
+
+  shop.forEach((item, r) => {
+    const y = rowY(r), locked = item.locked(), maxed = item.maxed();
+    const cost = item.cost(), canBuy = !locked && !maxed && S.cash >= cost;
+    const hover = !modal && inRect(mouse, { x: SHOP.x, y, w: SHOP.w, h: SHOP.rowH });
+    ctx.fillStyle = canBuy ? (hover ? "#3a414b" : "#2b3038") : "#1d2127";
+    ctx.beginPath();
+    ctx.roundRect(SHOP.x, y, SHOP.w, SHOP.rowH, 9);
+    ctx.fill();
+    if (rowFlash[r]) {
+      ctx.strokeStyle = rowFlashColor[r];
+      ctx.globalAlpha = rowFlash[r];
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    Kit.brick(ctx, SHOP.x + 8, y + 13, 24, 24, "#4b5563", 5);
+    text(item.key, SHOP.x + 20, y + 25, 14, "#e5e7eb", "center");
+    if (locked) {
+      text("Locked", SHOP.x + 44, y + 18, 15, "#6b7280");
+      text("Buy the previous machine first", SHOP.x + 44, y + 36, 11, "#4b5563", "left", 600);
+      return;
+    }
+    Kit.brick(ctx, SHOP.x + 42, y + 15, 26, 20, item.color, 4);
+    text(item.title(), SHOP.x + 76, y + 17, 15, canBuy ? "#f2f4f5" : "#9ca3af");
+    text(item.info(), SHOP.x + 76, y + 36, 11, "#8b929b", "left", 600);
+    text(maxed ? "MAX" : money(cost), SHOP.x + SHOP.w - 10, y + 25, 15, maxed ? "#a855f7" : canBuy ? "#4ade80" : "#ef4444", "right");
+  });
+
+  // rebirth row
+  const y = rowY(REBIRTH_ROW), need = rebirthNeed(), pct = Math.min(1, S.run / need), ready = pct >= 1;
+  ctx.fillStyle = ready ? "#581c87" : "#1d2127";
+  ctx.beginPath();
+  ctx.roundRect(SHOP.x, y, SHOP.w, SHOP.rowH, 9);
+  ctx.fill();
+  if (rowFlash[REBIRTH_ROW]) {
+    ctx.strokeStyle = rowFlashColor[REBIRTH_ROW];
+    ctx.globalAlpha = rowFlash[REBIRTH_ROW];
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  Kit.brick(ctx, SHOP.x + 8, y + 13, 24, 24, "#4b5563", 5);
+  text("R", SHOP.x + 20, y + 25, 14, "#e5e7eb", "center");
+  text(`Rebirth  ->  x${rebirthMult() + 1} forever`, SHOP.x + 44, y + 16, 15, ready ? "#f5d0fe" : "#9ca3af");
+  ctx.fillStyle = "#0b0d10";
+  const barW = SHOP.w - 160;
+  ctx.fillRect(SHOP.x + 44, y + 30, barW, 10);
+  ctx.fillStyle = ready ? "#e879f9" : "#a855f7";
+  ctx.fillRect(SHOP.x + 44, y + 30, barW * pct, 10);
+  text(ready ? "READY! (R)" : `${money(S.run)} / ${money(need)}`, SHOP.x + SHOP.w - 10, y + 35, 11, ready ? "#fff" : "#8b929b", "right", 700);
+}
+
+function draw() {
+  drawBackground();
+  drawTopBar();
+  TIERS.forEach((_, i) => drawDropper(i));
+  for (const b of bricks) if (!b.landed) drawBrick(b);
+  drawBelt();
+  for (const b of bricks) if (b.landed) drawBrick(b);
+  drawPolisher();
+  drawBin();
+  drawPress();
+  for (const f of flyers) {
+    const x = f.x0 + (f.x1 - f.x0) * f.t;
+    const y = f.y0 + (f.y1 - f.y0) * f.t - Math.sin(Math.PI * f.t) * 150;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(f.t * 6);
+    Kit.brick(ctx, -11, -7, 22, 14, "#c2410c", 3);
+    ctx.restore();
+  }
+  drawShop();
+  for (const p of parts) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const f of floats) {
+    ctx.globalAlpha = Math.min(1, f.life * 2);
+    text(f.text, f.x + 1, f.y + 2, f.size, "#000", "center");
+    text(f.text, f.x, f.y, f.size, f.color, "center");
+  }
+  ctx.globalAlpha = 1;
+  if (toast) {
+    ctx.globalAlpha = Math.min(1, toast.life);
+    Kit.brick(ctx, 110, 76, 380, 40, "#1d4ed8", 10);
+    text(toast.text, 300, 96, 15, "#fff", "center");
+    ctx.globalAlpha = 1;
+  }
+  if (rebirthFlash) {
+    ctx.fillStyle = `rgba(232,121,249,${rebirthFlash * 0.5})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+// ---------- input ----------
+function inRect(p, r) {
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+
+function shopRowAt(p) {
+  if (p.x < SHOP.x || p.x > SHOP.x + SHOP.w) return -1;
+  for (let r = 0; r <= REBIRTH_ROW; r++) {
+    const y = rowY(r);
+    if (p.y >= y && p.y <= y + SHOP.rowH) return r;
+  }
+  return -1;
+}
+
+canvas.addEventListener("pointermove", (e) => {
+  mouse = Kit.pointer(canvas, e);
+  canvas.style.cursor = !modal && (inRect(mouse, PRESS) || shopRowAt(mouse) >= 0) ? "pointer" : "default";
+});
+canvas.addEventListener("pointerleave", () => (mouse = { x: -1, y: -1 }));
+canvas.addEventListener("pointerdown", (e) => {
+  if (modal) return;
+  const p = Kit.pointer(canvas, e);
+  if (inRect(p, PRESS)) return press();
+  const r = shopRowAt(p);
+  if (r === REBIRTH_ROW) askRebirth();
+  else if (r >= 0) tryBuy(r, e.shiftKey);
+});
+
+Kit.onKey((code, e) => {
+  if (modal) return;
+  if (code === "Space" || code === "Enter" || code === "KeyP") return press();
+  if (code === "KeyR") return askRebirth();
+  const m = /^(?:Digit|Numpad)([1-8])$/.exec(code);
+  if (m) tryBuy(Number(m[1]) - 1, e.shiftKey);
+});
+
+function confirmBox(title, body, yes, no) {
+  return new Promise((resolve) => {
+    modal = true;
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = body;
+    const row = document.createElement("div");
+    row.className = "ty-choice";
+    const by = document.createElement("button");
+    by.className = "kit-btn";
+    by.textContent = yes;
+    const bn = document.createElement("button");
+    bn.className = "kit-btn ty-alt";
+    bn.textContent = no;
+    row.append(by, bn);
+    panel.append(h, p, row);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    const shownAt = performance.now();
+    function done(ok) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      modal = false;
+      Kit.sfx("click");
+      resolve(ok);
+    }
+    function onKey(e) {
+      if (performance.now() - shownAt < 300) return;
+      if (e.code === "Enter" || e.code === "KeyY") { e.preventDefault(); e.stopPropagation(); done(true); }
+      else if (e.code === "KeyN" || e.code === "Backspace") { e.preventDefault(); e.stopPropagation(); done(false); }
+    }
+    by.addEventListener("click", () => done(true));
+    bn.addEventListener("click", () => done(false));
+    addEventListener("keydown", onKey, true);
+    bn.focus();
+  });
+}
+
+async function askRebirth() {
+  if (S.run < rebirthNeed()) {
+    rowFlash[REBIRTH_ROW] = 1;
+    rowFlashColor[REBIRTH_ROW] = "#ef4444";
+    Kit.sfx("hit");
+    return;
+  }
+  const ok = await confirmBox(
+    "Rebirth?",
+    `Your cash, droppers and upgrades reset, but every brick and press is worth x${rebirthMult() + 1} forever.\n\nEnter / Y to rebirth, N to wait.`,
+    "Rebirth", "Not yet");
+  if (!ok || S.run < rebirthNeed()) return;
+  S.rebirths++;
+  S.cash = 0;
+  S.run = 0;
+  S.owned = TIERS.map(() => 0);
+  S.belt = 0;
+  S.polish = 0;
+  S.press = 0;
+  bricks = [];
+  flyers = [];
+  rebirthFlash = 1;
+  Kit.sfx("win");
+  toast = { text: `Reborn! Everything now earns x${rebirthMult()}`, life: 4 };
+  save();
+  Kit.finish(ID, Math.floor(S.total));
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`${money(S.total)}<small>Lifetime cash</small>`);
+}
+
+// ---------- persistence across tab switches ----------
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    save();
+    hiddenAt = Date.now();
+  } else if (hiddenAt && !modal) {
+    const away = (Date.now() - hiddenAt) / 1000;
+    hiddenAt = 0;
+    if (away > 5) {
+      const v = grantAway(away);
+      if (v > 0) toast = { text: `While you were away: +${money(v, true)}`, life: 4 };
+    }
+  }
+});
+addEventListener("pagehide", save);
+
+// ---------- start ----------
+const game = Kit.loop(update, draw);
+const awaySecs = (Date.now() - S.savedAt) / 1000;
+const offline = S.total > 0 && awaySecs > 10 ? grantAway(awaySecs) : 0;
+updateHud();
+draw();
+
+const HOW = "Click the big press (or Space) to earn cash.\n" +
+  "Buy droppers (keys 1-5): their bricks ride the belt into the collector.\n" +
+  "Upgrade the belt (6), polisher (7) and press (8). Shift buys 10.\n" +
+  "Rebirth (R) for a permanent multiplier.";
+const intro = offline > 0
+  ? `Welcome back!\nYour factory earned ${money(offline, true)} while you were away (up to 2 hours).\n\n${HOW}`
+  : S.total > 0 ? `Your factory is waiting.\n\n${HOW}` : HOW;
+save();
+Kit.overlay("Brick Tycoon", intro, S.total > 0 ? "Continue" : "Play").then(() => {
+  modal = false;
+  game.start();
+});
+</script>
+</body>
+</html>

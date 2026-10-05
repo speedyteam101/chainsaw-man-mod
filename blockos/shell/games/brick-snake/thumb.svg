@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs><pattern id="studs" width="30" height="30" patternUnits="userSpaceOnUse"><circle cx="15" cy="15" r="6" fill="#ffffff" fill-opacity=".06"/></pattern></defs>
+  <rect width="480" height="270" fill="#14251a"/><rect width="480" height="270" fill="url(#studs)"/>
+  <g stroke="#0d3b1f" stroke-width="3">
+    <rect x="60" y="180" width="30" height="30" rx="7" fill="#15803d"/><rect x="90" y="180" width="30" height="30" rx="7" fill="#16a34a"/>
+    <rect x="120" y="180" width="30" height="30" rx="7" fill="#15803d"/><rect x="150" y="180" width="30" height="30" rx="7" fill="#16a34a"/>
+    <rect x="150" y="150" width="30" height="30" rx="7" fill="#15803d"/><rect x="150" y="120" width="30" height="30" rx="7" fill="#16a34a"/>
+    <rect x="180" y="120" width="30" height="30" rx="7" fill="#15803d"/><rect x="210" y="120" width="30" height="30" rx="7" fill="#16a34a"/>
+    <rect x="240" y="120" width="30" height="30" rx="7" fill="#15803d"/><rect x="270" y="120" width="30" height="30" rx="7" fill="#16a34a"/>
+    <rect x="300" y="120" width="36" height="36" rx="9" fill="#22c55e"/>
+  </g>
+  <rect x="314" y="128" width="7" height="7" fill="#111"/><rect x="314" y="142" width="7" height="7" fill="#111"/>
+  <g stroke-width="3"><rect x="390" y="126" width="26" height="26" rx="6" fill="#facc15" stroke="#a16207"/>
+  <rect x="380" y="50" width="26" height="26" rx="6" fill="#ef4444" stroke="#991b1b"/>
+  <rect x="90" y="60" width="26" height="26" rx="6" fill="#3b82f6" stroke="#1e3a8a"/>
+  <rect x="250" y="210" width="26" height="26" rx="6" fill="#a855f7" stroke="#6b21a8"/></g>
+</svg>

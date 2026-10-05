@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=BlockOS
+Comment=The BlockOS game desktop
+Exec=/usr/local/bin/blockos-session
+Type=Application
+DesktopNames=BlockOS

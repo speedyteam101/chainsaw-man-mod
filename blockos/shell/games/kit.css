@@ -1,0 +1,87 @@
+/* Shared styles for BlockOS games. Each game page includes this file. */
+:root {
+  --bg: #16181b;
+  --panel: #22252a;
+  --card: #2b2f35;
+  --line: #3a3f46;
+  --text: #f2f4f5;
+  --muted: #a7adb4;
+  --green: #12b76a;
+  --blue: #3b82f6;
+  --red: #ef4444;
+  --yellow: #facc15;
+  --orange: #fb923c;
+  --purple: #a855f7;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Noto Sans", "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.kit-stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kit-stage canvas {
+  display: block;
+  background: #0f1113;
+  border-radius: 10px;
+  box-shadow: 0 0 0 3px var(--line), 0 20px 60px rgba(0, 0, 0, .5);
+  image-rendering: pixelated;
+}
+.kit-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 11, 13, .72);
+  z-index: 50;
+}
+.kit-panel {
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 26px 30px;
+  min-width: 300px;
+  max-width: 440px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.kit-panel h1 { margin: 0 0 8px; font-size: 28px; font-weight: 800; }
+.kit-panel p { margin: 6px 0; color: var(--muted); line-height: 1.45; white-space: pre-line; }
+.kit-btn {
+  margin-top: 16px;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 34px;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--green);
+  box-shadow: 0 4px 0 #0b7a47;
+  cursor: pointer;
+}
+.kit-btn:hover { filter: brightness(1.08); }
+.kit-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #0b7a47; }
+.kit-hud {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  font-weight: 800;
+  font-size: 18px;
+  text-shadow: 0 2px 0 #000;
+  z-index: 10;
+  text-align: right;
+}
+.kit-hud small { display: block; color: var(--muted); font-size: 13px; font-weight: 600; }

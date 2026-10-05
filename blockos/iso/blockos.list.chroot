@@ -1,0 +1,27 @@
+# Packages baked into the BlockOS live ISO (system/install.sh lists the same set).
+live-boot
+live-config
+live-config-systemd
+user-setup
+sudo
+xserver-xorg
+xinit
+x11-xserver-utils
+openbox
+lightdm
+lightdm-gtk-greeter
+chromium
+python3
+xfce4-terminal
+pcmanfm
+mousepad
+xfce4-taskmanager
+galculator
+dbus-user-session
+polkitd
+pipewire-audio
+fonts-noto-core
+fonts-dejavu-core
+xdg-utils
+spice-vdagent
+qemu-guest-agent

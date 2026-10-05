@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Space Blaster</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "space-blaster";
+const { canvas, ctx, W, H } = Kit.stage(800, 600);
+const TAU = Math.PI * 2;
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+// Rock sizes: grid cells per side, cell size in px, points.
+const ROCK = {
+  3: { n: 5, cell: 13, points: 20, speed: [30, 70] },
+  2: { n: 3, cell: 12, points: 50, speed: [60, 110] },
+  1: { n: 2, cell: 10, points: 100, speed: [90, 160] },
+};
+const SHIP_TURN = 4.4, SHIP_THRUST = 320, SHIP_MAX = 430;
+const BULLET_SPEED = 560, BULLET_LIFE = 0.85, MAX_BULLETS = 8;
+const EXTRA_LIFE_EVERY = 10000;
+
+let state = "attract"; // attract | play | over
+let ship, rocks, bullets, enemyShots, saucers, particles;
+let score, lives, wave, nextLifeAt, waveDelay, saucerTimer, respawnTimer, overTimer;
+let fireCooldown, shake, banner, paused;
+
+const stars = Array.from({ length: 140 }, () => ({
+  x: Math.random() * W, y: Math.random() * H, z: Kit.pick([1, 1, 1, 2, 2, 3]), t: Math.random() * TAU,
+}));
+
+const mouse = { x: W / 2, y: H / 2, aim: false, fire: false, thrust: false };
+
+/* ---------- creation ---------- */
+
+function makeShip() {
+  return { x: W / 2, y: H / 2, a: -Math.PI / 2, vx: 0, vy: 0, r: 14, inv: 2.5, thrusting: false, hyperCd: 0 };
+}
+
+function makeRock(size, x, y, vx, vy) {
+  const spec = ROCK[size];
+  const c = (spec.n - 1) / 2;
+  const cells = [];
+  const hue = Kit.pick([24, 30, 210, 220, 260, 15]);
+  const sat = hue > 200 ? 18 : 28;
+  for (let i = 0; i < spec.n; i++) {
+    for (let j = 0; j < spec.n; j++) {
+      const d = Math.hypot(i - c, j - c);
+      if (spec.n > 2 && d > c + 0.2 && Math.random() < 0.75) continue; // knock off corners
+      if (spec.n >= 5 && d > 1.4 && Math.random() < 0.25) continue; // ragged edges
+      if (spec.n === 2 && cells.length === 3 && Math.random() < 0.3) continue;
+      const l = Kit.randInt(36, 54);
+      cells.push({ x: (i - c) * spec.cell, y: (j - c) * spec.cell, color: `hsl(${hue},${sat}%,${l}%)` });
+    }
+  }
+  if (x === undefined) {
+    // spawn along an edge, away from the ship
+    do {
+      if (Math.random() < 0.5) { x = Kit.pick([-30, W + 30]); y = Kit.rand(0, H); }
+      else { x = Kit.rand(0, W); y = Kit.pick([-30, H + 30]); }
+    } while (ship && Math.hypot(x - ship.x, y - ship.y) < 200);
+  }
+  if (vx === undefined) {
+    const a = Math.random() * TAU;
+    const s = Kit.rand(...spec.speed) * (1 + Math.min(wave || 1, 12) * 0.05);
+    vx = Math.cos(a) * s;
+    vy = Math.sin(a) * s;
+  }
+  return {
+    size, x, y, vx, vy, cells, cell: spec.cell,
+    r: spec.cell * spec.n * 0.45, a: Math.random() * TAU, spin: Kit.rand(-1.6, 1.6),
+    color: cells[0] ? cells[0].color : "#888",
+  };
+}
+
+function makeSaucer() {
+  const small = Math.random() < Math.min(0.15 + wave * 0.07 + score / 40000, 0.7);
+  const fromLeft = Math.random() < 0.5;
+  return {
+    small, r: small ? 11 : 18,
+    x: fromLeft ? -30 : W + 30, y: Kit.rand(60, H - 60),
+    vx: (fromLeft ? 1 : -1) * (small ? 170 : 120), vy: 0,
+    turnTimer: 1, fireTimer: small ? 0.8 : 1.2, t: 0, dead: false,
+  };
+}
+
+function burst(x, y, color, count, speed, size) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * TAU, s = Kit.rand(speed * 0.2, speed);
+    const life = Kit.rand(0.35, 0.9);
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life, max: life, color, size: Kit.rand(size * 0.5, size) });
+  }
+}
+
+/* ---------- game flow ---------- */
+
+function reset() {
+  ship = null;
+  rocks = [];
+  bullets = [];
+  enemyShots = [];
+  saucers = [];
+  particles = [];
+  score = 0;
+  lives = 3;
+  wave = 0;
+  nextLifeAt = EXTRA_LIFE_EVERY;
+  waveDelay = 0;
+  respawnTimer = 0;
+  overTimer = 0;
+  fireCooldown = 0;
+  shake = 0;
+  banner = null;
+  paused = false;
+}
+
+function startGame() {
+  reset();
+  state = "play";
+  ship = makeShip();
+  nextWave();
+  updateHud();
+}
+
+function nextWave() {
+  wave++;
+  const count = Math.min(3 + wave, 11);
+  for (let i = 0; i < count; i++) rocks.push(makeRock(3));
+  saucerTimer = Kit.rand(14, 22) - Math.min(wave, 8);
+  banner = { text: `Wave ${wave}`, t: 2 };
+  updateHud();
+}
+
+function addScore(n) {
+  if (state !== "play") return;
+  score += n;
+  if (score >= nextLifeAt) {
+    nextLifeAt += EXTRA_LIFE_EVERY;
+    lives++;
+    banner = { text: "Extra ship!", t: 1.5 };
+    Kit.sfx("coin");
+  }
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Wave ${wave} | Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+function killShip() {
+  burst(ship.x, ship.y, "#f2f4f5", 26, 260, 6);
+  burst(ship.x, ship.y, "#fb923c", 26, 200, 5);
+  burst(ship.x, ship.y, "#38bdf8", 14, 160, 5);
+  Kit.sfx("lose");
+  shake = 12;
+  ship = null;
+  lives--;
+  if (lives > 0) respawnTimer = 1.6;
+  else { state = "over"; overTimer = 2.2; }
+}
+
+async function gameOver() {
+  game.stop();
+  const best = Kit.finish(ID, score);
+  updateHud();
+  await Kit.overlay("Game Over", `Score: ${score}\nWave reached: ${wave}\nBest: ${best}`, "Play again");
+  startGame();
+  game.start();
+}
+
+function splitRock(rock, byPlayer) {
+  rock.dead = true;
+  burst(rock.x, rock.y, rock.color, 6 + rock.size * 5, 90 + rock.size * 30, 4 + rock.size * 2);
+  Kit.sfx("hit");
+  shake = Math.max(shake, rock.size * 2);
+  if (byPlayer) addScore(ROCK[rock.size].points);
+  if (rock.size > 1) {
+    for (let k = 0; k < 2; k++) {
+      const a = Math.random() * TAU;
+      const s = Kit.rand(...ROCK[rock.size - 1].speed);
+      rocks.push(makeRock(rock.size - 1, rock.x, rock.y, rock.vx * 0.5 + Math.cos(a) * s, rock.vy * 0.5 + Math.sin(a) * s));
+    }
+  }
+}
+
+function destroySaucer(s, byPlayer) {
+  s.dead = true;
+  burst(s.x, s.y, "#a855f7", 26, 220, 6);
+  burst(s.x, s.y, "#67e8f9", 14, 160, 5);
+  Kit.sfx("hit");
+  shake = Math.max(shake, 6);
+  if (byPlayer) {
+    addScore(s.small ? 1000 : 200);
+    Kit.sfx("score");
+  }
+}
+
+/* ---------- input ---------- */
+
+const left = () => Kit.key("ArrowLeft") || Kit.key("KeyA");
+const right = () => Kit.key("ArrowRight") || Kit.key("KeyD");
+const thrust = () => Kit.key("ArrowUp") || Kit.key("KeyW") || mouse.thrust;
+const firing = () => Kit.key("Space") || Kit.key("KeyJ") || mouse.fire;
+
+Kit.onKey((code) => {
+  if (state !== "play") return;
+  if (code === "KeyP") paused = !paused;
+  if (paused) return;
+  if ((code === "ShiftLeft" || code === "ShiftRight" || code === "KeyH" || code === "ArrowDown" || code === "KeyS") && ship) hyperspace();
+});
+
+function hyperspace() {
+  if (ship.hyperCd > 0) return;
+  burst(ship.x, ship.y, "#38bdf8", 16, 140, 4);
+  ship.x = Kit.rand(60, W - 60);
+  ship.y = Kit.rand(60, H - 60);
+  ship.vx = ship.vy = 0;
+  ship.hyperCd = 1.2;
+  burst(ship.x, ship.y, "#38bdf8", 16, 140, 4);
+  Kit.sfx("jump");
+}
+
+canvas.addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (Math.abs(p.x - mouse.x) + Math.abs(p.y - mouse.y) > 2) mouse.aim = true;
+  mouse.x = p.x;
+  mouse.y = p.y;
+});
+canvas.addEventListener("mousedown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  mouse.x = p.x; mouse.y = p.y; mouse.aim = true;
+  if (e.button === 0) mouse.fire = true;
+  if (e.button === 2) mouse.thrust = true;
+});
+addEventListener("mouseup", (e) => {
+  if (e.button === 0) mouse.fire = false;
+  if (e.button === 2) mouse.thrust = false;
+});
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+/* ---------- update ---------- */
+
+function wrap(o, m) {
+  if (o.x < -m) o.x += W + 2 * m; else if (o.x > W + m) o.x -= W + 2 * m;
+  if (o.y < -m) o.y += H + 2 * m; else if (o.y > H + m) o.y -= H + 2 * m;
+}
+
+function angleDiff(a, b) {
+  let d = (b - a) % TAU;
+  if (d > Math.PI) d -= TAU;
+  if (d < -Math.PI) d += TAU;
+  return d;
+}
+
+function updateShip(dt) {
+  const s = ship;
+  if (left() || right()) mouse.aim = false;
+  if (left()) s.a -= SHIP_TURN * dt;
+  if (right()) s.a += SHIP_TURN * dt;
+  if (mouse.aim && !left() && !right()) {
+    const d = angleDiff(s.a, Math.atan2(mouse.y - s.y, mouse.x - s.x));
+    s.a += Math.sign(d) * Math.min(Math.abs(d), SHIP_TURN * 1.5 * dt);
+  }
+  s.thrusting = thrust();
+  if (s.thrusting) {
+    s.vx += Math.cos(s.a) * SHIP_THRUST * dt;
+    s.vy += Math.sin(s.a) * SHIP_THRUST * dt;
+    if (Math.random() < 0.7) {
+      const a = s.a + Math.PI + Kit.rand(-0.35, 0.35);
+      particles.push({
+        x: s.x - Math.cos(s.a) * 16, y: s.y - Math.sin(s.a) * 16,
+        vx: Math.cos(a) * 160 + s.vx, vy: Math.sin(a) * 160 + s.vy,
+        life: 0.3, max: 0.3, color: Kit.pick(["#facc15", "#fb923c", "#ef4444"]), size: 4,
+      });
+    }
+  }
+  const sp = Math.hypot(s.vx, s.vy);
+  if (sp > SHIP_MAX) { s.vx *= SHIP_MAX / sp; s.vy *= SHIP_MAX / sp; }
+  const drag = Math.pow(0.6, dt);
+  s.vx *= drag;
+  s.vy *= drag;
+  s.x += s.vx * dt;
+  s.y += s.vy * dt;
+  wrap(s, 14);
+  s.inv = Math.max(0, s.inv - dt);
+  s.hyperCd = Math.max(0, s.hyperCd - dt);
+
+  fireCooldown -= dt;
+  if (firing() && fireCooldown <= 0 && bullets.length < MAX_BULLETS) {
+    fireCooldown = 0.16;
+    const nx = Math.cos(s.a), ny = Math.sin(s.a);
+    bullets.push({ x: s.x + nx * 18, y: s.y + ny * 18, vx: nx * BULLET_SPEED + s.vx * 0.5, vy: ny * BULLET_SPEED + s.vy * 0.5, life: BULLET_LIFE });
+    s.vx -= nx * 6; // a little recoil
+    s.vy -= ny * 6;
+    Kit.sfx("click");
+  }
+}
+
+function updateSaucer(s, dt) {
+  s.t += dt;
+  s.x += s.vx * dt;
+  s.y += s.vy * dt;
+  if (s.y < -20) s.y += H + 40; else if (s.y > H + 20) s.y -= H + 40;
+  if (s.x < -60 || s.x > W + 60) { s.dead = true; s.gone = true; return; }
+  s.turnTimer -= dt;
+  if (s.turnTimer <= 0) {
+    s.turnTimer = Kit.rand(0.7, 1.6);
+    s.vy = Kit.pick([-1, 0, 1]) * (s.small ? 110 : 80);
+  }
+  s.fireTimer -= dt;
+  if (s.fireTimer <= 0 && state === "play") {
+    s.fireTimer = s.small ? Math.max(0.6, 1.0 - wave * 0.04) : 1.3;
+    let a = Math.random() * TAU;
+    if (ship && (s.small || Math.random() < 0.35)) {
+      const err = s.small ? Math.max(0.05, 0.4 - score / 50000) : 0.5;
+      a = Math.atan2(ship.y - s.y, ship.x - s.x) + Kit.rand(-err, err);
+    }
+    enemyShots.push({ x: s.x, y: s.y, vx: Math.cos(a) * 300, vy: Math.sin(a) * 300, life: 1.4 });
+    Kit.sfx("jump");
+  }
+}
+
+function update(dt) {
+  for (const st of stars) st.t += dt * (1 + st.z);
+  if (paused) return;
+  shake = Math.max(0, shake - dt * 30);
+  if (banner && (banner.t -= dt) <= 0) banner = null;
+
+  if (state === "play" && ship) updateShip(dt);
+
+  for (const r of rocks) {
+    r.x += r.vx * dt;
+    r.y += r.vy * dt;
+    r.a += r.spin * dt;
+    wrap(r, r.r + 4);
+  }
+  for (const list of [bullets, enemyShots]) {
+    for (const b of list) {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.life -= dt;
+      wrap(b, 2);
+    }
+  }
+  for (const s of saucers) updateSaucer(s, dt);
+  for (const p of particles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= Math.pow(0.3, dt);
+    p.vy *= Math.pow(0.3, dt);
+    p.life -= dt;
+  }
+
+  if (state !== "attract") collide();
+
+  bullets = bullets.filter((b) => b.life > 0);
+  enemyShots = enemyShots.filter((b) => b.life > 0);
+  rocks = rocks.filter((r) => !r.dead);
+  saucers = saucers.filter((s) => !s.dead);
+  particles = particles.filter((p) => p.life > 0);
+
+  if (state === "play") {
+    // saucers
+    saucerTimer -= dt;
+    if (saucerTimer <= 0 && saucers.length === 0) {
+      saucers.push(makeSaucer());
+      saucerTimer = Kit.rand(16, 26) - Math.min(wave, 10);
+    }
+    // wave cleared
+    if (rocks.length === 0) {
+      if (waveDelay <= 0) {
+        waveDelay = 2.2;
+        banner = { text: "Wave clear!", t: 1.8 };
+        Kit.sfx("score");
+      } else if ((waveDelay -= dt) <= 0) {
+        waveDelay = 0;
+        nextWave();
+      }
+    }
+    // respawn
+    if (!ship && respawnTimer > 0 && (respawnTimer -= dt) <= 0) {
+      ship = makeShip();
+      // nudge rocks away from the spawn point so respawning is fair
+      for (const r of rocks) {
+        const d = Math.hypot(r.x - ship.x, r.y - ship.y);
+        if (d < 110) { r.x += ((r.x - ship.x) / (d || 1)) * 120; r.y += ((r.y - ship.y) / (d || 1)) * 120; }
+      }
+    }
+  } else if (state === "over" && (overTimer -= dt) <= 0) {
+    state = "done";
+    gameOver();
+  }
+}
+
+function hits(a, b, extra) {
+  const dx = a.x - b.x, dy = a.y - b.y, r = (a.r || 0) + (b.r || 0) + (extra || 0);
+  return dx * dx + dy * dy < r * r;
+}
+
+function collide() {
+  for (const b of bullets) {
+    if (b.life <= 0) continue;
+    for (const r of rocks) {
+      if (!r.dead && hits(b, r, 3)) { b.life = 0; splitRock(r, true); break; }
+    }
+    if (b.life <= 0) continue;
+    for (const s of saucers) {
+      if (!s.dead && hits(b, s, 3)) { b.life = 0; destroySaucer(s, true); break; }
+    }
+  }
+  for (const b of enemyShots) {
+    if (b.life <= 0) continue;
+    for (const r of rocks) {
+      if (!r.dead && hits(b, r, 2)) { b.life = 0; splitRock(r, false); break; }
+    }
+    if (b.life > 0 && ship && ship.inv <= 0 && hits(b, ship, 2)) { b.life = 0; killShip(); }
+  }
+  for (const s of saucers) {
+    for (const r of rocks) {
+      if (!s.dead && !r.dead && hits(s, r)) { splitRock(r, false); destroySaucer(s, false); }
+    }
+  }
+  if (ship && ship.inv <= 0) {
+    for (const r of rocks) {
+      if (!r.dead && hits(ship, r, -3)) { splitRock(r, true); killShip(); return; }
+    }
+    for (const s of saucers) {
+      if (!s.dead && hits(ship, s, -2)) { destroySaucer(s, true); killShip(); return; }
+    }
+  }
+}
+
+/* ---------- drawing ---------- */
+
+function drawShipShape(c, flame) {
+  if (flame) {
+    const len = Kit.rand(8, 16);
+    Kit.brick(c, -14 - len, -4, len + 2, 8, Kit.pick(["#facc15", "#fb923c"]), 3);
+  }
+  Kit.brick(c, -16, -5, 6, 10, "#6b7280", 2); // engine
+  Kit.brick(c, -13, -15, 13, 8, "#2563eb", 3); // wings
+  Kit.brick(c, -13, 7, 13, 8, "#2563eb", 3);
+  Kit.brick(c, -11, -6, 22, 12, "#e5e7eb", 3); // hull
+  Kit.brick(c, 10, -4, 9, 8, "#ef4444", 3); // nose
+  Kit.brick(c, 0, -3, 7, 6, "#38bdf8", 2); // cockpit
+}
+
+function drawShip(s) {
+  if (s.inv > 0 && Math.floor(s.inv * 12) % 2 === 0) return;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.rotate(s.a);
+  ctx.scale(1.2, 1.2);
+  drawShipShape(ctx, s.thrusting);
+  ctx.restore();
+  if (s.inv > 0) {
+    ctx.strokeStyle = `rgba(56,189,248,${0.25 + 0.25 * Math.sin(s.inv * 10)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 24, 0, TAU);
+    ctx.stroke();
+  }
+}
+
+function drawRock(r) {
+  ctx.save();
+  ctx.translate(r.x, r.y);
+  ctx.rotate(r.a);
+  const h = r.cell / 2;
+  for (const c of r.cells) Kit.brick(ctx, c.x - h, c.y - h, r.cell, r.cell, c.color, 2);
+  ctx.restore();
+}
+
+function drawSaucer(s) {
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  const k = s.r / 18;
+  ctx.scale(k, k);
+  Kit.brick(ctx, -9, -14, 18, 11, "#67e8f9", 4); // dome
+  Kit.brick(ctx, -22, -5, 44, 11, s.small ? "#ec4899" : "#a855f7", 4);
+  Kit.brick(ctx, -13, 5, 26, 7, "#6d28d9", 3);
+  const on = Math.floor(s.t * 8) % 3;
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i === on ? "#fef08a" : "#7c3aed";
+    ctx.fillRect(-14 + i * 11, -1, 6, 4);
+  }
+  ctx.restore();
+}
+
+function drawBullet(b, color, glow) {
+  ctx.fillStyle = glow;
+  ctx.fillRect(b.x - b.vx * 0.015 - 2, b.y - b.vy * 0.015 - 2, 4, 4);
+  ctx.fillStyle = color;
+  ctx.fillRect(b.x - 2.5, b.y - 2.5, 5, 5);
+}
+
+function draw() {
+  ctx.fillStyle = "#070a14";
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-shake, shake) * 0.5, Kit.rand(-shake, shake) * 0.5);
+
+  for (const st of stars) {
+    const a = 0.25 + 0.2 * st.z + 0.15 * Math.sin(st.t);
+    ctx.fillStyle = `rgba(200,220,255,${a})`;
+    ctx.fillRect(st.x, st.y, st.z, st.z);
+  }
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  for (const r of rocks) drawRock(r);
+  for (const s of saucers) drawSaucer(s);
+  for (const b of bullets) drawBullet(b, "#fef9c3", "rgba(250,204,21,.45)");
+  for (const b of enemyShots) drawBullet(b, "#fecaca", "rgba(239,68,68,.55)");
+  if (ship) drawShip(ship);
+  ctx.restore();
+
+  if (state === "attract") return;
+
+  // lives
+  for (let i = 0; i < lives; i++) {
+    ctx.save();
+    ctx.translate(26 + i * 30, 54);
+    ctx.rotate(-Math.PI / 2);
+    ctx.scale(0.7, 0.7);
+    drawShipShape(ctx, false);
+    ctx.restore();
+  }
+  ctx.fillStyle = "#f2f4f5";
+  ctx.font = `800 22px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillText(String(score), 14, 30);
+  ctx.fillStyle = "rgba(242,244,245,.55)";
+  ctx.font = `700 14px ${FONT}`;
+  ctx.fillText(`WAVE ${wave}`, 14, 84);
+
+  if (banner) {
+    ctx.globalAlpha = Math.min(1, banner.t * 2);
+    ctx.textAlign = "center";
+    ctx.font = `900 46px ${FONT}`;
+    ctx.fillStyle = "#000";
+    ctx.fillText(banner.text, W / 2 + 3, H / 2 - 57);
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(banner.text, W / 2, H / 2 - 60);
+    ctx.globalAlpha = 1;
+  }
+  if (paused) {
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#f2f4f5";
+    ctx.textAlign = "center";
+    ctx.font = `900 48px ${FONT}`;
+    ctx.fillText("Paused", W / 2, H / 2);
+    ctx.font = `700 16px ${FONT}`;
+    ctx.fillText("Press P to resume", W / 2, H / 2 + 34);
+  }
+}
+
+/* ---------- boot ---------- */
+
+const game = Kit.loop(update, draw);
+reset();
+wave = 3;
+for (let i = 0; i < 7; i++) rocks.push(makeRock(Kit.pick([1, 2, 3, 3]), Kit.rand(0, W), Kit.rand(0, H)));
+wave = 0;
+updateHud();
+game.start(); // rocks drift behind the title screen
+Kit.overlay(
+  "Space Blaster",
+  "Blast the space rocks before they smash your ship. Big rocks split into smaller, faster ones. Watch out for saucers!\n\n" +
+  "Left / Right or A / D: rotate\nUp or W: thrust\nSpace: fire (hold for auto)\nShift or Down: hyperspace jump\nP: pause\n\n" +
+  "Mouse: aim with the pointer, left button fires, right button thrusts",
+  "Launch"
+).then(startGame);
+</script>
+</body>
+</html>

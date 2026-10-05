@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brick 2048</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "brick-2048";
+const N = 4;
+const { canvas, ctx, W, H } = Kit.stage(480, 580);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const BOARD_X = 20, BOARD_Y = 116, BOARD = 440, GAP = 12;
+const TILE = (BOARD - GAP * (N + 1)) / N;
+const SLIDE_TIME = 0.11, POP_TIME = 0.18, BORN_TIME = 0.16;
+const NEW_BTN = { x: 360, y: 74, w: 100, h: 30 };
+
+const TILE_COLORS = {
+  2: "#e7e2d8", 4: "#e8cf9a", 8: "#fb923c", 16: "#f97316", 32: "#ef4444", 64: "#dc2626",
+  128: "#facc15", 256: "#eab308", 512: "#22c55e", 1024: "#14b8a6", 2048: "#3b82f6",
+  4096: "#a855f7", 8192: "#ec4899",
+};
+const tileColor = (v) => TILE_COLORS[v] || "#334155";
+const darkText = (v) => v <= 4 || v === 128 || v === 256;
+
+let grid, tiles, score, nextId, slide, popups, won, busy;
+
+function reset() {
+  grid = Array.from({ length: N }, () => Array(N).fill(null));
+  tiles = [];
+  score = 0;
+  nextId = 1;
+  slide = null;
+  popups = [];
+  won = false;
+  busy = false;
+  addTile();
+  addTile();
+  updateHud();
+}
+
+function addTile() {
+  const empty = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!grid[r][c]) empty.push([r, c]);
+  if (!empty.length) return;
+  const [r, c] = Kit.pick(empty);
+  const t = { id: nextId++, v: Math.random() < 0.9 ? 2 : 4, r, c, fr: r, fc: c, born: BORN_TIME, pop: 0 };
+  grid[r][c] = t;
+  tiles.push(t);
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+const DIRS = {
+  ArrowLeft: [0, -1], KeyA: [0, -1],
+  ArrowRight: [0, 1], KeyD: [0, 1],
+  ArrowUp: [-1, 0], KeyW: [-1, 0],
+  ArrowDown: [1, 0], KeyS: [1, 0],
+};
+
+function move(dr, dc) {
+  if (busy) return;
+  if (slide) finishSlide();
+  for (const t of tiles) { t.fr = t.r; t.fc = t.c; }
+  const rows = [...Array(N).keys()], cols = [...Array(N).keys()];
+  if (dr === 1) rows.reverse();
+  if (dc === 1) cols.reverse();
+  const inside = (r, c) => r >= 0 && r < N && c >= 0 && c < N;
+  let moved = false, gained = 0;
+
+  for (const r of rows)
+    for (const c of cols) {
+      const t = grid[r][c];
+      if (!t) continue;
+      let nr = r, nc = c;
+      while (inside(nr + dr, nc + dc) && !grid[nr + dr][nc + dc]) { nr += dr; nc += dc; }
+      const other = inside(nr + dr, nc + dc) ? grid[nr + dr][nc + dc] : null;
+      if (other && other.v === t.v && !other.merging) {
+        // t slides into other and disappears; other doubles once the slide finishes
+        grid[r][c] = null;
+        t.r = other.r; t.c = other.c; t.dying = true;
+        other.merging = true;
+        gained += t.v * 2;
+        moved = true;
+      } else if (nr !== r || nc !== c) {
+        grid[r][c] = null;
+        grid[nr][nc] = t;
+        t.r = nr; t.c = nc;
+        moved = true;
+      }
+    }
+
+  if (!moved) return;
+  score += gained;
+  if (gained) {
+    popups.push({ text: "+" + gained, t: 0 });
+    Kit.sfx(gained >= 128 ? "coin" : "score");
+  } else {
+    Kit.sfx("click");
+  }
+  slide = { t: 0 };
+  updateHud();
+}
+
+function finishSlide() {
+  slide = null;
+  tiles = tiles.filter((t) => !t.dying);
+  let reached2048 = false;
+  for (const t of tiles) {
+    t.fr = t.r; t.fc = t.c;
+    if (t.merging) {
+      t.v *= 2;
+      t.merging = false;
+      t.pop = POP_TIME;
+      if (t.v === 2048) reached2048 = true;
+    }
+  }
+  addTile();
+  if (reached2048 && !won) { won = true; celebrate(); }
+  else if (!canMove()) gameOver();
+}
+
+function canMove() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const t = grid[r][c];
+      if (!t) return true;
+      if (c + 1 < N && grid[r][c + 1] && grid[r][c + 1].v === t.v) return true;
+      if (r + 1 < N && grid[r + 1][c] && grid[r + 1][c].v === t.v) return true;
+    }
+  return false;
+}
+
+async function celebrate() {
+  busy = true;
+  Kit.sfx("win");
+  Kit.finish(ID, score);
+  await Kit.overlay("2048!", `You stacked a 2048 brick!\nScore so far: ${score}\n\nKeep going for an even bigger brick.`, "Keep going");
+  busy = false;
+}
+
+async function gameOver() {
+  busy = true;
+  Kit.sfx("lose");
+  const top = Math.max(...tiles.map((t) => t.v));
+  const best = Kit.finish(ID, score);
+  updateHud();
+  await Kit.overlay("No more moves", `Score: ${score}\nBiggest brick: ${top}\nBest: ${best}`, "Play again");
+  reset();
+}
+
+// ---------- input ----------
+
+Kit.onKey((code) => {
+  if (code === "KeyR" && !busy) { Kit.sfx("click"); reset(); return; }
+  const d = DIRS[code];
+  if (d) move(d[0], d[1]);
+});
+
+let swipe = null;
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (p.x >= NEW_BTN.x && p.x <= NEW_BTN.x + NEW_BTN.w && p.y >= NEW_BTN.y && p.y <= NEW_BTN.y + NEW_BTN.h) {
+    if (!busy) { Kit.sfx("click"); reset(); }
+    return;
+  }
+  swipe = p;
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointerup", (e) => {
+  if (!swipe) return;
+  const p = Kit.pointer(canvas, e);
+  const dx = p.x - swipe.x, dy = p.y - swipe.y;
+  swipe = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
+  if (Math.abs(dx) > Math.abs(dy)) move(0, dx > 0 ? 1 : -1);
+  else move(dy > 0 ? 1 : -1, 0);
+});
+canvas.addEventListener("pointercancel", () => { swipe = null; });
+canvas.style.touchAction = "none";
+
+// ---------- loop ----------
+
+function update(dt) {
+  if (slide) {
+    slide.t += dt;
+    if (slide.t >= SLIDE_TIME) finishSlide();
+  }
+  for (const t of tiles) {
+    t.pop = Math.max(0, t.pop - dt);
+    if (!slide) t.born = Math.max(0, t.born - dt);
+  }
+  for (const p of popups) p.t += dt;
+  popups = popups.filter((p) => p.t < 0.8);
+}
+
+const cellX = (c) => BOARD_X + GAP + c * (TILE + GAP);
+const cellY = (r) => BOARD_Y + GAP + r * (TILE + GAP);
+const ease = (k) => 1 - (1 - k) * (1 - k);
+
+function drawTile(t) {
+  const k = slide ? ease(Math.min(1, slide.t / SLIDE_TIME)) : 1;
+  const x = cellX(t.fc) + (cellX(t.c) - cellX(t.fc)) * k;
+  const y = cellY(t.fr) + (cellY(t.r) - cellY(t.fr)) * k;
+  let s = 1;
+  if (t.born > 0) s = 1 - t.born / BORN_TIME;
+  if (t.pop > 0) s = 1 + 0.14 * Math.sin((1 - t.pop / POP_TIME) * Math.PI);
+  if (s <= 0) return;
+  const cx = x + TILE / 2, cy = y + TILE / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  const color = tileColor(t.v);
+  // two studs poking out of the top edge, like a toy brick seen from the side
+  ctx.fillStyle = color;
+  for (const sx of [-TILE / 4, TILE / 4]) {
+    ctx.beginPath();
+    ctx.roundRect(sx - 13, -TILE / 2 - 5, 26, 9, 3);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(255,255,255,.25)";
+  for (const sx of [-TILE / 4, TILE / 4]) ctx.fillRect(sx - 10, -TILE / 2 - 4, 20, 2);
+  Kit.brick(ctx, -TILE / 2, -TILE / 2, TILE, TILE, color, 8);
+  const digits = String(t.v).length;
+  const size = [0, 46, 46, 40, 32, 26, 22][Math.min(6, digits)];
+  ctx.font = `900 ${size}px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  if (!darkText(t.v)) {
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.fillText(t.v, 0, 4);
+  }
+  ctx.fillStyle = darkText(t.v) ? "#3b3227" : "#ffffff";
+  ctx.fillText(t.v, 0, 2);
+  ctx.restore();
+}
+
+function scoreBox(x, label, value) {
+  ctx.fillStyle = "#2b2f35";
+  ctx.beginPath();
+  ctx.roundRect(x, 18, 100, 48, 8);
+  ctx.fill();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.font = `800 11px ${FONT}`;
+  ctx.fillStyle = "#a7adb4";
+  ctx.fillText(label, x + 50, 35);
+  ctx.font = `900 20px ${FONT}`;
+  ctx.fillStyle = "#f2f4f5";
+  ctx.fillText(value, x + 50, 58);
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+
+  // title made of small bricks
+  const title = "2048";
+  const titleColors = ["#ef4444", "#facc15", "#22c55e", "#3b82f6"];
+  for (let i = 0; i < 4; i++) {
+    Kit.brick(ctx, 20 + i * 52, 18, 48, 48, titleColors[i], 6);
+    ctx.font = `900 30px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.fillText(title[i], 44 + i * 52, 44);
+  }
+  ctx.font = `700 13px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#a7adb4";
+  ctx.fillText("Merge matching bricks!", 20, 90);
+
+  scoreBox(250, "SCORE", score);
+  scoreBox(360, "BEST", Math.max(score, Kit.best(ID) ?? 0));
+  for (const p of popups) {
+    ctx.globalAlpha = 1 - p.t / 0.8;
+    ctx.font = `900 18px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(p.text, 300, 98 - p.t * 22);
+  }
+  ctx.globalAlpha = 1;
+
+  Kit.brick(ctx, NEW_BTN.x, NEW_BTN.y, NEW_BTN.w, NEW_BTN.h, "#12b76a", 8);
+  ctx.font = `800 14px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#fff";
+  ctx.fillText("New game", NEW_BTN.x + NEW_BTN.w / 2, NEW_BTN.y + NEW_BTN.h / 2 + 1);
+
+  // baseplate
+  ctx.fillStyle = "#3a3f46";
+  ctx.beginPath();
+  ctx.roundRect(BOARD_X, BOARD_Y, BOARD, BOARD, 12);
+  ctx.fill();
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      ctx.fillStyle = "#2b2f35";
+      ctx.beginPath();
+      ctx.roundRect(cellX(c), cellY(r), TILE, TILE, 8);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.04)";
+      for (const [sx, sy] of [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]]) {
+        ctx.beginPath();
+        ctx.arc(cellX(c) + TILE * sx, cellY(r) + TILE * sy, 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+  // dying tiles first so the surviving tile lands on top of them
+  for (const t of tiles) if (t.dying) drawTile(t);
+  for (const t of tiles) if (!t.dying) drawTile(t);
+}
+
+const game = Kit.loop(update, draw);
+reset();
+game.start();
+busy = true;
+Kit.overlay(
+  "Brick 2048",
+  "Slide the bricks. When two bricks with the same number touch, they snap together into one!\nBuild a 2048 brick to win.\n\nArrows / WASD or swipe with the mouse\nR: new game",
+  "Play"
+).then(() => { busy = false; });
+</script>
+</body>
+</html>

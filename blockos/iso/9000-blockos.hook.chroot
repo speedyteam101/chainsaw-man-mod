@@ -1,0 +1,7 @@
+#!/bin/sh
+# live-build chroot hook: set BlockOS up inside the image, then remove the sources.
+# The live user created at boot is called "user", so that's who logs in automatically.
+set -e
+/opt/blockos-src/system/install.sh --chroot --user user
+rm -rf /opt/blockos-src
+echo blockos > /etc/hostname
