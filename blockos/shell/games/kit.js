@@ -27,6 +27,14 @@
 (function () {
   "use strict";
 
+  // Phones and tablets: load the on-screen controls (touch.js, next to this file).
+  const IS_TOUCH = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0 && !matchMedia("(pointer: fine)").matches;
+  if (IS_TOUCH && document.currentScript) {
+    const s = document.createElement("script");
+    s.src = new URL("touch.js", document.currentScript.src).href;
+    document.head.appendChild(s);
+  }
+
   const held = new Set();
   const keyHandlers = [];
   const GAME_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
@@ -52,9 +60,11 @@
     canvas.height = h;
     wrap.appendChild(canvas);
     document.body.appendChild(wrap);
-    // Leave a band at the top for the HUD (top right) and the shell's menu button (top left).
-    const TOP = 58;
+    // Leave a band at the top for the HUD (top right) and the shell's menu button (top left);
+    // a smaller one on short screens like phones held sideways.
     function fit() {
+      const TOP = innerHeight < 500 ? 34 : 58;
+      wrap.style.top = TOP + "px";
       const s = Math.min((innerWidth - 24) / w, (innerHeight - TOP - 12) / h);
       canvas.style.width = Math.max(50, w * s) + "px";
       canvas.style.height = Math.max(50, h * s) + "px";

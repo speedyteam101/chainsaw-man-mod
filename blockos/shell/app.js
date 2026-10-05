@@ -220,8 +220,11 @@
     page.scrollTop = 0;
   }
 
+  // On the web (iPhone, iPad, any browser) there's no computer to open apps on or turn off.
+  const webOnly = () => !sysInfo;
   function render() {
-    $("#nav").innerHTML = NAV.map((n) =>
+    document.documentElement.classList.toggle("web", webOnly());
+    $("#nav").innerHTML = NAV.filter((n) => !(webOnly() && n.id === "apps")).map((n) =>
       `<button data-page="${n.id}" class="${view.page === n.id ? "active" : ""}">${icon(n.id)}<span>${n.label}</span></button>`).join("");
     $("#meCard").innerHTML = `<div class="headshot">${Avatar.draw(state.avatar, { headshot: true })}</div>
       <div><b>${esc(state.name)}</b><small>View avatar</small></div>`;
@@ -305,11 +308,15 @@
         : addr ? `<b class="ok">Online.</b> Games that support it will put you on the server at <code>${esc(addr)}</code>.`
         : `<b>You're offline.</b> Host a server or join a friend's to play together.`;
       const online = GAMES.filter((g) => g.multiplayer);
+      const hostPanel = webOnly()
+        ? `<div class="panel"><h2>Host a server</h2><p class="hint">Hosting needs the BlockOS app on a Mac or Windows computer (or the BlockOS virtual machine).
+            On the web version you can join servers that have an internet address starting with <code>wss://</code>.</p></div>`
+        : `<div class="panel"><h2>Host a server</h2>
+            <p class="hint">Turns this computer into a game server. Your friends join it from their BlockOS using the address shown above.</p>
+            ${hosting ? '<button class="btn red" id="stopHost">Stop hosting</button>' : '<button class="btn green" id="startHost">Start hosting</button>'}</div>`;
       page.innerHTML = `<h1 class="page-title">Play Online</h1>
         <div class="panel"><h2>Status</h2><p>${status}</p>${addr ? '<button class="btn" id="goOffline">Go offline</button>' : ""}</div>
-        <div class="panel"><h2>Host a server</h2>
-          <p class="hint">Turns this computer into a game server. Your friends join it from their BlockOS using the address shown above.</p>
-          ${hosting ? '<button class="btn red" id="stopHost">Stop hosting</button>' : '<button class="btn green" id="startHost">Start hosting</button>'}</div>
+        ${hostPanel}
         <div class="panel"><h2>Join a server</h2>
           <p class="hint">Type the address your friend sees on their Play Online page, or an internet server address (starting with wss://).</p>
           <div class="join-row"><input type="text" id="joinAddr" placeholder="192.168.1.23 or wss://example.com" value="${hosting ? "" : esc(addr)}" spellcheck="false">
@@ -350,7 +357,7 @@
           <div class="setting"><div><b>Reset everything</b><p>Clears Bricks, items, favorites and best scores.</p></div>
             <button class="btn red" id="resetAll">Reset</button></div></div>
         ${systemPanel()}
-        <div class="panel"><h2>Power</h2><div class="setting"><div><b>Turn off or restart BlockOS</b></div>
+        <div class="panel web-hide"><h2>Power</h2><div class="setting"><div><b>Turn off or restart BlockOS</b></div>
           <div class="btns"><button class="btn" data-power="reboot">Restart</button> <button class="btn red" data-power="poweroff">Shut down</button></div></div></div>`;
       $("#setName").onchange = (e) => { state.name = e.target.value.trim().slice(0, 20) || "Player"; save(); render(); };
       $("#setTheme").onclick = () => { state.theme = state.theme === "dark" ? "light" : "dark"; applyTheme(); save(); render(); };
@@ -690,7 +697,7 @@
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
   updateOnlinePill();
   loadOnlineInfo();
-  loadSysInfo().then(() => { if (view.page === "apps" || view.page === "settings") render(); });
+  loadSysInfo().then(() => render());
   setTimeout(() => $("#boot").classList.add("done"), 1300);
   setTimeout(() => $("#boot").remove(), 1900);
 })();

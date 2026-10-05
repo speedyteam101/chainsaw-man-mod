@@ -553,12 +553,33 @@ export class World {
     const el = this.renderer.domElement;
     let dragging = false, lastX = 0, lastY = 0;
     el.addEventListener("contextmenu", (e) => e.preventDefault());
+    // Two fingers: pinch to zoom (phones and tablets).
+    const touches = new Map();
+    let pinch = 0;
     el.addEventListener("pointerdown", (e) => {
-      if (this.opts.cameraButton === "right" && e.button !== 2) return;
+      if (e.pointerType === "touch") {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); dragging = false; return; }
+      }
+      // A finger always turns the camera; with a mouse some games keep the left button for actions.
+      if (this.opts.cameraButton === "right" && e.button !== 2 && e.pointerType !== "touch") return;
       dragging = true; lastX = e.clientX; lastY = e.clientY;
       el.setPointerCapture(e.pointerId);
     });
+    const untouch = (e) => { touches.delete(e.pointerId); if (touches.size < 2) pinch = 0; };
+    el.addEventListener("pointerup", untouch);
+    el.addEventListener("pointercancel", untouch);
     el.addEventListener("pointermove", (e) => {
+      if (touches.has(e.pointerId)) {
+        touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (touches.size === 2 && pinch) {
+          const [a, b] = [...touches.values()];
+          const d = Math.hypot(a.x - b.x, a.y - b.y);
+          this.cam.dist = Math.max(4, Math.min(60, this.cam.dist * (pinch / d)));
+          pinch = d;
+          return;
+        }
+      }
       if (this.cam.shiftLock && document.pointerLockElement === el) {
         this.cam.yaw -= e.movementX * 0.005;
         this.cam.pitch = Math.max(-0.3, Math.min(1.35, this.cam.pitch + e.movementY * 0.005));

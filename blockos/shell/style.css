@@ -173,7 +173,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .thumb .fav { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.55); display: grid; place-items: center; }
 .thumb .fav svg { width: 15px; height: 15px; fill: #ff4d6d; stroke: #ff4d6d; }
 .tile .t-name { margin-top: 8px; font-weight: 800; line-height: 1.25; }
-.tile .t-meta { margin-top: 2px; font-size: 13px; color: var(--muted); display: flex; gap: 10px; }
+.tile .t-meta { margin-top: 2px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .chip {
@@ -374,3 +374,39 @@ select {
 .badge-card small { display: block; color: var(--muted); font-weight: 700; }
 .badge-card p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
 .gd-stats { grid-template-columns: 1fr 1fr; }
+
+/* ---------- web version (no computer to control) ---------- */
+.web #powerBtn, .web .gm-power, .web .web-hide { display: none !important; }
+
+/* ---------- phones ---------- */
+@media (max-height: 500px) {
+  :root { --top: 52px; }
+  .menu-btn { height: 38px; }
+  .brand { font-size: 20px; }
+}
+@media (max-width: 640px) {
+  :root { --side: 0px; --top: 58px; }
+  .topbar { gap: 8px; padding: 0 10px; padding-top: env(safe-area-inset-top); height: calc(var(--top) + env(safe-area-inset-top)); }
+  .brand, .clock, .topbar .search { display: none; }
+  .top-right { margin-left: auto; }
+  .sidebar {
+    top: auto; bottom: 0; width: 100%; height: calc(62px + env(safe-area-inset-bottom)); flex-direction: row;
+    padding: 0 0 env(safe-area-inset-bottom); border-right: 0; border-top: 1px solid var(--line);
+  }
+  .sidebar .me, .sidebar-foot { display: none; }
+  #nav { display: flex; width: 100%; }
+  #nav button { flex: 1; flex-direction: column; gap: 2px; margin: 0; padding: 8px 2px; border-radius: 0; font-size: 11px; text-align: center; }
+  #nav button span { display: block !important; }
+  #nav button.active { box-shadow: inset 0 3px 0 var(--accent); }
+  #page { top: calc(var(--top) + env(safe-area-inset-top)); left: 0; bottom: calc(62px + env(safe-area-inset-bottom)); padding: 18px 14px 30px; }
+  .hello h1 { font-size: 24px; }
+  .hello .headshot { width: 64px; height: 64px; }
+  .strip { grid-auto-columns: 160px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .game-menu { left: 6px; right: 6px; top: calc(var(--top) + env(safe-area-inset-top) + 6px); width: auto; bottom: 6px; }
+  .gm-head { flex-wrap: wrap; padding: 12px; }
+  .gm-search { max-width: none; width: 100%; }
+  .gm-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); padding: 12px; }
+  .gd-info { padding: 18px; }
+  .kv { grid-template-columns: 120px 1fr; }
+}
