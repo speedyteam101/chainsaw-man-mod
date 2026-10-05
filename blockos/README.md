@@ -18,7 +18,7 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 | Part | Where | What it does |
 | --- | --- | --- |
 | Desktop shell | `shell/` | The BlockOS desktop: Home, Discover, Avatar (with a shop), Apps, Settings, the Game Menu and the in-game menu. Plain HTML/CSS/JS, works offline. |
-| Games | `shell/games/` | 20 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
+| Games | `shell/games/` | 58 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
 | Session | `system/blockos-session` | Starts Openbox, the shell server, and Chromium in full-screen kiosk mode showing the desktop. |
 | Installer | `system/install.sh` | Turns a plain Debian 12 or 13 install into BlockOS: installs packages, sets up auto-login, adds boot-menu branding. |
@@ -110,9 +110,22 @@ and please report the error.
 
 ## Games
 
-| Game | Genre |
+58 original games, sorted by genre in the Game Menu.
+
+| Genre | Games |
 | --- | --- |
-| Brick Snake | Arcade |
+| **Action** | Battle Tanks, Blob Rush, Disaster Island, Getaway, Sword Duel, The Floor Is Lava |
+| **Adventure** | Maze Escape |
+| **Arcade** | Bonk-a-Block, Brick Breaker, Brick Pinball, Brick Snake, Cave Copter, Flap Block, Ninja Run, Rhythm Tap, Road Hopper, Sky Jumper, Space Blaster, Tower Stack |
+| **Board** | Checkers, Dots and Boxes, Four in a Row, Reversi, Tic Tac Block |
+| **Card** | Solitaire |
+| **Obby** | Obby Run, Tower Climb |
+| **Puzzle** | Block Drop, Brick 2048, Bubble Pop, Color Echo, Color Sort, Gem Bricks, Lights Out, Math Blitz, Memory Bricks, Mine Sweep, Pipe Connect, Pixel Logic, Slide Puzzle, Sudoku Blocks |
+| **Racing** | Kart Dash, Turbo Lanes, Typing Racer |
+| **Simulator** | Brick Tycoon, Fishing Frenzy, Mining Sim, Pet Hatchery, Pizza Shop |
+| **Sports** | Air Hockey, Basket Toss, Block Bowling, Block Golf, Paddle Clash, Penalty Kick |
+| **Strategy** | Brick Defense |
+| **Word** | Word Bricks, Word Search |
 
 ## Add your own game
 
@@ -120,7 +133,7 @@ and please report the error.
    as a starting point. It uses the shared helpers in `shell/games/kit.js` (canvas setup, keyboard,
    game loop, start/game-over screens, sounds, best scores), which are documented at the top of that file.
 2. Add a `thumb.svg` (480 x 270) for the game card.
-3. Add an entry to `shell/games/catalog.js`.
+3. Add a `meta.json` (copy brick-snake's) and run `python3 blockos/tools/gen-catalog.py` to rebuild `shell/games/catalog.js`.
 4. Call `Kit.finish("my-game", score)` when a round ends so the player earns Bricks.
 
 On an installed system, copy the changed `shell/` folder to `/opt/blockos/shell`, or simply run
