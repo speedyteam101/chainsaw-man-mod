@@ -138,7 +138,7 @@ const ENEMIES = {
   mummy:     { name: "Brick Mummy", art: "mummy", col: ["#e7e5e4", "#a8a29e"], hp: 95, atk: 20, def: 10, mag: 18, spd: 5, xp: 37, gold: 26, weak: ["fire"], resist: ["ice"], skills: [["wrap", 2]], drops: [["bell", 0.2]] },
   magma:     { name: "Magma Slime", art: "slime", col: ["#f97316", "#b91c1c"], hp: 75, atk: 18, def: 10, mag: 22, spd: 8, xp: 31, gold: 28, weak: ["ice"], resist: ["fire"], skills: [["fireball", 2]], drops: [["firebomb", 0.2]] },
   frostslime:{ name: "Frost Slime", art: "slime", col: ["#7dd3fc", "#0369a1"], hp: 125, atk: 31, def: 18, mag: 30, spd: 9, xp: 60, gold: 40, weak: ["fire"], resist: ["ice"], skills: [["iceshard", 2]], drops: [["ether", 0.1]] },
-  snowwolf:  { name: "Snow Wolf", art: "wolf", col: ["#f1f5f9", "#94a3b8"], hp: 145, atk: 39, def: 18, mag: 4, spd: 17, xp: 66, gold: 42, weak: ["fire"], skills: [["bite", 1]], drops: [["hipotion", 0.12]] },
+  snowwolf:  { name: "Snow Wolf", art: "wolf", col: ["#f1f5f9", "#64748b"], hp: 145, atk: 39, def: 18, mag: 4, spd: 17, xp: 66, gold: 42, weak: ["fire"], skills: [["bite", 1]], drops: [["hipotion", 0.12]] },
   frostbat:  { name: "Frost Bat", art: "bat", col: ["#38bdf8", "#1e40af"], hp: 105, atk: 35, def: 14, mag: 20, spd: 19, xp: 58, gold: 38, weak: ["thunder"], resist: ["ice"], skills: [["chill", 1]], drops: [["remedy", 0.1]] },
   yeti:      { name: "Yeti", art: "yeti", col: ["#f8fafc", "#60a5fa"], hp: 230, atk: 46, def: 22, mag: 10, spd: 7, xp: 92, gold: 60, weak: ["fire"], resist: ["ice"], big: true, skills: [["avalanche", 1]], drops: [["megapotion", 0.08]] },
   skeleton:  { name: "Skeleton", art: "skeleton", col: ["#f5f5f4", "#a8a29e"], hp: 200, atk: 54, def: 28, mag: 10, spd: 12, xp: 112, gold: 62, weak: ["thunder"], skills: [["bonecrush", 1]], drops: [["hipotion", 0.15]] },
@@ -152,7 +152,7 @@ const ENEMIES = {
   wyrm:      { name: "Sand Wyrm", art: "wyrm", col: ["#d6a756", "#8a5a1b"], hp: 1500, atk: 40, def: 22, mag: 34, spd: 12, xp: 700, gold: 450, weak: ["ice"], resist: ["fire"], boss: true, ai: "wyrm", drops: [["megapotion", 1]] },
   colossus:  { name: "Frost Colossus", art: "golem", col: ["#bae6fd", "#38bdf8", "#e0f2fe"], hp: 2500, atk: 58, def: 34, mag: 46, spd: 8, xp: 1300, gold: 800, weak: ["fire"], resist: ["ice"], boss: true, ai: "colossus", drops: [["elixir", 1]] },
   king:      { name: "The Hollow King", art: "king", col: ["#1e1b4b", "#7c3aed", "#facc15"], hp: 2800, atk: 70, def: 44, mag: 70, spd: 15, xp: 0, gold: 0, weak: [], boss: true, ai: "king" },
-  king2:     { name: "Hollow King Unbound", art: "dragon", col: ["#2a1745", "#120a22", "#c084fc"], hp: 3400, atk: 86, def: 46, mag: 82, spd: 18, xp: 3000, gold: 2000, weak: ["thunder"], boss: true, ai: "king2", crown: true },
+  king2:     { name: "Hollow King Unbound", art: "dragon", col: ["#5b21b6", "#2e1065", "#f0abfc"], hp: 3400, atk: 86, def: 46, mag: 82, spd: 18, xp: 3000, gold: 2000, weak: ["thunder"], boss: true, ai: "king2", crown: true },
 };
 
 const ESKILLS = {

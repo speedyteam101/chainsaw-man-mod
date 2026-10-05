@@ -118,6 +118,8 @@ export class UI {
     this.close();
     const wrap = $("div", "si-panel", document.body);
     wrap.addEventListener("pointerdown", (e) => e.stopPropagation());
+    // don't leave buttons focused: Space (jump) or Enter would press them again
+    wrap.addEventListener("click", () => { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); });
     const head = $("div", "si-panel-head", wrap);
     $("h2", "", head, title);
     const x = $("button", "si-x", head, "Close");

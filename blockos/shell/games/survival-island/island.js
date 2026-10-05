@@ -21,7 +21,7 @@ function studTexture() {
   return STUD;
 }
 
-const TOP_COL = { [SEABED]: "#c9b27a", [SAND]: "#ead38f", [GRASS]: "#5cab45", [FOREST]: "#43923a", [ROCK]: "#8e9298", [CAVE]: "#62656c" };
+const TOP_COL = { [SEABED]: "#c9b27a", [SAND]: "#ead38f", [GRASS]: "#5cab45", [FOREST]: "#43923a", [ROCK]: "#8e9298", [CAVE]: "#4b4e55" };
 const SIDE_COL = { [SEABED]: "#b89e66", [SAND]: "#d4b978", [GRASS]: "#8a6239", [FOREST]: "#7c5733", [ROCK]: "#767a80", [CAVE]: "#55585e" };
 const DEEP = new THREE.Color("#1f5876");
 
@@ -200,7 +200,10 @@ export class Island {
           if (ex !== null) sides.quad([[ex, y0, z0], [ex, y0, z1], [ex, y1, z1], [ex, y1, z0]], [dx, 0, 0], c);
           else sides.quad([[x0, y0, ez], [x1, y0, ez], [x1, y1, ez], [x0, y1, ez]], [0, 0, dz], c);
         };
-        if ((kind === GRASS || kind === FOREST) && h - lo > 0.6) { face(h - 0.45, h, lip); face(lo, h - 0.45, side); }
+        const ni = i + dx, nk = k + dz;
+        const intoCave = ni >= 0 && nk >= 0 && ni < N && nk < N && K[idx(ni, nk)] === CAVE;
+        if (intoCave) face(lo, h, side.clone().multiplyScalar(0.62));
+        else if ((kind === GRASS || kind === FOREST) && h - lo > 0.6) { face(h - 0.45, h, lip); face(lo, h - 0.45, side); }
         else face(lo, h, side);
       }
       // cave roof slab

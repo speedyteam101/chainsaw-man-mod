@@ -148,7 +148,7 @@ function defineStory() {
   // --- mini-bosses
   obj("world", { type: "crystal", x: 10, y: 26, col: "#4ade80", glow: "74,222,128", cond: () => !F().ch1 });
   obj("world", {
-    type: "boss", enemy: "treant", x: 10, y: 28, scale: 3.6, cond: () => !F().ch1,
+    type: "boss", enemy: "treant", x: 10, y: 28, scale: 4.2, cond: () => !F().ch1,
     use: async () => {
       if (!F().nova) { await say(G.heroName, "A giant walking tree, guarding a glowing crystal... I'd better not face it alone."); return; }
       await talk([["Mossy Treant", "Hrrrm... Who disturbs the crystal's slumber? Leave, little bricks, or become mulch!"], ["Nova", "Here we go, {hero}! Fire, fire, fire!"]]);
@@ -165,7 +165,7 @@ function defineStory() {
   });
   obj("world", { type: "crystal", x: 84, y: 36, col: "#facc15", glow: "250,204,21", cond: () => !F().wyrm });
   obj("world", {
-    type: "boss", enemy: "wyrm", x: 84, y: 37, scale: 3.2, cond: () => !F().wyrm,
+    type: "boss", enemy: "wyrm", x: 84, y: 37, scale: 4.2, cond: () => !F().wyrm,
     use: async () => {
       await talk([["Sand Wyrm", "SSSSS... The sun crystal is MINE. Your bones will join the sand!"]]);
       const r = await battleFlow(["wyrm"], { boss: true, bg: "desert" });
@@ -179,7 +179,7 @@ function defineStory() {
   });
   obj("world", { type: "crystal", x: 84, y: 7, col: "#7dd3fc", glow: "125,211,252", cond: () => !F().ch2 });
   obj("world", {
-    type: "boss", enemy: "colossus", x: 84, y: 8, scale: 3.4, cond: () => !F().ch2,
+    type: "boss", enemy: "colossus", x: 84, y: 8, scale: 4.4, cond: () => !F().ch2,
     use: async () => {
       await talk([["Frost Colossus", "...INTRUDERS. THE SUMMIT IS SILENT. YOU WILL BE SILENT TOO."], ["Mira", "Stay close, everyone. I'll keep you standing!"]]);
       const r = await battleFlow(["colossus"], { boss: true, bg: "snow" });
@@ -256,7 +256,7 @@ function defineStory() {
 
   // --- the castle
   obj("castle", {
-    type: "boss", enemy: "king", x: 16, y: 5, scale: 3.6, cond: () => !F().cleared,
+    type: "boss", enemy: "king", x: 16, y: 5, scale: 4.6, cond: () => !F().cleared,
     use: async () => {
       await talk([["The Hollow King", "So, the little brick hero has come at last. And you brought friends. How sweet."],
         ["The Hollow King", "Your shiny crystals mean nothing before the Hollow Crown. I will empty this land of every color!"],

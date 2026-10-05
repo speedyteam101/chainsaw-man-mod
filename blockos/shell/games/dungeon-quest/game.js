@@ -836,7 +836,7 @@ export function boot(World) {
         } else if (alive === 0) {
           if (zone.wave[i] < r.waves.length) {
             zone.waveDelay[i] += dt;
-            if (zone.waveDelay[i] > 1.2) { zone.waveDelay[i] = 0; spawnWave(r); banner("", "More monsters!"); send({ k: "msg", t: "More monsters!" }); }
+            if (zone.waveDelay[i] > 1.2 && enemies.size < 14) { zone.waveDelay[i] = 0; spawnWave(r); banner("", "More monsters!"); send({ k: "msg", t: "More monsters!" }); }
           } else clearRoom(r);
         }
       }
@@ -1665,6 +1665,13 @@ export function boot(World) {
   addEventListener("pointerup", (e) => { if (e.button === 0) mouseHeld = false; });
   addEventListener("blur", () => { mouseHeld = false; });
 
+  // The BlockOS menu (Escape) takes focus away from the game: solo play pauses until you come back.
+  let paused = false;
+  addEventListener("blur", () => { paused = true; mouseHeld = false; });
+  addEventListener("focus", () => { paused = false; });
+  addEventListener("pointerdown", () => { paused = false; }, true);
+  addEventListener("keydown", () => { paused = false; }, true);
+
   let camDistPrev = world.cam.dist;
   Kit.onKey((code, e) => {
     if (code === "KeyI") world.cam.dist = camDistPrev;    // the kit zooms on I; here I opens the inventory
@@ -1698,9 +1705,10 @@ export function boot(World) {
   let slowT = 0, boardT = 0, cullT = 0, regenAcc = 0;
   world.start((dt) => {
     camDistPrev = world.cam.dist;
-    me.frozen = titleOpen || busy || !!panelOpen || dashT > 0;
+    const hold = paused && !online();
+    me.frozen = titleOpen || busy || !!panelOpen || dashT > 0 || hold;
     bannerT -= dt;
-    if (!zone || busy) { stepFloats(dt); return; }
+    if (!zone || busy || hold) { stepFloats(dt); return; }
     const host = isHost();
     if (zone.kind === "dungeon" && host && !wasHost) becomeHost();
     wasHost = host;

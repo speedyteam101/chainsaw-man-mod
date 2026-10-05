@@ -168,7 +168,7 @@ export class Builds {
         b.parts.push(w.part({ size: [sx, sy, sz], pos: [b.x, cy, b.z], color: "#c99a5b", material: "wood" }));
         break;
       case "wood_wall":
-        b.parts.push(w.part({ size: [sx, sy, sz], pos: [b.x, cy, b.z], color: "#a0703c", material: "wood" }));
+        b.parts.push(w.part({ size: [sx, sy, sz], pos: [b.x, cy, b.z], color: "#b98552", material: "wood" }));
         break;
       case "stone_wall":
         b.parts.push(w.part({ size: [sx, sy, sz], pos: [b.x, cy, b.z], color: "#8d9096" }));

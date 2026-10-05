@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <pattern id="bricks" width="60" height="30" patternUnits="userSpaceOnUse">
+      <rect width="60" height="30" fill="#2b2140"/>
+      <rect x="1" y="1" width="58" height="13" rx="2" fill="#3a2d57"/>
+      <rect x="-29" y="16" width="58" height="13" rx="2" fill="#352951"/>
+      <rect x="31" y="16" width="58" height="13" rx="2" fill="#352951"/>
+    </pattern>
+    <pattern id="studs" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="12" cy="12" r="5" fill="#ffffff" fill-opacity=".07"/></pattern>
+    <radialGradient id="glowA" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fde047" stop-opacity=".55"/><stop offset="1" stop-color="#fde047" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glowP" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#c084fc" stop-opacity=".7"/><stop offset="1" stop-color="#c084fc" stop-opacity="0"/></radialGradient>
+    <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b3f66"/><stop offset="1" stop-color="#2a223d"/></linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb020" stop-opacity="0"/><stop offset="1" stop-color="#ffb020" stop-opacity=".75"/></linearGradient>
+  </defs>
+  <rect width="480" height="270" fill="url(#bricks)"/>
+  <rect y="196" width="480" height="74" fill="url(#floor)"/>
+  <rect y="196" width="480" height="74" fill="url(#studs)"/>
+  <rect y="190" width="480" height="8" fill="#1d1630"/>
+
+  <!-- torches -->
+  <circle cx="58" cy="88" r="38" fill="url(#glowA)"/>
+  <rect x="52" y="92" width="12" height="26" fill="#1d1630"/><rect x="49" y="74" width="18" height="20" rx="3" fill="#fde047"/><rect x="54" y="79" width="8" height="10" fill="#fff7c2"/>
+  <circle cx="424" cy="88" r="38" fill="url(#glowA)"/>
+  <rect x="418" y="92" width="12" height="26" fill="#1d1630"/><rect x="415" y="74" width="18" height="20" rx="3" fill="#fde047"/><rect x="420" y="79" width="8" height="10" fill="#fff7c2"/>
+
+  <!-- portal -->
+  <circle cx="240" cy="110" r="70" fill="url(#glowP)"/>
+  <rect x="196" y="44" width="16" height="148" fill="#4a3d6b"/><rect x="268" y="44" width="16" height="148" fill="#4a3d6b"/>
+  <rect x="188" y="34" width="104" height="18" fill="#5b4b82"/>
+  <rect x="212" y="52" width="56" height="140" fill="#a855f7"/>
+  <rect x="220" y="62" width="40" height="120" fill="#c084fc"/>
+
+  <!-- legendary loot beam -->
+  <rect x="370" y="60" width="16" height="150" fill="url(#beam)"/>
+  <rect x="364" y="194" width="28" height="28" rx="4" fill="#ffb020" transform="rotate(45 378 208)"/>
+
+  <!-- zombie -->
+  <g transform="translate(300 98)">
+    <rect x="6" y="56" width="20" height="44" fill="#3b3f2f"/><rect x="28" y="56" width="20" height="44" fill="#30331f"/>
+    <rect x="4" y="14" width="46" height="44" fill="#4b5d3a"/>
+    <rect x="-22" y="16" width="26" height="14" fill="#7fb069"/><rect x="50" y="16" width="26" height="14" fill="#6f9f5a"/>
+    <rect x="12" y="-14" width="30" height="28" fill="#7fb069"/>
+    <rect x="16" y="-6" width="8" height="6" fill="#facc15"/><rect x="30" y="-6" width="8" height="6" fill="#facc15"/>
+    <rect x="18" y="6" width="18" height="3" fill="#2f3a24"/>
+  </g>
+  <!-- zombie health bar -->
+  <rect x="306" y="66" width="56" height="8" rx="3" fill="#111"/><rect x="308" y="68" width="22" height="4" rx="2" fill="#ef4444"/>
+
+  <!-- hero -->
+  <g transform="translate(108 92)">
+    <rect x="10" y="62" width="22" height="48" fill="#22c55e"/><rect x="34" y="62" width="22" height="48" fill="#16a34a"/>
+    <rect x="8" y="16" width="50" height="48" fill="#3b82f6"/>
+    <rect x="-16" y="18" width="24" height="44" fill="#f5cd30"/>
+    <rect x="58" y="10" width="24" height="24" fill="#f5cd30"/>
+    <rect x="18" y="-16" width="30" height="30" fill="#f5cd30"/>
+    <rect x="34" y="-8" width="6" height="9" fill="#111"/><rect x="42" y="-8" width="5" height="9" fill="#111"/>
+    <rect x="31" y="5" width="15" height="3" fill="#111"/>
+    <!-- sword -->
+    <g transform="rotate(-50 72 22)">
+      <rect x="66" y="14" width="12" height="16" fill="#5b3a1e"/>
+      <rect x="58" y="10" width="28" height="6" fill="#9ca3af"/>
+      <rect x="67" y="-62" width="10" height="74" fill="#ffb020"/>
+      <rect x="69" y="-58" width="4" height="64" fill="#ffe08a"/>
+    </g>
+  </g>
+  <!-- swing arc -->
+  <path d="M200 70 Q 262 100 246 170" fill="none" stroke="#ffffff" stroke-opacity=".55" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- gold -->
+  <g fill="#facc15" stroke="#a16207" stroke-width="2">
+    <rect x="200" y="214" width="16" height="10" rx="3"/><rect x="220" y="220" width="16" height="10" rx="3"/><rect x="208" y="206" width="16" height="10" rx="3"/>
+    <rect x="62" y="222" width="16" height="10" rx="3"/><rect x="80" y="228" width="16" height="10" rx="3"/>
+  </g>
+  <!-- chest -->
+  <rect x="404" y="210" width="50" height="34" rx="3" fill="#8b5a2b"/><rect x="404" y="204" width="50" height="12" rx="3" fill="#a16207"/><rect x="424" y="214" width="10" height="12" fill="#facc15"/>
+</svg>

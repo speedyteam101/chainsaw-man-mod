@@ -338,10 +338,11 @@ function drawMountain(ctx, sx, sy, snowy, h) {
   ctx.fillRect(sx + 10, sy - 2, 12, 5);
   if (snowy) ctx.fillRect(sx + 5, sy + 8, 6, 3);
 }
-function drawHouse(ctx, sx, sy, roof, wall) {
-  Kit.brick(ctx, sx + 2, sy + 14, 13, 12, wall, 2);
-  ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(sx, sy + 15); ctx.lineTo(sx + 8.5, sy + 6); ctx.lineTo(sx + 17, sy + 15); ctx.fill();
-  ctx.fillStyle = "#5b3a1e"; ctx.fillRect(sx + 7, sy + 19, 4, 7);
+function drawHouse(ctx, sx, sy, roof, wall, s) {
+  s = s || 1;
+  Kit.brick(ctx, sx + 2 * s, sy + 14 * s, 13 * s, 12 * s, wall, 2);
+  ctx.fillStyle = roof; ctx.beginPath(); ctx.moveTo(sx, sy + 15 * s); ctx.lineTo(sx + 8.5 * s, sy + 5 * s); ctx.lineTo(sx + 17 * s, sy + 15 * s); ctx.fill();
+  ctx.fillStyle = "#5b3a1e"; ctx.fillRect(sx + 7 * s, sy + 19 * s, 4 * s, 7 * s);
 }
 
 function drawTile(ctx, m, x, y, sx, sy, T) {
@@ -460,11 +461,12 @@ function drawTile(ctx, m, x, y, sx, sy, T) {
     }
     case "1": case "2": case "3": {
       const th = TOWN_THEMES[TOWN_ICON[c]];
+      ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.beginPath(); ctx.ellipse(sx + 16, sy + 28, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#b8aa94"; ctx.fillRect(sx + 4, sy + 24, 24, 8);
-      drawHouse(ctx, sx - 2, sy + 2, th.roof, th.house);
-      drawHouse(ctx, sx + 15, sy + 5, th.roof2, th.house);
-      ctx.fillStyle = "#5b3a1e"; ctx.fillRect(sx + 15, sy - 4, 2, 12);
-      ctx.fillStyle = th.awning[0]; ctx.fillRect(sx + 17, sy - 4, 8, 5);
+      drawHouse(ctx, sx - 10, sy - 8, th.roof, th.house, 1.35);
+      drawHouse(ctx, sx + 14, sy - 2, th.roof2, th.house, 1.1);
+      ctx.fillStyle = "#5b3a1e"; ctx.fillRect(sx + 8, sy - 18, 2, 14);
+      ctx.fillStyle = th.awning[0]; ctx.fillRect(sx + 10, sy - 18, 10, 6);
       break;
     }
     case "b": {
@@ -583,7 +585,10 @@ function drawTile(ctx, m, x, y, sx, sy, T) {
     case "#": case "t": {
       ctx.fillStyle = "#211d2b"; ctx.fillRect(sx, sy, 32, 32);
       ctx.fillStyle = "#2d2839";
-      for (let r = 0; r < 4; r++) for (let k = -1; k < 2; k++) ctx.fillRect(sx + k * 16 + (r % 2) * 8 + 1, sy + r * 8 + 1, 14, 6);
+      for (let r = 0; r < 4; r++) for (let bx = -((r % 2) * 8); bx < 32; bx += 16) {
+        const a = Math.max(0, bx + 1), b = Math.min(32, bx + 15);
+        if (b > a) ctx.fillRect(sx + a, sy + r * 8 + 1, b - a, 6);
+      }
       if (tileAt(m, x, y + 1) !== "#" && tileAt(m, x, y + 1) !== "t") { ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fillRect(sx, sy + 28, 32, 4); }
       if (c === "t") {
         ctx.fillStyle = "#57534e"; ctx.fillRect(sx + 13, sy + 14, 6, 12);
@@ -618,8 +623,10 @@ function drawTile(ctx, m, x, y, sx, sy, T) {
     }
     case "h": {
       const p = Math.sin(T * 3) * 0.5 + 0.5;
-      ctx.fillStyle = `rgba(103,232,249,${0.35 + p * 0.3})`;
-      ctx.beginPath(); ctx.ellipse(sx + 16, sy + 18, 14, 9, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#94a3b8"; ctx.beginPath(); ctx.ellipse(sx + 16, sy + 18, 15, 10, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(103,232,249,${0.55 + p * 0.35})`;
+      ctx.beginPath(); ctx.ellipse(sx + 16, sy + 18, 12, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(103,232,249,${0.12 + p * 0.1})`; ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 26, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#e0f2fe";
       for (let i = 0; i < 3; i++) { const k = (T * 0.8 + i / 3) % 1; ctx.fillRect(sx + 8 + i * 7, sy + 18 - k * 22, 3, 3); }
       break;

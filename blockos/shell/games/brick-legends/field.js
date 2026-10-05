@@ -97,6 +97,7 @@ async function arrive() {
       G.lastRegion = reg;
       G.banner = { text: REGION_NAME[reg], t: 0 };
       Music.play(reg === "dark" ? "castle" : "field");
+      updateHud();
     }
   }
   // random encounters
@@ -176,6 +177,7 @@ async function warpTo(map, x, y, dir) {
   G.lastRegion = m.id === "world" ? regionAt(m, x, y) : null;
   G.banner = { text: m.id === "world" ? REGION_NAME[G.lastRegion] : m.name, t: 0 };
   Music.play(fieldMusic());
+  updateHud();
   await fadeIn(250);
   G.busy = false;
   if (m.onEnter) await m.onEnter();

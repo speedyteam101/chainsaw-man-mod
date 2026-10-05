@@ -121,7 +121,6 @@ for (let i = 0; i < 7; i++) {
 for (const [x, z, w, d] of [[-60, -40, 70, 40], [50, 50, 80, 50], [-40, 70, 60, 40], [80, -60, 60, 50], [0, 0, 50, 40], [-110, 20, 50, 60], [120, 10, 50, 70]]) {
   deco([w, 3, d], [x, -32, z], "#ffffff", { material: "glass" });
 }
-world.label("SWORD ARENA", { pos: [0, 16, 0], height: 3, color: "#fde68a" });
 
 const SPAWNS = [[0, -75], [0, 75], [75, 0], [-75, 0], [10, -70], [-10, 72], [70, 10], [-70, -10]];
 function randomSpawn() { const [x, z] = Kit.pick(SPAWNS); return [x + Kit.rand(-3, 3), 0.5, z + Kit.rand(-3, 3)]; }
@@ -448,8 +447,11 @@ function botStep(b, dt) {
   let tg = b.target !== null && t < b.retarget ? all.find((x) => x.key === b.target) : null;
   if (!tg) {
     let bd = 1e9;
+    // at most two bots go after the same player at once
+    const hunters = (k) => bots.filter((o) => o !== b && o.alive && o.target === k).length;
     for (const x of all) {
-      const d = Math.hypot(x.pos.x - b.pos.x, x.pos.z - b.pos.z) * (x.bot ? 1.25 : 1);
+      let d = Math.hypot(x.pos.x - b.pos.x, x.pos.z - b.pos.z);
+      if (!x.bot && hunters(x.key) >= 2) d += 60;
       if (d < bd) { bd = d; tg = x; }
     }
     b.target = tg ? tg.key : null; b.retarget = t + 1500;

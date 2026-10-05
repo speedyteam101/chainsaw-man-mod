@@ -542,7 +542,7 @@ function frontTarget(withBuilds) {
       for (const b of builds.inCell(cellOf(me.pos.x) + di, cellOf(me.pos.z) + dk)) {
         if (withBuilds !== "all" && !PIECES[b.type].use && !PIECES[b.type].door) continue;
         if (b.top < me.pos.y - 1.5 || b.y > me.pos.y + 5) continue;
-        consider({ kind: "build", b }, b.x, b.z, 1.8, 5);
+        consider({ kind: "build", b }, b.x, b.z, 1.8, 6.5);
       }
     }
   }
@@ -591,7 +591,7 @@ function updateGhost() {
   if (pk && (pk.kind === "ground" || pk.kind === "build") && pk.dist < 18) pl = builds.placement(it.id, G.rot, pk.point, pk.normal);
   else {
     const fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw);
-    pl = builds.placement(it.id, G.rot, new V3(me.pos.x + fx * 6, me.pos.y + 1.2, me.pos.z + fz * 6), new V3(0, 1, 0));
+    pl = builds.placement(it.id, G.rot, new V3(me.pos.x + fx * 5, me.pos.y + 1.2, me.pos.z + fz * 5), new V3(0, 1, 0));
   }
   if (pl.i < 0 || pl.k < 0 || pl.i >= N || pl.k >= N) pl.ok = false;
   const res = island.resByCell.get(pl.i + pl.k * N);
@@ -869,7 +869,13 @@ function spawnTick(dt, pls) {
   }
 }
 
+// Monsters fear light: they won't step into the glow of a campfire, torch or lamp.
+function inLight(x, z) {
+  for (const b of builds.lights) if (Math.hypot(b.x - x, b.z - z) < b.light.range * 0.32) return true;
+  return false;
+}
 function tryMove(m, x, z) {
+  if (m.def.monster && isNight() && inLight(x, z) && !inLight(m.x, m.z)) return false;
   const g = builds.groundAt(x, z, m.y + 1.6);
   if (g > m.y + 1.6 || g < -1.5) return false;
   if (builds.blocked(x, z, g + 0.05, g + Math.min(4.5, m.def.h))) return false;
@@ -1160,7 +1166,7 @@ function dayNight() {
   const night = isNight();
   if (night && !G.wasNight) {
     G.nightAlive = me.alive;
-    ui.announce("Night is falling", "Monsters are coming out. Stay near light or build a shelter!");
+    ui.announce("Night is falling", "Monsters are coming out. They fear light: stay near a fire or build a shelter!");
     Kit.sfx("lose");
   }
   if (!night && G.wasNight && phase() >= NIGHT_END - 0.01) {
@@ -1329,4 +1335,4 @@ ui.title({
   if (!count("wood") && !G.inv.some(Boolean)) ui.announce("Welcome to Survival Island", "Hit trees to collect wood, then press C to craft.");
   saveNow();
 });
-window.game.api = { give, gather, newWorld, craft: (id) => craft(RECIPES.find((r) => r.out === id)), setPhase: (p) => { G.clock = Math.floor(G.clock / DAY) * DAY + p * DAY; }, count, teleport, spawnMob, saveNow, recipeState, placeBuild, eat, isHost, pickPointer };
+window.game.api = { give, gather, attack, newWorld, craft: (id) => craft(RECIPES.find((r) => r.out === id)), setPhase: (p) => { G.clock = Math.floor(G.clock / DAY) * DAY + p * DAY; }, count, teleport, spawnMob, saveNow, recipeState, placeBuild, eat, isHost, pickPointer };

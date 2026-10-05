@@ -11,9 +11,18 @@ import sys
 GAMES = pathlib.Path(__file__).resolve().parent.parent / "shell" / "games"
 REQUIRED = ("id", "title", "genre", "description", "controls")
 
+# Games still being written: listed one id per line in tools/wip.txt, left out of the menu.
+WIP_FILE = pathlib.Path(__file__).resolve().parent / "wip.txt"
+wip = set()
+if WIP_FILE.exists():
+    wip = {line.strip() for line in WIP_FILE.read_text(encoding="utf-8").splitlines() if line.strip() and not line.startswith("#")}
+
 entries = []
 for meta_path in sorted(GAMES.glob("*/meta.json")):
     folder = meta_path.parent
+    if folder.name in wip:
+        print(f"skipping {folder.name}: still being written (tools/wip.txt)", file=sys.stderr)
+        continue
     if not (folder / "index.html").exists() or not (folder / "thumb.svg").exists():
         print(f"skipping {folder.name}: needs index.html and thumb.svg", file=sys.stderr)
         continue

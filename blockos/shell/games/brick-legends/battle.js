@@ -25,7 +25,7 @@ function makeEnemy(kind) {
     isEnemy: true, kind, d, name: d.name, hp: d.hp, maxHp: d.hp,
     atk: d.atk, def: d.def, mag: d.mag, spd: d.spd,
     st: {}, ox: 0, oy: 0, flash: 0, alpha: 1, dead: false, turns: 0,
-    s: d.boss ? (kind === "king" ? 15 : kind === "king2" ? 17 : 13.5) : d.big ? 9.5 : 8,
+    s: d.boss ? (kind === "king" ? 15 : kind === "king2" ? 17 : 13.5) : d.big ? 10.5 : 9,
   };
 }
 function makePartyUnit(m, i) {
@@ -639,7 +639,7 @@ function drawBattleBg(ctx, bg) {
   const g = ctx.createLinearGradient(0, 0, 0, 260);
   g.addColorStop(0, sky[0]); g.addColorStop(1, sky[1]);
   ctx.fillStyle = g; ctx.fillRect(0, 0, VW, 260);
-  const groundC = { fields: "#5bb450", forest: "#2f7a3a", desert: "#e9c46a", snow: "#eef3f8", dark: "#3d3548", castle: "#433d52" }[bg];
+  const groundC = { fields: "#5bb450", forest: "#2f7a3a", desert: "#e9c46a", snow: "#d3dfec", dark: "#3d3548", castle: "#433d52" }[bg];
   if (bg === "fields") {
     ctx.fillStyle = "#fff"; [[120, 60], [520, 40], [800, 80]].forEach(([x, y], i) => { const xx = (x + T * 6 * (i + 1)) % 1060 - 100; Kit.brick(ctx, xx, y, 90, 22, "rgba(255,255,255,.9)", 10); Kit.brick(ctx, xx + 20, y - 14, 50, 20, "rgba(255,255,255,.9)", 10); });
     ctx.fillStyle = "#4a9a44"; for (let i = 0; i < 6; i++) Kit.brick(ctx, i * 180 - 40, 190 - (i % 2) * 30, 220, 90, i % 2 ? "#4a9a44" : "#3f8f3c", 30);
@@ -803,6 +803,7 @@ function drawBattle(ctx) {
     ctx.save();
     ctx.globalAlpha = e.alpha;
     if (e.glow) { ctx.shadowColor = e.glow; ctx.shadowBlur = 30; }
+    else if (e.kind === "king2") { ctx.shadowColor = "#e879f9"; ctx.shadowBlur = 18 + Math.sin(T * 3) * 8; }
     if (e.flash > 0 && Math.floor(e.flash * 30) % 2 === 0) ctx.filter = "brightness(3)";
     drawMonster(ctx, e.d.art, e.d.col, e.x + e.ox + (e.flash > 0 ? Math.sin(e.flash * 80) * 4 : 0), e.y + e.oy, e.s, T + e.x, { boss: e.d.boss, crown: e.d.crown });
     ctx.restore();

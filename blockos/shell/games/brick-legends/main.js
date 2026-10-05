@@ -163,22 +163,27 @@ function drawEnding(ctx) {
   ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   for (let i = 0; i < 3; i++) {
     const c = ["#4ade80", "#facc15", "#7dd3fc"][i];
-    const x = 330 + i * 150, y = 120 + Math.sin(T * 2 + i) * 8;
-    ctx.fillStyle = c + "55"; ctx.beginPath(); ctx.arc(x, y, 34, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, y - 26); ctx.lineTo(x + 16, y); ctx.lineTo(x, y + 26); ctx.lineTo(x - 16, y); ctx.fill();
+    const x = 330 + i * 150, y = 70 + Math.sin(T * 2 + i) * 6;
+    ctx.fillStyle = c + "55"; ctx.beginPath(); ctx.arc(x, y, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.lineTo(x + 14, y); ctx.lineTo(x, y + 22); ctx.lineTo(x - 14, y); ctx.fill();
   }
-  ctx.fillStyle = "#5bb450"; ctx.fillRect(0, 440, VW, VH - 440);
-  const members = G.s.party;
-  members.forEach((m, i) => drawWalker(ctx, memberLook(m), 380 + i * 100, 440, "down", 0, 80));
+  ctx.fillStyle = "#5bb450"; ctx.fillRect(0, 480, VW, VH - 480);
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  for (let x = 24; x < VW; x += 48) { ctx.beginPath(); ctx.arc(x, 520, 7, 0, Math.PI * 2); ctx.fill(); }
+  G.s.party.forEach((m, i) => drawWalker(ctx, memberLook(m), VW / 2 + (i - (G.s.party.length - 1) / 2) * 110, 556, "down", 0, 74));
   const target = CREDITS.indexOf("THE END");
-  const scroll = Math.min(G.endT * 40, 560 + target * 34 - 300);
-  const top = 560 - scroll;
+  const scroll = Math.min(G.endT * 40, 470 + target * 34 - 290);
+  const top = 470 - scroll;
   CREDITS.forEach((l, i) => {
     const y = top + i * 34;
-    if (y < 230 || y > VH - 130) return;
+    const a = Math.min(1, (y - 120) / 50, (470 - y) / 40);
+    if (a <= 0) return;
+    ctx.globalAlpha = a;
     const size = l === "BRICK LEGENDS" || l === "THE END" ? 30 : 19;
     txt(ctx, l === "Starring" ? "Starring " + G.heroName : l, VW / 2, y, { size, align: "center", color: size > 20 ? "#fde68a" : "#fff" });
+    ctx.globalAlpha = 1;
   });
+  if (G.endT * 40 >= 470 + target * 34 - 290) downArrow(ctx, VW / 2, 450, T);
 }
 function drawGameOver(ctx) {
   ctx.fillStyle = "#0b0812"; ctx.fillRect(0, 0, VW, VH);
