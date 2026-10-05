@@ -166,8 +166,13 @@ export function animateMonster(m, dt, speed, pose, k) {
 }
 
 export function disposeGroup(g) {
+  const own = g.userData && g.userData.ownMats;
   g.traverse((o) => {
     if (o.isSprite && o.material && o.material.map) { o.material.map.dispose(); o.material.dispose(); }
+    if (own && o.isMesh) {
+      o.geometry.dispose();
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m.map) m.map.dispose(); m.dispose(); }
+    }
   });
 }
 

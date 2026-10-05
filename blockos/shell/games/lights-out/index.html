@@ -13,6 +13,9 @@
 "use strict";
 const ID = "lights-out";
 const { canvas, ctx, W, H } = Kit.stage(640, 720);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let hintsUsed = 0;   // hints used this run
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const BOARD = 480, BY = 150;
 
@@ -47,6 +50,7 @@ function newRun() {
   level = 1;
   total = 0;
   hints = 3;
+  hintsUsed = 0;
   newLevel();
 }
 
@@ -88,6 +92,7 @@ function useHint() {
   if (!cells.length) return;
   hintCell = Kit.pick(cells);
   hints--;
+  hintsUsed++;
   Kit.sfx("coin");
 }
 
@@ -99,6 +104,10 @@ async function levelClear() {
   const best = Kit.finish(ID, total);
   Kit.sfx("win");
   updateHud();
+  badge("first-clear", "Lights Out!", "Clear your first level.");
+  if (perfect) badge("perfect", "Perfect Switch", "Clear a level in par moves or fewer.");
+  if (level >= 6 && hintsUsed === 0) badge("no-hints", "No Help Needed", "Clear level 6 without using a hint this run.");
+  if (n >= 7) badge("big-board", "Big Board", "Clear a 7 x 7 board.");
   await new Promise((r) => setTimeout(r, 700));
   await Kit.overlay(perfect ? "Perfect!" : "Lights out!",
     `Level ${level} cleared in ${moves} moves (par ${par}).\n+${levelPoints} points${perfect ? " (incl. +100 perfect bonus)" : ""}\nRun score: ${total}   Best: ${best}`, "Next level");
@@ -213,6 +222,12 @@ function draw() {
   ctx.fillText(`Level ${level}`, 32, 50);
   ctx.fillStyle = "#94a3b8"; ctx.font = `700 15px ${FONT}`;
   ctx.fillText(`${n} x ${n}   Par ${par}   Lights on ${litCount()}`, 32, 76);
+  // your name, centered in the header
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#cbd5e1"; ctx.font = `800 16px ${FONT}`;
+  let nm = ME;
+  while (nm.length > 3 && ctx.measureText(nm).width > 190) nm = nm.slice(0, -1);
+  ctx.fillText(nm === ME ? nm : nm + "..", W / 2, 46);
   // move meter
   ctx.textAlign = "right";
   ctx.fillStyle = "#fff"; ctx.font = `800 22px ${FONT}`;

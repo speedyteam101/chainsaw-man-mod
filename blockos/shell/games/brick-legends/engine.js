@@ -255,6 +255,7 @@ function say(name, text, o) {
       },
       finish(v) { Kit.sfx("click"); closeUI(w); resolve(v); },
       draw(ctx) {
+        hit(0, 0, VW, VH, () => this.key("ok"));
         if (this.shown < full.length) {
           this.shown = Math.min(full.length, this.shown + (G.fast > 1 ? 999 : 1.6));
         }
@@ -284,7 +285,6 @@ function say(name, text, o) {
             hit(cx + 6, ry, cw - 12, 30, () => this.finish(i), () => { this.sel = i; });
           });
         } else if (done) downArrow(ctx, bx + bw - 30, by + bh - 14, G.T);
-        hit(0, 0, VW, VH, () => this.key("ok"));
       },
     };
     pushUI(w);
@@ -403,7 +403,7 @@ const Music = {
     }
   },
   sfx(kind) {
-    if (!this.ac || this.muted() && kind !== "x") { if (!this.ac || this.muted()) return; }
+    if (!this.ac || this.muted()) return;
     const t = this.ac.currentTime;
     const seq = {
       magic: [[523, 0.06], [784, 0.06], [1047, 0.1]],

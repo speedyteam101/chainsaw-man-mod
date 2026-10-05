@@ -324,7 +324,7 @@ function decorate(zone, r, def, R, hooks) {
   const q = r.size / 2, i = r.i;
   const solid = (size, pos, color, o) => {
     const m = zone.part(Object.assign({ size, pos: [r.x + pos[0], pos[1], r.z + pos[2]], color, studs: false }, o || {}), i);
-    if (!o || o.collide !== false) r.solids.push({ x0: r.x + pos[0] - size[0] / 2, x1: r.x + pos[0] + size[0] / 2, z0: r.z + pos[2] - size[2] / 2, z1: r.z + pos[2] + size[2] / 2 });
+    if (!o || o.collide !== false) r.solids.push({ x0: r.x + pos[0] - size[0] / 2, x1: r.x + pos[0] + size[0] / 2, z0: r.z + pos[2] - size[2] / 2, z1: r.z + pos[2] + size[2] / 2, y1: pos[1] + size[1] / 2 });
     return m;
   };
   const quad = (min) => {

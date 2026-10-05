@@ -244,7 +244,7 @@ function buildCastle() {
   rectT(m, 7, 22, 12, 28, "l");
   rectT(m, 20, 22, 25, 28, "l");
   rectT(m, 11, 13, 21, 18, "o");
-  setT(m, 16, 19, 16 && "o");
+  setT(m, 16, 19, "o");
   rectT(m, 7, 2, 25, 11, "o");
   setT(m, 16, 12, "o");
   for (let y = 4; y <= 40; y++) if (m.t[y][16] === "o") setT(m, 16, y, "u");
