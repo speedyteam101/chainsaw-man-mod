@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disaster Island</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "disaster-island";
+const T = 24, COLS = 40, ROWS = 23;
+const { ctx, W, H } = Kit.stage(960, 540);
+const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const SEA_ROW = 18;                        // calm sea surface (row index)
+const SEA_Y = SEA_ROW * T + 8;
+
+const PW = 16, PH = 22;
+const RUN = 175, GRAV = 1600, JUMP = 570, MAX_FALL = 760;
+
+// block types: hp and colors
+const BLOCKS = {
+  grass: { hp: 2, color: "#22c55e", light: true },
+  dirt: { hp: 2, color: "#a16207" },
+  sand: { hp: 2, color: "#fde68a", light: true },
+  stone: { hp: 7, color: "#78716c" },
+  wood: { hp: 2, color: "#b45309", light: true },
+  plank: { hp: 2, color: "#d97706", light: true },
+  roof: { hp: 2, color: "#dc2626", light: true },
+  brick: { hp: 4, color: "#9f1239" },
+  glass: { hp: 1, color: "#7dd3fc", light: true },
+  leaves: { hp: 1, color: "#16a34a", light: true },
+};
+
+const DISASTERS = {
+  meteor: { name: "Meteor Shower", sky: ["#7c2d12", "#fb923c"], tip: "Watch the red markers and stay away from impacts!" },
+  flood: { name: "Rising Flood", sky: ["#1e3a8a", "#60a5fa"], tip: "Get to high ground before your air runs out!" },
+  tornado: { name: "Tornado", sky: ["#334155", "#94a3b8"], tip: "Don't get sucked into the funnel. Hide behind sturdy walls!" },
+  quake: { name: "Earthquake", sky: ["#78350f", "#fcd34d"], tip: "Falling blocks hurt. Get out from under buildings!" },
+  acid: { name: "Acid Rain", sky: ["#365314", "#a3e635"], tip: "Stay under a roof! The acid slowly eats through blocks." },
+};
+const DISASTER_IDS = Object.keys(DISASTERS);
+
+let grid, backdrop, player, debris, meteors, drops, particles, waterY, round, score, phase, phaseT, disaster, lastDisaster, shake, tornado, msg;
+
+// ---------- island generation ----------
+function setTile(x, y, type) {
+  if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return;
+  grid[y][x] = type ? { type, hp: BLOCKS[type].hp } : null;
+}
+const tileAt = (x, y) => (x < 0 || x >= COLS || y >= ROWS ? null : y < 0 ? null : grid[y][x]);
+const solidAt = (x, y) => (x < 0 || x >= COLS ? false : y >= ROWS ? true : !!tileAt(x, y));
+
+function buildIsland() {
+  grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  backdrop = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+  const ground = [];
+  const phase1 = Math.random() * 6, phase2 = Math.random() * 6;
+  for (let x = 0; x < COLS; x++) {
+    const edge = Math.min(x - 4, COLS - 5 - x);         // distance from the beach
+    let h = 12 + Math.round(Math.sin(x * 0.3 + phase1) * 1.4 + Math.sin(x * 0.13 + phase2) * 1.6);
+    if (edge < 4) h += 4 - Math.max(0, edge);            // slope down into the sea
+    ground.push(Math.min(h, 21));
+  }
+  // buildings sit on flattened ground
+  const kinds = Kit.pick([["house", "tower", "bunker"], ["tower", "house", "tree"], ["bunker", "tower", "tree"], ["house", "tree", "tower"]]);
+  const spots = [[7, 14], [16, 24], [26, 33]].sort(() => Math.random() - 0.5);
+  const plans = kinds.map((k, i) => ({ kind: k, x0: spots[i][0], x1: spots[i][1] }));
+  for (const p of plans) {
+    const g = ground[p.x0 + 3];
+    for (let x = p.x0; x <= p.x1; x++) ground[x] = g;
+    p.g = g;
+  }
+  for (let x = 0; x < COLS; x++) {
+    const g = ground[x];
+    for (let y = g; y < ROWS; y++) {
+      const beach = g >= SEA_ROW - 1;
+      const type = y === g ? (beach ? "sand" : "grass") : y < g + 3 ? (beach ? "sand" : "dirt") : "stone";
+      setTile(x, y, type);
+    }
+  }
+  for (const p of plans) {
+    const w = p.x1 - p.x0 + 1;
+    const cx = p.x0 + Math.floor((w - 6) / 2) + Kit.randInt(0, Math.max(0, w - 7));
+    if (p.kind === "house") buildHouse(cx, p.g);
+    else if (p.kind === "tower") buildTower(cx, p.g);
+    else if (p.kind === "bunker") buildBunker(cx, p.g);
+    else buildTree(cx + 2, p.g);
+  }
+}
+
+function fillBackdrop(x0, x1, y0, y1, color) {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (y >= 0 && x >= 0 && x < COLS && y < ROWS) backdrop[y][x] = color;
+}
+
+function buildHouse(x0, g) {
+  const w = 7, h = 4;
+  fillBackdrop(x0, x0 + w - 1, g - h, g - 1, "#7c4a24");
+  for (let y = g - h; y < g; y++) {
+    setTile(x0, y, "wood");
+    setTile(x0 + w - 1, y, "wood");
+  }
+  setTile(x0, g - 1, null); setTile(x0, g - 2, null);            // door
+  setTile(x0 + w - 1, g - 3, "glass");                            // window
+  for (let x = x0 - 1; x <= x0 + w; x++) setTile(x, g - h - 1, "roof");
+  for (let x = x0 + 1; x <= x0 + w - 2; x++) setTile(x, g - h - 2, "roof");
+  for (let x = x0 + 2; x <= x0 + w - 3; x++) setTile(x, g - h - 3, "roof");
+}
+
+function buildTower(x0, g) {
+  const w = 6, floors = 3, fh = 3;
+  fillBackdrop(x0, x0 + w - 1, g - floors * fh, g - 1, "#6b2737");
+  for (let f = 0; f < floors; f++) {
+    const base = g - f * fh;
+    for (let y = base - fh; y < base; y++) {
+      setTile(x0, y, "brick");
+      setTile(x0 + w - 1, y, "brick");
+    }
+    // floor above this storey with a hole on alternating sides
+    const fy = base - fh;
+    for (let x = x0; x < x0 + w; x++) setTile(x, fy, "plank");
+    const hole = f % 2 === 0 ? x0 + 1 : x0 + w - 3;
+    setTile(hole, fy, null);
+    setTile(hole + 1, fy, null);
+    setTile(f % 2 === 0 ? hole : hole + 1, base - 1, "plank");     // step to jump up through the hole
+    setTile(f % 2 === 0 ? x0 + w - 1 : x0, base - 2, "glass");
+  }
+  setTile(x0, g - 1, null); setTile(x0, g - 2, null);            // door
+  const top = g - floors * fh;
+  setTile(x0, top - 1, "brick");
+  setTile(x0 + w - 1, top - 1, "brick");
+}
+
+function buildBunker(x0, g) {
+  const w = 7, h = 3;
+  fillBackdrop(x0, x0 + w - 1, g - h, g, "#44403c");
+  for (let x = x0; x < x0 + w; x++) {
+    setTile(x, g - h - 1, "stone");
+    for (let y = g - h; y < g + 1; y++) setTile(x, y, x === x0 || x === x0 + w - 1 ? "stone" : null);
+    setTile(x, g + 1, "stone");
+  }
+  setTile(x0 + w - 1, g - 1, null); setTile(x0 + w - 1, g - 2, null);   // door
+  setTile(x0 + w - 1, g, null);
+  setTile(x0 + w, g - 1, null);
+}
+
+function buildTree(x, g) {
+  for (let y = g - 5; y < g; y++) setTile(x, y, "wood");
+  for (let y = g - 8; y <= g - 5; y++) for (let dx = -2; dx <= 2; dx++) if (!(Math.abs(dx) === 2 && (y === g - 8 || y === g - 5))) setTile(x + dx, y, "leaves");
+  setTile(x, g - 5, "wood");
+  setTile(x + 1, g - 3, "plank");      // branch to climb
+  setTile(x - 1, g - 6 + 0, "leaves");
+}
+
+function spawnPoint() {
+  const cols = [];
+  for (let x = 6; x < COLS - 6; x++) {
+    let y = 0;
+    while (y < ROWS && !solidAt(x, y)) y++;
+    if (y > 4 && !solidAt(x + 1, y - 1) && !solidAt(x, y - 1) && !solidAt(x, y - 2)) cols.push([x, y]);
+  }
+  const [x, y] = cols.length ? Kit.pick(cols) : [20, 10];
+  return { x: x * T + (T - PW) / 2, y: y * T - PH };
+}
+
+// ---------- state ----------
+function reset() {
+  round = 0;
+  score = 0;
+  lastDisaster = null;
+  player = { x: 0, y: 0, vx: 0, vy: 0, grounded: false, hp: 100, air: 1, stamina: 1, face: 1, hurt: 0, buffer: 0, coyote: 0 };
+  newRound();
+}
+
+function newRound() {
+  buildIsland();
+  debris = [];
+  meteors = [];
+  drops = [];
+  particles = [];
+  waterY = SEA_Y;
+  shake = 0;
+  tornado = null;
+  const sp = spawnPoint();
+  player.x = sp.x;
+  player.y = sp.y;
+  player.vx = player.vy = 0;
+  player.air = 1;
+  round++;
+  disaster = Kit.pick(DISASTER_IDS.filter((d) => d !== lastDisaster));
+  lastDisaster = disaster;
+  phase = "intermission";
+  phaseT = 4;
+  msg = "";
+  updateHud();
+}
+
+const intensity = () => 1 + (round - 1) * 0.18;
+const roundLength = () => 20 + Math.min(10, round);
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Round ${round} · Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- input ----------
+Kit.onKey((code) => {
+  if (code === "Space" || code === "ArrowUp" || code === "KeyW") player.buffer = 0.12;
+});
+
+// ---------- helpers ----------
+function burst(x, y, n, colors, spd, grav = 600) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Math.random() * spd;
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.3, 0.9), size: Kit.randInt(3, 7), color: Kit.pick(colors), grav });
+  }
+}
+
+function hurt(amount, kx, ky) {
+  if (phase !== "active" && phase !== "warning") return;
+  if (player.hp <= 0) return;
+  player.hp -= amount;
+  player.hurt = 0.25;
+  if (kx !== undefined) { player.vx += kx; player.vy += ky; }
+  if (amount >= 8) Kit.sfx("hit");
+  if (player.hp <= 0) { player.hp = 0; gameOver(); }
+}
+
+function damageTile(x, y, amount) {
+  const t = tileAt(x, y);
+  if (!t) return false;
+  t.hp -= amount;
+  if (t.hp <= 0) {
+    grid[y][x] = null;
+    burst(x * T + T / 2, y * T + T / 2, 5, [BLOCKS[t.type].color, "#00000055"], 120);
+    return true;
+  }
+  return false;
+}
+
+function topSolidRow(x) {
+  for (let y = 0; y < ROWS; y++) if (solidAt(x, y)) return y;
+  return ROWS;
+}
+
+// detach a block into a falling / flying piece of debris
+function detach(x, y, vx, vy) {
+  const t = tileAt(x, y);
+  if (!t) return;
+  grid[y][x] = null;
+  debris.push({ x: x * T, y: y * T, vx, vy, type: t.type, spin: 0, life: 8, orbit: false });
+}
+
+// ---------- disasters ----------
+function startDisaster() {
+  const I = intensity();
+  if (disaster === "tornado") tornado = { x: Math.random() < 0.5 ? -60 : W + 60, dir: 0, t: 0, speed: 70 + I * 20, rip: 0 };
+  if (disaster === "flood") waterY = SEA_Y;
+}
+
+function updateDisaster(dt, active) {
+  const I = intensity();
+  const elapsed = roundLength() - phaseT;
+  if (disaster === "meteor" && active) {
+    if (Math.random() < dt * (1.0 + I * 0.8)) {
+      const targetX = Math.random() < 0.3 ? player.x + Kit.rand(-80, 80) : Kit.rand(80, W - 80);
+      const vx = Kit.rand(-120, 120), vy = Kit.rand(320, 420);
+      const col = Kit.clamp(Math.floor(targetX / T), 0, COLS - 1);
+      const groundY = Math.min(topSolidRow(col) * T, waterY);
+      const time = (groundY + 40) / vy;
+      meteors.push({ x: targetX - vx * time, y: -40, vx, vy, r: 9 + Math.random() * 6 * Math.min(2, I), markX: targetX, markY: groundY });
+    }
+  }
+  if (disaster === "flood") {
+    const peak = (13.2 - Math.min(6, round * 0.8)) * T;   // the water climbs higher every round
+    const rise = active ? Math.min(1, elapsed / (roundLength() * 0.7)) : 0;
+    const target = active ? SEA_Y - (SEA_Y - peak) * rise : SEA_Y;
+    waterY += (target - waterY) * Math.min(1, dt * (active ? 2 : 0.8));
+    waterY += Math.sin(performance.now() / 300) * 0.3;
+  }
+  if (disaster === "tornado" && tornado) {
+    tornado.t += dt;
+    const tx = W / 2 + Math.sin(tornado.t * (0.25 + I * 0.03)) * (W / 2 - 60) + Math.sin(tornado.t * 1.3) * 60;
+    if (!active) tornado.x += (tornado.x < W / 2 ? -1 : 1) * 300 * dt;
+    else tornado.x += (tx - tornado.x) * Math.min(1, dt * 1.5);
+    // rip loose light blocks near the funnel
+    tornado.rip -= dt;
+    if (active && tornado.rip <= 0) {
+      tornado.rip = 0.25 / I;
+      const cx = Math.floor(tornado.x / T) + Kit.randInt(-2, 2);
+      for (let y = 0; y < ROWS; y++) {
+        const t = tileAt(cx, y);
+        if (t) {
+          if (BLOCKS[t.type].light && Math.random() < 0.6) detach(cx, y, Kit.rand(-60, 60), -Kit.rand(100, 260));
+          break;
+        }
+      }
+    }
+    // pull on the player
+    const px = player.x + PW / 2, dx = tornado.x - px;
+    const reach = 240;
+    const shielded = shieldedFrom(tornado.x);
+    if (Math.abs(dx) < reach && !shielded) {
+      const f = 1 - Math.abs(dx) / reach;
+      player.vx += Math.sign(dx) * 900 * f * f * I * 0.6 * dt;
+      if (Math.abs(dx) < 46) {
+        player.vy -= (GRAV + 900) * dt;
+        hurt(18 * I * dt);
+        if (player.y < 140) { player.vx += (Math.random() < 0.5 ? -1 : 1) * 500; player.vy = -150; hurt(10); }
+      }
+    }
+  }
+  if (disaster === "quake" && active) {
+    shake = 5 + I * 2;
+    if (Math.random() < dt * (6 + I * 4)) {
+      // random block falls (prefer buildings and overhangs)
+      for (let tries = 0; tries < 8; tries++) {
+        const x = Kit.randInt(1, COLS - 2), y = Kit.randInt(2, 17);
+        const t = tileAt(x, y);
+        if (t && t.type !== "stone" && !solidAt(x, y + 1)) { detach(x, y, Kit.rand(-30, 30), 0); break; }
+        if (t && (t.type === "brick" || t.type === "wood" || t.type === "plank" || t.type === "roof" || t.type === "glass") && Math.random() < 0.35) { detach(x, y, Kit.rand(-30, 30), 0); break; }
+      }
+    }
+    if (player.grounded && Math.random() < dt * 3) { player.vx += Kit.rand(-220, 220); player.vy = -Kit.rand(80, 200); }
+  } else if (!active) shake = Math.max(0, shake - dt * 10);
+  if (disaster === "acid") {
+    if (active) for (let i = 0; i < 6 * I; i++) if (Math.random() < 0.6) drops.push({ x: Kit.rand(-40, W), y: Kit.rand(-40, -5), vy: Kit.rand(500, 640) });
+    if (active && !covered()) hurt(9 * I * dt);
+  }
+}
+
+// is there a solid block above the player's head?
+function covered() {
+  const c0 = Math.floor((player.x + 2) / T), c1 = Math.floor((player.x + PW - 2) / T);
+  const top = Math.floor(player.y / T);
+  for (const c of [c0, c1]) {
+    let roof = false;
+    for (let y = top - 1; y >= 0; y--) if (solidAt(c, y)) { roof = true; break; }
+    if (!roof) return false;
+  }
+  return true;
+}
+// is there a solid wall between the player and the tornado (at body height)?
+function shieldedFrom(tx) {
+  const row = Math.floor((player.y + PH / 2) / T);
+  const c = Math.floor((player.x + PW / 2) / T), tc = Math.floor(tx / T);
+  if (Math.abs(tc - c) < 2) return false;
+  const step = Math.sign(tc - c);
+  for (let x = c + step; x !== tc; x += step) if (solidAt(x, row) && solidAt(x, row - 1)) return true;
+  return false;
+}
+
+// ---------- update ----------
+function update(dt) {
+  if (!(dt > 0)) return;   // the first frame after start can report a tiny negative dt
+  phaseT -= dt;
+  if (phase === "intermission" && phaseT <= 0) { phase = "warning"; phaseT = 2.5; Kit.sfx("click"); }
+  else if (phase === "warning" && phaseT <= 0) { phase = "active"; phaseT = roundLength(); startDisaster(); Kit.sfx("hit"); }
+  else if (phase === "active" && phaseT <= 0) {
+    phase = "survived";
+    phaseT = 3;
+    const pts = 100 + Math.round(player.hp);
+    score += pts;
+    msg = `Survived! +${pts}`;
+    Kit.sfx("win");
+    updateHud();
+  } else if (phase === "survived" && phaseT <= 0) {
+    player.hp = Math.min(100, player.hp + 40);
+    newRound();
+  }
+  const active = phase === "active";
+  updateDisaster(dt, active);
+  updatePlayer(dt);
+  updateDebris(dt);
+  updateMeteors(dt);
+  updateDrops(dt);
+  for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += q.grav * dt; q.life -= dt; }
+  particles = particles.filter((q) => q.life > 0);
+  if (phase !== "active" && disaster !== "quake") shake = Math.max(0, shake - dt * 10);
+}
+
+function collideTiles(axis) {
+  const x0 = Math.floor(player.x / T), x1 = Math.floor((player.x + PW - 0.01) / T);
+  const y0 = Math.floor(player.y / T), y1 = Math.floor((player.y + PH - 0.01) / T);
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      if (!solidAt(x, y)) continue;
+      if (axis === "x") {
+        if (player.vx > 0) player.x = x * T - PW; else if (player.vx < 0) player.x = (x + 1) * T;
+        player.vx = 0;
+        return;
+      }
+      if (player.vy > 0) { player.y = y * T - PH; player.grounded = true; }
+      else if (player.vy < 0) player.y = (y + 1) * T;
+      player.vy = 0;
+      return;
+    }
+}
+
+function updatePlayer(dt) {
+  if (player.hp <= 0) return;
+  player.hurt = Math.max(0, player.hurt - dt);
+  const left = Kit.key("ArrowLeft") || Kit.key("KeyA"), right = Kit.key("ArrowRight") || Kit.key("KeyD");
+  const jumpHeld = Kit.key("Space") || Kit.key("ArrowUp") || Kit.key("KeyW");
+  const want = (right ? 1 : 0) - (left ? 1 : 0);
+  if (want) player.face = want;
+  const inWater = player.y + PH > waterY + 4;
+  const headUnder = player.y + 4 > waterY;
+  const speed = inWater ? RUN * 0.7 : RUN;
+  const accel = (player.grounded ? 1600 : 900) * dt;
+  const target = want * speed;
+  // keep extra velocity from knockbacks but steer back toward input
+  if (Math.abs(player.vx - target) <= accel) player.vx = target;
+  else player.vx += Math.sign(target - player.vx) * accel;
+
+  player.buffer -= dt;
+  player.coyote = player.grounded ? 0.1 : player.coyote - dt;
+  if (inWater) {
+    player.vy += GRAV * 0.35 * dt;
+    player.vy = Math.min(player.vy, 140);
+    if (jumpHeld && player.stamina > 0) {
+      player.vy = Math.max(player.vy - 1400 * dt, -220);
+      player.stamina = Math.max(0, player.stamina - dt * 0.12);
+    }
+    if (player.grounded && player.buffer > 0) { player.vy = -JUMP * 0.8; player.buffer = 0; }
+  } else {
+    player.stamina = Math.min(1, player.stamina + dt * 0.35);
+    if (player.buffer > 0 && player.coyote > 0) {
+      player.vy = -JUMP;
+      player.buffer = 0;
+      player.coyote = 0;
+      Kit.sfx("jump");
+    }
+    if (!jumpHeld && player.vy < -200) player.vy += GRAV * 1.2 * dt;
+    player.vy = Math.min(player.vy + GRAV * dt, MAX_FALL);
+  }
+  if (headUnder) {
+    player.air = Math.max(0, player.air - dt / 7);
+    if (player.air <= 0) hurt(22 * dt);
+  } else player.air = Math.min(1, player.air + dt * 0.5);
+
+  player.x += player.vx * dt;
+  player.x = Kit.clamp(player.x, 0, W - PW);
+  collideTiles("x");
+  player.grounded = false;
+  player.y += player.vy * dt;
+  if (player.y < -60) { player.y = -60; player.vy = Math.max(0, player.vy); }
+  collideTiles("y");
+  if (player.y > H + 40) hurt(999);
+}
+
+function updateDebris(dt) {
+  for (const d of debris) {
+    d.life -= dt;
+    d.spin += dt * 6;
+    if (tornado && phase === "active") {
+      const dx = tornado.x - (d.x + T / 2);
+      if (Math.abs(dx) < 200) { d.vx += Math.sign(dx) * 500 * dt + (Math.random() - 0.5) * 300 * dt; d.vy -= 700 * dt * (1 - Math.abs(dx) / 200); }
+    }
+    d.vy += GRAV * 0.8 * dt;
+    d.vy = Math.min(d.vy, 700);
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    // hit the player
+    if (!d.dead && d.x < player.x + PW && d.x + T > player.x && d.y < player.y + PH && d.y + T > player.y) {
+      const sp = Math.hypot(d.vx, d.vy);
+      if (sp > 160) {
+        hurt(Math.min(30, sp / 22), Math.sign(d.vx) * 120, -120);
+        d.dead = true;
+        burst(d.x + T / 2, d.y + T / 2, 8, [BLOCKS[d.type].color], 140);
+      }
+    }
+    // land: settle back into the grid or shatter
+    const cx = Math.floor((d.x + T / 2) / T), cy = Math.floor((d.y + T) / T);
+    if (d.vy > 0 && solidAt(cx, cy) && !d.dead) {
+      const ty = cy - 1;
+      if (ty >= 0 && cx >= 0 && cx < COLS && !solidAt(cx, ty) && Math.random() < 0.55 && !(Math.floor((player.x + PW / 2) / T) === cx && Math.floor((player.y + PH / 2) / T) === ty)) setTile(cx, ty, d.type);
+      else burst(d.x + T / 2, d.y + T, 6, [BLOCKS[d.type].color], 100);
+      d.dead = true;
+      if (Math.random() < 0.3) Kit.sfx("hit");
+    }
+    if (d.y > waterY && !d.splashed) { d.splashed = true; d.vy *= 0.4; burst(d.x + T / 2, waterY, 6, ["#bfdbfe", "#fff"], 120); }
+  }
+  debris = debris.filter((d) => !d.dead && d.life > 0 && d.y < H + 50 && d.x > -100 && d.x < W + 100);
+}
+
+function updateMeteors(dt) {
+  for (const m of meteors) {
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    particles.push({ x: m.x + Kit.rand(-4, 4), y: m.y + Kit.rand(-4, 4), vx: -m.vx * 0.2, vy: -m.vy * 0.2, life: 0.4, size: Kit.randInt(4, 8), color: Kit.pick(["#fb923c", "#facc15", "#78716c"]), grav: 0 });
+    const cx = Math.floor(m.x / T), cy = Math.floor(m.y / T);
+    const hitPlayer = Math.abs(m.x - (player.x + PW / 2)) < m.r + PW / 2 && Math.abs(m.y - (player.y + PH / 2)) < m.r + PH / 2;
+    if (solidAt(cx, cy) || m.y > waterY || hitPlayer || m.y > H) explode(m);
+  }
+  meteors = meteors.filter((m) => !m.done);
+}
+
+function explode(m) {
+  m.done = true;
+  const R = 2.2 * T * (m.r / 12);
+  Kit.sfx("hit");
+  shake = Math.max(shake, 8);
+  burst(m.x, m.y, 26, ["#f97316", "#facc15", "#ef4444", "#57534e"], 260);
+  if (m.y > waterY) { burst(m.x, waterY, 14, ["#bfdbfe", "#fff"], 200); return; }
+  const r = Math.ceil(R / T);
+  const cx = Math.floor(m.x / T), cy = Math.floor(m.y / T);
+  for (let y = cy - r; y <= cy + r; y++)
+    for (let x = cx - r; x <= cx + r; x++) {
+      const d = Math.hypot((x + 0.5) * T - m.x, (y + 0.5) * T - m.y);
+      if (d < R) damageTile(x, y, d < R * 0.5 ? 4 : 2);
+    }
+  const pd = Math.hypot(player.x + PW / 2 - m.x, player.y + PH / 2 - m.y);
+  if (pd < R * 1.3) {
+    const f = 1 - pd / (R * 1.3);
+    const nx = (player.x + PW / 2 - m.x) / (pd || 1);
+    hurt(10 + 34 * f, nx * 380 * f, -260 * f);
+  }
+}
+
+function updateDrops(dt) {
+  for (const d of drops) {
+    d.y += d.vy * dt;
+    d.x += 40 * dt;
+    const cx = Math.floor(d.x / T), cy = Math.floor(d.y / T);
+    if (solidAt(cx, cy) || d.y > waterY) {
+      d.done = true;
+      if (Math.random() < 0.25) particles.push({ x: d.x, y: d.y, vx: Kit.rand(-40, 40), vy: -60, life: 0.25, size: 3, color: "#bef264", grav: 400 });
+      // the acid slowly eats through soft blocks
+      const t = tileAt(cx, cy);
+      if (t && t.type !== "stone" && Math.random() < 0.02 * intensity()) damageTile(cx, cy, 1);
+    }
+  }
+  drops = drops.filter((d) => !d.done);
+}
+
+async function gameOver() {
+  phase = "dead";
+  game.stop();
+  Kit.sfx("lose");
+  burst(player.x + PW / 2, player.y + PH / 2, 30, ["#f97316", "#facc15", "#1d4ed8"], 260);
+  draw();
+  const best = Kit.finish(ID, score);
+  updateHud();
+  await Kit.overlay("You didn't make it!", `The ${DISASTERS[disaster].name.toLowerCase()} got you in round ${round}.\nRounds survived: ${round - 1}\nScore: ${score}\nBest: ${best}`, "Play again");
+  reset();
+  game.start();
+}
+
+// ---------- drawing ----------
+function lerpColor(a, b, f) {
+  const pa = a.match(/\w\w/g).map((h) => parseInt(h, 16)), pb = b.match(/\w\w/g).map((h) => parseInt(h, 16));
+  return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * f)).join(",")})`;
+}
+
+function drawSky() {
+  const calm = ["#38bdf8", "#bae6fd"];
+  const d = DISASTERS[disaster].sky;
+  let f = phase === "warning" ? 1 - phaseT / 2.5 : phase === "active" ? 1 : phase === "survived" ? phaseT / 3 : 0;
+  f = Kit.clamp(f, 0, 1);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, lerpColor(calm[0], d[0], f));
+  g.addColorStop(1, lerpColor(calm[1], d[1], f));
+  ctx.fillStyle = g;
+  ctx.fillRect(-20, -20, W + 40, H + 40);
+  // blocky sun / clouds
+  ctx.fillStyle = `rgba(253,224,71,${1 - f})`;
+  ctx.fillRect(820, 40, 56, 56);
+  ctx.fillStyle = `rgba(255,255,255,${0.7 - f * 0.4})`;
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 4; i++) {
+    const x = ((i * 260 + t * (12 + f * 40)) % (W + 200)) - 120;
+    ctx.fillRect(x, 50 + i * 26, 110, 22);
+    ctx.fillRect(x + 22, 36 + i * 26, 56, 16);
+  }
+}
+
+function drawTiles() {
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) {
+      if (!backdrop[y][x] || grid[y][x]) continue;
+      ctx.fillStyle = backdrop[y][x];
+      ctx.fillRect(x * T, y * T, T, T);
+      ctx.fillStyle = "rgba(0,0,0,.18)";
+      ctx.fillRect(x * T, y * T + T - 2, T, 2);
+      ctx.fillRect(x * T + (y % 2 ? 4 : 16), y * T, 2, T);
+    }
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) {
+      const t = grid[y][x];
+      if (!t) continue;
+      const b = BLOCKS[t.type];
+      ctx.globalAlpha = t.type === "glass" ? 0.7 : 1;
+      Kit.brick(ctx, x * T, y * T, T, T, b.color, 3);
+      if (t.hp < b.hp) {
+        ctx.fillStyle = "rgba(0,0,0,.35)";
+        ctx.fillRect(x * T + 5, y * T + 8, 9, 2);
+        ctx.fillRect(x * T + 12, y * T + 10, 2, 8);
+      }
+      if (t.type === "grass" && !solidAt(x, y - 1)) {
+        ctx.fillStyle = "#4ade80";
+        ctx.fillRect(x * T, y * T, T, 5);
+      }
+      if (t.type === "brick") {
+        ctx.fillStyle = "rgba(0,0,0,.2)";
+        ctx.fillRect(x * T, y * T + 11, T, 2);
+        ctx.fillRect(x * T + 11, y * T, 2, 11);
+      }
+    }
+  ctx.globalAlpha = 1;
+}
+
+function drawWater() {
+  const t = performance.now() / 1000;
+  ctx.fillStyle = disaster === "acid" && phase === "active" ? "rgba(132,204,22,.55)" : "rgba(37,99,235,.55)";
+  ctx.beginPath();
+  ctx.moveTo(-20, H + 20);
+  for (let x = -20; x <= W + 20; x += 16) ctx.lineTo(x, waterY + Math.sin(x * 0.04 + t * 2) * 3);
+  ctx.lineTo(W + 20, H + 20);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  for (let x = 0; x < W; x += 48) ctx.fillRect(x + ((t * 20) % 48), waterY + Math.sin(x * 0.04 + t * 2) * 3 - 1, 18, 3);
+}
+
+function drawPlayer() {
+  if (player.hp <= 0) return;
+  const x = Math.round(player.x), y = Math.round(player.y);
+  if (player.hurt > 0 && Math.floor(player.hurt * 30) % 2) return;
+  const run = player.grounded && Math.abs(player.vx) > 20 ? Math.sin(performance.now() / 50) : 0;
+  ctx.fillStyle = "#1e3a8a";
+  ctx.fillRect(x + 2 + run * 2, y + PH - 7, 5, 7);
+  ctx.fillRect(x + PW - 7 - run * 2, y + PH - 7, 5, 7);
+  Kit.brick(ctx, x, y + 9, PW, PH - 15, "#f97316", 3);
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(x - 3, y + 10 + run * 2, 3, 7);
+  ctx.fillRect(x + PW, y + 10 - run * 2, 3, 7);
+  Kit.brick(ctx, x + 1, y, PW - 2, 10, "#fcd34d", 3);
+  ctx.fillStyle = "#111";
+  const ex = x + PW / 2 + player.face * 2;
+  ctx.fillRect(ex - 4, y + 3, 2, 3);
+  ctx.fillRect(ex + 2, y + 3, 2, 3);
+}
+
+function drawTornado() {
+  if (!tornado) return;
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 26; i++) {
+    const y = H - i * 22;
+    const w = 30 + i * i * 0.4;
+    const x = tornado.x + Math.sin(t * 3 + i * 0.4) * (6 + i * 1.5) - w / 2;
+    ctx.fillStyle = i % 2 ? "rgba(51,65,85,.78)" : "rgba(100,116,139,.72)";
+    ctx.fillRect(x, y - 20, w, 20);
+    // swirling streaks
+    ctx.fillStyle = "rgba(226,232,240,.5)";
+    const sx = x + ((t * 220 + i * 37) % w);
+    ctx.fillRect(sx, y - 14, 10, 4);
+  }
+}
+
+function drawBar(x, y, w, frac, color, label) {
+  ctx.fillStyle = "rgba(0,0,0,.45)";
+  ctx.fillRect(x, y, w + 4, 16);
+  ctx.fillStyle = color;
+  ctx.fillRect(x + 2, y + 2, w * Kit.clamp(frac, 0, 1), 12);
+  ctx.fillStyle = "#fff";
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillText(label, x + 6, y + 12);
+}
+
+function centerText(text, y, size, color) {
+  ctx.font = `900 ${size}px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(0,0,0,.6)";
+  ctx.fillText(text, W / 2 + 3, y + 3);
+  ctx.fillStyle = color;
+  ctx.fillText(text, W / 2, y);
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-shake, shake), Kit.rand(-shake, shake) * 0.6);
+  drawSky();
+  drawTiles();
+  if (tornado) drawTornado();
+  for (const d of debris) {
+    ctx.save();
+    ctx.translate(d.x + T / 2, d.y + T / 2);
+    ctx.rotate(d.spin);
+    Kit.brick(ctx, -T / 2 + 2, -T / 2 + 2, T - 4, T - 4, BLOCKS[d.type].color, 3);
+    ctx.restore();
+  }
+  drawPlayer();
+  for (const m of meteors) {
+    // impact marker
+    ctx.strokeStyle = Math.floor(performance.now() / 120) % 2 ? "#ef4444" : "#fca5a5";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(m.markX - 12, m.markY - 6, 24, 6);
+    Kit.brick(ctx, m.x - m.r, m.y - m.r, m.r * 2, m.r * 2, "#57534e", 4);
+    ctx.fillStyle = "#fb923c";
+    ctx.fillRect(m.x - m.r / 2, m.y - m.r / 2, m.r * 0.7, m.r * 0.7);
+  }
+  ctx.fillStyle = "rgba(190,242,100,.8)";
+  for (const d of drops) ctx.fillRect(d.x, d.y, 2, 10);
+  drawWater();
+  for (const q of particles) {
+    ctx.globalAlpha = Kit.clamp(q.life * 2, 0, 1);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(q.x - q.size / 2, q.y - q.size / 2, q.size, q.size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // HUD on canvas: health, air, phase text
+  drawBar(16, 16, 160, player.hp / 100, player.hp > 35 ? "#22c55e" : "#ef4444", `HEALTH ${Math.ceil(player.hp)}`);
+  if (player.air < 1) drawBar(16, 38, 160, player.air, "#38bdf8", "AIR");
+  if (player.y + PH > waterY + 4) drawBar(16, player.air < 1 ? 60 : 38, 160, player.stamina, "#facc15", "SWIM");
+  const name = DISASTERS[disaster].name;
+  if (phase === "intermission") {
+    centerText(`Round ${round}`, 120, 40, "#fff");
+    centerText(`Disaster in ${Math.ceil(phaseT)}...`, 160, 22, "#e5e7eb");
+  } else if (phase === "warning") {
+    if (Math.floor(phaseT * 6) % 2 === 0) centerText(`${name}!`, 130, 48, "#fde047");
+    centerText(DISASTERS[disaster].tip, 170, 18, "#fff");
+  } else if (phase === "active") {
+    ctx.font = `800 16px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(W / 2 - 130, 12, 260, 28);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(`${name}  ${Math.ceil(phaseT)}s`, W / 2, 32);
+    if (disaster === "acid" && !covered()) centerText("Find cover!", 80, 22, "#bef264");
+  } else if (phase === "survived") {
+    centerText(msg, 140, 44, "#86efac");
+  }
+}
+
+const game = Kit.loop(update, draw);
+reset();
+draw();
+Kit.overlay("Disaster Island", "Every round a random disaster strikes the island: meteors, floods, tornadoes, earthquakes or acid rain. Survive each one to score, and they keep getting stronger!\n\nLeft / Right or A / D to move\nSpace / Up / W to jump (hold to swim up)", "Play").then(() => game.start());
+</script>
+</body>
+</html>

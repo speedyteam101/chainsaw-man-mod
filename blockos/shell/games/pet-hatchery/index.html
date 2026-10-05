@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pet Hatchery</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "pet-hatchery";
+const SAVE_KEY = "blockos.pet-hatchery.save";
+const { canvas, ctx, W, H } = Kit.stage(960, 600);
+const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const MAX_EQUIP = 3, MAX_PETS = 24;
+
+// ---------- data ----------
+const RARITIES = [
+  { name: "Common", chance: 55, factor: 0.5, color: "#9ca3af" },
+  { name: "Uncommon", chance: 28, factor: 1, color: "#22c55e" },
+  { name: "Rare", chance: 12, factor: 2.5, color: "#3b82f6" },
+  { name: "Epic", chance: 4.3, factor: 6, color: "#a855f7" },
+  { name: "Legendary", chance: 0.7, factor: 20, color: "#f59e0b" },
+];
+// each species: body color, accent color and a few shape features for the blocky drawing
+const EGGS = [
+  { name: "Basic Egg", cost: 50, base: 1, shell: "#f5f5f4", spots: "#d6d3d1", pets: [
+    { name: "Pup", body: "#c08457", accent: "#7c4a24", ears: "flop" },
+    { name: "Kitty", body: "#f59e0b", accent: "#fde68a", ears: "point", tail: true },
+    { name: "Bunny", body: "#f5f5f4", accent: "#fda4af", ears: "long" },
+    { name: "Piggy", body: "#f9a8d4", accent: "#ec4899", ears: "point", snout: true },
+    { name: "Golden Pup", body: "#facc15", accent: "#a16207", ears: "flop", shine: true },
+  ] },
+  { name: "Forest Egg", cost: 500, base: 5, shell: "#86efac", spots: "#16a34a", pets: [
+    { name: "Fox", body: "#ea580c", accent: "#fff7ed", ears: "point", tail: true },
+    { name: "Deer", body: "#a16207", accent: "#fef3c7", ears: "antlers" },
+    { name: "Owl", body: "#78716c", accent: "#fde68a", ears: "tufts", wings: true },
+    { name: "Bear", body: "#78350f", accent: "#d6a461", ears: "round" },
+    { name: "Forest Spirit", body: "#4ade80", accent: "#f0fdf4", ears: "leaf", shine: true },
+  ] },
+  { name: "Ocean Egg", cost: 5000, base: 25, shell: "#7dd3fc", spots: "#0284c7", pets: [
+    { name: "Crab", body: "#ef4444", accent: "#fecaca", ears: "claws" },
+    { name: "Fish", body: "#38bdf8", accent: "#facc15", ears: "none", fins: true },
+    { name: "Seal", body: "#94a3b8", accent: "#e2e8f0", ears: "none", fins: true },
+    { name: "Shark", body: "#64748b", accent: "#f1f5f9", ears: "fin", fins: true },
+    { name: "Narwhal", body: "#a5b4fc", accent: "#fef9c3", ears: "horn", fins: true, shine: true },
+  ] },
+  { name: "Volcano Egg", cost: 50000, base: 125, shell: "#fb923c", spots: "#7f1d1d", pets: [
+    { name: "Salamander", body: "#f97316", accent: "#facc15", ears: "none", tail: true },
+    { name: "Lava Pup", body: "#b91c1c", accent: "#fdba74", ears: "flop" },
+    { name: "Magma Golem", body: "#44403c", accent: "#f97316", ears: "round" },
+    { name: "Phoenix", body: "#ef4444", accent: "#fde047", ears: "tufts", wings: true },
+    { name: "Fire Dragon", body: "#dc2626", accent: "#fbbf24", ears: "horns", wings: true, shine: true },
+  ] },
+  { name: "Galaxy Egg", cost: 500000, base: 625, shell: "#6366f1", spots: "#e0e7ff", pets: [
+    { name: "Alien", body: "#84cc16", accent: "#1a2e05", ears: "antenna" },
+    { name: "Robot", body: "#cbd5e1", accent: "#0ea5e9", ears: "antenna" },
+    { name: "Star Cat", body: "#312e81", accent: "#fde047", ears: "point", tail: true },
+    { name: "Comet Bird", body: "#0ea5e9", accent: "#f0f9ff", ears: "tufts", wings: true },
+    { name: "Cosmic Dragon", body: "#4c1d95", accent: "#f0abfc", ears: "horns", wings: true, shine: true },
+  ] },
+  { name: "Rainbow Egg", cost: 5000000, base: 3125, shell: "#f472b6", spots: "#fde047", rainbow: true, pets: [
+    { name: "Rainbow Cat", body: "#f472b6", accent: "#fff", ears: "point", tail: true },
+    { name: "Unicorn", body: "#fdf4ff", accent: "#e879f9", ears: "horn" },
+    { name: "Pegasus", body: "#e0f2fe", accent: "#38bdf8", ears: "point", wings: true },
+    { name: "Prism Dragon", body: "#22d3ee", accent: "#f472b6", ears: "horns", wings: true },
+    { name: "Rainbow Titan", body: "#fde047", accent: "#ec4899", ears: "horns", wings: true, shine: true },
+  ] },
+];
+const TOTAL_SPECIES = EGGS.length * 5;
+const petBonus = (p) => EGGS[p.egg].base * RARITIES[p.r].factor;
+const petDef = (p) => EGGS[p.egg].pets[p.r];
+
+// ---------- save ----------
+let state;
+function fresh() { return { coins: 0, earned: 0, gloves: 0, pets: [], equipped: [], nextId: 1, index: {}, hatched: 0 }; }
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (s && Array.isArray(s.pets)) return Object.assign(fresh(), s);
+  } catch (_) {}
+  return fresh();
+}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (_) {} }
+
+const equippedPets = () => state.equipped.map((id) => state.pets.find((p) => p.id === id)).filter(Boolean);
+const multiplier = () => 1 + equippedPets().reduce((a, p) => a + petBonus(p), 0);
+const clickPower = () => 1 + state.gloves;
+const perClick = () => clickPower() * multiplier();
+const perSecond = () => (multiplier() - 1) * clickPower() * 0.6;
+const glovesCost = () => Math.round(25 * Math.pow(1.55, state.gloves));
+
+function fmt(n) {
+  if (n < 100 && n % 1 !== 0) return n.toFixed(1).replace(/\.0$/, "");
+  n = Math.floor(n);
+  if (n < 10000) return n.toLocaleString();
+  const units = [["T", 1e12], ["B", 1e9], ["M", 1e6], ["K", 1e3]];
+  for (const [u, v] of units) if (n >= v) return (n / v).toFixed(n / v < 100 ? 1 : 0) + u;
+  return String(n);
+}
+
+// ---------- runtime state ----------
+let popups = [], particles = [], buttons = [], hatch = null, selected = null, coinPulse = 0, t = 0, saveTimer = 0, toast = "", toastT = 0, hover = null;
+
+function say(text) { toast = text; toastT = 2.2; }
+
+function addCoins(n) {
+  state.coins += n;
+  state.earned += n;
+}
+
+function tapCoin(x, y) {
+  if (hatch) return;
+  const n = perClick();
+  addCoins(n);
+  coinPulse = 1;
+  Kit.sfx("coin");
+  popups.push({ x: x ?? 170 + Kit.rand(-30, 30), y: y ?? 250, text: `+${fmt(n)}`, life: 0.9, color: "#fde047" });
+  for (let i = 0; i < 4; i++) particles.push({ x: x ?? 170, y: y ?? 270, vx: Kit.rand(-160, 160), vy: Kit.rand(-320, -120), life: 0.7, size: 7, color: Kit.pick(["#facc15", "#fde047", "#f59e0b"]) });
+}
+
+function buyGloves() {
+  const c = glovesCost();
+  if (state.coins < c) { say("Not enough coins for gloves yet."); Kit.sfx("hit"); return; }
+  state.coins -= c;
+  state.gloves++;
+  Kit.sfx("score");
+  persist();
+}
+
+function rollRarity() {
+  let r = Math.random() * 100;
+  for (let i = RARITIES.length - 1; i >= 0; i--) {
+    // roll rarest first so the small chances are honoured exactly
+    const ch = RARITIES[i].chance;
+    if (r < ch) return i;
+    r -= ch;
+  }
+  return 0;
+}
+
+function buyEgg(i) {
+  if (hatch) return;
+  const egg = EGGS[i];
+  if (i > 0 && !state.index[`${i - 1}`]) { say("Hatch a pet from the previous egg to unlock this one."); return; }
+  if (state.coins < egg.cost) { say(`You need ${fmt(egg.cost - state.coins)} more coins.`); Kit.sfx("hit"); return; }
+  if (state.pets.length >= MAX_PETS) { say("Your pet storage is full! Sell a pet first."); Kit.sfx("hit"); return; }
+  state.coins -= egg.cost;
+  const r = rollRarity();
+  const pet = { id: state.nextId++, egg: i, r };
+  hatch = { egg: i, pet, t: 0, revealed: false };
+  Kit.sfx("click");
+}
+
+function finishHatch() {
+  const pet = hatch.pet;
+  state.pets.push(pet);
+  state.hatched++;
+  const key = `${pet.egg}:${pet.r}`;
+  const isNew = !state.index[key];
+  state.index[key] = true;
+  state.index[`${pet.egg}`] = true;
+  // auto-equip if there's room or it beats the weakest equipped pet
+  const eq = equippedPets();
+  if (eq.length < MAX_EQUIP) state.equipped.push(pet.id);
+  else {
+    const weakest = eq.reduce((a, b) => (petBonus(a) <= petBonus(b) ? a : b));
+    if (petBonus(pet) > petBonus(weakest)) state.equipped[state.equipped.indexOf(weakest.id)] = pet.id;
+  }
+  if (isNew) say(`New pet discovered: ${petDef(pet).name}!`);
+  hatch = null;
+  persist();
+  Kit.finish(ID, Math.floor(state.earned));
+}
+
+function toggleEquip(p) {
+  const i = state.equipped.indexOf(p.id);
+  if (i >= 0) state.equipped.splice(i, 1);
+  else if (state.equipped.length < MAX_EQUIP) state.equipped.push(p.id);
+  else { say(`You can only equip ${MAX_EQUIP} pets. Unequip one first.`); return; }
+  Kit.sfx("click");
+  persist();
+}
+
+function equipBest() {
+  const sorted = state.pets.slice().sort((a, b) => petBonus(b) - petBonus(a));
+  state.equipped = sorted.slice(0, MAX_EQUIP).map((p) => p.id);
+  Kit.sfx("score");
+  persist();
+}
+
+function sellPet(p) {
+  const value = Math.round(EGGS[p.egg].cost * 0.2 * (1 + p.r));
+  state.pets = state.pets.filter((q) => q !== p);
+  state.equipped = state.equipped.filter((id) => id !== p.id);
+  addCoins(value);
+  selected = null;
+  say(`Sold ${petDef(p).name} for ${fmt(value)} coins`);
+  Kit.sfx("coin");
+  persist();
+}
+
+// ---------- input ----------
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (hatch) { if (hatch.revealed && hatch.t > hatch.revealAt + 0.4) finishHatch(); return; }
+  for (const b of buttons.slice().reverse()) {
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { b.fn(p); return; }
+  }
+  selected = null;
+});
+canvas.addEventListener("pointermove", (e) => { hover = Kit.pointer(canvas, e); });
+canvas.addEventListener("pointerleave", () => { hover = null; });
+Kit.onKey((code) => {
+  if (hatch) {
+    if ((code === "Space" || code === "Enter") && hatch.revealed && hatch.t > hatch.revealAt + 0.4) finishHatch();
+    return;
+  }
+  if (code === "Space" || code === "KeyC") tapCoin();
+  const n = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6"].indexOf(code);
+  if (n >= 0) buyEgg(n);
+  if (code === "KeyG") buyGloves();
+  if (code === "KeyQ") equipBest();
+});
+
+// ---------- update ----------
+function update(dt) {
+  if (!(dt > 0)) return;
+  t += dt;
+  coinPulse = Math.max(0, coinPulse - dt * 5);
+  toastT -= dt;
+  if (!hatch) addCoins(perSecond() * dt);
+  for (const p of popups) { p.y -= 50 * dt; p.life -= dt; }
+  popups = popups.filter((p) => p.life > 0);
+  for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 700 * dt; q.life -= dt; }
+  particles = particles.filter((q) => q.life > 0);
+  if (hatch) {
+    hatch.t += dt;
+    if (!hatch.revealed && hatch.t > 2.4) {
+      hatch.revealed = true;
+      hatch.revealAt = hatch.t;
+      const r = hatch.pet.r;
+      Kit.sfx(r >= 3 ? "win" : r >= 2 ? "score" : "coin");
+      const c = RARITIES[r].color;
+      for (let i = 0; i < 30 + r * 20; i++) {
+        const a = Math.random() * Math.PI * 2, s = Kit.rand(100, 360 + r * 60);
+        particles.push({ x: W / 2, y: 320, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.6, 1.3), size: Kit.randInt(4, 9), color: Kit.pick([c, "#fff", EGGS[hatch.egg].shell]) });
+      }
+    } else if (!hatch.revealed && Math.floor(hatch.t * 3) !== Math.floor((hatch.t - dt) * 3)) Kit.sfx("click");
+  }
+  saveTimer -= dt;
+  if (saveTimer <= 0) { saveTimer = 4; persist(); }
+  Kit.hud(`${fmt(state.coins)} coins<small>x${multiplier().toFixed(1)} · Best ${fmt(Kit.best(ID) ?? 0)} earned</small>`);
+}
+
+// ---------- drawing ----------
+function rainbow(i) { return ["#ef4444", "#f97316", "#facc15", "#22c55e", "#3b82f6", "#a855f7"][((i % 6) + 6) % 6]; }
+
+function drawEgg(x, y, s, egg, wobble, cracks) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(wobble);
+  // blocky egg: stacked rows that are narrower at the top
+  const rows = [0.5, 0.75, 0.9, 1, 1, 0.95, 0.8];
+  const rh = (s * 1.25) / rows.length;
+  rows.forEach((f, i) => {
+    const w = s * f;
+    const color = egg.rainbow ? rainbow(i + Math.floor(t * 4)) : egg.shell;
+    ctx.fillStyle = color;
+    ctx.fillRect(-w / 2, -s * 0.75 + i * rh, w, rh + 1);
+  });
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.fillRect(-s * 0.32, -s * 0.5, s * 0.12, s * 0.3);
+  ctx.fillStyle = egg.spots;
+  ctx.fillRect(s * 0.1, -s * 0.35, s * 0.16, s * 0.12);
+  ctx.fillRect(-s * 0.22, s * 0.05, s * 0.14, s * 0.12);
+  ctx.fillRect(s * 0.18, s * 0.22, s * 0.12, s * 0.1);
+  if (cracks > 0) {
+    ctx.strokeStyle = "#1f2937";
+    ctx.lineWidth = Math.max(2, s * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.4, -s * 0.05);
+    ctx.lineTo(-s * 0.2, -s * 0.15);
+    ctx.lineTo(-s * 0.05, 0);
+    if (cracks > 1) { ctx.lineTo(s * 0.12, -s * 0.18); ctx.lineTo(s * 0.28, -s * 0.02); ctx.lineTo(s * 0.42, -s * 0.12); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPet(x, y, s, p, bob) {
+  const d = petDef(p);
+  const u = s / 16;   // one "pixel" of the pet
+  ctx.save();
+  ctx.translate(x, y + (bob || 0));
+  const R = (px, py, pw, ph, c) => { ctx.fillStyle = c; ctx.fillRect(px * u, py * u, pw * u, ph * u); };
+  if (d.shine || p.r === 4) {
+    ctx.fillStyle = `rgba(253,224,71,${0.25 + Math.sin(t * 4) * 0.1})`;
+    ctx.fillRect(-9 * u, -10 * u, 18 * u, 18 * u);
+  }
+  if (d.wings) {
+    const f = Math.sin(t * 10) * 1.5;
+    R(-9, -4 + f, 4, 5, d.accent);
+    R(5, -4 - f, 4, 5, d.accent);
+  }
+  if (d.tail) R(5, 1, 4, 2, d.accent);
+  if (d.fins) { R(-8, 2, 3, 3, d.accent); R(5, 2, 3, 3, d.accent); }
+  // body and head
+  R(-5, 0, 10, 7, d.body);
+  R(-4, 7, 3, 2, d.body);
+  R(1, 7, 3, 2, d.body);
+  R(-6, -8, 12, 9, d.body);
+  ctx.fillStyle = "rgba(255,255,255,.2)";
+  ctx.fillRect(-6 * u, -8 * u, 12 * u, 1.2 * u);
+  R(-3, 2, 6, 4, d.accent);
+  // ears and head features
+  switch (d.ears) {
+    case "flop": R(-8, -7, 2, 5, d.accent); R(6, -7, 2, 5, d.accent); break;
+    case "point": R(-6, -11, 3, 3, d.body); R(3, -11, 3, 3, d.body); R(-5, -10, 1, 1, d.accent); R(4, -10, 1, 1, d.accent); break;
+    case "long": R(-5, -15, 3, 7, d.body); R(2, -15, 3, 7, d.body); R(-4, -14, 1, 5, d.accent); R(3, -14, 1, 5, d.accent); break;
+    case "round": R(-7, -10, 3, 3, d.body); R(4, -10, 3, 3, d.body); break;
+    case "antlers": R(-6, -13, 1, 5, "#78350f"); R(-8, -12, 3, 1, "#78350f"); R(5, -13, 1, 5, "#78350f"); R(5, -12, 3, 1, "#78350f"); break;
+    case "tufts": R(-6, -10, 2, 2, d.accent); R(4, -10, 2, 2, d.accent); break;
+    case "leaf": R(-1, -13, 2, 5, "#16a34a"); R(1, -14, 3, 2, "#22c55e"); break;
+    case "claws": R(-10, -2, 4, 4, d.body); R(6, -2, 4, 4, d.body); R(-10, -3, 2, 1, d.accent); R(8, -3, 2, 1, d.accent); break;
+    case "fin": R(-1, -12, 3, 4, d.body); break;
+    case "horn": R(-1, -15, 2, 7, "#fef08a"); break;
+    case "horns": R(-6, -12, 2, 4, d.accent); R(4, -12, 2, 4, d.accent); break;
+    case "antenna": R(-4, -12, 1, 4, d.accent); R(3, -12, 1, 4, d.accent); R(-5, -13, 3, 2, d.accent); R(2, -13, 3, 2, d.accent); break;
+  }
+  if (d.snout) R(-2, -3, 4, 3, d.accent);
+  // eyes
+  const blink = Math.sin(t * 1.7 + p.id) > 0.97;
+  R(-4, -5, 2, blink ? 0.5 : 2, "#111");
+  R(2, -5, 2, blink ? 0.5 : 2, "#111");
+  R(-3.5, -5, 0.8, 0.8, "#fff");
+  R(2.5, -5, 0.8, 0.8, "#fff");
+  ctx.restore();
+}
+
+function button(x, y, w, h, label, color, fn, sub, enabled = true) {
+  const hot = hover && hover.x >= x && hover.x <= x + w && hover.y >= y && hover.y <= y + h;
+  ctx.globalAlpha = enabled ? 1 : 0.45;
+  Kit.brick(ctx, x, y, w, h, color, 8);
+  if (hot && enabled) { ctx.fillStyle = "rgba(255,255,255,.12)"; ctx.fillRect(x, y, w, h); }
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "center";
+  ctx.font = `800 15px ${FONT}`;
+  ctx.fillText(label, x + w / 2, y + (sub ? h / 2 - 2 : h / 2 + 5));
+  if (sub) { ctx.font = `700 12px ${FONT}`; ctx.fillStyle = "#fef9c3"; ctx.fillText(sub, x + w / 2, y + h / 2 + 14); }
+  ctx.globalAlpha = 1;
+  buttons.push({ x, y, w, h, fn });
+}
+
+function panel(x, y, w, h, title) {
+  ctx.fillStyle = "rgba(15,17,19,.55)";
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 14);
+  ctx.fill();
+  if (title) {
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = `800 15px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.fillText(title, x + 14, y + 24);
+  }
+}
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#7dd3fc");
+  g.addColorStop(0.65, "#bae6fd");
+  g.addColorStop(0.65, "#4ade80");
+  g.addColorStop(1, "#22c55e");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.12)";
+  for (let y = 400; y < H; y += 24) for (let x = (y / 24) % 2 * 24; x < W; x += 48) ctx.fillRect(x + 8, y + 8, 8, 8);
+  ctx.fillStyle = "rgba(255,255,255,.75)";
+  for (let i = 0; i < 3; i++) {
+    const x = ((i * 380 + t * 10) % (W + 200)) - 140;
+    ctx.fillRect(x, 50 + i * 40, 120, 24);
+    ctx.fillRect(x + 24, 34 + i * 40, 60, 16);
+  }
+}
+
+function draw() {
+  buttons = [];
+  drawBackground();
+
+  // ---- coin clicker ----
+  panel(16, 16, 310, 568);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fde047";
+  ctx.font = `900 30px ${FONT}`;
+  ctx.fillText(fmt(state.coins), 171, 58);
+  ctx.font = `700 13px ${FONT}`;
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillText(`+${fmt(perClick())} per tap · +${fmt(perSecond())}/s`, 171, 80);
+  const s = 150 * (1 - coinPulse * 0.08);
+  const cx = 171, cy = 250;
+  Kit.brick(ctx, cx - s / 2, cy - s / 2, s, s, "#f59e0b", 22);
+  Kit.brick(ctx, cx - s * 0.38, cy - s * 0.38, s * 0.76, s * 0.76, "#facc15", 16);
+  // embossed coin face: a ring with a shine
+  ctx.strokeStyle = "#b45309";
+  ctx.lineWidth = s * 0.07;
+  ctx.strokeRect(cx - s * 0.22, cy - s * 0.22, s * 0.44, s * 0.44);
+  ctx.fillStyle = "#fde68a";
+  ctx.fillRect(cx - s * 0.1, cy - s * 0.1, s * 0.2, s * 0.2);
+  ctx.fillStyle = "rgba(255,255,255,.45)";
+  ctx.fillRect(cx - s * 0.32, cy - s * 0.32, s * 0.1, s * 0.22);
+  buttons.push({ x: cx - 80, y: cy - 80, w: 160, h: 160, fn: (p) => tapCoin(p.x, p.y - 20) });
+  ctx.fillStyle = "#fff";
+  ctx.font = `700 13px ${FONT}`;
+  ctx.fillText("Tap the coin block (Space)", cx, 352);
+  button(36, 372, 270, 52, `Power Gloves Lv ${state.gloves + 1}  (G)`, "#2563eb", buyGloves, `+1 tap power · ${fmt(glovesCost())} coins`, state.coins >= glovesCost());
+  // equipped pets showcase
+  ctx.fillStyle = "#e5e7eb";
+  ctx.font = `800 14px ${FONT}`;
+  ctx.fillText(`Equipped pets  x${multiplier().toFixed(1)}`, cx, 452);
+  for (let i = 0; i < MAX_EQUIP; i++) {
+    const x = 46 + i * 90, y = 466;
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    ctx.fillRect(x, y, 76, 92);
+    const p = equippedPets()[i];
+    if (p) {
+      drawPet(x + 38, y + 44, 52, p, Math.sin(t * 3 + i) * 3);
+      ctx.fillStyle = RARITIES[p.r].color;
+      ctx.font = `800 11px ${FONT}`;
+      ctx.fillText(`+${fmt(petBonus(p))}x`, x + 38, y + 86);
+    } else {
+      ctx.fillStyle = "rgba(255,255,255,.35)";
+      ctx.font = `700 11px ${FONT}`;
+      ctx.fillText("empty", x + 38, y + 50);
+    }
+  }
+
+  // ---- eggs ----
+  panel(342, 16, 602, 214, "Egg Shop  (1-6)");
+  EGGS.forEach((egg, i) => {
+    const x = 356 + i * 97, y = 40;
+    const unlocked = i === 0 || state.index[`${i - 1}`];
+    const afford = state.coins >= egg.cost;
+    const hot = hover && hover.x >= x && hover.x <= x + 88 && hover.y >= y && hover.y <= y + 178;
+    ctx.fillStyle = hot ? "rgba(255,255,255,.2)" : "rgba(255,255,255,.1)";
+    ctx.fillRect(x, y, 88, 178);
+    if (unlocked) drawEgg(x + 44, y + 70, 56, egg, hot ? Math.sin(t * 12) * 0.08 : 0, 0);
+    else {
+      ctx.globalAlpha = 0.35;
+      drawEgg(x + 44, y + 70, 56, { shell: "#1f2937", spots: "#111827" }, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 12px ${FONT}`;
+    ctx.fillText(unlocked ? egg.name : "Locked", x + 44, y + 128);
+    ctx.fillStyle = afford && unlocked ? "#fde047" : "#fca5a5";
+    ctx.font = `800 13px ${FONT}`;
+    ctx.fillText(`${fmt(egg.cost)}`, x + 44, y + 147);
+    ctx.fillStyle = "rgba(255,255,255,.6)";
+    ctx.font = `700 10px ${FONT}`;
+    ctx.fillText(unlocked ? `${i + 1} to hatch` : "hatch previous", x + 44, y + 166);
+    buttons.push({ x, y, w: 88, h: 178, fn: () => (unlocked ? buyEgg(i) : say("Hatch a pet from the previous egg to unlock this one.")) });
+  });
+
+  // ---- inventory ----
+  const found = Object.keys(state.index).filter((k) => k.includes(":")).length;
+  panel(342, 244, 602, 340, `Pets ${state.pets.length}/${MAX_PETS}   ·   Pet Index ${found}/${TOTAL_SPECIES}`);
+  button(800, 254, 132, 30, "Equip best (Q)", "#16a34a", equipBest);
+  const sorted = state.pets.slice().sort((a, b) => petBonus(b) - petBonus(a));
+  sorted.forEach((p, i) => {
+    const col = i % 8, row = Math.floor(i / 8);
+    const x = 356 + col * 72, y = 296 + row * 76;
+    const eq = state.equipped.includes(p.id);
+    ctx.fillStyle = selected === p ? "rgba(255,255,255,.3)" : "rgba(255,255,255,.1)";
+    ctx.fillRect(x, y, 64, 68);
+    ctx.fillStyle = RARITIES[p.r].color;
+    ctx.fillRect(x, y + 64, 64, 4);
+    if (eq) { ctx.strokeStyle = "#fde047"; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, y + 1.5, 61, 65); }
+    drawPet(x + 32, y + 32, 34, p, 0);
+    buttons.push({ x, y, w: 64, h: 68, fn: () => { if (selected === p) toggleEquip(p); else selected = p; } });
+  });
+  if (!state.pets.length) {
+    ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.font = `700 15px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.fillText("No pets yet. Tap coins and hatch your first egg!", 643, 420);
+  }
+  if (selected) {
+    const p = selected, d = petDef(p);
+    ctx.fillStyle = "rgba(15,17,19,.85)";
+    ctx.fillRect(356, 520, 576, 56);
+    ctx.textAlign = "left";
+    ctx.fillStyle = RARITIES[p.r].color;
+    ctx.font = `800 15px ${FONT}`;
+    ctx.fillText(`${d.name} (${RARITIES[p.r].name})`, 370, 543);
+    ctx.fillStyle = "#e5e7eb";
+    ctx.font = `600 12px ${FONT}`;
+    ctx.fillText(`+${fmt(petBonus(p))}x coins · from the ${EGGS[p.egg].name}`, 370, 564);
+    const eq = state.equipped.includes(p.id);
+    button(668, 528, 120, 40, eq ? "Unequip" : "Equip", eq ? "#64748b" : "#16a34a", () => toggleEquip(p));
+    button(798, 528, 124, 40, "Sell", "#b91c1c", () => sellPet(p), `+${fmt(Math.round(EGGS[p.egg].cost * 0.2 * (1 + p.r)))}`);
+  }
+
+  for (const q of particles) {
+    if (hatch) continue;
+    ctx.globalAlpha = Kit.clamp(q.life * 2, 0, 1);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(q.x - q.size / 2, q.y - q.size / 2, q.size, q.size);
+  }
+  ctx.globalAlpha = 1;
+  ctx.textAlign = "center";
+  ctx.font = `900 20px ${FONT}`;
+  for (const p of popups) {
+    ctx.globalAlpha = Kit.clamp(p.life * 2, 0, 1);
+    ctx.fillStyle = "#000";
+    ctx.fillText(p.text, p.x + 2, p.y + 2);
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  if (toastT > 0 && !hatch) {
+    ctx.globalAlpha = Kit.clamp(toastT * 2, 0, 1);
+    ctx.font = `800 15px ${FONT}`;
+    const w = ctx.measureText(toast).width + 30;
+    ctx.fillStyle = "rgba(0,0,0,.8)";
+    ctx.fillRect(643 - w / 2, 470, w, 30);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(toast, 643, 491);
+    ctx.globalAlpha = 1;
+  }
+  if (hatch) drawHatch();
+}
+
+function drawHatch() {
+  ctx.fillStyle = "rgba(10,11,13,.82)";
+  ctx.fillRect(0, 0, W, H);
+  const egg = EGGS[hatch.egg];
+  const k = hatch.t;
+  if (!hatch.revealed) {
+    // three wobbles that get stronger, then it cracks
+    const wob = Math.sin(k * 14) * 0.08 * (1 + k * 1.4);
+    const cracks = k > 1.3 ? 2 : k > 0.7 ? 1 : 0;
+    drawEgg(W / 2, 300, 170 + k * 12, egg, wob, cracks);
+    ctx.fillStyle = "#fff";
+    ctx.font = `900 26px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.fillText(`Hatching ${egg.name}...`, W / 2, 110);
+    if (k > 2.1) {
+      ctx.fillStyle = `rgba(255,255,255,${(k - 2.1) / 0.3})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  } else {
+    const p = hatch.pet, rar = RARITIES[p.r];
+    const since = k - hatch.revealAt;
+    // light rays in the rarity color
+    ctx.save();
+    ctx.translate(W / 2, 320);
+    ctx.rotate(t * 0.5);
+    ctx.fillStyle = rar.color + "44";
+    for (let i = 0; i < 8; i++) { ctx.rotate(Math.PI / 4); ctx.fillRect(-14, 0, 28, 320); }
+    ctx.restore();
+    const scale = Math.min(1, since * 4);
+    drawPet(W / 2, 335, 190 * scale, p, Math.sin(t * 3) * 6);
+    ctx.textAlign = "center";
+    ctx.font = `900 22px ${FONT}`;
+    ctx.fillStyle = rar.color;
+    ctx.fillText(rar.name.toUpperCase(), W / 2, 88);
+    ctx.font = `900 40px ${FONT}`;
+    ctx.fillStyle = "#fff";
+    ctx.fillText(petDef(p).name, W / 2, 132);
+    ctx.font = `800 18px ${FONT}`;
+    ctx.fillStyle = "#fde047";
+    ctx.fillText(`+${fmt(petBonus(p))}x coin multiplier`, W / 2, 515);
+    ctx.font = `700 14px ${FONT}`;
+    ctx.fillStyle = "#e5e7eb";
+    ctx.fillText(`${rar.chance}% chance · click or press Space to continue`, W / 2, 545);
+  }
+  for (const q of particles) {
+    ctx.globalAlpha = Kit.clamp(q.life * 2, 0, 1);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(q.x - q.size / 2, q.y - q.size / 2, q.size, q.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+addEventListener("pagehide", persist);
+addEventListener("beforeunload", persist);
+
+state = load();
+const game = Kit.loop(update, draw);
+draw();
+const back = state.hatched > 0;
+Kit.overlay("Pet Hatchery", (back ? `Welcome back! Your ${state.pets.length} pets missed you.\n\n` : "") + "Tap the coin block to earn coins, buy eggs and hatch blocky pets. Rarer pets give bigger coin multipliers. Equip up to 3 pets and work your way up to the Rainbow Egg!\n\nClick / Space: tap coins\n1-6 or click an egg: hatch it\nClick a pet to select, click again to equip\nG: buy gloves\nQ: equip your best pets\nProgress saves automatically.", "Play").then(() => game.start());
+</script>
+</body>
+</html>
