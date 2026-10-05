@@ -100,7 +100,7 @@ async function doTurn(u) {
   if (u.isEnemy) {
     u.turns++;
     await performEnemy(u, enemyAI(u));
-    if (u.d.ai === "king2" && alive(u) && u.hp < u.maxHp * 0.3 && outcome() === null) {
+    if (u.d.ai === "king2" && alive(u) && u.hp < u.maxHp * 0.25 && outcome() === null) {
       await bmsg("The Hollow King moves again in a frenzy!", 650);
       await performEnemy(u, enemyAI(u));
     }

@@ -1,4 +1,3 @@
 # Games still being written; gen-catalog.py leaves these out of the menu.
 mega-obby
 tower-rush
-brick-legends

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tower Rush</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .tr-banner {
+    position: fixed; left: 50%; top: 20%; transform: translate(-50%, -50%) scale(.9); z-index: 15;
+    font-size: 44px; font-weight: 900; color: #fff; text-shadow: 0 3px 0 #000, 0 0 18px rgba(0,0,0,.45);
+    opacity: 0; transition: opacity .3s, transform .3s; pointer-events: none; white-space: nowrap; text-align: center;
+  }
+  .tr-banner small { display: block; font-size: 18px; font-weight: 700; color: #fde68a; }
+  .tr-banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .tr-timer {
+    position: fixed; left: 50%; top: 12px; transform: translateX(-50%); z-index: 15; pointer-events: none;
+    padding: 6px 18px; border-radius: 10px; background: rgba(15, 17, 19, .72); text-align: center;
+    font-weight: 900; font-size: 28px; color: #fff; text-shadow: 0 2px 0 #000; min-width: 120px;
+  }
+  .tr-timer small { display: block; font-size: 12px; font-weight: 700; color: #a7adb4; letter-spacing: .04em; }
+  .tr-timer.low { color: #fca5a5; }
+  .tr-meter {
+    position: fixed; left: 14px; top: 50%; transform: translateY(-50%); z-index: 15; width: 14px; height: 46vh;
+    background: rgba(0,0,0,.45); border: 2px solid rgba(255,255,255,.25); border-radius: 8px; pointer-events: none;
+  }
+  .tr-meter i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(0deg, #22c55e, #facc15); border-radius: 6px; }
+  .tr-meter b { position: absolute; left: -5px; width: 20px; height: 4px; margin-bottom: -2px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px #000; }
+  .tr-meter b.me { left: -7px; width: 24px; height: 6px; margin-bottom: -3px; background: #facc15; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script type="module">
+import { World, THREE } from "../kit3d.js";
+
+const ID = "tower-rush";
+const ROUND = 360;          // seconds to reach the top
+const BREAK = 8;            // seconds between towers
+const SECTION_COUNT = 8;
+const G = 196.2;
+const PAL = ["#ef4444", "#fb923c", "#facc15", "#22c55e", "#14b8a6", "#3b82f6", "#a855f7", "#ec4899"];
+const SPAWN = [0, 0, 40];
+
+const world = new World({ sky: "#93d2ff", fogNear: 220, fogFar: 650 });
+window.world = world;
+world.baseplate(320, "#4b9b3f");
+world.spawnPad(SPAWN);
+world.label("TOWER RUSH", { pos: [0, 12, 52], height: 4 });
+// a little lobby: benches and a path to the tower
+world.part({ size: [6, 0.2, 24], pos: [0, 0.1, 22], color: "#d6d3d1", studs: false });
+for (const x of [-9, 9]) {
+  world.part({ size: [5, 1, 1.6], pos: [x, 0.5, 44], color: "#a16207", material: "wood" });
+  world.part({ size: [1, 6, 1], pos: [x * 1.6, 3, 30], color: "#6b4f2a", material: "wood" });
+  world.part({ size: [4.5, 4, 4.5], pos: [x * 1.6, 7, 30], color: "#16a34a" });
+}
+
+// ------------------------------------------------------------------ helpers
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Local frame of a section: x = sideways (mirrored on some sections), y = up, f = "forward" (-z).
+class Frame {
+  constructor(o, m) { this.o = o.clone(); this.m = m; }
+  p(x, y, f) { return [this.o.x + x * this.m, this.o.y + y, this.o.z - f]; }
+  v(x, y, f) { return new THREE.Vector3(...this.p(x, y, f)); }
+  part(o) { return track(world.part(Object.assign({}, o, { pos: this.p(...o.at), size: o.size }))); }
+  place(m, x, y, f) { const q = this.p(x, y, f); m.position.set(q[0], q[1], q[2]); }
+  blk(x, top, f, sx, sf, color, extra) { return this.part(Object.assign({ at: [x, top - 0.5, f], size: [sx, 1, sf], color }, extra)); }
+}
+
+// The climbing loop: a square path of half-size R around the middle of the tower.
+// Every section starts at the center pad, climbs around this loop, and ends on the next center pad.
+const R = 9.5, PER = 76, CORNERS = [9.5, 28.5, 47.5, 66.5];
+function L(s) {
+  s = ((s % PER) + PER) % PER;
+  if (s < 9.5) return [s, R];
+  if (s < 28.5) return [R, R - (s - 9.5)];
+  if (s < 47.5) return [R - (s - 28.5), -R];
+  if (s < 66.5) return [-R, -R + (s - 47.5)];
+  return [-R + (s - 66.5), R];
+}
+function alongX(s) { s = ((s % PER) + PER) % PER; return s < 9.5 || (s >= 28.5 && s < 47.5) || s >= 66.5; }
+function outward(s) { const [x, f] = L(s); return alongX(s) ? [0, Math.sign(f)] : [Math.sign(x), 0]; }
+function travel(s) { s = ((s % PER) + PER) % PER; return s < 9.5 ? [1, 0] : s < 28.5 ? [0, -1] : s < 47.5 ? [-1, 0] : s < 66.5 ? [0, 1] : [1, 0]; }
+
+// ------------------------------------------------------------------ the tower's moving bits
+let towerParts = [];
+let anims = [], hazards = [], belts = [], pushers = [], fallers = [], blinkers = [];
+let rt = 0;                // seconds since the round started (shared between players)
+function track(m) { towerParts.push(m); return m; }
+function template(color, material) {
+  const m = world.part({ size: [1, 1, 1], pos: [0, -999, 0], color, material, collide: false });
+  world.remove(m);
+  return m.material;
+}
+const WARN = template("#f8fafc", "neon");
+
+function launchPad(F, x, top, f, size, height) {
+  const v = Math.sqrt(2 * G * height);
+  return F.part({
+    at: [x, top + 0.15, f], size: [size, 0.3, size], color: "#4ade80", material: "neon", studs: false, collide: false,
+    onTouch: (p) => { if (p.vel.y < v * 0.5) { p.vel.y = v; p.onGround = false; Kit.sfx("jump"); } },
+  });
+}
+
+// A section builder gets S = { F, d (0..1 difficulty), c (color), rng } and returns its height.
+function seg(S, s0, s1, top, w, color, extra) {
+  const out = [];
+  let a = s0;
+  while (a < s1 - 0.01) {
+    const nextCorner = CORNERS.find((c) => c > a + 0.01) ?? 1e9;
+    const b = Math.min(s1, nextCorner);
+    const [x0, f0] = L(a), [x1, f1] = L(b - 0.0001);
+    const len = Math.hypot(x1 - x0, f1 - f0) + w;
+    const along = alongX(a);
+    const m = S.F.blk((x0 + x1) / 2, top, (f0 + f1) / 2, along ? len : w, along ? w : len, color, extra);
+    out.push({ m, s: (a + b) / 2, len, along });
+    a = b;
+  }
+  return out;
+}
+function blkAt(S, s, top, size, color, extra) {
+  const [x, f] = L(s);
+  return S.F.blk(x, top, f, size, size, color, extra);
+}
+// three walkway tiers joined by corner steps; returns the tiers
+function tiers(S, w, color) {
+  const T = [
+    { s0: 2, s1: 24, top: 4 }, { s0: 33, s1: 43.5, top: 9 }, { s0: 52, s1: 63, top: 14 },
+  ];
+  for (const t of T) t.pieces = seg(S, t.s0, t.s1, t.top, w, color);
+  blkAt(S, 28.5, 6.5, 3.5, "#e2e8f0");
+  blkAt(S, 47.5, 11.5, 3.5, "#e2e8f0");
+  return T;
+}
+function belt(S, piece, dirLocal, speed) {
+  const m = piece.m;
+  const dir = new THREE.Vector3(dirLocal[0] * S.F.m, 0, -dirLocal[1]).normalize();
+  belts.push({ m, dir, speed });
+  const size = m.userData.part.size, c = m.position;
+  const alongWorldX = Math.abs(dir.x) > 0.5;
+  const span = alongWorldX ? size.x : size.z;
+  const n = Math.max(2, Math.floor(span / 3));
+  for (let k = 0; k < n; k++) {
+    const st = track(world.part({ size: alongWorldX ? [0.5, 0.12, size.z - 0.6] : [size.x - 0.6, 0.12, 0.5], pos: [c.x, c.y + 0.56, c.z], color: "#facc15", material: "neon", collide: false, studs: false, shadow: false }));
+    anims.push(() => {
+      const o = ((rt * speed + (k * span) / n) % span) - span / 2;
+      if (alongWorldX) st.position.x = c.x + o * Math.sign(dir.x); else st.position.z = c.z + o * Math.sign(dir.z);
+    });
+  }
+}
+function spinArms(S, y, r0, r1, speed, n, phase) {
+  const center = S.F.v(0, y, 0), len = r1 - r0, mid = (r0 + r1) / 2;
+  for (let k = 0; k < n; k++) {
+    const arm = track(world.part({ size: [len, 0.8, 0.8], pos: [center.x + mid, center.y, center.z], color: "#ff2d2d", material: "neon", kill: true, collide: false, studs: false, rot: [0, 0.01, 0] }));
+    anims.push(() => {
+      const a = rt * speed + phase + (k * Math.PI * 2) / n;
+      arm.rotation.y = a;
+      arm.position.set(center.x + Math.cos(a) * mid, center.y, center.z - Math.sin(a) * mid);
+      arm.updateMatrixWorld();
+    });
+  }
+}
+
+const SECTIONS = {
+  steps(S) {
+    const n = 10, size = 4 - S.d * 0.8;
+    for (let k = 0; k < n; k++) blkAt(S, 3 + k * 6.2, 2.8 * (k + 1), size, S.c);
+    return 2.8 * (n + 1);
+  },
+  beams(S) {
+    const w = 1.5 - S.d * 0.4;
+    let top = 0;
+    for (let k = 0; k < 5; k++) { top = 2 + k * 2.6; seg(S, 2 + k * 12, 11 + k * 12, top, w, S.c); }
+    return top + 3;
+  },
+  sweepers(S) {
+    const T = tiers(S, 4, S.c);
+    T.forEach((t, k) => spinArms(S, t.top + 1.5, 5, 11, (0.7 + S.d * 0.4) * (k % 2 ? -1 : 1), 2, k));
+    return 17;
+  },
+  lava(S) {
+    const n = 8, H = 2.8 * (n + 1);
+    for (let k = 0; k < n; k++) blkAt(S, 3 + k * 7, 2.8 * (k + 1), 4 - S.d * 0.5, S.c);
+    const lava = S.F.part({ at: [0, 3, 0], size: [26, 0.6, 26], color: "#ff6a00", material: "neon", collide: false, studs: false, shadow: false });
+    const C = 15, base = S.F.o.y;
+    const on = () => (rt % C) >= 3.5;
+    anims.push(() => {
+      const p = rt % C;
+      lava.visible = p >= 3.5;
+      lava.position.y = base + 3 + Math.max(0, (p - 3.5) / (C - 3.5)) * (H - 5);
+      world.updateBox(lava);
+    });
+    hazards.push({ mesh: lava, on });
+    S.tip = "Rising lava! Wait for it to vanish, then race it up.";
+    return H;
+  },
+  ladder(S) {
+    const n = 10, size = 2.2 - S.d * 0.4;
+    for (let k = 0; k < n; k++) blkAt(S, 3 + k * 4.8, 3 * (k + 1), size, k % 2 ? "#f8fafc" : S.c);
+    return 3 * (n + 1);
+  },
+  pushers(S) {
+    const T = tiers(S, 3.5, S.c);
+    const spots = [[8, 0], [18, 0], [38, 1], [57, 2]];
+    spots.forEach(([s, ti], k) => {
+      const top = T[ti].top, [x, f] = L(s), [ox, of] = outward(s);
+      const m = S.F.part({ at: [x, top + 2, f], size: alongX(s) ? [3, 4, 3] : [3, 4, 3], color: "#7f1d1d", moving: true });
+      // which world axis the wall slides along, and which way "outward" points on it
+      const pu = { m, axis: alongX(s) ? "z" : "x", sign: alongX(s) ? -of : ox * S.F.m, r: 0, v: 0 };
+      pushers.push(pu);
+      const w = 1.2 + S.d * 0.6, ph = k * 1.9;
+      anims.push(() => {
+        const r = Math.sin(rt * w + ph) * 3.5;
+        pu.v = r - pu.r; pu.r = r;
+        S.F.place(m, x + ox * r, top + 2, f + of * r);
+      });
+    });
+    return 17;
+  },
+  bounce(S) {
+    const P = [[3, 1], [12.5, 11], [22, 21], [31.5, 31]];
+    P.forEach(([s, top], k) => {
+      const [x, f] = L(s);
+      S.F.blk(x, top, f, 5, 5, k === 3 ? "#e2e8f0" : S.c);
+      if (k < 3) launchPad(S.F, x, top, f, 3.6, 15);
+    });
+    return 34;
+  },
+  pillar(S) {
+    const H = 21, w = 2 - S.d * 0.4, e = 4.5 + w / 2, lo = -4.5 - w, hi = 4.5 + w;
+    S.F.part({ at: [0, (12.5 + H - 1) / 2, 0], size: [9, H - 1 - 12.5, 9], color: "#475569" });
+    // six ledges hugging the pillar, each starting after the previous one's corner
+    const faces = [
+      [[lo, hi], e, true], [[3.5, lo], e, false], [[3.5, lo], -e, true],
+      [[-3.5, hi], -e, false], [[-3.5, hi], e, true], [[3.5, lo], e, false],
+    ];
+    faces.forEach(([[a, b], c, alongXf], k) => {
+      const top = 3 + k * 3, len = Math.abs(b - a), mid = (a + b) / 2;
+      if (alongXf) S.F.blk(mid, top, c, len, w, k % 2 ? "#f8fafc" : S.c);
+      else S.F.blk(c, top, mid, w, len, k % 2 ? "#f8fafc" : S.c);
+    });
+    return H;
+  },
+  elevators(S) {
+    const w = 0.9 + S.d * 0.4;
+    [[4, 1], [13, 9.5], [22, 18]].forEach(([s, b], k) => {
+      const [x, f] = L(s);
+      const m = S.F.part({ at: [x, b - 0.5, f], size: [5, 1, 5], color: S.c, moving: true });
+      anims.push(() => S.F.place(m, x, b + 4.25 * (1 - Math.cos(rt * w + k * Math.PI)) - 0.5, f));
+    });
+    blkAt(S, 31, 26.5, 5, "#e2e8f0");
+    return 29.5;
+  },
+  killSteps(S) {
+    for (let k = 0; k < 9; k++) {
+      const s = 5 + k * 6.5, top = 2.3 * (k + 1), [x, f] = L(s), [ox, of] = outward(s);
+      S.F.blk(x, top, f, 5, 5, S.c);
+      const side = k % 2 ? -1 : 1;   // the outer half is red, then the inner half...
+      S.F.part({ at: [x + ox * side * 1.35, top + 0.15, f + of * side * 1.35], size: alongX(s) ? [5, 0.3, 2.3] : [2.3, 0.3, 5], color: "#ff2d2d", material: "neon", kill: true, studs: false });
+    }
+    return 2.3 * 10;
+  },
+  blink(S) {
+    const n = 9;
+    for (let k = 0; k < n; k++) {
+      const m = blkAt(S, 3 + k * 6.4, 2.8 * (k + 1), 4, S.c);
+      blinkers.push({ m, mats: m.material, k, on: true });
+    }
+    S.tip = "Odd and even steps take turns - hop across when yours flashes white.";
+    return 2.8 * (n + 1);
+  },
+  conveyors(S) {
+    const T = tiers(S, 4, "#1f2937");
+    const sp = 5 + S.d * 2;
+    T.forEach((t, k) => t.pieces.forEach((pc) => {
+      const back = travel(pc.s).map((v) => -v);
+      belt(S, pc, k === 1 ? outward(pc.s) : back, k === 1 ? sp * 0.8 : sp);
+    }));
+    return 17;
+  },
+  lasers(S) {
+    const T = tiers(S, 4, "#64748b");
+    const gates = [[6, 0], [16, 0], [21, 0], [38, 1], [57, 2]];
+    gates.forEach(([s, ti], k) => {
+      const top = T[ti].top, [x, f] = L(s), [ox, of] = outward(s);
+      const ax = alongX(s);
+      for (const side of [-1, 1]) S.F.part({ at: [x + ox * side * 2.6, top + 2.5, f + of * side * 2.6], size: [0.8, 5, 0.8], color: "#1e293b" });
+      const beams = [0.8, 2.4, 4].map((y) => S.F.part({ at: [x, top + y, f], size: ax ? [0.35, 0.35, 4.6] : [4.6, 0.35, 0.35], color: "#ff2d2d", material: "neon", collide: false, studs: false, shadow: false }));
+      const w = 2.2 + S.d * 0.6, ph = k * 1.7, duty = -0.3 + S.d * 0.25;
+      const on = () => Math.sin(rt * w + ph) > duty;
+      for (const m of beams) hazards.push({ mesh: m, on });
+      anims.push(() => { const v = on(); for (const m of beams) m.visible = v; });
+    });
+    return 17;
+  },
+  crumble(S) {
+    const n = 10, size = 4 - S.d * 0.6;
+    for (let k = 0; k < n; k++) {
+      const m = blkAt(S, 3 + k * 5.6, 2.4 * (k + 1), size, S.c);
+      m.userData.part.onTouch = () => dropBlock(m);
+      world.touchers.push(m);
+      fallers.push({ m, state: 0, time: 0, mats: m.material, delay: 0.6 - S.d * 0.2 });
+    }
+    return 2.4 * (n + 1);
+  },
+};
+const NAMES = {
+  steps: "Sky Steps", beams: "Balance Beams", sweepers: "Sweepers", lava: "Rising Lava", ladder: "Block Ladder",
+  pushers: "Pushers", bounce: "Jump Pads", pillar: "Pillar Ledges", elevators: "Elevators", killSteps: "Hot Steps",
+  blink: "Blink Steps", conveyors: "Conveyors", lasers: "Lasers", crumble: "Crumbling Steps",
+};
+
+function dropBlock(m) {
+  const fb = fallers.find((q) => q.m === m);
+  if (!fb || fb.state !== 0) return;
+  fb.state = 1; fb.time = 0; m.material = WARN;
+}
+function setSolid(m, on) {
+  const i = world.solids.indexOf(m);
+  if (on && i < 0) world.solids.push(m);
+  if (!on && i >= 0) world.solids.splice(i, 1);
+}
+
+// ------------------------------------------------------------------ building a tower
+let tower = null;   // { seed, sections: [{ name, base, top, tip }], top, finish }
+function clearTower() {
+  for (const m of towerParts) {
+    world.remove(m);
+    if (m.isSprite) { if (m.material.map) m.material.map.dispose(); m.material.dispose(); }
+    else m.geometry.dispose();
+  }
+  towerParts = [];
+  anims = []; hazards = []; belts = []; pushers = []; fallers = []; blinkers = [];
+}
+function pad(y, color) {
+  track(world.part({ size: [8, 1, 8], pos: [0, y - 0.5, 0], color: "#334155" }));
+  track(world.part({ size: [6, 0.2, 6], pos: [0, y + 0.1, 0], color, material: "neon", collide: false, studs: false }));
+}
+function buildTower(seed, forceKeys) {
+  clearTower();
+  const rng = mulberry32(seed);
+  const keys = Object.keys(SECTIONS);
+  for (let i = keys.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [keys[i], keys[j]] = [keys[j], keys[i]]; }
+  const pick = forceKeys || keys.slice(0, SECTION_COUNT);
+  const sections = [];
+  let y = 1;
+  pad(y, "#facc15");
+  pick.forEach((key, k) => {
+    const c = PAL[(k + (seed % PAL.length)) % PAL.length];
+    // (sections are never mirrored: each one ends on the far side of the loop from where the next one starts)
+    const S = { F: new Frame(new THREE.Vector3(0, y, 0), 1), d: k / (SECTION_COUNT - 1), c, rng, tip: "" };
+    const H = SECTIONS[key](S);
+    // corner posts and a ring at the top of the section, so you can see the floors
+    for (const [cx, cz] of [[-14.5, -14.5], [14.5, -14.5], [-14.5, 14.5], [14.5, 14.5]]) {
+      track(world.part({ size: [1, H, 1], pos: [cx, y + H / 2, cz], color: c, collide: false, studs: false }));
+    }
+    for (const [cx, cz, sx, sz] of [[0, -14.5, 30, 0.6], [0, 14.5, 30, 0.6], [-14.5, 0, 0.6, 30], [14.5, 0, 0.6, 30]]) {
+      track(world.part({ size: [sx, 0.6, sz], pos: [cx, y + H, cz], color: c, material: "neon", collide: false, studs: false, shadow: false }));
+    }
+    const lab = world.label(String(k + 1), { pos: [14.5, y + 3, 14.5], height: 2.6 });
+    track(lab);
+    sections.push({ name: NAMES[key], key, base: y, top: y + H, tip: S.tip, F: S.F, d: S.d });
+    y += H;
+    if (k < SECTION_COUNT - 1) pad(y, c);
+  });
+  // the top
+  track(world.part({ size: [8, 1, 8], pos: [0, y - 0.5, 0], color: "#ca8a04" }));
+  const fin = track(world.part({ size: [6, 0.3, 6], pos: [0, y + 0.15, 0], color: "#fde047", material: "neon", collide: false, studs: false, onTouch: () => reachTop() }));
+  track(world.part({ size: [1.4, 2, 1.4], pos: [0, y + 9, 0], color: "#a16207", collide: false }));
+  track(world.part({ size: [3, 2.4, 3], pos: [0, y + 11.2, 0], color: "#facc15", material: "neon", collide: false, studs: false }));
+  const topLab = world.label("TOP", { pos: [0, y + 15, 0], height: 3.4, color: "#fde047" });
+  track(topLab);
+  tower = { seed, sections, top: y, fin };
+  return tower;
+}
+
+// ------------------------------------------------------------------ game state
+let wins = 0;
+try { wins = Number(localStorage.getItem("blockos.towerrush.wins")) || 0; } catch (_) {}
+let phase = "idle";        // "play" | "wait" | "idle"
+let left = 0;              // seconds left in this phase
+let roundNo = 0;
+let best = 0;              // best height this round
+let won = false, scored = false, playing = false, wonAt = 0;
+let fallTop = 0;           // highest point of the current fall
+let lastRoundMsg = 0;
+
+const me = world.spawnPlayer({ pos: SPAWN, yaw: 0 });
+me.frozen = true;
+world.onRespawn((p) => { p.yaw = world.cam.yaw = 0; fallTop = p.pos.y; });
+Kit.onKey((code) => { if (code === "KeyR" && playing && me.alive) world.kill(); });
+
+const net = Kit.net(ID, { room: "main" });
+world.online(net);
+window.net = net;
+const sendState = net.state.bind(net);
+net.state = (s) => sendState(Object.assign(s, { h: Math.round(best), wn: wins, ok: won ? 1 : 0, sd: tower ? tower.seed : 0 }));
+
+// UI
+const bannerEl = document.createElement("div"); bannerEl.className = "tr-banner"; document.body.appendChild(bannerEl);
+let bannerT = 0;
+function banner(title, sub, time) {
+  bannerEl.innerHTML = "";
+  bannerEl.append(title);
+  if (sub) { const s = document.createElement("small"); s.textContent = sub; bannerEl.appendChild(s); }
+  bannerEl.classList.add("on");
+  bannerT = time || 2.4;
+}
+const timerEl = document.createElement("div"); timerEl.className = "tr-timer"; document.body.appendChild(timerEl);
+const meter = document.createElement("div"); meter.className = "tr-meter"; meter.innerHTML = "<i></i>"; document.body.appendChild(meter);
+const meMark = document.createElement("b"); meMark.className = "me"; meter.appendChild(meMark);
+const marks = new Map();
+net.on("leave", (pl) => { const el = marks.get(pl.id); if (el) { el.remove(); marks.delete(pl.id); } });
+
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const heightOf = (y) => Math.max(0, y - 1);
+
+function startRound(seed, timeLeft, forceKeys) {
+  buildTower(seed, forceKeys);
+  roundNo++;
+  phase = "play";
+  left = timeLeft ?? ROUND;
+  rt = ROUND - left;
+  best = 0; won = false; scored = false;
+  world.checkpoint(SPAWN);
+  if (me.alive) { me.pos.set(...SPAWN); me.vel.set(0, 0, 0); me.yaw = world.cam.yaw = 0; }
+  fallTop = me.pos.y;
+  if (playing) banner("New tower!", `${SECTION_COUNT} sections - reach the top in ${fmt(left)}`, 3);
+}
+function endRound() {
+  if (phase !== "play") return;
+  phase = "wait";
+  left = BREAK;
+  if (!won) banner("Time's up!", `You climbed ${Math.round(best)} studs`, 3);
+  if (playing && !scored) { scored = true; Kit.finish(ID, Math.round(best)); }
+}
+function sendRound() {
+  if (!net.online || !net.isHost || !tower) return;
+  net.event({ k: "r", sd: tower.seed, l: Math.round(left * 10) / 10, ph: phase === "wait" ? "w" : "p" });
+}
+function newSeed() { return (Math.random() * 2147483647) | 0 || 1; }
+
+const gotBadges = new Set();
+function badge(id, name, desc) {
+  if (gotBadges.has(id)) return;
+  gotBadges.add(id);
+  Kit.badge(ID, id, name, desc);
+}
+
+function reachTop() {
+  if (!playing || phase !== "play" || won) return;
+  won = true;
+  wins++;
+  wonAt = ROUND - left;
+  best = heightOf(tower.top);
+  try { localStorage.setItem("blockos.towerrush.wins", String(wins)); } catch (_) {}
+  Kit.sfx("win");
+  banner("You reached the top!", `${fmt(wonAt)} - ${wins} ${wins === 1 ? "win" : "wins"}`, 4);
+  badge("first-win", "Top of the Tower", "Reached the top of a tower before time ran out.");
+  if (wins >= 5) badge("veteran", "Tower Veteran", "Reached the top of 5 towers.");
+  if (left >= 180) badge("speed", "Speed Climber", "Reached the top with 3 minutes or more left on the clock.");
+  if (net.online && net.players.size > 0) {
+    const beaten = [...net.players.values()].every((pl) => !(pl.state && pl.state.ok && pl.state.sd === tower.seed));
+    if (beaten) badge("king", "King of the Tower", "Got to the top first in an online round.");
+    net.event({ k: "win", t: Math.round(wonAt) });
+  }
+  if (!scored) { scored = true; Kit.finish(ID, Math.round(best)); }
+}
+
+net.on("event", (pl, e) => {
+  if (!e || typeof e !== "object") return;
+  if (e.k === "r" && Number.isFinite(e.sd) && Number.isFinite(e.l)) {
+    lastRoundMsg = performance.now();
+    if (net.isHost) return;
+    const l = Math.max(0, Math.min(ROUND, e.l));
+    if (e.ph === "p") {
+      if (!tower || tower.seed !== (e.sd | 0) || phase !== "play") startRound(e.sd | 0, l);
+      else if (Math.abs(left - l) > 1.5) { left = l; rt = ROUND - l; }
+    } else if (phase === "play" && tower && tower.seed === (e.sd | 0)) {
+      endRound(); left = Math.min(BREAK, l);
+    } else if (phase === "wait") left = Math.min(left, l);
+  }
+  if (e.k === "win") Kit.toast(`${pl.name} reached the top!`, Number.isFinite(e.t) ? `in ${fmt(e.t)}` : "", "#facc15");
+});
+net.on("join", () => { if (net.isHost) setTimeout(sendRound, 300); });
+net.on("status", (on) => { if (on && !net.isHost) lastRoundMsg = performance.now(); });
+
+// ------------------------------------------------------------------ per-frame
+let boardT = 0, syncT = 0;
+const tipEl = document.createElement("div");
+tipEl.style.cssText = "position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:15;font-weight:700;font-size:14px;color:#e5e7eb;text-shadow:0 1px 2px #000;pointer-events:none";
+document.body.appendChild(tipEl);
+
+function updateBoard() {
+  const rows = [{ name: me.name, values: [Math.round(best), wins], me: true, h: best }];
+  const top = tower ? heightOf(tower.top) : 1;
+  for (const pl of net.players.values()) {
+    const s = pl.state || {};
+    const same = tower && s.sd === tower.seed;
+    const h = same ? Math.max(0, +s.h || 0) : 0;
+    rows.push({ name: pl.name, values: [h, Math.max(0, s.wn | 0)], h });
+    let el = marks.get(pl.id);
+    if (!el) { el = document.createElement("b"); el.style.background = (pl.avatar && pl.avatar.torso) || "#3b82f6"; meter.appendChild(el); marks.set(pl.id, el); }
+    const y = s.p ? heightOf(+s.p[1] || 0) : 0;
+    el.style.bottom = Math.min(100, (y / top) * 100) + "%";
+    el.style.display = same ? "" : "none";
+  }
+  rows.sort((a, b) => b.h - a.h);
+  Kit.leaderboard(["Height", "Wins"], rows);
+}
+
+world.start((dt) => {
+  if (phase !== "idle") {
+    left -= dt;
+    if (phase === "play") rt += dt;
+  }
+  for (const fn of anims) fn();
+  // blinking steps: even and odd steps take turns, with a short overlap to hop across
+  for (const b of blinkers) {
+    const ph = rt % 4;
+    const on = b.k % 2 ? ph >= 2 || ph < 0.6 : ph < 2.6;
+    const warn = b.k % 2 ? ph >= 3.8 || ph < 0.6 : ph >= 1.8;
+    if (on !== b.on) { b.on = on; b.m.visible = on; setSolid(b.m, on); }
+    b.m.material = on && warn ? WARN : b.mats;
+  }
+  // crumbling steps
+  for (const fb of fallers) {
+    if (fb.state === 0) continue;
+    fb.time += dt;
+    if (fb.state === 1 && fb.time > fb.delay) { fb.state = 2; fb.time = 0; fb.m.visible = false; setSolid(fb.m, false); }
+    else if (fb.state === 2 && fb.time > 3) { fb.state = 0; fb.m.visible = true; fb.m.material = fb.mats; setSolid(fb.m, true); }
+  }
+  const p = me;
+  if (p.alive && playing) {
+    if (p.onGround && p.standingOn) for (const b of belts) if (b.m === p.standingOn) p.pos.addScaledVector(b.dir, b.speed * dt);
+    for (const pu of pushers) {
+      const m = pu.m, s = m.userData.part.size, q = m.position;
+      if (Math.abs(p.pos.x - q.x) < s.x / 2 + 0.95 && Math.abs(p.pos.z - q.z) < s.z / 2 + 0.95 && p.pos.y < q.y + s.y / 2 && p.pos.y + 5.2 > q.y - s.y / 2) {
+        const ax = pu.axis;
+        // shove the player the way the wall is moving (the kit would resolve it along x first)
+        const sgn = Math.abs(pu.v) > 0.0001 ? Math.sign(pu.v) * pu.sign : Math.sign(p.pos[ax] - q[ax]) || 1;
+        p.pos[ax] = sgn > 0 ? q[ax] + s[ax] / 2 + 0.97 : q[ax] - s[ax] / 2 - 0.97;
+      }
+    }
+    for (const h of hazards) if (h.on() && world.touching(h.mesh)) { world.kill(); break; }
+    // height, falls and badges
+    const hgt = heightOf(p.pos.y);
+    if (phase === "play" && !won && hgt > best) best = hgt;
+    if (!p.onGround) fallTop = Math.max(fallTop, p.pos.y);
+    else {
+      if (fallTop - p.pos.y > 100) badge("longfall", "Long Fall", "Fell more than 100 studs in one go - and walked it off.");
+      fallTop = p.pos.y;
+    }
+    if (tower && phase === "play") {
+      if (best >= heightOf(tower.sections[0].top)) badge("rookie", "Tower Rookie", "Climbed your first section of a tower.");
+      if (best >= heightOf(tower.top) / 2) badge("halfway", "Halfway Up", "Climbed halfway up a tower.");
+    }
+  }
+  // round flow
+  if (phase === "play" && left <= 0) endRound();
+  if (phase === "wait" && left <= 0) {
+    if (!net.online || net.isHost) { startRound(newSeed()); sendRound(); }
+    else if (performance.now() - lastRoundMsg > 6000) { startRound(newSeed()); }
+    else left = 0;
+  }
+  if (net.online && net.isHost && phase === "play") {
+    // everyone made it? end early
+    const all = won && [...net.players.values()].every((pl) => pl.state && pl.state.ok && pl.state.sd === tower.seed);
+    if (all && left > 6) { left = 6; sendRound(); }
+  } else if (!net.online && won && phase === "play" && left > 5) left = 5;
+  syncT -= dt;
+  if (syncT <= 0) { syncT = 3; sendRound(); }
+  // HUD
+  if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) bannerEl.classList.remove("on"); }
+  const show = Math.max(0, left);
+  if (phase === "play") { timerEl.innerHTML = `${fmt(show)}<small>${won ? "YOU MADE IT" : "TIME LEFT"}</small>`; timerEl.classList.toggle("low", show < 30 && !won); }
+  else if (phase === "wait") { timerEl.innerHTML = `${Math.ceil(show)}<small>NEXT TOWER</small>`; timerEl.classList.remove("low"); }
+  else timerEl.innerHTML = `--:--<small>WAITING</small>`;
+  boardT -= dt;
+  if (boardT <= 0 && tower) {
+    boardT = 0.4;
+    updateBoard();
+    const top = heightOf(tower.top), hgt = heightOf(me.pos.y);
+    meter.firstChild.style.height = Math.min(100, (best / top) * 100) + "%";
+    meMark.style.bottom = Math.min(100, (hgt / top) * 100) + "%";
+    const sec = tower.sections.findIndex((s) => me.pos.y < s.top);
+    const si = sec < 0 ? SECTION_COUNT : sec + 1;
+    Kit.hud(`Height ${Math.round(hgt)} / ${Math.round(top)}<small>${sec < 0 ? "At the top" : `Section ${si} / ${SECTION_COUNT}: ${tower.sections[sec].name}`}</small>`);
+    tipEl.textContent = sec >= 0 && me.pos.y > tower.sections[sec].base - 1 ? tower.sections[sec].tip || "" : "";
+  }
+});
+
+// ------------------------------------------------------------------ start
+window.tr = { L, get rt() { return rt; }, get pushers() { return pushers; }, get tower() { return tower; }, get phase() { return phase; }, get left() { return left; }, set left(v) { left = v; }, get best() { return best; }, get won() { return won; }, get wins() { return wins; }, startRound, reachTop };
+
+(async function startScreen() {
+  // a tower to look at behind the start screen
+  startRound(newSeed());
+  phase = "idle";
+  updateBoard();
+  await Kit.overlay("Tower Rush",
+    `Race to the top of a tower made of ${SECTION_COUNT} random sections before the timer runs out. There are no checkpoints: fall and you land wherever you land, touch red and you're back at the bottom. Every round builds a brand-new tower, and online everyone climbs the same one.\n\nWASD / arrows to move, Space to jump, drag or Left/Right to turn the camera, mouse wheel to zoom, Shift for shift lock, R to reset.`,
+    "Play");
+  playing = true;
+  me.frozen = false;
+  if (net.online && !net.isHost) {
+    // the host shares the round every few seconds; until then, wait
+    if (!(phase === "play" && performance.now() - lastRoundMsg < 8000)) { phase = "wait"; left = 2; }
+  } else {
+    phase = "play"; left = ROUND; rt = 0;
+    banner("Climb!", `${SECTION_COUNT} sections - reach the top in ${fmt(ROUND)}`, 3);
+    sendRound();
+  }
+})();
+</script>
+</body>
+</html>

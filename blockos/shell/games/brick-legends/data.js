@@ -71,7 +71,7 @@ const ITEMS = {
   potion:    { name: "Potion", price: 12, use: "heal", amt: 50, desc: "Restores 50 HP to one ally." },
   hipotion:  { name: "Big Potion", price: 45, use: "heal", amt: 150, desc: "Restores 150 HP to one ally." },
   megapotion:{ name: "Grand Potion", price: 120, use: "heal", amt: 400, desc: "Restores 400 HP to one ally." },
-  ether:     { name: "Mana Drop", price: 40, use: "mp", amt: 25, desc: "Restores 25 MP to one ally." },
+  ether:     { name: "Mana Drop", price: 40, use: "mp", amt: 40, desc: "Restores 40 MP to one ally." },
   antidote:  { name: "Antidote", price: 8, use: "cure", status: ["poison"], desc: "Cures poison (battle only)." },
   bell:      { name: "Wake Bell", price: 10, use: "cure", status: ["sleep"], desc: "Wakes a sleeping ally (battle only)." },
   remedy:    { name: "Remedy", price: 30, use: "cure", status: ["poison", "sleep"], desc: "Cures poison and sleep (battle only)." },
@@ -148,11 +148,11 @@ const ENEMIES = {
   drake:     { name: "Ember Drake", art: "dragon", col: ["#dc2626", "#7f1d1d", "#fbbf24"], hp: 310, atk: 58, def: 34, mag: 60, spd: 14, xp: 175, gold: 100, weak: ["ice"], resist: ["fire"], big: true, skills: [["firebreath", 1]], drops: [["firebomb", 0.3]] },
   gargoyle:  { name: "Gargoyle", art: "gargoyle", col: ["#7b8798", "#3f4a5c"], hp: 270, atk: 58, def: 44, mag: 30, spd: 13, xp: 155, gold: 90, weak: ["thunder"], resist: ["ice"], skills: [["dive", 1]], drops: [["remedy", 0.15]] },
   // mini-bosses and the final boss
-  treant:    { name: "Mossy Treant", art: "treant", col: ["#7c4a1e", "#2f8a3e"], hp: 460, atk: 20, def: 10, mag: 18, spd: 6, xp: 220, gold: 200, weak: ["fire"], resist: ["thunder"], boss: true, ai: "treant", drops: [["ether", 1]] },
-  wyrm:      { name: "Sand Wyrm", art: "wyrm", col: ["#d6a756", "#8a5a1b"], hp: 1500, atk: 40, def: 22, mag: 34, spd: 12, xp: 700, gold: 450, weak: ["ice"], resist: ["fire"], boss: true, ai: "wyrm", drops: [["megapotion", 1]] },
-  colossus:  { name: "Frost Colossus", art: "golem", col: ["#bae6fd", "#38bdf8", "#e0f2fe"], hp: 2500, atk: 58, def: 34, mag: 46, spd: 8, xp: 1300, gold: 800, weak: ["fire"], resist: ["ice"], boss: true, ai: "colossus", drops: [["elixir", 1]] },
-  king:      { name: "The Hollow King", art: "king", col: ["#1e1b4b", "#7c3aed", "#facc15"], hp: 2800, atk: 70, def: 44, mag: 70, spd: 15, xp: 0, gold: 0, weak: [], boss: true, ai: "king" },
-  king2:     { name: "Hollow King Unbound", art: "dragon", col: ["#5b21b6", "#2e1065", "#f0abfc"], hp: 3400, atk: 86, def: 46, mag: 82, spd: 18, xp: 3000, gold: 2000, weak: ["thunder"], boss: true, ai: "king2", crown: true },
+  treant:    { name: "Mossy Treant", art: "treant", col: ["#7c4a1e", "#2f8a3e"], hp: 540, atk: 22, def: 10, mag: 18, spd: 6, xp: 220, gold: 200, weak: ["fire"], resist: ["thunder"], boss: true, ai: "treant", drops: [["ether", 1]] },
+  wyrm:      { name: "Sand Wyrm", art: "wyrm", col: ["#d6a756", "#8a5a1b"], hp: 1300, atk: 36, def: 22, mag: 34, spd: 12, xp: 700, gold: 450, weak: ["ice"], resist: ["fire"], boss: true, ai: "wyrm", drops: [["megapotion", 1]] },
+  colossus:  { name: "Frost Colossus", art: "golem", col: ["#bae6fd", "#38bdf8", "#e0f2fe"], hp: 2200, atk: 54, def: 34, mag: 46, spd: 8, xp: 1300, gold: 800, weak: ["fire"], resist: ["ice"], boss: true, ai: "colossus", drops: [["elixir", 1]] },
+  king:      { name: "The Hollow King", art: "king", col: ["#1e1b4b", "#7c3aed", "#facc15"], hp: 2200, atk: 70, def: 44, mag: 70, spd: 15, xp: 0, gold: 0, weak: [], boss: true, ai: "king" },
+  king2:     { name: "Hollow King Unbound", art: "dragon", col: ["#5b21b6", "#2e1065", "#f0abfc"], hp: 2300, atk: 76, def: 46, mag: 76, spd: 18, xp: 3000, gold: 2000, weak: ["thunder"], boss: true, ai: "king2", crown: true },
 };
 
 const ESKILLS = {
