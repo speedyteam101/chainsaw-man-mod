@@ -437,7 +437,7 @@ function draw() {
 const game = Kit.loop(update, draw);
 reset();
 draw();
-Kit.overlay("Ninja Run", "Dash across the rooftops as far as you can.\nJump crates, saws and gaps. Slide under red beams.\nGrab coins for bonus points. It keeps getting faster!\n\nSpace / Up / W or left click: jump (press again to double jump)\nDown / S or right click (hold): slide", "Run").then(() => game.start());
+Kit.overlay("Ninja Run", "Dash across the rooftops as far as you can. Jump crates, saws and gaps, and slide under red beams. Grab coins for bonus points. It keeps getting faster!\n\nSpace / Up / W or left click: jump (again in the air to double jump)\nDown / S or hold right click: slide", "Run").then(() => game.start());
 </script>
 </body>
 </html>

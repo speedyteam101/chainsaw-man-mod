@@ -16,7 +16,7 @@ const { ctx, W, H } = Kit.stage(COLS * T, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
 
 const PW = 20, PH = 28;
-const RUN = 220, ACCEL = 2200, GRAV = 1800, JUMP = 610, MAX_FALL = 900, CLIMB = 160;
+const RUN = 220, ACCEL = 2200, GRAV = 1800, JUMP = 660, MAX_FALL = 900, CLIMB = 160;
 const COYOTE = 0.1, BUFFER = 0.12;
 const START_LIVES = 5;
 
@@ -55,9 +55,9 @@ function buildSection(k) {
   let dir = cx < COLS / 2 ? 1 : -1;
   let guard = 0;
   const steps = [{ c: cx, r: base, w: 3 }];
-  while (cr - (top + 2) > 3 && guard++ < 20) {
+  while (cr - (top + 3) > 3 && guard++ < 20) {
     const type = theme.id === "mixed" ? Kit.pick(["basic", "kill", "conveyor", "vanish", "moving", "laser"]) : theme.id;
-    if (type === "truss" && cr - (top + 2) >= 6) {
+    if (type === "truss" && cr - (top + 3) >= 7) {
       // climb a truss beside the platform, then hop to the next ledge
       const blocked = (c) => cr === base && prevHole !== null && (Math.abs(c - prevPad) < 3 || Math.abs(c - prevHole) < 3);
       let tc = null;
@@ -80,7 +80,7 @@ function buildSection(k) {
       }
     }
     const dy = Math.random() < 0.25 + diff * 0.4 ? 3 : 2;
-    let nr = Math.max(cr - dy, top + 4);
+    let nr = Math.max(cr - dy, top + 5);
     const reach = cr - nr >= 3 ? 4 : 5;
     // try a few spots; avoid ones that hang just above an earlier step (you'd bonk your head)
     let nx = null;
@@ -99,8 +99,8 @@ function buildSection(k) {
     cx = nx;
     cr = nr;
   }
-  // final step two rows under the hole in the next floor
-  const fr = top + 2;
+  // final step three rows under the hole in the next floor
+  const fr = top + 3;
   let fx = cx + dir * Kit.randInt(3, 4);
   if (fx < 2 || fx > COLS - 3) { dir = -dir; fx = cx + dir * Kit.randInt(3, 4); }
   fx = Kit.clamp(fx, 2, COLS - 3);
@@ -256,6 +256,7 @@ function update(dt) {
   if (player.grounded) player.coyote = COYOTE;
   if (player.climbing) {
     player.vy = up ? -CLIMB : down ? CLIMB : 0;
+    if (!want) player.x += (truss.x + (T - PW) / 2 - player.x) * Math.min(1, dt * 12);   // hug the truss
     if (Kit.key("Space") && player.buffer > 0) {
       player.climbing = false;
       player.vy = -JUMP * 0.9;
@@ -606,7 +607,7 @@ function draw() {
 const game = Kit.loop(update, draw);
 reset();
 draw();
-Kit.overlay("Tower Climb", "Climb an endless tower of obstacle stages.\nRed bricks and lasers are deadly. Conveyors push you,\nwhite blocks crumble, purple ones move. Climb trusses with Up.\nEvery stage has a checkpoint flag. You get 5 lives\n(+1 every 5 stages). Your height is your score!\n\nLeft / Right or A / D to run\nSpace / Up / W to jump, Up / Down on a truss to climb", "Climb").then(() => game.start());
+Kit.overlay("Tower Climb", "Climb an endless tower of obstacle stages. Red bricks and lasers are deadly, conveyors push you, white blocks crumble and purple ones move.\nEvery stage ends at a checkpoint flag. You have 5 lives, plus one more every 5 stages. Your height is your score!\n\nLeft / Right or A / D: run\nSpace / Up / W: jump\nUp / Down on a truss: climb", "Climb").then(() => game.start());
 </script>
 </body>
 </html>

@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Air Hockey</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .diff-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .diff-row .kit-btn { padding: 12px 22px; }
+  .kit-btn.easy { background: #12b76a; }
+  .kit-btn.medium { background: #f59e0b; box-shadow: 0 4px 0 #b45309; }
+  .kit-btn.hard { background: #ef4444; box-shadow: 0 4px 0 #991b1b; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "air-hockey";
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+
+const T = { x1: 40, y1: 40, x2: 920, y2: 500 };   // table playing area
+const MID = (T.x1 + T.x2) / 2;
+const CYM = (T.y1 + T.y2) / 2;
+const GOAL_H = 150;
+const MALLET_R = 30, PUCK_R = 17;
+const MAX_PUCK = 1500;
+const WIN = 7;
+const DIFFS = {
+  easy:   { name: "Easy",   speed: 520,  react: 0.75, attack: 0.55, mult: 1 },
+  medium: { name: "Medium", speed: 820,  react: 0.9,  attack: 0.8,  mult: 1.5 },
+  hard:   { name: "Hard",   speed: 1150, react: 1,    attack: 1,    mult: 2 },
+};
+
+let diff = DIFFS.medium;
+let you, cpu, puck, goals, state, pauseT, msg, msgT, time, trail, sparks, pointer;
+
+function newMatch() {
+  goals = [0, 0];
+  you = { x: T.x1 + 110, y: CYM, vx: 0, vy: 0, px: T.x1 + 110, py: CYM };
+  cpu = { x: T.x2 - 110, y: CYM, vx: 0, vy: 0, px: T.x2 - 110, py: CYM, mode: "defend" };
+  pointer = { x: you.x, y: you.y, active: false };
+  faceoff(Math.random() < 0.5 ? 0 : 1);
+  updateHud();
+}
+
+function faceoff(side) {
+  // side 0: puck placed on the player's half
+  puck = { x: side === 0 ? MID - 140 : MID + 140, y: CYM, vx: 0, vy: 0 };
+  trail = [];
+  sparks = sparks || [];
+}
+
+function updateHud() {
+  Kit.hud(`You ${goals[0]} - ${goals[1]} CPU<small>${diff.name} · Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- input ----------
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  pointer.x = p.x; pointer.y = p.y; pointer.active = true;
+});
+canvas.style.cursor = "none";
+
+function moveMallet(m, tx, ty, maxSpeed, dt, minX, maxX) {
+  tx = Kit.clamp(tx, minX, maxX);
+  ty = Kit.clamp(ty, T.y1 + MALLET_R, T.y2 - MALLET_R);
+  const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy);
+  const step = maxSpeed * dt;
+  m.px = m.x; m.py = m.y;
+  if (d <= step) { m.x = tx; m.y = ty; } else { m.x += (dx / d) * step; m.y += (dy / d) * step; }
+  m.vx = (m.x - m.px) / Math.max(dt, 1e-4);
+  m.vy = (m.y - m.py) / Math.max(dt, 1e-4);
+}
+
+// ---------- CPU ----------
+function predictY(targetX) {
+  // follow the puck's path with wall reflections until it reaches targetX
+  if (Math.abs(puck.vx) < 20) return puck.y;
+  const t = (targetX - puck.x) / puck.vx;
+  if (t < 0) return CYM;
+  let y = puck.y + puck.vy * t;
+  const lo = T.y1 + PUCK_R, hi = T.y2 - PUCK_R, span = hi - lo;
+  let r = (y - lo) % (2 * span);
+  if (r < 0) r += 2 * span;
+  return lo + (r > span ? 2 * span - r : r);
+}
+
+function cpuThink(dt) {
+  const homeX = T.x2 - 80;
+  let tx = homeX, ty = CYM;
+  const onMySide = puck.x > MID - 10;
+  const goalX = T.x1, goalY = CYM;
+  if (onMySide && (puck.vx > -150 || puck.x > T.x2 - 200)) {
+    // attack: get behind the puck relative to the player's goal, then drive through it
+    const dx = puck.x - goalX, dy = puck.y - goalY, d = Math.hypot(dx, dy) || 1;
+    const behindX = puck.x + (dx / d) * (MALLET_R + PUCK_R + 6);
+    const behindY = puck.y + (dy / d) * (MALLET_R + PUCK_R + 6);
+    const lined = Math.hypot(cpu.x - behindX, cpu.y - behindY) < 22 || cpu.mode === "strike";
+    if (lined && Math.random() < diff.attack + 0.2) {
+      cpu.mode = "strike";
+      tx = puck.x - (dx / d) * 30;
+      ty = puck.y - (dy / d) * 30;
+      if (cpu.x < puck.x - 20 || Math.hypot(cpu.x - puck.x, cpu.y - puck.y) > 140) cpu.mode = "attack";
+    } else {
+      cpu.mode = "attack";
+      tx = behindX;
+      ty = behindY;
+      // don't knock the puck into our own goal while circling around
+      if (puck.x > cpu.x - 10 && Math.abs(puck.y - cpu.y) < MALLET_R + PUCK_R + 10) ty = cpu.y + (cpu.y < puck.y ? -60 : 60);
+    }
+  } else {
+    cpu.mode = "defend";
+    const lineX = homeX - 20;
+    const py = puck.vx > 0 ? predictY(lineX) : puck.y;
+    const err = (1 - diff.react) * 120;
+    ty = CYM + (Kit.clamp(py, CYM - GOAL_H / 2 - 30, CYM + GOAL_H / 2 + 30) - CYM) * diff.react + Math.sin(time * 1.7) * err * 0.3;
+    tx = lineX;
+  }
+  const speed = cpu.mode === "strike" ? diff.speed * 1.25 : diff.speed;
+  moveMallet(cpu, tx, ty, speed, dt, MID + MALLET_R, T.x2 - MALLET_R);
+}
+
+// ---------- physics ----------
+function hitMallet(m) {
+  const dx = puck.x - m.x, dy = puck.y - m.y, d = Math.hypot(dx, dy);
+  const minD = MALLET_R + PUCK_R;
+  if (d >= minD || d === 0) return;
+  const nx = dx / d, ny = dy / d;
+  puck.x = m.x + nx * minD;
+  puck.y = m.y + ny * minD;
+  const rvx = puck.vx - m.vx, rvy = puck.vy - m.vy;
+  const vn = rvx * nx + rvy * ny;
+  if (vn < 0) {
+    puck.vx -= 1.9 * vn * nx;
+    puck.vy -= 1.9 * vn * ny;
+    const sp = Math.hypot(puck.vx, puck.vy);
+    if (sp > MAX_PUCK) { puck.vx *= MAX_PUCK / sp; puck.vy *= MAX_PUCK / sp; }
+    if (-vn > 150) { Kit.sfx("click"); spark(puck.x - nx * PUCK_R, puck.y - ny * PUCK_R, "#fff"); }
+  }
+}
+
+function spark(x, y, color) {
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * 6.28, s = Kit.rand(60, 220);
+    sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3, color });
+  }
+}
+
+function stepPuck(dt) {
+  puck.x += puck.vx * dt;
+  puck.y += puck.vy * dt;
+  const f = Math.exp(-0.35 * dt);
+  puck.vx *= f; puck.vy *= f;
+  hitMallet(you);
+  hitMallet(cpu);
+  // walls are resolved after the mallets so the puck can never be pushed through a rail
+  const inGoalMouth = Math.abs(puck.y - CYM) < GOAL_H / 2 - PUCK_R * 0.3;
+  if (puck.y < T.y1 + PUCK_R) { puck.y = T.y1 + PUCK_R; puck.vy = Math.abs(puck.vy) * 0.9; bump(); }
+  if (puck.y > T.y2 - PUCK_R) { puck.y = T.y2 - PUCK_R; puck.vy = -Math.abs(puck.vy) * 0.9; bump(); }
+  if (!inGoalMouth) {
+    if (puck.x < T.x1 + PUCK_R) { puck.x = T.x1 + PUCK_R; puck.vx = Math.abs(puck.vx) * 0.9; bump(); }
+    if (puck.x > T.x2 - PUCK_R) { puck.x = T.x2 - PUCK_R; puck.vx = -Math.abs(puck.vx) * 0.9; bump(); }
+  } else {
+    if (puck.x < T.x1 - PUCK_R) return scored(1);
+    if (puck.x > T.x2 + PUCK_R) return scored(0);
+  }
+}
+
+let bumpT = 0;
+function bump() {
+  if (bumpT <= 0 && Math.hypot(puck.vx, puck.vy) > 200) { Kit.sfx("click"); bumpT = 0.06; }
+}
+
+function scored(side) {
+  goals[side]++;
+  state = "goal";
+  pauseT = 1.4;
+  msg = side === 0 ? "GOAL!" : "CPU scores";
+  msgT = 1.4;
+  Kit.sfx(side === 0 ? "score" : "lose");
+  spark(side === 0 ? T.x2 : T.x1, puck.y, side === 0 ? "#facc15" : "#ef4444");
+  spark(side === 0 ? T.x2 : T.x1, puck.y, "#fff");
+  puck.vx = puck.vy = 0;
+  puck.x = -100;
+  updateHud();
+  if (goals[side] >= WIN) setTimeout(endMatch, 1200);
+  else setTimeout(() => { faceoff(side === 0 ? 1 : 0); state = "play"; }, 1300);
+}
+
+async function endMatch() {
+  state = "over";
+  game.stop();
+  const won = goals[0] > goals[1];
+  const pts = Math.round((goals[0] * 100 + (won ? 500 : 0) + (won ? (WIN - goals[1]) * 50 : 0)) * diff.mult);
+  const best = Kit.finish(ID, pts);
+  Kit.sfx(won ? "win" : "lose");
+  await Kit.overlay(won ? "You win!" : "CPU wins", `Final: You ${goals[0]} - ${goals[1]} CPU (${diff.name})\nPoints: ${pts}   Best: ${best}`, "Play again");
+  await pickDifficulty();
+  newMatch();
+  state = "play";
+  game.start();
+}
+
+function update(dt) {
+  time += dt;
+  msgT = Math.max(0, msgT - dt);
+  bumpT -= dt;
+  // player mallet: mouse or keyboard
+  const kx = (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0) - (Kit.key("ArrowLeft") || Kit.key("KeyA") ? 1 : 0);
+  const ky = (Kit.key("ArrowDown") || Kit.key("KeyS") ? 1 : 0) - (Kit.key("ArrowUp") || Kit.key("KeyW") ? 1 : 0);
+  if (kx || ky) {
+    pointer.active = false;
+    pointer.x = you.x + kx * 2000; pointer.y = you.y + ky * 2000;
+  }
+  const targetX = pointer.active || kx || ky ? pointer.x : you.x;
+  const targetY = pointer.active || kx || ky ? pointer.y : you.y;
+  const SUB = 4;
+  for (let i = 0; i < SUB; i++) {
+    const sdt = dt / SUB;
+    moveMallet(you, targetX, targetY, pointer.active ? 2600 : 700, sdt, T.x1 + MALLET_R, MID - MALLET_R);
+    if (state === "play") cpuThink(sdt);
+    else moveMallet(cpu, T.x2 - 100, CYM, 400, sdt, MID + MALLET_R, T.x2 - MALLET_R);
+    if (state === "play") stepPuck(sdt);
+  }
+  if (!(kx || ky) && !pointer.active) { you.vx = you.vy = 0; }
+  if (state === "play") {
+    trail.push({ x: puck.x, y: puck.y });
+    if (trail.length > 10) trail.shift();
+  }
+  for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }
+  sparks = sparks.filter((s) => s.life > 0);
+}
+
+// ---------- drawing ----------
+function drawTable() {
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, W, H);
+  // rails
+  Kit.brick(ctx, T.x1 - 26, T.y1 - 26, T.x2 - T.x1 + 52, T.y2 - T.y1 + 52, "#1d4ed8", 26);
+  ctx.fillStyle = "#e0f2fe";
+  ctx.beginPath(); ctx.roundRect(T.x1, T.y1, T.x2 - T.x1, T.y2 - T.y1, 20); ctx.fill();
+  // air holes
+  ctx.fillStyle = "rgba(14,116,144,.12)";
+  for (let y = T.y1 + 18; y < T.y2; y += 26) for (let x = T.x1 + 18; x < T.x2; x += 26) ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+  // markings
+  ctx.strokeStyle = "#ef4444";
+  ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.moveTo(MID, T.y1); ctx.lineTo(MID, T.y2); ctx.stroke();
+  ctx.strokeStyle = "#3b82f6";
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(MID, CYM, 70, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(MID, CYM, 10, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(T.x1, CYM, GOAL_H / 2 + 30, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(T.x2, CYM, GOAL_H / 2 + 30, Math.PI / 2, Math.PI * 1.5); ctx.stroke();
+  // goals
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(T.x1 - 26, CYM - GOAL_H / 2, 26, GOAL_H);
+  ctx.fillRect(T.x2, CYM - GOAL_H / 2, 26, GOAL_H);
+  ctx.fillStyle = "#facc15";
+  ctx.fillRect(T.x1 - 26, CYM - GOAL_H / 2 - 4, 26, 4);
+  ctx.fillRect(T.x1 - 26, CYM + GOAL_H / 2, 26, 4);
+  ctx.fillRect(T.x2, CYM - GOAL_H / 2 - 4, 26, 4);
+  ctx.fillRect(T.x2, CYM + GOAL_H / 2, 26, 4);
+  // score digits on the rail
+  ctx.font = "900 20px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(`${goals[0]}`, MID - 40, 30);
+  ctx.fillText(`${goals[1]}`, MID + 40, 30);
+  ctx.fillStyle = "rgba(255,255,255,.6)";
+  ctx.font = "bold 12px system-ui, sans-serif";
+  ctx.fillText("YOU", MID - 80, 28);
+  ctx.fillText("CPU", MID + 80, 28);
+}
+
+function drawMallet(m, color, dark) {
+  ctx.fillStyle = "rgba(0,0,0,.2)";
+  ctx.beginPath(); ctx.arc(m.x + 4, m.y + 6, MALLET_R, 0, 7); ctx.fill();
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.arc(m.x, m.y, MALLET_R, 0, 7); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(m.x, m.y - 2, MALLET_R - 4, 0, 7); ctx.fill();
+  Kit.brick(ctx, m.x - 12, m.y - 14, 24, 24, dark, 6);
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.fillRect(m.x - 18, m.y - 22, 10, 5);
+}
+
+function draw() {
+  drawTable();
+  trail.forEach((t, i) => {
+    ctx.fillStyle = `rgba(30,41,59,${(i / trail.length) * 0.18})`;
+    ctx.beginPath(); ctx.arc(t.x, t.y, PUCK_R * (0.5 + i / trail.length / 2), 0, 7); ctx.fill();
+  });
+  if (puck.x > -50) {
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.beginPath(); ctx.arc(puck.x + 3, puck.y + 4, PUCK_R, 0, 7); ctx.fill();
+    ctx.fillStyle = "#111827";
+    ctx.beginPath(); ctx.arc(puck.x, puck.y, PUCK_R, 0, 7); ctx.fill();
+    ctx.fillStyle = "#374151";
+    ctx.beginPath(); ctx.arc(puck.x, puck.y - 1, PUCK_R - 5, 0, 7); ctx.fill();
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(puck.x - 4, puck.y - 5, 8, 8);
+  }
+  drawMallet(you, "#60a5fa", "#1d4ed8");
+  drawMallet(cpu, "#f87171", "#b91c1c");
+  for (const s of sparks) {
+    ctx.globalAlpha = s.life / 0.3;
+    ctx.fillStyle = s.color;
+    ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+  }
+  ctx.globalAlpha = 1;
+  if (msgT > 0) {
+    ctx.globalAlpha = Math.min(1, msgT * 2);
+    ctx.font = "900 64px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(15,23,42,.5)";
+    ctx.fillText(msg, W / 2 + 3, CYM + 23);
+    ctx.fillStyle = msg === "GOAL!" ? "#16a34a" : "#dc2626";
+    ctx.fillText(msg, W / 2, CYM + 20);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- difficulty picker ----------
+function pickDifficulty() {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    o.innerHTML = `<div class="kit-panel"><h1>Air Hockey</h1>
+      <p>First to ${WIN} goals wins. Keep the puck out of your goal on the left.\n\nMouse: move your mallet (stays on your half)\nArrows / WASD also work.\n\nPick the CPU's skill (keys 1, 2, 3):</p>
+      <div class="diff-row">
+        <button class="kit-btn easy" data-d="easy">Easy</button>
+        <button class="kit-btn medium" data-d="medium">Medium</button>
+        <button class="kit-btn hard" data-d="hard">Hard</button>
+      </div></div>`;
+    document.body.appendChild(o);
+    const shownAt = performance.now();
+    function choose(key) {
+      diff = DIFFS[key];
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      updateHud();
+      resolve();
+    }
+    function onKey(e) {
+      if (performance.now() - shownAt < 300) return;
+      const map = { Digit1: "easy", Digit2: "medium", Digit3: "hard", Numpad1: "easy", Numpad2: "medium", Numpad3: "hard" };
+      if (map[e.code]) { e.preventDefault(); choose(map[e.code]); }
+      else if (e.code === "Enter" || e.code === "Space") {
+        const f = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.d : null;
+        e.preventDefault();
+        e.stopPropagation();
+        choose(f || "medium");
+      }
+    }
+    o.querySelectorAll("button").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); choose(b.dataset.d); }));
+    addEventListener("keydown", onKey, true);
+    o.querySelector(".medium").focus();
+  });
+}
+
+time = 0;
+sparks = [];
+state = "menu";
+newMatch();
+const game = Kit.loop(update, draw);
+game.start();
+pickDifficulty().then(() => { newMatch(); state = "play"; });
+</script>
+</body>
+</html>

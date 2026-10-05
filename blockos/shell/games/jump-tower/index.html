@@ -385,7 +385,7 @@ function draw() {
 const game = Kit.loop(update, draw);
 reset();
 draw();
-Kit.overlay("Sky Jumper", "Bounce from platform to platform and climb as high as you can.\nGreen is solid, blue moves, white vanishes after one bounce,\nbrown crumbles. Red springs launch you. Grab a jetpack to blast up.\nStomp flying critters from above, but don't bump into them!\n\nLeft / Right or A / D to steer (or move the mouse).\nRun off one side to wrap to the other.", "Jump").then(() => game.start());
+Kit.overlay("Sky Jumper", "Bounce from platform to platform and climb as high as you can. Green is solid, blue moves, white vanishes after one bounce and brown crumbles. Red springs launch you and jetpacks blast you upward. Stomp flying critters from above, but don't bump into them!\n\nLeft / Right or A / D to steer, or move the mouse.\nRun off one side to wrap to the other.", "Jump").then(() => game.start());
 </script>
 </body>
 </html>

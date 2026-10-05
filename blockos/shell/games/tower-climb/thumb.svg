@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#e0f2fe"/></linearGradient>
+    <pattern id="bricks" width="40" height="20" patternUnits="userSpaceOnUse"><rect width="40" height="20" fill="#1e1b4b"/><rect x="1" y="1" width="38" height="8" fill="#ffffff" fill-opacity=".05"/><rect x="-19" y="11" width="38" height="8" fill="#ffffff" fill-opacity=".05"/><rect x="21" y="11" width="38" height="8" fill="#ffffff" fill-opacity=".05"/></pattern>
+    <pattern id="wall" width="30" height="20" patternUnits="userSpaceOnUse"><rect width="30" height="20" fill="#57534e"/><rect y="10" width="30" height="10" fill="#4b4642"/><rect y="9" width="30" height="1" fill="#000" fill-opacity=".25"/><rect x="15" y="0" width="1" height="10" fill="#000" fill-opacity=".25"/></pattern>
+  </defs>
+  <rect width="480" height="270" fill="url(#sky)"/>
+  <rect x="90" y="0" width="300" height="270" fill="url(#bricks)"/>
+  <rect x="60" y="0" width="30" height="270" fill="url(#wall)"/><rect x="390" y="0" width="30" height="270" fill="url(#wall)"/>
+  <g fill="#fff" fill-opacity=".8"><rect x="10" y="40" width="40" height="12"/><rect x="18" y="32" width="20" height="8"/><rect x="430" y="150" width="44" height="12"/><rect x="440" y="142" width="20" height="8"/></g>
+  <g stroke="#334155" stroke-width="2"><rect x="90" y="56" width="180" height="20" rx="3" fill="#64748b"/><rect x="320" y="56" width="70" height="20" rx="3" fill="#64748b"/></g>
+  <rect x="290" y="44" width="4" height="0" fill="#e5e7eb"/>
+  <rect x="150" y="20" width="4" height="36" fill="#e5e7eb"/><rect x="154" y="20" width="22" height="13" fill="#facc15"/><rect x="132" y="48" width="44" height="8" rx="2" fill="#facc15"/>
+  <rect x="160" y="200" width="100" height="18" rx="4" fill="#78716c" stroke="#44403c" stroke-width="2"/>
+  <g fill="#fbbf24"><path d="M172 203l7 6-7 6h4l7-6-7-6z"/><path d="M192 203l7 6-7 6h4l7-6-7-6z"/><path d="M212 203l7 6-7 6h4l7-6-7-6z"/><path d="M232 203l7 6-7 6h4l7-6-7-6z"/></g>
+  <rect x="290" y="160" width="70" height="18" rx="4" fill="#a855f7" stroke="#6b21a8" stroke-width="2"/>
+  <rect x="300" y="118" width="70" height="18" rx="4" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 3"/>
+  <rect x="100" y="140" width="90" height="18" rx="4" fill="#22c55e" stroke="#15803d" stroke-width="2"/>
+  <rect x="134" y="118" width="22" height="22" rx="4" fill="#ef4444" stroke="#991b1b" stroke-width="2"/><rect x="128" y="112" width="34" height="34" fill="#ef4444" fill-opacity=".2"/>
+  <rect x="90" y="96" width="300" height="5" fill="#5eead4"/><rect x="90" y="97" width="300" height="2" fill="#fff"/><rect x="90" y="91" width="300" height="15" fill="#2dd4bf" fill-opacity=".25"/>
+  <rect x="80" y="88" width="14" height="22" rx="3" fill="#334155"/><rect x="386" y="88" width="14" height="22" rx="3" fill="#334155"/>
+  <g stroke="#cbd5e1" stroke-width="3" fill="none"><rect x="352" y="186" width="20" height="84"/><path d="M352 186l20 14M372 186l-20 14M352 200l20 14M372 200l-20 14M352 214l20 14M372 214l-20 14M352 228l20 14M372 228l-20 14M352 242l20 14M372 242l-20 14"/></g>
+  <rect x="90" y="250" width="160" height="20" fill="#64748b"/>
+  <g transform="translate(200 158)">
+    <rect x="6" y="30" width="9" height="13" fill="#1d4ed8"/><rect x="21" y="30" width="9" height="13" fill="#1d4ed8"/>
+    <rect x="2" y="14" width="32" height="20" rx="4" fill="#22c55e" stroke="#15803d" stroke-width="2"/>
+    <rect x="-5" y="12" width="7" height="14" fill="#fcd34d" transform="rotate(-30 -1 14)"/><rect x="34" y="12" width="7" height="14" fill="#fcd34d" transform="rotate(30 37 14)"/>
+    <rect x="5" y="-4" width="26" height="19" rx="4" fill="#fcd34d" stroke="#b45309" stroke-width="2"/>
+    <rect x="12" y="2" width="4" height="4" fill="#111"/><rect x="21" y="2" width="4" height="4" fill="#111"/><rect x="14" y="9" width="9" height="2" fill="#111"/>
+  </g>
+</svg>

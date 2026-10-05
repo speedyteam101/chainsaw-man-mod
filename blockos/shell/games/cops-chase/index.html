@@ -515,7 +515,7 @@ function draw() {
 const game = Kit.loop(update, draw);
 reset();
 draw();
-Kit.overlay("Getaway", "Grab the cash bags scattered around the city\nand don't get caught! More police join the chase over time.\nGold bags are worth $500 but vanish quickly.\nBlue bolts give you a burst of nitro.\n\nArrows / WASD to steer (turns are remembered),\nor click a street to drive there.", "Drive").then(() => game.start());
+Kit.overlay("Getaway", "Grab the cash bags scattered around the city and don't get caught! More police join the chase over time. Gold bags are worth $500 but vanish quickly, and blue bolts give you a burst of nitro.\n\nArrows / WASD to steer (turns are remembered), or click a street to drive there.", "Drive").then(() => game.start());
 </script>
 </body>
 </html>

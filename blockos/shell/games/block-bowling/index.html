@@ -479,14 +479,12 @@ function draw() {
   drawLane();
   for (const p of pins) if (p.down) drawPin(p);
   for (const p of pins) if (!p.down) drawPin(p);
-  if (phase !== "sweep" || ball.x < PIT_X) drawBall();
+  if (ball.x < PIT_X + 4) drawBall();
   if (phase === "sweep") {
-    const t = Math.min(1, sweepT / 0.9);
+    // the pinsetter's sweep bar drops in front of the deck
+    const t = Math.min(1, sweepT / 0.3);
     ctx.fillStyle = "rgba(15,23,42,.85)";
-    ctx.fillRect(HEAD_X - 40, CY - HALF - GUTTER, 12, (HALF + GUTTER) * 2);
-    ctx.globalAlpha = t;
-    ctx.fillStyle = "#1f2430";
-    ctx.globalAlpha = 1;
+    ctx.fillRect(HEAD_X - 40, CY - HALF - GUTTER, 12, (HALF + GUTTER) * 2 * t);
   }
   drawScorecard();
   drawMeters();
