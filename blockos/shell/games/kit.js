@@ -67,7 +67,7 @@
     let running = false, last = 0, id = 0;
     function frame(t) {
       if (!running) return;
-      const dt = Math.min(0.05, (t - last) / 1000 || 0);
+      const dt = Math.max(0, Math.min(0.05, (t - last) / 1000 || 0));
       last = t;
       update(dt);
       draw();

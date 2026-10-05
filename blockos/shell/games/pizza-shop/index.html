@@ -260,6 +260,7 @@ async function endDay() {
   const lines = `Served ${dayStats.served} customers (${dayStats.perfect} perfect bakes)\nSales $${dayStats.income} + tips $${dayStats.tips}\nAngry customers: ${dayStats.angry}`;
   if (day >= DAYS) {
     const best = Kit.finish(ID, earned);
+    updateHud();
     await Kit.overlay("Season complete!", `${lines}\n\nTotal earned over ${DAYS} days: $${earned}\nBest: $${best}`, "Play again");
     newGame();
     return;
@@ -275,6 +276,7 @@ async function endDay() {
 async function gameOver() {
   phase = "over";
   const best = Kit.finish(ID, earned);
+  updateHud();
   await new Promise((r) => setTimeout(r, 600));
   await Kit.overlay("Shop closed!", `Too many unhappy customers on day ${day}.\nTotal earned: $${earned}\nBest: $${best}`, "Play again");
   newGame();
@@ -409,7 +411,7 @@ function update(dt) {
     spawnTimer -= dt;
     if (phase === "open" && spawnTimer <= 0) {
       spawnCustomer();
-      const base = Math.max(3.2, 8.5 - day * 0.75);
+      const base = Math.max(3.4, 7 - day * 0.55);
       spawnTimer = Kit.rand(base * 0.75, base * 1.3);
     }
     for (let i = 0; i < 4; i++) {
