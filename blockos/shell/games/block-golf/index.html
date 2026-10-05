@@ -92,7 +92,7 @@ function fmtPar(d) { return d === 0 ? "E" : d > 0 ? "+" + d : String(d); }
 
 function updateHud() {
   const best = Kit.best(ID, undefined, true);
-  Kit.hud(`Strokes ${strokes}<small>Total ${total() + strokes} · Best ${best ?? "-"}</small>`);
+  Kit.hud(`Strokes ${strokes}<small>Total ${total() + (state === "done" ? 0 : strokes)} · Best ${best ?? "-"}</small>`);
 }
 
 function moverRect(m) {

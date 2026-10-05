@@ -185,6 +185,7 @@ function scored(side) {
   spark(side === 0 ? T.x2 : T.x1, puck.y, "#fff");
   puck.vx = puck.vy = 0;
   puck.x = -100;
+  trail = [];
   updateHud();
   if (goals[side] >= WIN) setTimeout(endMatch, 1200);
   else setTimeout(() => { faceoff(side === 0 ? 1 : 0); state = "play"; }, 1300);

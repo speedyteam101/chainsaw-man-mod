@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fishing Frenzy</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .ff-panel { max-width: 560px; width: 92vw; text-align: left; }
+  .ff-panel h1 { text-align: center; }
+  .ff-list { max-height: 52vh; overflow-y: auto; margin: 10px 0; display: grid; gap: 6px; }
+  .ff-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .ff-row b { font-size: 15px; }
+  .ff-row small { display: block; color: var(--muted); font-size: 12px; }
+  .ff-tag { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 99px; color: #111; white-space: nowrap; }
+  .ff-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .ff-actions .kit-btn { padding: 10px 22px; font-size: 16px; }
+  .kit-btn.alt { background: #3b82f6; box-shadow: 0 4px 0 #1e40af; }
+  .kit-btn.gray { background: #4b5563; box-shadow: 0 4px 0 #1f2937; }
+  .kit-btn:disabled { filter: grayscale(1) brightness(.7); cursor: not-allowed; }
+  .ff-buy { padding: 8px 14px !important; font-size: 14px !important; margin: 0 !important; }
+  .ff-coins { text-align: center; font-weight: 800; color: #facc15; margin: 4px 0 0; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "fishing-frenzy";
+const SAVE_KEY = "blockos.fishing-frenzy.save";
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+
+const SURFACE = 215;
+const DOCK_END = 210;
+const ROD_TIP = { x: 236, y: 92 };
+const BUCKET_MAX = 10;
+
+const RARITY = {
+  junk:      { name: "Junk",      color: "#9ca3af", weight: 6,  tier: 0 },
+  common:    { name: "Common",    color: "#e5e7eb", weight: 58, tier: 1 },
+  uncommon:  { name: "Uncommon",  color: "#4ade80", weight: 24, tier: 2 },
+  rare:      { name: "Rare",      color: "#60a5fa", weight: 9,  tier: 3 },
+  epic:      { name: "Epic",      color: "#c084fc", weight: 2.6, tier: 4 },
+  legendary: { name: "Legendary", color: "#fbbf24", weight: 0.6, tier: 5 },
+};
+
+// zones: 0 = near the dock, 1 = mid lake, 2 = deep water far out
+const SPECIES = [
+  { id: "boot",  name: "Old Boot",          rarity: "junk",      zones: [0, 1, 2], size: [20, 30],   value: 1,   color: "#6b4f2a", accent: "#3f2d17", shape: "boot" },
+  { id: "can",   name: "Rusty Can",         rarity: "junk",      zones: [0, 1],    size: [10, 14],   value: 1,   color: "#94a3b8", accent: "#b45309", shape: "can" },
+  { id: "minnow",name: "Mud Minnow",        rarity: "common",    zones: [0, 1],    size: [6, 14],    value: 3,   color: "#a8a29e", accent: "#78716c", shape: "plain" },
+  { id: "perch", name: "Pebble Perch",      rarity: "common",    zones: [0, 1, 2], size: [15, 35],   value: 6,   color: "#84cc16", accent: "#3f6212", shape: "stripes" },
+  { id: "bream", name: "Sunny Bream",       rarity: "common",    zones: [0, 1],    size: [12, 28],   value: 5,   color: "#facc15", accent: "#ea580c", shape: "spots" },
+  { id: "dace",  name: "Silver Dace",       rarity: "common",    zones: [1, 2],    size: [14, 30],   value: 7,   color: "#cbd5e1", accent: "#64748b", shape: "plain" },
+  { id: "carp",  name: "Copper Carp",       rarity: "uncommon",  zones: [0, 1],    size: [30, 70],   value: 16,  color: "#d97706", accent: "#92400e", shape: "scales" },
+  { id: "trout", name: "Cobalt Trout",      rarity: "uncommon",  zones: [1, 2],    size: [25, 60],   value: 20,  color: "#3b82f6", accent: "#1e3a8a", shape: "spots" },
+  { id: "pike",  name: "Reed Pike",         rarity: "uncommon",  zones: [1, 2],    size: [40, 100],  value: 24,  color: "#65a30d", accent: "#1a2e05", shape: "stripes" },
+  { id: "bass",  name: "Stripe Bass",       rarity: "uncommon",  zones: [0, 1, 2], size: [25, 65],   value: 18,  color: "#94a3b8", accent: "#1e293b", shape: "stripes" },
+  { id: "koi",   name: "Ruby Koi",          rarity: "rare",      zones: [0],       size: [35, 80],   value: 60,  color: "#f8fafc", accent: "#dc2626", shape: "spots" },
+  { id: "eel",   name: "Lantern Eel",       rarity: "rare",      zones: [2],       size: [60, 150],  value: 65,  color: "#164e63", accent: "#facc15", shape: "eel" },
+  { id: "snap",  name: "Rainbow Snapper",   rarity: "rare",      zones: [1, 2],    size: [30, 70],   value: 70,  color: "#ec4899", accent: "#22d3ee", shape: "rainbow" },
+  { id: "cat",   name: "Ghost Catfish",     rarity: "rare",      zones: [1, 2],    size: [50, 130],  value: 75,  color: "#e2e8f0", accent: "#94a3b8", shape: "whiskers" },
+  { id: "gcarp", name: "Golden Carp",       rarity: "epic",      zones: [0, 1],    size: [40, 90],   value: 170, color: "#fbbf24", accent: "#b45309", shape: "scales" },
+  { id: "tuna",  name: "Thunder Tuna",      rarity: "epic",      zones: [2],       size: [90, 200],  value: 200, color: "#1e40af", accent: "#facc15", shape: "stripes" },
+  { id: "stur",  name: "Crystal Sturgeon",  rarity: "epic",      zones: [2],       size: [100, 250], value: 230, color: "#a5f3fc", accent: "#0891b2", shape: "scales" },
+  { id: "coel",  name: "Ancient Coelacanth",rarity: "legendary", zones: [2],       size: [120, 200], value: 600, color: "#1e3a8a", accent: "#e2e8f0", shape: "spots" },
+  { id: "levi",  name: "Pixel Leviathan",   rarity: "legendary", zones: [1, 2],    size: [200, 400], value: 900, color: "#7c3aed", accent: "#22d3ee", shape: "rainbow" },
+];
+
+const ROD_COST = [0, 60, 220, 650, 1600];
+const BAIT_COST = [0, 45, 170, 500, 1300];
+const ROD_NAMES = ["Twig Rod", "Bamboo Rod", "Fiber Rod", "Carbon Rod", "Titan Rod"];
+const BAIT_NAMES = ["Bread Crumbs", "Worms", "Shrimp", "Glow Lure", "Legend Lure"];
+
+// ---------- save data ----------
+let save = load();
+function load() {
+  const base = { coins: 0, rod: 0, bait: 0, bucket: [], journal: {}, earned: 0, caught: 0 };
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) return { ...base, ...JSON.parse(raw) };
+  } catch (_) {}
+  return base;
+}
+function persist() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {}
+}
+
+const rodStrength = () => [1, 1.25, 1.5, 1.8, 2.3][save.rod];
+const reelSpeed = () => [120, 138, 158, 182, 210][save.rod];
+const maxCast = () => [560, 700, 820, 900, 930][save.rod];
+const biteSpeed = () => [1, 1.25, 1.5, 1.8, 2.2][save.bait];
+const rareBoost = () => [1, 1.4, 1.9, 2.6, 3.6][save.bait];
+
+// ---------- game state ----------
+let state, charge, chargeDir, bobber, fish, tension, slackT, distance, msg, msgT, card, time, nibbleT, biteT, waitT, shadows, bubbles, splashes, menuOpen, holding, birds;
+
+function zoneAt(x) { return x < 470 ? 0 : x < 720 ? 1 : 2; }
+
+function pickSpecies(zone) {
+  const pool = SPECIES.filter((s) => s.zones.includes(zone));
+  const boost = rareBoost();
+  const weights = pool.map((s) => {
+    const r = RARITY[s.rarity];
+    let w = r.weight;
+    if (r.tier >= 3) w *= boost * (zone === 2 ? 1.5 : 1);
+    if (r.tier === 2) w *= 1 + (boost - 1) * 0.5;
+    if (r.tier === 0) w /= boost;
+    return w;
+  });
+  let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { roll -= weights[i]; if (roll <= 0) return pool[i]; }
+  return pool[0];
+}
+
+function makeFish(sp) {
+  const t = Math.pow(Math.random(), 1.7);  // big ones are rarer
+  const size = Math.round(sp.size[0] + (sp.size[1] - sp.size[0]) * t);
+  const avg = (sp.size[0] + sp.size[1]) / 2;
+  const value = Math.max(1, Math.round(sp.value * Math.pow(size / avg, 1.3)));
+  const tier = RARITY[sp.rarity].tier;
+  return {
+    sp, size, value,
+    power: 0.45 + tier * 0.28 + t * 0.6,        // how hard it pulls
+    stamina: 1,
+    thrash: 0, thrashT: Kit.rand(0.6, 1.6),
+    dir: Math.random() < 0.5 ? -1 : 1,
+  };
+}
+
+function resetLine() {
+  state = "idle";
+  charge = 0;
+  chargeDir = 1;
+  bobber = null;
+  fish = null;
+  tension = 30;
+  slackT = 0;
+  distance = 0;
+}
+
+function say(text, color) { msg = { text, color: color || "#fff" }; msgT = 2; }
+
+function updateHud() {
+  Kit.hud(`${save.coins} coins<small>Bucket ${save.bucket.length}/${BUCKET_MAX} · Earned ${save.earned}</small>`);
+}
+
+// ---------- input ----------
+function press() {
+  if (menuOpen) return;
+  holding = true;
+  if (state === "idle") {
+    if (save.bucket.length >= BUCKET_MAX) { say("Your bucket is full! Sell your catch (B)", "#fca5a5"); Kit.sfx("lose"); holding = false; return; }
+    state = "charging"; charge = 0; chargeDir = 1;
+  } else if (state === "waiting") {
+    // struck too early: scare the fish off
+    say("Too early! The fish swam off", "#fca5a5");
+    Kit.sfx("lose");
+    reelIn();
+  } else if (state === "bite") {
+    hook();
+  } else if (state === "caught") {
+    card = null;
+    resetLine();
+    holding = false;
+  }
+}
+function release() {
+  holding = false;
+  if (state === "charging") cast();
+}
+
+Kit.onKey((code) => {
+  if (code === "Space") press();
+  else if (code === "KeyB") openBucket();
+  else if (code === "KeyU") openShop();
+  else if (code === "KeyJ") openJournal();
+});
+addEventListener("keyup", (e) => { if (e.code === "Space") release(); });
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  for (const b of BUTTONS) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { b.fn(); return; }
+  if (e.button === 0) { canvas.setPointerCapture(e.pointerId); press(); }
+});
+canvas.addEventListener("pointerup", (e) => { if (e.button === 0) release(); });
+
+const BUTTONS = [
+  { x: 12, y: 12, w: 118, h: 34, label: () => `Bucket ${save.bucket.length}/${BUCKET_MAX}`, fn: () => openBucket(), key: "B" },
+  { x: 138, y: 12, w: 84, h: 34, label: () => "Shop", fn: () => openShop(), key: "U" },
+  { x: 230, y: 12, w: 100, h: 34, label: () => "Journal", fn: () => openJournal(), key: "J" },
+];
+
+// ---------- fishing flow ----------
+function cast() {
+  state = "casting";
+  const dist = 280 + charge * (maxCast() - 280);
+  bobber = { x: ROD_TIP.x, y: ROD_TIP.y, sx: ROD_TIP.x, sy: ROD_TIP.y, tx: Math.min(930, ROD_TIP.x + dist - 20), t: 0, dip: 0, bob: 0 };
+  Kit.sfx("jump");
+}
+
+function landBobber() {
+  state = "waiting";
+  splash(bobber.x, SURFACE, 10);
+  Kit.sfx("click");
+  waitT = Kit.rand(1.6, 5.5) / biteSpeed();
+  nibbleT = 0;
+  const sp = pickSpecies(zoneAt(bobber.x));
+  fish = makeFish(sp);
+}
+
+function hook() {
+  state = "reeling";
+  tension = 40;
+  slackT = 0;
+  distance = bobber.x - DOCK_END;
+  fish.maxDist = distance + 160;
+  say("Hooked! Hold to reel", "#facc15");
+  Kit.sfx("score");
+  splash(bobber.x, SURFACE, 16);
+}
+
+function reelIn() {
+  state = "returning";
+  fish = null;
+}
+
+function landFish() {
+  state = "caught";
+  const f = fish;
+  card = { f, t: 0 };
+  save.bucket.push({ id: f.sp.id, size: f.size, value: f.value });
+  save.caught++;
+  const j = save.journal[f.sp.id] || { count: 0, best: 0 };
+  j.count++;
+  const record = f.size > j.best;
+  j.best = Math.max(j.best, f.size);
+  save.journal[f.sp.id] = j;
+  card.newSpecies = j.count === 1;
+  card.record = record && j.count > 1;
+  persist();
+  updateHud();
+  Kit.sfx(RARITY[f.sp.rarity].tier >= 3 ? "win" : "coin");
+  splash(DOCK_END + 10, SURFACE, 20);
+}
+
+function loseFish(why) {
+  say(why, "#fca5a5");
+  Kit.sfx("lose");
+  reelIn();
+}
+
+function splash(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    splashes.push({ x, y, vx: Kit.rand(-90, 90), vy: Kit.rand(-220, -60), life: Kit.rand(0.4, 0.8) });
+  }
+}
+
+// ---------- update ----------
+function update(dt) {
+  time += dt;
+  msgT = Math.max(0, msgT - dt);
+  for (const s of shadows) {
+    s.x += s.vx * dt;
+    if (s.x < 260 || s.x > 940) s.vx *= -1;
+    s.y = s.baseY + Math.sin(time * s.f + s.ph) * 8;
+  }
+  for (const b of bubbles) { b.y -= b.v * dt; b.x += Math.sin(time * 3 + b.ph) * 0.3; if (b.y < SURFACE) { b.y = H - Kit.rand(0, 80); b.x = Kit.rand(250, 950); } }
+  for (const s of splashes) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 600 * dt; s.life -= dt; }
+  splashes = splashes.filter((s) => s.life > 0);
+  for (const b of birds) { b.x += b.v * dt; if (b.x > W + 40) b.x = -40; }
+  if (card) card.t += dt;
+  if (menuOpen) return;
+
+  if (state === "charging") {
+    charge += chargeDir * dt * 0.9;
+    if (charge >= 1) { charge = 1; chargeDir = -1; }
+    if (charge <= 0) { charge = 0; chargeDir = 1; }
+  } else if (state === "casting") {
+    bobber.t += dt * 1.4;
+    const t = Math.min(1, bobber.t);
+    bobber.x = bobber.sx + (bobber.tx - bobber.sx) * t;
+    bobber.y = bobber.sy + (SURFACE - bobber.sy) * t - Math.sin(Math.PI * t) * 110;
+    if (t >= 1) landBobber();
+  } else if (state === "waiting") {
+    waitT -= dt;
+    bobber.bob = Math.sin(time * 2.5) * 2;
+    // nibbles before the real bite
+    if (waitT < 1.2 && waitT > 0) {
+      nibbleT -= dt;
+      if (nibbleT <= 0) { nibbleT = Kit.rand(0.25, 0.6); bobber.dip = 5; Kit.sfx("click"); }
+    }
+    bobber.dip = Math.max(0, bobber.dip - dt * 25);
+    if (waitT <= 0) {
+      state = "bite";
+      biteT = Math.max(0.45, 0.9 - RARITY[fish.sp.rarity].tier * 0.08);
+      bobber.dip = 16;
+      Kit.sfx("hit");
+      splash(bobber.x, SURFACE, 8);
+    }
+  } else if (state === "bite") {
+    biteT -= dt;
+    bobber.dip = 16 + Math.sin(time * 40) * 3;
+    if (biteT <= 0) { bobber.dip = 0; loseFish("Missed it! Strike when the bobber dives"); }
+  } else if (state === "reeling") {
+    updateReel(dt);
+  } else if (state === "returning") {
+    // pull the empty line back to the dock
+    bobber.x -= 520 * dt;
+    bobber.y = SURFACE;
+    bobber.dip = 0;
+    if (bobber.x <= DOCK_END + 10) resetLine();
+  }
+}
+
+const REEL = { rise: 9, risePow: 12, riseThrash: 42, riseMul: 1.35, fall: 46, fallThrash: 22, drift: 5, driftThrash: 30 };
+
+// advances the tug of war; returns "snap", "slack", "away", "landed" or null
+function reelPhysics(dt) {
+  const f = fish;
+  f.thrashT -= dt;
+  if (f.thrashT <= 0) {
+    // alternate between calm spells and bursts
+    if (f.thrash > 0.5) { f.thrash = 0; f.thrashT = Kit.rand(0.8, 2) / (0.6 + f.power * 0.3); }
+    else { f.thrash = 1; f.thrashT = Kit.rand(0.5, 1.2) * (0.6 + f.power * 0.25); f.dir *= -1; f.burst = true; }
+  }
+  const thrash = f.thrash * f.stamina;
+  if (holding) {
+    tension += ((REEL.rise + f.power * REEL.risePow + thrash * f.power * REEL.riseThrash) / rodStrength()) * REEL.riseMul * dt;
+    distance -= reelSpeed() * (1 - thrash * 0.75) * dt;
+    f.stamina = Math.max(0.35, f.stamina - dt * 0.06 * (tension / 60));
+  } else {
+    tension -= (REEL.fall - thrash * REEL.fallThrash) * dt;
+    distance += (REEL.drift + thrash * f.power * REEL.driftThrash) * dt;
+  }
+  tension = Kit.clamp(tension, 0, 110);
+  if (tension < 8) slackT += dt; else slackT = Math.max(0, slackT - dt * 2);
+  if (tension >= 100) return "snap";
+  if (slackT > 2.4) return "slack";
+  if (distance > f.maxDist) return "away";
+  if (distance <= 0) return "landed";
+  return null;
+}
+
+function updateReel(dt) {
+  const res = reelPhysics(dt);
+  if (fish.burst) { fish.burst = false; Kit.sfx("hit"); }
+  const thrash = fish.thrash * fish.stamina;
+  bobber.x = DOCK_END + Math.max(0, distance);
+  bobber.y = SURFACE + 6 + Math.sin(time * (thrash > 0 ? 18 : 4)) * (thrash > 0 ? 4 : 1.5);
+  if (thrash > 0 && Math.random() < 0.3) splash(bobber.x, SURFACE, 1);
+  if (res === "snap") loseFish("SNAP! The line broke");
+  else if (res === "slack") loseFish("The line went slack and it got away");
+  else if (res === "away") loseFish("It swam off with the line");
+  else if (res === "landed") landFish();
+}
+
+// ---------- menus ----------
+function panel(title, bodyHtml, buttons) {
+  menuOpen = true;
+  holding = false;
+  if (state === "charging") state = "idle";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  o.innerHTML = `<div class="kit-panel ff-panel"><h1>${title}</h1>${bodyHtml}<div class="ff-actions"></div></div>`;
+  const actions = o.querySelector(".ff-actions");
+  const close = () => { o.remove(); removeEventListener("keydown", onKey, true); menuOpen = false; updateHud(); };
+  for (const b of buttons) {
+    const el = document.createElement("button");
+    el.className = "kit-btn " + (b.cls || "");
+    el.textContent = b.label;
+    if (b.disabled) el.disabled = true;
+    el.addEventListener("click", () => { Kit.sfx("click"); close(); if (b.fn) b.fn(); });
+    actions.appendChild(el);
+  }
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "kit-btn gray";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => { Kit.sfx("click"); close(); });
+  actions.appendChild(closeBtn);
+  const shown = performance.now();
+  function onKey(e) {
+    if (performance.now() - shown < 250) return;
+    if (["KeyB", "KeyU", "KeyJ", "Enter", "Space"].includes(e.code)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.code === "Enter" || e.code === "Space") (actions.querySelector("button:not(:disabled)") || closeBtn).click();
+      else closeBtn.click();
+    }
+  }
+  addEventListener("keydown", onKey, true);
+  document.body.appendChild(o);
+  (actions.querySelector("button:not(:disabled)") || closeBtn).focus();
+  return o;
+}
+
+const speciesById = (id) => SPECIES.find((s) => s.id === id);
+function tag(r) { return `<span class="ff-tag" style="background:${RARITY[r].color}">${RARITY[r].name}</span>`; }
+
+function openBucket() {
+  if (menuOpen) return;
+  if (state === "reeling" || state === "bite") return;
+  const total = save.bucket.reduce((a, f) => a + f.value, 0);
+  const rows = save.bucket.map((f) => {
+    const sp = speciesById(f.id);
+    return `<div class="ff-row"><div><b>${sp.name}</b><small>${f.size} cm</small></div>${tag(sp.rarity)}<b style="color:#facc15">${f.value}</b></div>`;
+  }).join("") || `<p style="text-align:center">Your bucket is empty. Go catch something!</p>`;
+  panel("Bucket", `<p class="ff-coins">${save.coins} coins</p><div class="ff-list">${rows}</div>`, [
+    { label: `Sell all (${total})`, disabled: !save.bucket.length, fn: sellAll },
+  ]);
+}
+
+function sellAll() {
+  const total = save.bucket.reduce((a, f) => a + f.value, 0);
+  if (!total) return;
+  save.coins += total;
+  save.earned += total;
+  save.bucket = [];
+  persist();
+  Kit.finish(ID, save.earned);
+  Kit.sfx("coin");
+  say(`Sold for ${total} coins!`, "#facc15");
+  updateHud();
+}
+
+function openShop() {
+  if (menuOpen) return;
+  if (state === "reeling" || state === "bite") return;
+  const next = (lvl, costs) => (lvl + 1 < costs.length ? costs[lvl + 1] : null);
+  const rc = next(save.rod, ROD_COST), bc = next(save.bait, BAIT_COST);
+  const body = `<p class="ff-coins">${save.coins} coins</p><div class="ff-list">
+    <div class="ff-row"><div><b>Rod: ${ROD_NAMES[save.rod]}</b><small>Level ${save.rod + 1}/5 · stronger line, faster reel, longer casts</small></div>
+      <small>${rc === null ? "Maxed" : "Next: " + ROD_NAMES[save.rod + 1] + " - " + rc + " coins"}</small></div>
+    <div class="ff-row"><div><b>Bait: ${BAIT_NAMES[save.bait]}</b><small>Level ${save.bait + 1}/5 · quicker bites, rarer fish</small></div>
+      <small>${bc === null ? "Maxed" : "Next: " + BAIT_NAMES[save.bait + 1] + " - " + bc + " coins"}</small></div>
+    </div><p style="text-align:center">Tip: deep water (far casts) holds the rarest fish.</p>`;
+  panel("Tackle Shop", body, [
+    { label: rc === null ? "Rod maxed" : `Upgrade rod (${rc})`, disabled: rc === null || save.coins < rc, fn: () => buy("rod", rc) },
+    { label: bc === null ? "Bait maxed" : `Upgrade bait (${bc})`, cls: "alt", disabled: bc === null || save.coins < bc, fn: () => buy("bait", bc) },
+  ]);
+}
+
+function buy(kind, cost) {
+  if (save.coins < cost) return;
+  save.coins -= cost;
+  save[kind]++;
+  persist();
+  Kit.sfx("win");
+  say(kind === "rod" ? `New rod: ${ROD_NAMES[save.rod]}!` : `New bait: ${BAIT_NAMES[save.bait]}!`, "#4ade80");
+  updateHud();
+  setTimeout(openShop, 50);
+}
+
+function openJournal() {
+  if (menuOpen) return;
+  if (state === "reeling" || state === "bite") return;
+  const found = SPECIES.filter((s) => save.journal[s.id]).length;
+  const rows = SPECIES.map((s) => {
+    const j = save.journal[s.id];
+    if (!j) return `<div class="ff-row"><div><b>???</b><small>${["Near the dock", "Mid lake", "Deep water"].filter((_, i) => s.zones.includes(i)).join(", ")}</small></div>${tag(s.rarity)}</div>`;
+    return `<div class="ff-row"><div><b>${s.name}</b><small>Caught ${j.count} · biggest ${j.best} cm</small></div>${tag(s.rarity)}</div>`;
+  }).join("");
+  panel(`Journal ${found}/${SPECIES.length}`, `<p style="text-align:center">Total fish landed: ${save.caught}</p><div class="ff-list">${rows}</div>`, []);
+}
+
+// ---------- drawing ----------
+function drawFish(x, y, len, sp, facing, wiggle) {
+  // len in px; blocky body built from rectangles
+  const h = sp.shape === "eel" ? len * 0.18 : len * 0.42;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(facing, 1);
+  if (sp.shape === "boot") {
+    Kit.brick(ctx, -len * 0.3, -len * 0.4, len * 0.35, len * 0.6, sp.color, 3);
+    Kit.brick(ctx, -len * 0.3, 0, len * 0.65, len * 0.22, sp.color, 3);
+    ctx.fillStyle = sp.accent; ctx.fillRect(-len * 0.3, len * 0.18, len * 0.65, len * 0.06);
+    ctx.restore(); return;
+  }
+  if (sp.shape === "can") {
+    Kit.brick(ctx, -len * 0.3, -len * 0.45, len * 0.6, len * 0.9, sp.color, 3);
+    ctx.fillStyle = sp.accent; ctx.fillRect(-len * 0.3, -len * 0.15, len * 0.6, len * 0.3);
+    ctx.restore(); return;
+  }
+  const tail = Math.sin(wiggle) * h * 0.25;
+  // tail
+  ctx.fillStyle = sp.accent;
+  ctx.beginPath();
+  ctx.moveTo(-len * 0.38, 0);
+  ctx.lineTo(-len * 0.56, -h * 0.55 + tail);
+  ctx.lineTo(-len * 0.5, tail);
+  ctx.lineTo(-len * 0.56, h * 0.55 + tail);
+  ctx.closePath();
+  ctx.fill();
+  // body
+  Kit.brick(ctx, -len * 0.42, -h / 2, len * 0.84, h, sp.color, Math.min(10, h / 3));
+  // patterns
+  ctx.fillStyle = sp.accent;
+  if (sp.shape === "stripes") for (let k = -2; k <= 1; k++) ctx.fillRect(k * len * 0.14, -h / 2 + 2, len * 0.05, h - 4);
+  else if (sp.shape === "spots") for (let k = 0; k < 5; k++) ctx.fillRect(-len * 0.3 + k * len * 0.12, (k % 2 ? -1 : 1) * h * 0.15 - h * 0.08, h * 0.16, h * 0.16);
+  else if (sp.shape === "scales") { ctx.globalAlpha = 0.45; for (let r = 0; r < 2; r++) for (let k = 0; k < 5; k++) ctx.fillRect(-len * 0.3 + k * len * 0.13 + r * len * 0.06, -h * 0.25 + r * h * 0.3, len * 0.07, h * 0.18); ctx.globalAlpha = 1; }
+  else if (sp.shape === "rainbow") { const cols = ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6"]; cols.forEach((c, k) => { ctx.fillStyle = c; ctx.fillRect(-len * 0.38, -h / 2 + 3 + k * (h - 6) / 4, len * 0.7, (h - 6) / 4); }); }
+  else if (sp.shape === "eel") { ctx.fillRect(-len * 0.4, -h / 2, len * 0.8, h * 0.25); ctx.fillStyle = "#facc15"; ctx.fillRect(len * 0.42, -h * 0.9, h * 0.4, h * 0.4); }
+  else if (sp.shape === "whiskers") { ctx.fillRect(len * 0.38, h * 0.1, len * 0.18, 2); ctx.fillRect(len * 0.38, h * 0.25, len * 0.15, 2); }
+  // fin
+  ctx.fillStyle = sp.accent;
+  ctx.fillRect(-len * 0.05, -h / 2 - h * 0.18, len * 0.18, h * 0.2);
+  // eye
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(len * 0.22, -h * 0.22, h * 0.22, h * 0.22);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(len * 0.27, -h * 0.17, h * 0.12, h * 0.12);
+  ctx.restore();
+}
+
+function drawWorld() {
+  // sky
+  const g = ctx.createLinearGradient(0, 0, 0, SURFACE);
+  g.addColorStop(0, "#38bdf8");
+  g.addColorStop(1, "#bae6fd");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, SURFACE);
+  // sun
+  ctx.fillStyle = "rgba(254,240,138,.5)";
+  ctx.fillRect(812, 32, 76, 76);
+  ctx.fillStyle = "#fde047";
+  ctx.fillRect(822, 42, 56, 56);
+  // clouds
+  for (const [cx, cy, s] of [[420, 60, 1], [640, 100, 0.8], [140, 140, 0.7]]) {
+    const x = (cx + time * 8 * s) % (W + 200) - 100;
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    ctx.fillRect(x, cy, 90 * s, 22 * s);
+    ctx.fillRect(x + 18 * s, cy - 16 * s, 46 * s, 20 * s);
+  }
+  // birds
+  ctx.fillStyle = "#1e293b";
+  for (const b of birds) {
+    const f = Math.sin(time * 8 + b.ph) * 4;
+    ctx.fillRect(b.x - 8, b.y - f, 7, 3);
+    ctx.fillRect(b.x + 1, b.y - f, 7, 3);
+    ctx.fillRect(b.x - 1, b.y, 3, 3);
+  }
+  // far shore
+  ctx.fillStyle = "#4d7c0f";
+  ctx.fillRect(0, SURFACE - 24, W, 24);
+  for (let x = 0; x < W; x += 46) {
+    ctx.fillStyle = (x / 46) % 2 ? "#3f6212" : "#365314";
+    const th = 30 + ((x * 37) % 30);
+    ctx.fillRect(x, SURFACE - 24 - th, 34, th);
+  }
+  // water
+  const wg = ctx.createLinearGradient(0, SURFACE, 0, H);
+  wg.addColorStop(0, "#0ea5e9");
+  wg.addColorStop(0.5, "#0369a1");
+  wg.addColorStop(1, "#082f49");
+  ctx.fillStyle = wg;
+  ctx.fillRect(0, SURFACE, W, H - SURFACE);
+  // depth zones (subtle)
+  ctx.fillStyle = "rgba(255,255,255,.05)";
+  ctx.fillRect(470, SURFACE, 3, H);
+  ctx.fillRect(720, SURFACE, 3, H);
+  ctx.font = "bold 12px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  ctx.fillText("NEAR", 340, SURFACE + 24);
+  ctx.fillText("MID LAKE", 595, SURFACE + 24);
+  ctx.fillText("DEEP WATER", 830, SURFACE + 24);
+  // lake bed
+  ctx.fillStyle = "#422006";
+  for (let x = 0; x < W; x += 24) {
+    const y = H - 26 + Math.sin(x * 0.05) * 6 + (x > 700 ? 14 : 0);
+    ctx.fillRect(x, y, 24, H - y);
+  }
+  // seaweed
+  for (let k = 0; k < 9; k++) {
+    const x = 280 + k * 76;
+    ctx.fillStyle = k % 2 ? "#15803d" : "#166534";
+    for (let s = 0; s < 5; s++) ctx.fillRect(x + Math.sin(time * 1.5 + k + s * 0.6) * 5, H - 40 - s * 16, 8, 16);
+  }
+  // fish shadows
+  for (const s of shadows) {
+    ctx.fillStyle = "rgba(8,47,73,.45)";
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.scale(Math.sign(s.vx), 1);
+    ctx.fillRect(-s.len / 2, -s.len * 0.18, s.len, s.len * 0.36);
+    ctx.fillRect(-s.len / 2 - 8, -s.len * 0.22 + Math.sin(time * 8 + s.ph) * 2, 8, s.len * 0.44);
+    ctx.restore();
+  }
+  for (const b of bubbles) {
+    ctx.strokeStyle = "rgba(255,255,255,.4)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(b.x, b.y, b.s, b.s);
+  }
+  // surface shimmer
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  for (let x = 0; x < W; x += 40) ctx.fillRect(x + ((time * 20 + x) % 40) * 0.5, SURFACE + 2 + Math.sin(time * 2 + x) * 1.5, 16, 2);
+  // dock
+  ctx.fillStyle = "#57381c";
+  for (const px of [40, 110, 180]) ctx.fillRect(px, SURFACE - 30, 14, H - SURFACE);
+  for (let x = 0; x < DOCK_END + 20; x += 32) Kit.brick(ctx, x, SURFACE - 44, 31, 16, x % 64 ? "#a16207" : "#92400e", 3);
+  // bucket on the dock
+  Kit.brick(ctx, 30, SURFACE - 72, 30, 28, "#6b7280", 4);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fillRect(33, SURFACE - 70, 24, 5);
+}
+
+function drawFisher() {
+  const x = 186, y = SURFACE - 44;
+  ctx.fillStyle = "#1e3a8a";
+  ctx.fillRect(x - 12, y - 36, 10, 36);
+  ctx.fillRect(x + 2, y - 36, 10, 36);
+  Kit.brick(ctx, x - 15, y - 76, 30, 42, "#f97316", 4);
+  ctx.fillStyle = "#fde68a";
+  ctx.fillRect(x - 15, y - 60, 30, 6);
+  Kit.brick(ctx, x - 12, y - 102, 24, 24, "#fcd34d", 5);
+  ctx.fillStyle = "#1f2937";
+  ctx.fillRect(x + 4, y - 94, 4, 4);
+  // hat
+  ctx.fillStyle = "#15803d";
+  ctx.fillRect(x - 16, y - 106, 32, 6);
+  ctx.fillRect(x - 10, y - 116, 20, 10);
+  // rod
+  const bend = state === "reeling" ? tension / 100 : 0;
+  const raise = state === "charging" ? -charge * 0.5 : 0;
+  const ang = -0.75 + raise + bend * 0.35;
+  ctx.save();
+  ctx.translate(x + 10, y - 56);
+  ctx.rotate(ang);
+  ctx.fillStyle = "#78350f";
+  ctx.fillRect(0, -3, 70, 6);
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillRect(4, 3, 8, 8);
+  ctx.restore();
+  ROD_TIP.x = x + 10 + Math.cos(ang) * 70;
+  ROD_TIP.y = y - 56 + Math.sin(ang) * 70;
+  // arm
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(x + 6, y - 62, 14, 8);
+}
+
+function drawLine() {
+  if (!bobber) return;
+  const bx = bobber.x, by = bobber.y + bobber.dip + (bobber.bob || 0);
+  ctx.strokeStyle = state === "reeling" && tension > 80 ? "#fca5a5" : "rgba(255,255,255,.85)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(ROD_TIP.x, ROD_TIP.y);
+  const sag = state === "reeling" ? 40 * (1 - tension / 100) : 40;
+  ctx.quadraticCurveTo((ROD_TIP.x + bx) / 2, Math.max(ROD_TIP.y, by) + sag * 0.5, bx, by);
+  ctx.stroke();
+  if (state === "reeling" && fish) {
+    // the hooked fish just under the surface
+    const fx = bx + 30 * fish.dir * (fish.thrash ? 1 : 0.4);
+    drawFish(fx, SURFACE + 34, Math.min(110, 30 + fish.size * 0.35), fish.sp, fish.dir, time * (fish.thrash ? 25 : 6));
+    ctx.strokeStyle = "rgba(255,255,255,.6)";
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(fx, SURFACE + 34); ctx.stroke();
+  }
+  // bobber
+  ctx.fillStyle = "#ef4444";
+  ctx.fillRect(bx - 6, by - 10, 12, 8);
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillRect(bx - 6, by - 2, 12, 7);
+  ctx.fillStyle = "#1f2937";
+  ctx.fillRect(bx - 1, by - 16, 2, 6);
+  if (state === "bite") {
+    ctx.font = "900 34px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#facc15";
+    ctx.fillText("!", bx, by - 26);
+  }
+}
+
+function drawUI() {
+  // buttons
+  ctx.font = "bold 14px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  for (const b of BUTTONS) {
+    Kit.brick(ctx, b.x, b.y, b.w, b.h, "rgba(15,23,42,.75)", 8);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(b.label(), b.x + b.w / 2, b.y + 22);
+  }
+  ctx.textAlign = "right";
+  ctx.font = "900 20px system-ui, sans-serif";
+  ctx.fillStyle = "#0f172a";
+  ctx.fillText(`${save.coins} coins`, W - 140, 34);
+  ctx.font = "bold 12px system-ui, sans-serif";
+  ctx.fillText(`${ROD_NAMES[save.rod]} · ${BAIT_NAMES[save.bait]}`, W - 140, 52);
+
+  // state hints and meters
+  ctx.textAlign = "center";
+  ctx.font = "bold 16px system-ui, sans-serif";
+  const hint = {
+    idle: "Hold Space (or the mouse) to cast",
+    charging: "Release to cast",
+    waiting: "Wait for the bobber to dive... (nibbles are fake-outs)",
+    bite: "STRIKE NOW!",
+    reeling: "Hold to reel, ease off when the tension climbs",
+    caught: "Click or press Space to continue",
+  }[state];
+  if (hint) {
+    ctx.fillStyle = "rgba(15,23,42,.6)";
+    const tw = ctx.measureText(hint).width;
+    ctx.fillRect(W / 2 - tw / 2 - 12, 62, tw + 24, 28);
+    ctx.fillStyle = state === "bite" ? "#facc15" : "#fff";
+    ctx.fillText(hint, W / 2, 82);
+  }
+  if (state === "charging") {
+    const x = 120, y = 110;
+    Kit.brick(ctx, x - 4, y - 4, 208, 26, "rgba(15,23,42,.8)", 6);
+    const max = maxCast();
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(x, y, 200 * charge, 18);
+    // zone ticks
+    for (const zx of [470, 720]) {
+      const f = (zx - ROD_TIP.x + 20 - 280) / (max - 280);
+      if (f > 0 && f < 1) { ctx.fillStyle = "#fff"; ctx.fillRect(x + 200 * f, y - 3, 2, 24); }
+    }
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.fillStyle = "#0f172a";
+    ctx.fillText("CAST POWER", x + 100, y + 40);
+  }
+  if (state === "reeling") {
+    const x = 300, y = 470, w = 360;
+    Kit.brick(ctx, x - 6, y - 6, w + 12, 34, "rgba(15,23,42,.85)", 8);
+    ctx.fillStyle = "#16a34a";
+    ctx.fillRect(x, y, w * 0.7, 22);
+    ctx.fillStyle = "#ca8a04";
+    ctx.fillRect(x + w * 0.7, y, w * 0.15, 22);
+    ctx.fillStyle = "#b91c1c";
+    ctx.fillRect(x + w * 0.85, y, w * 0.15, 22);
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(x, y, w * 0.08, 22);
+    const tx = x + w * Math.min(1, tension / 100);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(tx - 3, y - 6, 6, 34);
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.fillStyle = "#e2e8f0";
+    ctx.fillText(slackT > 0.5 ? "SLACK! reel in" : fish && fish.thrash ? "IT'S FIGHTING!" : "TENSION", x + w / 2, y + 44);
+    // distance
+    const d = Math.max(0, distance / (fish.maxDist || 1));
+    ctx.fillStyle = "rgba(15,23,42,.6)";
+    ctx.fillRect(DOCK_END, SURFACE - 8, 720, 4);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(DOCK_END, SURFACE - 8, 720 * d, 4);
+  }
+
+  if (msgT > 0 && msg) {
+    ctx.globalAlpha = Math.min(1, msgT * 2);
+    ctx.font = "900 26px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(0,0,0,.5)";
+    ctx.fillText(msg.text, W / 2 + 62, 162);
+    ctx.fillStyle = msg.color;
+    ctx.fillText(msg.text, W / 2 + 60, 160);
+    ctx.globalAlpha = 1;
+  }
+
+  if (card) drawCard();
+}
+
+function drawCard() {
+  const f = card.f, r = RARITY[f.sp.rarity];
+  const s = Math.min(1, card.t * 4);
+  ctx.save();
+  ctx.translate(W / 2 + 60, 300);
+  ctx.scale(s, s);
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.roundRect(-194, -122, 400, 250, 14); ctx.fill();
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath(); ctx.roundRect(-200, -130, 400, 250, 14); ctx.fill();
+  ctx.strokeStyle = r.color;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(-192, -122, 384, 234);
+  ctx.textAlign = "center";
+  ctx.font = "bold 13px system-ui, sans-serif";
+  ctx.fillStyle = r.color;
+  ctx.fillText(r.name.toUpperCase() + (card.newSpecies ? "  ·  NEW SPECIES!" : card.record ? "  ·  NEW RECORD!" : ""), 0, -96);
+  ctx.font = "900 28px system-ui, sans-serif";
+  ctx.fillStyle = "#fff";
+  ctx.fillText(f.sp.name, 0, -64);
+  // rays behind rare fish
+  if (r.tier >= 3) {
+    ctx.save();
+    ctx.rotate(time);
+    ctx.fillStyle = r.color + "33";
+    for (let k = 0; k < 8; k++) { ctx.rotate(Math.PI / 4); ctx.fillRect(-6, 0, 12, 120); }
+    ctx.restore();
+  }
+  drawFish(0, 4, Math.min(250, 120 + f.size * 0.5), f.sp, 1, time * 6);
+  ctx.font = "bold 18px system-ui, sans-serif";
+  ctx.fillStyle = "#e2e8f0";
+  ctx.fillText(`${f.size} cm   ·   worth ${f.value} coins`, 0, 84);
+  ctx.font = "13px system-ui, sans-serif";
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillText("Added to your bucket", 0, 106);
+  ctx.restore();
+}
+
+function draw() {
+  drawWorld();
+  drawFisher();
+  drawLine();
+  for (const s of splashes) {
+    ctx.fillStyle = `rgba(224,242,254,${Math.min(1, s.life * 2)})`;
+    ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+  }
+  drawUI();
+}
+
+// ---------- start ----------
+time = 0;
+msg = null; msgT = 0;
+card = null;
+menuOpen = false;
+holding = false;
+splashes = [];
+shadows = Array.from({ length: 9 }, () => ({ x: Kit.rand(280, 920), baseY: Kit.rand(SURFACE + 60, H - 70), y: 0, vx: Kit.pick([-1, 1]) * Kit.rand(15, 50), len: Kit.rand(24, 70), f: Kit.rand(0.5, 1.5), ph: Math.random() * 6 }));
+bubbles = Array.from({ length: 14 }, () => ({ x: Kit.rand(250, 950), y: Kit.rand(SURFACE, H), v: Kit.rand(15, 40), s: Kit.rand(3, 6), ph: Math.random() * 6 }));
+birds = Array.from({ length: 3 }, (_, i) => ({ x: Kit.rand(0, W), y: 50 + i * 26, v: Kit.rand(20, 40), ph: i }));
+resetLine();
+updateHud();
+const game = Kit.loop(update, draw);
+game.start();
+Kit.overlay("Fishing Frenzy",
+  "Cast from the dock, strike when the bobber dives, then reel in without snapping the line.\nSell your catch for coins and upgrade your rod and bait. Your progress is saved.\n\nHold Space / mouse: charge the cast, release to throw\nSpace / click: strike when it bites\nHold Space / mouse: reel (let go when tension is high)\nB: bucket and selling   U: shop   J: journal",
+  "Go fishing");
+</script>
+</body>
+</html>
