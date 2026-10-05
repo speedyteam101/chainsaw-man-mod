@@ -30,7 +30,7 @@ cd "$HERE"
 STAGE="$BUILD/stage"
 rm -rf "${BUILD:?}"
 mkdir -p "$STAGE/shell/games"
-cp main.js "$ROOT/multiplayer/relay.js" "$STAGE/"
+cp main.js "$ROOT/multiplayer/relay.js" "$ROOT/multiplayer/chatfilter.js" "$STAGE/"
 node -e '
   const p = require("./package.json");
   delete p.devDependencies; delete p.scripts;

@@ -69,6 +69,7 @@
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     online: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
     badge: '<circle cx="12" cy="9" r="6"/><path d="m8.5 13.5-1.5 7.5 5-3 5 3-1.5-7.5"/>',
+    friends: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 0 1 6 5"/>',
   };
   const icon = (name) => `<svg viewBox="0 0 24 24">${ICON[name] || ""}</svg>`;
   const BRICK_SVG = $(".brick-icon").outerHTML;
@@ -138,7 +139,7 @@
     const focusable = $(".modal-card [autofocus]", modal) || $(".modal-card button", modal);
     if (focusable) focusable.focus();
   }
-  function closeModal() { modal.hidden = true; modal.innerHTML = ""; }
+  function closeModal() { modal.hidden = true; modal.innerHTML = ""; if (typeof openDm !== "undefined" && openDm) { openDm = null; render(); } }
   modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
 
   function confirmDialog(title, text, okLabel, onOk) {
@@ -207,6 +208,7 @@
     { id: "discover", label: "Discover" },
     { id: "avatar", label: "Avatar" },
     { id: "online", label: "Play Online" },
+    { id: "friends", label: "Friends" },
     { id: "apps", label: "Apps" },
     { id: "settings", label: "Settings" },
   ];
@@ -224,8 +226,9 @@
   const webOnly = () => !sysInfo;
   function render() {
     document.documentElement.classList.toggle("web", webOnly());
+    const waiting = Object.keys(Friends.requests()).length + Object.values(Friends.unread()).reduce((a, b) => a + b, 0);
     $("#nav").innerHTML = NAV.filter((n) => !(webOnly() && n.id === "apps")).map((n) =>
-      `<button data-page="${n.id}" class="${view.page === n.id ? "active" : ""}">${icon(n.id)}<span>${n.label}</span></button>`).join("");
+      `<button data-page="${n.id}" class="${view.page === n.id ? "active" : ""}">${icon(n.id)}<span>${n.label}</span>${n.id === "friends" && waiting ? `<em class="nav-count">${waiting}</em>` : ""}</button>`).join("");
     $("#meCard").innerHTML = `<div class="headshot">${Avatar.draw(state.avatar, { headshot: true })}</div>
       <div><b>${esc(state.name)}</b><small>View avatar</small></div>`;
     $("#brickCount").textContent = state.bricks.toLocaleString();
@@ -321,7 +324,9 @@
           <p class="hint">Type the address your friend sees on their Play Online page, or an internet server address (starting with wss://).</p>
           <div class="join-row"><input type="text" id="joinAddr" placeholder="192.168.1.23 or wss://example.com" value="${hosting ? "" : esc(addr)}" spellcheck="false">
           <button class="btn green" id="joinBtn">Join</button></div></div>
-        <div class="panel"><h2>Staying safe</h2><p class="hint">Chat only has ready-made phrases, so nobody can type messages to you. Only play with people you know.</p></div>
+        <div class="panel"><h2>Staying safe</h2><p class="hint">Chat is filtered: swear words, phone numbers, emails and links are hidden.
+          You can mute anyone from the People list in a game, and choose who can chat with you in Settings. Only play with people you know,
+          and never share where you live or your passwords.</p></div>
         ${row("Games you can play online", online)}`;
       const goOffline = $("#goOffline");
       if (goOffline) goOffline.onclick = async () => { if (hosting) await setHosting(false); setServer(""); render(); };
@@ -331,6 +336,59 @@
       if (stop) stop.onclick = async () => { await setHosting(false); setServer(""); render(); };
       $("#joinBtn").onclick = () => joinServer($("#joinAddr").value);
       $("#joinAddr").onkeydown = (e) => { if (e.key === "Enter") joinServer(e.target.value); };
+    },
+
+    friends() {
+      const list = Object.entries(Friends.list()).sort((a, b) => a[1].name.localeCompare(b[1].name));
+      const requests = Object.entries(Friends.requests());
+      const online = !!serverAddress() && lobby.connected;
+      const status = (code) => {
+        const p = lobby.presence[code];
+        if (!p) return { text: online ? "Offline" : "", game: null };
+        const g = GAME_BY_ID[p.game];
+        return g ? { text: `Playing ${g.title}`, game: g.id } : { text: "On BlockOS", game: null };
+      };
+      const sorted = list.sort((a, b) => (!!lobby.presence[b[0]] - !!lobby.presence[a[0]]));
+      page.innerHTML = `<h1 class="page-title">Friends</h1>
+        <div class="panel"><h2>Your friend code</h2>
+          <p class="hint">Give this code to friends so they can add you.</p>
+          <div class="code-row"><span class="friend-code" id="myCode">${esc(Friends.pretty(Friends.code()))}</span>
+          <button class="btn" id="copyCode">Copy</button></div></div>
+        <div class="panel"><h2>Add a friend</h2>
+          ${online ? `<p class="hint">Type your friend's code. They need to be online on the same server to get your request.
+            You can also tap People inside an online game and choose Add friend.</p>`
+            : `<p class="hint">${webOnly() ? "Friends work in the BlockOS app on a Mac or Windows computer (or the BlockOS virtual machine)."
+              : 'Go online first: open <b>Play Online</b> and host or join a server.'}</p>`}
+          <div class="join-row"><input type="text" id="addCode" placeholder="ABCD-1234" maxlength="9" spellcheck="false" autocapitalize="characters" ${online ? "" : "disabled"}>
+          <button class="btn green" id="addBtn" ${online ? "" : "disabled"}>Send request</button></div></div>
+        ${requests.length ? `<div class="panel"><h2>Friend requests</h2>${requests.map(([code, r]) => `
+          <div class="friend-row"><div class="headshot">${Avatar.draw(r.avatar, { headshot: true })}</div>
+            <div class="friend-info"><b>${esc(r.name)}</b><small>${esc(Friends.pretty(code))}</small></div>
+            <button class="btn green" data-fr-accept="${code}">Accept</button><button class="btn" data-fr-decline="${code}">No thanks</button></div>`).join("")}</div>` : ""}
+        <div class="panel"><h2>Your friends (${list.length})</h2>
+          ${list.length ? sorted.map(([code, f]) => {
+            const st = status(code);
+            return `<div class="friend-row"><div class="headshot">${Avatar.draw(f.avatar, { headshot: true })}</div>
+              <div class="friend-info"><b>${esc(f.name)}</b><small class="${lobby.presence[code] ? "on" : ""}">${esc(st.text || Friends.pretty(code))}</small></div>
+              ${st.game ? `<button class="btn green" data-play="${st.game}">Join</button>` : ""}
+              ${chatMode() === "off" ? "" : `<button class="btn" data-dm="${code}">Message${Friends.unread()[code] ? ` <em class="dm-count">${Friends.unread()[code]}</em>` : ""}</button>`}
+              <button class="btn" data-fr-remove="${code}">Remove</button></div>`;
+          }).join("") : `<div class="empty">No friends yet. Add someone with their code, or from the People list in an online game.</div>`}</div>`;
+      $("#copyCode").onclick = async () => {
+        try { await navigator.clipboard.writeText(Friends.pretty(Friends.code())); toast("Friend code copied."); }
+        catch (_) { const r = document.createRange(); r.selectNodeContents($("#myCode")); getSelection().removeAllRanges(); getSelection().addRange(r); }
+      };
+      const add = () => {
+        const code = $("#addCode").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        if (!/^[A-HJ-NP-Z2-9]{8}$/.test(code)) return toast("Friend codes have 8 letters and numbers, like ABCD-2345.");
+        if (code === Friends.code()) return toast("That's your own code!");
+        if (Friends.list()[code]) return toast("You're already friends.");
+        lobby.send({ t: "fr", to: code, kind: "request" });
+        toast("Friend request sent.");
+        $("#addCode").value = "";
+      };
+      $("#addBtn").onclick = add;
+      $("#addCode").onkeydown = (e) => { if (e.key === "Enter") add(); };
     },
 
     apps() {
@@ -353,6 +411,10 @@
           <div class="setting"><div><b>Accent color</b></div><div class="accents">${accents.map((c) =>
             `<button style="background:${c}" class="${state.accent === c ? "on" : ""}" data-accent="${c}" aria-label="${c}"></button>`).join("")}</div></div>
           <div class="setting"><div><b>Game sounds</b></div><button class="toggle ${state.muted ? "" : "on"}" id="setSound" aria-label="Game sounds"></button></div></div>
+        <div class="panel"><h2>Chat</h2>
+          <div class="setting"><div><b>Who can chat with me</b><p>Applies to typed chat in online games and to private messages.
+            Messages are always filtered for swear words and personal details.</p></div>
+            <select id="setChat"><option value="all">Everyone</option><option value="friends">Friends only</option><option value="off">Nobody (chat off)</option></select></div></div>
         <div class="panel"><h2>Progress</h2>
           <div class="setting"><div><b>Reset everything</b><p>Clears Bricks, items, favorites and best scores.</p></div>
             <button class="btn red" id="resetAll">Reset</button></div></div>
@@ -362,6 +424,8 @@
       $("#setName").onchange = (e) => { state.name = e.target.value.trim().slice(0, 20) || "Player"; save(); render(); };
       $("#setTheme").onclick = () => { state.theme = state.theme === "dark" ? "light" : "dark"; applyTheme(); save(); render(); };
       $("#setSound").onclick = () => { state.muted = !state.muted; save(); render(); };
+      $("#setChat").value = chatMode();
+      $("#setChat").onchange = (e) => { try { localStorage.setItem("blockos.chatMode", e.target.value); } catch (_) {} toast("Chat setting saved."); };
       $("#resetAll").onclick = () => confirmDialog("Reset everything?", "This can't be undone.", "Reset", () => {
         try {
           Object.keys(localStorage).filter((k) => k.startsWith("blockos.")).forEach((k) => localStorage.removeItem(k));
@@ -402,6 +466,7 @@
   function setServer(url) {
     try { url ? localStorage.setItem("blockos.server", url) : localStorage.removeItem("blockos.server"); } catch (_) {}
     updateOnlinePill();
+    lobbyConnect();
   }
   function updateOnlinePill() {
     $("#onlinePill").hidden = !serverAddress();
@@ -445,6 +510,160 @@
       render();
     };
     ws.onerror = () => { clearTimeout(timer); toast("Couldn't reach that server. Check the address and that you're on the same Wi-Fi."); };
+  }
+
+  // ---------------------------------------------------------------- friends
+  // Same storage keys as Kit.friends in games/kit.js, so games and the desktop share one list.
+
+  const Friends = (() => {
+    const CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const read = (k) => { try { return JSON.parse(localStorage.getItem(k)) || {}; } catch (_) { return {}; } };
+    const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
+    const code = () => {
+      let c = null;
+      try { c = localStorage.getItem("blockos.uid"); } catch (_) {}
+      if (!c || !/^[A-HJ-NP-Z2-9]{8}$/.test(c)) {
+        const r = new Uint8Array(8);
+        crypto.getRandomValues(r);
+        c = [...r].map((x) => CHARS[x % CHARS.length]).join("");
+        try { localStorage.setItem("blockos.uid", c); } catch (_) {}
+      }
+      return c;
+    };
+    return {
+      code, pretty: (c) => c.slice(0, 4) + "-" + c.slice(4),
+      list: () => read("blockos.friends"),
+      requests: () => read("blockos.requests"),
+      add(c, name, avatar) {
+        const f = read("blockos.friends");
+        f[c] = { name, avatar: avatar || {}, since: (f[c] && f[c].since) || Date.now() };
+        write("blockos.friends", f);
+        const r = read("blockos.requests"); delete r[c]; write("blockos.requests", r);
+      },
+      remove(c) { const f = read("blockos.friends"); delete f[c]; write("blockos.friends", f); },
+      addRequest(c, name, avatar) { const r = read("blockos.requests"); r[c] = { name, avatar: avatar || {}, time: Date.now() }; write("blockos.requests", r); },
+      clearRequest(c) { const r = read("blockos.requests"); delete r[c]; write("blockos.requests", r); },
+      // Private messages: { code: [{ me: true|false, text, time }] }, last 60 per friend.
+      messages: (c) => read("blockos.dm")[c] || [],
+      addMessage(c, me, text) {
+        const all = read("blockos.dm");
+        all[c] = (all[c] || []).concat({ me, text, time: Date.now() }).slice(-60);
+        write("blockos.dm", all);
+      },
+      unread: () => read("blockos.dmUnread"),
+      setUnread(c, n) { const u = read("blockos.dmUnread"); if (n) u[c] = n; else delete u[c]; write("blockos.dmUnread", u); },
+    };
+  })();
+  const chatMode = () => { try { return localStorage.getItem("blockos.chatMode") || "all"; } catch (_) { return "all"; } };
+
+  // While BlockOS is online, the desktop keeps one connection to the server in the "lobby"
+  // so it can see which friends are online and receive friend requests.
+  const lobby = {
+    ws: null, connected: false, presence: {}, url: "",
+    send(msg) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg)); },
+  };
+  function lobbyConnect() {
+    const url = serverAddress();
+    if (lobby.ws && lobby.url === url) return;
+    if (lobby.ws) { lobby.ws.onclose = null; lobby.ws.close(); lobby.ws = null; lobby.connected = false; lobby.presence = {}; }
+    lobby.url = url;
+    if (!url) return;
+    let ws;
+    try { ws = new WebSocket(url); } catch (_) { return; }
+    lobby.ws = ws;
+    ws.onopen = () => {
+      lobby.send({ t: "hello", game: "lobby", name: state.name, avatar: state.avatar, uid: Friends.code() });
+    };
+    ws.onmessage = (ev) => {
+      let m;
+      try { m = JSON.parse(ev.data); } catch (_) { return; }
+      if (m.t === "welcome") { lobby.connected = true; askWho(); if (view.page === "friends") render(); }
+      else if (m.t === "who") {
+        lobby.presence = {};
+        for (const [c, p] of Object.entries(m.s || {})) if (p) lobby.presence[c] = p;
+        if (view.page === "friends") render();
+      } else if (m.t === "fr") friendMessage(m);
+      else if (m.t === "dm") {
+        if (!Friends.list()[m.from] || chatMode() === "off") return;   // only friends can message you
+        Friends.addMessage(m.from, false, String(m.text));
+        if (openDm === m.from) renderDm();
+        else {
+          Friends.setUnread(m.from, (Friends.unread()[m.from] || 0) + 1);
+          if (player.hidden) { toast(`<b>${esc(m.name || "A friend")}:</b> ${esc(m.text)}`); render(); }
+        }
+      } else if (m.t === "dm-sent") {
+        Friends.addMessage(m.to, true, String(m.text));
+        if (openDm === m.to) renderDm();
+      } else if (m.t === "dm-offline") {
+        toast("Your friend isn't online right now, so the message wasn't sent.");
+      } else if (m.t === "slow") toast("You're sending messages too fast. Wait a moment.");
+      else if (m.t === "fr-offline" && m.kind === "request") toast("That friend code isn't online right now. They need to be online on this server to get your request.");
+    };
+    ws.onclose = () => {
+      lobby.connected = false;
+      lobby.presence = {};
+      if (lobby.ws === ws) { lobby.ws = null; setTimeout(lobbyConnect, 4000); }
+    };
+  }
+  function askWho() {
+    const ids = Object.keys(Friends.list());
+    if (ids.length) lobby.send({ t: "who", ids });
+  }
+  setInterval(askWho, 8000);
+
+  let openDm = null;
+  function openMessages(code) {
+    const f = Friends.list()[code];
+    if (!f) return;
+    openDm = code;
+    Friends.setUnread(code, 0);
+    render();   // clears the unread badge on Friends
+    openModal(`<button class="icon-btn modal-close" data-close>${icon("close")}</button>
+      <div class="dm"><div class="dm-head"><div class="headshot">${Avatar.draw(f.avatar, { headshot: true })}</div>
+        <div><b>${esc(f.name)}</b><small id="dmStatus"></small></div></div>
+        <div class="dm-log" id="dmLog"></div>
+        <form class="dm-send" id="dmForm"><input type="text" id="dmInput" maxlength="120" placeholder="Message ${esc(f.name)}" autocomplete="off" autofocus>
+          <button class="btn green">Send</button></form>
+        <p class="dm-note">Messages are filtered: swear words and things like phone numbers, emails and links show as ####.</p></div>`, "dm-card");
+    $("#dmForm").onsubmit = (e) => {
+      e.preventDefault();
+      const text = $("#dmInput").value.trim();
+      if (!text) return;
+      if (!lobby.connected) return toast("Go online first (Play Online) to send messages.");
+      lobby.send({ t: "dm", to: code, text });
+      $("#dmInput").value = "";
+    };
+    renderDm();
+  }
+  function renderDm() {
+    const log = $("#dmLog");
+    if (!log || !openDm) return;
+    const msgs = Friends.messages(openDm);
+    log.innerHTML = msgs.length ? msgs.map((m) => `<div class="dm-msg ${m.me ? "me" : ""}"><span>${esc(m.text)}</span>
+      <small>${new Date(m.time).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small></div>`).join("")
+      : `<div class="empty">No messages yet. Say hi!</div>`;
+    log.scrollTop = log.scrollHeight;
+    const p = lobby.presence[openDm];
+    $("#dmStatus").textContent = p ? (GAME_BY_ID[p.game] ? `Playing ${GAME_BY_ID[p.game].title}` : "Online") : "Offline";
+  }
+
+  function friendMessage(m) {
+    const name = String(m.name || "Player");
+    const inGame = !player.hidden;   // the game shows its own pop-up for requests
+    if (m.kind === "request") {
+      if (Friends.list()[m.from]) { lobby.send({ t: "fr", to: m.from, kind: "accept" }); return; }
+      Friends.addRequest(m.from, name, m.avatar);
+      if (!inGame) toast(`<b>${esc(name)}</b> wants to be your friend. Open <b>Friends</b> to answer.`);
+    } else if (m.kind === "accept") {
+      Friends.add(m.from, name, m.avatar);
+      if (!inGame) toast(`You and <b>${esc(name)}</b> are now friends!`);
+      askWho();
+    } else if (m.kind === "decline") {
+      if (!inGame) toast(`${esc(name)} said no thanks to your friend request.`);
+    } else if (m.kind === "remove") {
+      Friends.remove(m.from);
+    }
+    if (player.hidden) render();
   }
 
   function applyTheme() {
@@ -628,6 +847,21 @@
       return render();
     }
     if (d.kind) return chooseItem(d.kind, d.item);
+    if (d.frAccept) {
+      const r = Friends.requests()[d.frAccept];
+      if (r) { Friends.add(d.frAccept, r.name, r.avatar); lobby.send({ t: "fr", to: d.frAccept, kind: "accept" }); toast(`You and <b>${esc(r.name)}</b> are now friends!`); askWho(); }
+      return render();
+    }
+    if (d.dm) return openMessages(d.dm);
+    if (d.frDecline) { Friends.clearRequest(d.frDecline); lobby.send({ t: "fr", to: d.frDecline, kind: "decline" }); return render(); }
+    if (d.frRemove) {
+      const f = Friends.list()[d.frRemove];
+      return confirmDialog(`Remove ${f ? f.name : "this friend"}?`, "You can add each other again later.", "Remove", () => {
+        Friends.remove(d.frRemove);
+        lobby.send({ t: "fr", to: d.frRemove, kind: "remove" });
+        render();
+      });
+    }
   });
   $("#powerBtn").onclick = () => openPowerMenu();
   $("#bricksBtn").onclick = () => go("avatar", { avatarTab: "hat" });
@@ -696,6 +930,7 @@
   setInterval(ping, 15000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
   updateOnlinePill();
+  lobbyConnect();
   loadOnlineInfo();
   loadSysInfo().then(() => render());
   setTimeout(() => $("#boot").classList.add("done"), 1300);

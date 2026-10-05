@@ -23,6 +23,7 @@
  *                                   rows: [{ name, values: [3, 120], me: true }]. Pass null to hide it.
  *   Kit.net(gameId, opts)        -> online play (see the comment above function net below)
  *   Kit.QUICK_CHAT               -> the phrases players can send (there is no free-text chat)
+ *   Kit.friends                  -> friend code and friends list (shared with the BlockOS desktop)
  */
 (function () {
   "use strict";
@@ -39,7 +40,14 @@
   const keyHandlers = [];
   const GAME_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"]);
 
+  const typing = (e) => e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
+  // Keys typed into a text box (like the chat box) belong to the box: this runs before any
+  // game's own key listeners and stops them from seeing (or blocking) those keys.
+  for (const type of ["keydown", "keyup", "keypress"]) {
+    addEventListener(type, (e) => { if (typing(e)) e.stopImmediatePropagation(); }, true);
+  }
   addEventListener("keydown", (e) => {
+    if (typing(e)) return;   // typing in a chat box isn't playing the game
     if (GAME_KEYS.has(e.code)) e.preventDefault();
     if (e.code === "Escape") {
       // The shell owns Escape (it opens the in-game menu).
@@ -375,6 +383,18 @@
     }</tbody></table>`;
   }
 
+  // Chat settings (set on the BlockOS Settings page): "all" | "friends" | "off", and muted players.
+  const chatMode = () => { try { return localStorage.getItem("blockos.chatMode") || "all"; } catch (_) { return "all"; } };
+  const muted = () => readJSON("blockos.mutedPlayers");
+  function setMuted(code, on) { const m = muted(); if (on) m[code] = 1; else delete m[code]; writeJSON("blockos.mutedPlayers", m); }
+  function canSee(p) {
+    if (p.uid && p.uid === friends.code()) return true;
+    const mode = chatMode();
+    if (mode === "off") return false;
+    if (p.uid && muted()[p.uid]) return false;
+    return mode === "all" || !!(p.uid && friends.isFriend(p.uid));
+  }
+
   // ------------------------------------------------------------------ online play
   //
   // const net = Kit.net("my-game", { room: "main", chat: true });
@@ -385,15 +405,77 @@
   //   net.state(obj)  share your own state (position etc.); sent at most 10 times a second
   //   net.event(obj)  send a one-off event to everyone else in the room (hits, pick-ups, round start...)
   //   net.chat(i)     send quick-chat phrase Kit.QUICK_CHAT[i]
+  //   net.friendRequest(code, kind) send a friend request ("request") / "accept" / "decline" to a friend code
   //   net.on(type, fn) types: "join" (player), "leave" (player), "state" (player), "event" (player, data),
   //                   "chat" (player, text), "status" (online: boolean)
   // When BlockOS isn't online, net.online stays false and the game simply plays solo.
 
-  const QUICK_CHAT = ["Hi!", "Hello everyone!", "Good game!", "Follow me!", "Help!", "Nice!", "Let's go!", "Wait for me!", "Oops!", "Thanks!", "Ready?", "Bye!"];
+  // Quick chat: phrases only, sent by number, so nobody can type messages to anyone.
+  // Keep the order: other players' BlockOS look phrases up by their position. Add new ones at the end.
+  const QUICK_CHAT = [
+    "Hi!", "Hello everyone!", "Good game!", "Follow me!", "Help!", "Nice!", "Let's go!", "Wait for me!", "Oops!", "Thanks!", "Ready?", "Bye!",
+    // 12+
+    "Hey friend!", "Welcome!", "How are you?", "I'm good!", "Want to play together?", "Let's be friends!",
+    "Over here!", "Come back!", "Go go go!", "Almost there!", "Watch out!", "Behind you!", "Jump!", "This way!",
+    "Let's team up!", "I'll help you!", "Thank you so much!", "No problem!", "Wait here", "Stay together!",
+    "Wow!", "Cool!", "Awesome!", "Haha!", "So close!", "I did it!", "Yay!", "Oh no!", "That was fun!", "Too easy!",
+    "Where are you?", "What should we do?", "Want to race?", "One more round?", "Which way?", "Are you ready?",
+    "See you later!", "Gotta go!", "Be right back", "Good night!", "Play again soon!",
+    "Yes", "No", "Maybe", "OK!", "Sorry!",
+  ];
+  // Tabs in the chat menu: [name, phrase numbers].
+  const QUICK_CHAT_TABS = [
+    ["Hi", [0, 1, 12, 13, 14, 15, 16, 17, 9, 16]],
+    ["Game", [3, 6, 7, 18, 19, 20, 21, 22, 23, 24, 25, 4]],
+    ["Team", [26, 27, 28, 29, 30, 31, 10, 6, 3, 4]],
+    ["Feelings", [5, 2, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 8]],
+    ["Ask", [42, 43, 44, 45, 46, 47, 14, 16]],
+    ["Bye", [11, 48, 49, 50, 51, 52, 2]],
+    ["Quick", [53, 54, 55, 56, 57, 9]],
+  ].map(([name, ids]) => [name, [...new Set(ids)].filter((i) => QUICK_CHAT[i])]);
 
   function serverAddress() {
     try { return localStorage.getItem("blockos.server") || ""; } catch (_) { return ""; }
   }
+
+  // ------------------------------------------------------------------ friends
+  // Shared with the BlockOS desktop (same keys in app.js):
+  //   blockos.uid       this install's friend code (8 characters)
+  //   blockos.friends   { code: { name, avatar, since } }
+  //   blockos.requests  { code: { name, avatar, time } } friend requests waiting for an answer
+
+  const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  function readJSON(key) { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch (_) { return {}; } }
+  function writeJSON(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (_) {} }
+  function myCode() {
+    let c = null;
+    try { c = localStorage.getItem("blockos.uid"); } catch (_) {}
+    if (!c || !/^[A-HJ-NP-Z2-9]{8}$/.test(c)) {
+      const r = new Uint8Array(8);
+      crypto.getRandomValues(r);
+      c = [...r].map((x) => CODE_CHARS[x % CODE_CHARS.length]).join("");
+      try { localStorage.setItem("blockos.uid", c); } catch (_) {}
+    }
+    return c;
+  }
+  const friends = {
+    code: myCode,
+    pretty: (c) => (c ? c.slice(0, 4) + "-" + c.slice(4) : ""),
+    list: () => readJSON("blockos.friends"),
+    isFriend: (code) => !!readJSON("blockos.friends")[code],
+    add(code, name, avatar) {
+      const f = readJSON("blockos.friends");
+      f[code] = { name, avatar: avatar || {}, since: (f[code] && f[code].since) || Date.now() };
+      writeJSON("blockos.friends", f);
+      friends.clearRequest(code);
+    },
+    remove(code) { const f = readJSON("blockos.friends"); delete f[code]; writeJSON("blockos.friends", f); },
+    requests: () => readJSON("blockos.requests"),
+    addRequest(code, name, avatar) { const r = readJSON("blockos.requests"); r[code] = { name, avatar: avatar || {}, time: Date.now() }; writeJSON("blockos.requests", r); },
+    clearRequest(code) { const r = readJSON("blockos.requests"); delete r[code]; writeJSON("blockos.requests", r); },
+  };
+
+  // ------------------------------------------------------------------ online play
 
   function net(gameId, opts) {
     const o = opts || {};
@@ -401,7 +483,7 @@
     const handlers = {};
     const api = {
       online: false,
-      me: { id: null, name: me.name, avatar: me.avatar },
+      me: { id: null, name: me.name, avatar: me.avatar, uid: friends.code() },
       players: new Map(),
       isHost: true,
       on(type, fn) { (handlers[type] = handlers[type] || []).push(fn); return api; },
@@ -412,10 +494,13 @@
         send({ t: "c", i });
         emit("chat", api.me, QUICK_CHAT[i]);
       },
+      // Typed message to everyone in the game. The server filters it and sends it back to everyone.
+      say(text) { const t = String(text || "").trim().slice(0, 120); if (t && chatMode() !== "off") send({ t: "say", text: t }); },
+      friendRequest(code, kind) { send({ t: "fr", to: code, kind: kind || "request" }); },
       close() { closed = true; if (ws) ws.close(); },
     };
     const emit = (type, ...args) => (handlers[type] || []).forEach((fn) => { try { fn(...args); } catch (e) { console.error(e); } });
-    let ws = null, closed = false, pendingState = null, joinedAt = 0;
+    let ws = null, closed = false, pendingState = null;
     const order = [];  // ids in join order, to pick the host
 
     function send(msg) {
@@ -428,11 +513,13 @@
       if (pendingState) { send({ t: "s", s: pendingState }); pendingState = null; }
     }, 100);
 
+    const toPlayer = (p) => ({ id: p.id, name: p.name, avatar: p.avatar, uid: p.uid || null, state: p.s || null });
+
     function connect() {
       const url = serverAddress();
       if (!url || closed) return;
       try { ws = new WebSocket(url); } catch (_) { return; }
-      ws.onopen = () => send({ t: "hello", game: gameId, room: o.room || "main", name: me.name, avatar: me.avatar });
+      ws.onopen = () => send({ t: "hello", game: gameId, room: o.room || "main", name: me.name, avatar: me.avatar, uid: api.me.uid });
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -442,7 +529,7 @@
           order.length = 0;
           api.players.clear();
           for (const p of m.players) {
-            api.players.set(p.id, { id: p.id, name: p.name, avatar: p.avatar, state: p.s || null });
+            api.players.set(p.id, toPlayer(p));
             order.push(p.id);
           }
           order.push(m.id);
@@ -450,12 +537,12 @@
           emit("status", true);
           for (const p of api.players.values()) emit("join", p);
         } else if (m.t === "join") {
-          const p = { id: m.p.id, name: m.p.name, avatar: m.p.avatar, state: null };
+          const p = toPlayer(m.p);
           api.players.set(p.id, p);
           order.push(p.id);
           updateHost();
           emit("join", p);
-          if (o.chat !== false) chatLine(null, `${p.name} joined the game`);
+          if (o.chat !== false) chatLine(null, `${p.name}${p.uid && friends.isFriend(p.uid) ? " (your friend)" : ""} joined the game`);
         } else if (m.t === "leave") {
           const p = api.players.get(m.id);
           api.players.delete(m.id);
@@ -474,7 +561,20 @@
           if (p) emit("event", p, m.e);
         } else if (m.t === "c") {
           const p = api.players.get(m.id);
-          if (p && QUICK_CHAT[m.i]) emit("chat", p, QUICK_CHAT[m.i]);
+          if (p && QUICK_CHAT[m.i] && canSee(p)) emit("chat", p, QUICK_CHAT[m.i]);
+        } else if (m.t === "say") {
+          const p = m.id === api.me.id ? api.me : api.players.get(m.id);
+          if (p && canSee(p)) emit("chat", p, String(m.text));
+        } else if (m.t === "slow") {
+          chatLine(null, "You're sending messages too fast. Wait a moment.");
+        } else if (m.t === "dm") {
+          // Private message from a friend: the desktop keeps the history; show a pop-up here.
+          if (friends.isFriend(m.from) && chatMode() !== "off" && !muted()[m.from]) {
+            gameToast(`Message from ${String(m.name || "a friend")}`, String(m.text), "#3b82f6");
+            sfx("click");
+          }
+        } else if (m.t === "fr") {
+          handleFriendMessage(api, m);
         }
       };
       ws.onclose = () => {
@@ -493,8 +593,48 @@
     return api;
   }
 
-  // Roblox-style chat: a log in the top-left corner and a quick-chat menu (press / or click the bubble).
+  function handleFriendMessage(api, m) {
+    const name = String(m.name || "Player");
+    if (m.kind === "request") {
+      if (friends.isFriend(m.from)) { api.friendRequest(m.from, "accept"); return; }  // already friends: just confirm
+      friends.addRequest(m.from, name, m.avatar);
+      friendPrompt(api, m.from, name, m.avatar);
+    } else if (m.kind === "accept") {
+      friends.add(m.from, name, m.avatar);
+      gameToast("New friend!", `You and ${name} are now friends.`, "#22c55e");
+      sfx("coin");
+    } else if (m.kind === "decline") {
+      gameToast("Friend request", `${name} said no thanks.`, "#6b7280");
+    } else if (m.kind === "remove") {
+      friends.remove(m.from);
+    }
+    refreshPeople();
+  }
+
+  function friendPrompt(api, code, name, avatar) {
+    const box = document.createElement("div");
+    box.className = "kit-friend-prompt";
+    const text = document.createElement("div");
+    const b = document.createElement("b");
+    b.textContent = name;
+    text.append(b, document.createTextNode(" wants to be your friend"));
+    const yes = document.createElement("button");
+    yes.className = "kit-btn";
+    yes.textContent = "Accept";
+    const no = document.createElement("button");
+    no.className = "kit-btn grey";
+    no.textContent = "No thanks";
+    yes.onclick = () => { friends.add(code, name, avatar); api.friendRequest(code, "accept"); box.remove(); gameToast("New friend!", `You and ${name} are now friends.`, "#22c55e"); refreshPeople(); };
+    no.onclick = () => { friends.clearRequest(code); api.friendRequest(code, "decline"); box.remove(); };
+    box.append(text, yes, no);
+    document.body.appendChild(box);
+    sfx("score");
+  }
+
+  // Roblox-style chat: a log in the top-left corner, a quick-chat menu (press / or click Chat)
+  // and a People list with Add friend buttons.
   let chatLog = null;
+  let refreshPeople = () => {};
   function chatLine(p, text) {
     if (!chatLog) return;
     const line = document.createElement("div");
@@ -516,29 +656,111 @@
     wrap.className = "kit-chat";
     chatLog = document.createElement("div");
     chatLog.className = "kit-chat-log";
-    const btn = document.createElement("button");
-    btn.className = "kit-chat-btn";
-    btn.title = "Quick chat (/)";
-    btn.textContent = "Chat";
-    const menu = document.createElement("div");
-    menu.className = "kit-chat-menu";
-    menu.hidden = true;
-    QUICK_CHAT.forEach((text, i) => {
-      const b = document.createElement("button");
-      b.textContent = text;
-      b.onclick = () => { api.chat(i); menu.hidden = true; };
-      menu.appendChild(b);
+    const bar = document.createElement("div");
+    bar.className = "kit-chat-bar";
+    const chatBtn = document.createElement("button");
+    chatBtn.className = "kit-chat-btn";
+    chatBtn.title = "Chat (/)";
+    chatBtn.textContent = "Chat";
+    const peopleBtn = document.createElement("button");
+    peopleBtn.className = "kit-chat-btn";
+    peopleBtn.textContent = "People";
+    bar.append(chatBtn, peopleBtn);
+
+    // Type a message: Enter sends, an empty Enter (or the Chat button) closes the box.
+    const box = document.createElement("form");
+    box.className = "kit-chat-input";
+    box.hidden = true;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 120;
+    input.placeholder = "Say something (Enter to send)";
+    input.autocomplete = "off";
+    input.setAttribute("enterkeyhint", "send");
+    const sendBtn = document.createElement("button");
+    sendBtn.className = "kit-chat-btn";
+    sendBtn.textContent = "Send";
+    box.append(input, sendBtn);
+    const closeBox = () => { box.hidden = true; input.blur(); };
+    box.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!input.value.trim()) return closeBox();
+      api.say(input.value);
+      input.value = "";
     });
-    btn.onclick = () => { menu.hidden = !menu.hidden; };
-    wrap.append(chatLog, btn, menu);
+    // Keep the game from reacting to the letters you type.
+    for (const type of ["keydown", "keyup", "keypress"]) input.addEventListener(type, (e) => e.stopPropagation());
+
+    // People in this game.
+    const people = document.createElement("div");
+    people.className = "kit-chat-panel kit-people";
+    people.hidden = true;
+    refreshPeople = () => {
+      people.textContent = "";
+      const head = document.createElement("div");
+      head.className = "kit-people-head";
+      head.textContent = `In this game - your friend code: ${friends.pretty(friends.code())}`;
+      people.appendChild(head);
+      if (api.players.size === 0) {
+        const empty = document.createElement("div");
+        empty.className = "kit-people-empty";
+        empty.textContent = "Nobody else is here yet.";
+        people.appendChild(empty);
+      }
+      const pending = friends.requests();
+      const mutedNow = muted();
+      for (const p of api.players.values()) {
+        const row = document.createElement("div");
+        row.className = "kit-people-row";
+        const n = document.createElement("span");
+        n.textContent = p.name;
+        n.style.color = (p.avatar && p.avatar.torso) || "#fff";
+        row.appendChild(n);
+        const act = document.createElement("button");
+        act.className = "kit-chat-btn";
+        if (!p.uid) { act.textContent = "-"; act.disabled = true; }
+        else if (friends.isFriend(p.uid)) { act.textContent = "Friends"; act.disabled = true; }
+        else if (pending[p.uid]) {
+          act.textContent = "Accept";
+          act.onclick = () => { friends.add(p.uid, p.name, p.avatar); api.friendRequest(p.uid, "accept"); gameToast("New friend!", `You and ${p.name} are now friends.`, "#22c55e"); document.querySelectorAll(".kit-friend-prompt").forEach((x) => x.remove()); refreshPeople(); };
+        } else {
+          act.textContent = p.sent ? "Sent" : "Add friend";
+          act.disabled = !!p.sent;
+          act.onclick = () => { api.friendRequest(p.uid, "request"); p.sent = true; refreshPeople(); };
+        }
+        row.appendChild(act);
+        if (p.uid) {
+          const mute = document.createElement("button");
+          mute.className = "kit-chat-btn";
+          mute.textContent = mutedNow[p.uid] ? "Unmute" : "Mute";
+          mute.onclick = () => { setMuted(p.uid, !mutedNow[p.uid]); refreshPeople(); };
+          row.appendChild(mute);
+        }
+        people.appendChild(row);
+      }
+    };
+
+    const openChat = () => {
+      if (chatMode() === "off") { chatLine(null, "Chat is turned off in BlockOS Settings."); return; }
+      people.hidden = true;
+      box.hidden = false;
+      input.focus();
+    };
+    chatBtn.onclick = () => (box.hidden ? openChat() : closeBox());
+    peopleBtn.onclick = () => { closeBox(); people.hidden = !people.hidden; if (!people.hidden) refreshPeople(); };
+    wrap.append(chatLog, bar, box, people);
     document.body.appendChild(wrap);
     wrap.hidden = true;
     api.on("status", (on) => {
       wrap.hidden = !on;
-      if (on) chatLine(null, `You're playing online. ${api.players.size} other ${api.players.size === 1 ? "person is" : "people are"} here.`);
+      if (on) chatLine(null, `You're playing online. ${api.players.size} other ${api.players.size === 1 ? "person is" : "people are"} here. Press / to chat.`);
     });
+    api.on("join", () => { if (!people.hidden) refreshPeople(); });
+    api.on("leave", () => { if (!people.hidden) refreshPeople(); });
     api.on("chat", (p, text) => chatLine(p, text));
-    keyHandlers.push((code) => { if (code === "Slash" && api.online) menu.hidden = !menu.hidden; });
+    keyHandlers.push((code, e) => {
+      if (code === "Slash" && api.online && box.hidden) { e.preventDefault(); openChat(); }
+    });
   }
 
   window.Kit = {
@@ -547,7 +769,7 @@
     onKey: (fn) => keyHandlers.push(fn),
     rand, randInt, pick, clamp,
     player, drawAvatar, badge, leaderboard, net, toast: gameToast,
-    QUICK_CHAT, DEFAULT_LOOK,
+    QUICK_CHAT, QUICK_CHAT_TABS, DEFAULT_LOOK, friends,
     colors: {
       red: "#ef4444", orange: "#fb923c", yellow: "#facc15", green: "#22c55e",
       teal: "#14b8a6", blue: "#3b82f6", purple: "#a855f7", pink: "#ec4899",

@@ -69,8 +69,8 @@
     return code;  // ArrowLeft etc.
   }
   function keyEvent(type, code, key) {
-    const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
-    target.dispatchEvent(new KeyboardEvent(type, { code, key: key || keyFor(code), bubbles: true, cancelable: true }));
+    // Sent from the page itself (not a text box) so games treat it as a key press.
+    document.body.dispatchEvent(new KeyboardEvent(type, { code, key: key || keyFor(code), bubbles: true, cancelable: true }));
   }
   const press = (code) => keyEvent("keydown", code);
   const release = (code) => keyEvent("keyup", code);

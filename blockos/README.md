@@ -135,10 +135,24 @@ Open **Play Online** in BlockOS.
 
 - **Same Wi-Fi:** one person clicks **Start hosting**. Everyone else types the address it shows
   (like `192.168.1.23`) under **Join a server**. Games marked **Online** then put you all in the
-  same world, where you see each other's avatars and can use quick chat (press `/`).
+  same world, where you see each other's avatars.
 - **Over the internet:** someone has to run the game server on a computer with a public address.
   See [`multiplayer/README.md`](multiplayer/README.md).
-- Chat only has ready-made phrases, so nobody can type messages to you. Only play with people you know.
+
+**Chat:** in an online game press `/` (or tap **Chat**), type, and press Enter. Messages show in the
+chat log and as bubbles over heads in 3D games.
+
+**Friends:** everyone has a friend code (shown on the **Friends** page). Add friends by code, or
+with **Add friend** in a game's **People** list; they have to accept. The Friends page shows who's
+online and what they're playing (with a **Join** button), and lets you send private messages.
+
+**Safety:**
+- The game server filters every message: swear words and personal details (phone numbers, email
+  addresses, links, street addresses, social-media names) show as `####`.
+- Only friends can send you private messages.
+- **Mute** anyone from a game's People list.
+- **Settings → Chat** chooses who can chat with you: Everyone, Friends only, or Nobody.
+- Only play with people you know.
 
 Games also award **badges** (shown in Avatar → Badges, +10 Bricks each). Where it makes sense, you
 play as your own avatar.

@@ -4,7 +4,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY relay.js ./
+COPY relay.js chatfilter.js ./
 EXPOSE 8790
 USER node
 CMD ["node", "relay.js", "--port", "8790"]
