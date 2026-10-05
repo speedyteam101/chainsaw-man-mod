@@ -269,6 +269,7 @@ function burst(x, y, n, colors, spd) {
 
 // ---------- update ----------
 function update(dt) {
+  if (!(dt > 0)) return;   // the first frame after start can report a tiny negative dt
   for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.94; q.vy *= 0.94; q.life -= dt; }
   particles = particles.filter((q) => q.life > 0);
   for (const p of popups) { p.y -= 30 * dt; p.life -= dt; }

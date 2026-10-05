@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pizza Shop</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .kit-stage canvas:focus { outline: none; }
+  .kit-panel { max-width: 520px; }
+  .shop { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; text-align: left; }
+  .shop .kit-btn { margin: 0; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 10px 16px; font-size: 15px; background: #2563eb; box-shadow: 0 4px 0 #1e3a8a; }
+  .shop .kit-btn > span:first-child { text-align: left; }
+  .shop .kit-btn small { display: block; font-size: 12px; font-weight: 600; opacity: .85; }
+  .shop .kit-btn .cost { font-size: 16px; white-space: nowrap; }
+  .shop .kit-btn:disabled { background: #3a3f46; box-shadow: 0 4px 0 #22252a; cursor: default; opacity: .7; filter: none; }
+  .shop .kit-btn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .money { margin-top: 8px; font-weight: 800; color: #facc15; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "pizza-shop";
+const { canvas, ctx, W, H } = Kit.stage(900, 640);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const DAYS = 7, DAY_LENGTH = 100, MAX_HEARTS = 5;
+
+const TOPPINGS = [
+  { id: "pepperoni", name: "Pepperoni", day: 1, key: "1" },
+  { id: "mushroom", name: "Mushroom", day: 1, key: "2" },
+  { id: "pepper", name: "Pepper", day: 2, key: "3" },
+  { id: "olive", name: "Olive", day: 3, key: "4" },
+  { id: "onion", name: "Onion", day: 4, key: "5" },
+  { id: "pineapple", name: "Pineapple", day: 5, key: "6" },
+];
+const SHIRTS = ["#ef4444", "#3b82f6", "#22c55e", "#a855f7", "#f59e0b", "#14b8a6", "#ec4899", "#64748b"];
+const SKINS = ["#f5d0a9", "#e0ac69", "#c68642", "#8d5524", "#ffdbac", "#facc15"];
+
+const UPGRADES = [
+  { id: "oven", name: "Turbo oven", desc: "Pizzas bake 30% faster", cost: [60, 110], max: 2 },
+  { id: "slot", name: "Third oven slot", desc: "Bake three pizzas at once", cost: [90], max: 1 },
+  { id: "chairs", name: "Comfy chairs", desc: "Customers wait 25% longer", cost: [50, 100], max: 2 },
+  { id: "sign", name: "Neon sign", desc: "Tips are 50% bigger", cost: [80], max: 1 },
+  { id: "counter", name: "Bigger counter", desc: "Serve a 4th customer at once", cost: [120], max: 1 },
+];
+
+// ---------- layout ----------
+const SLOT_X = [140, 340, 540, 740];
+const BIN = { x: 16, y: 276, w: 124, h: 62, gap: 8 };
+const BINS = [
+  { id: "dough", name: "Dough", key: "D" }, { id: "sauce", name: "Sauce", key: "S" },
+  { id: "cheese", name: "Cheese", key: "C" }, ...TOPPINGS.map((t) => ({ id: t.id, name: t.name, key: t.key, topping: true })),
+];
+BINS.forEach((b, i) => {
+  b.x = BIN.x + (i % 2) * (BIN.w + BIN.gap);
+  b.y = BIN.y + Math.floor(i / 2) * (BIN.h + BIN.gap);
+  b.w = BIN.w; b.h = BIN.h;
+});
+const PREP = { x: 290, y: 276, w: 250, h: 344, cx: 415, cy: 420, r: 104 };
+const OVEN_BTN = { x: 300, y: 568, w: 160, h: 42 };
+const TRASH = { x: 470, y: 562, w: 60, h: 52 };
+const OVENS = [0, 1, 2].map((i) => ({ x: 556, y: 276 + i * 116, w: 196, h: 106 }));
+const READY = [0, 1, 2].map((i) => ({ x: 764, y: 276 + i * 116, w: 120, h: 106 }));
+
+// ---------- state ----------
+let day, money, earned, hearts, up, dayTime, spawnTimer, customers, prep, ovens, ready, selReady, phase;
+let popups, leaving, smoke, dayStats, clock = 0;
+
+function newGame() {
+  day = 1;
+  money = 0;
+  earned = 0;
+  hearts = MAX_HEARTS;
+  up = { oven: 0, slot: 0, chairs: 0, sign: 0, counter: 0 };
+  startDay();
+}
+
+function startDay() {
+  dayTime = DAY_LENGTH;
+  spawnTimer = 1.5;
+  customers = [null, null, null, null];
+  prep = null;
+  ovens = [null, null, null];
+  ready = [null, null, null];
+  selReady = -1;
+  popups = [];
+  leaving = [];
+  smoke = [];
+  dayStats = { served: 0, perfect: 0, angry: 0, income: 0, tips: 0 };
+  phase = "open";
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`$${money}<small>Day ${day}/${DAYS} &middot; Best $${Kit.best(ID) ?? 0}</small>`);
+}
+
+const slotCount = () => (up.counter ? 4 : 3);
+const ovenCount = () => (up.slot ? 3 : 2);
+const unlocked = (t) => t.day <= day;
+const bakeSpeed = () => (1 + up.oven * 0.3) / 8;   // 1.0 = perfectly baked
+const patienceFor = () => (44 - day * 2.2) * (1 + up.chairs * 0.25);
+
+// ---------- customers ----------
+function spawnCustomer() {
+  const free = [];
+  for (let i = 0; i < slotCount(); i++) if (!customers[i]) free.push(i);
+  if (!free.length) return;
+  const slot = Kit.pick(free);
+  const pool = TOPPINGS.filter(unlocked);
+  const maxTop = Math.min(pool.length, 1 + Math.floor((day + 1) / 2));
+  const count = Kit.randInt(day === 1 ? 0 : 1, maxTop);
+  const tops = pool.slice().sort(() => Math.random() - 0.5).slice(0, count).map((t) => t.id);
+  const crispy = day >= 3 && Math.random() < 0.25;
+  const patience = patienceFor() + tops.length * 4 + (crispy ? 6 : 0);
+  customers[slot] = {
+    toppings: tops, crispy, patience, maxPatience: patience,
+    shirt: Kit.pick(SHIRTS), skin: Kit.pick(SKINS), hair: Kit.pick(["#1f2937", "#78350f", "#facc15", "#ef4444", "#e5e7eb"]),
+    enter: 0, bob: Math.random() * 6,
+  };
+  Kit.sfx("jump");
+}
+
+function customerLeaves(slot, happy) {
+  const c = customers[slot];
+  if (!c) return;
+  leaving.push({ c, x: SLOT_X[slot], t: 0, happy });
+  customers[slot] = null;
+}
+
+// ---------- pizza ----------
+function newPizza() {
+  return { sauce: false, cheese: false, toppings: [], bake: 0 };
+}
+function scatter(n) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * 0.62;
+    pts.push([Math.cos(a) * d, Math.sin(a) * d, Math.random() * Math.PI]);
+  }
+  return pts;
+}
+
+function useBin(id) {
+  if (phase !== "open" && phase !== "closing") return;
+  const bin = BINS.find((b) => b.id === id);
+  const top = TOPPINGS.find((t) => t.id === id);
+  if (top && !unlocked(top)) { popup(bin.x + bin.w / 2, bin.y, `Unlocks on day ${top.day}`, "#94a3b8"); Kit.sfx("hit"); return; }
+  if (id === "dough") {
+    if (prep) { popup(PREP.cx, PREP.y + 30, "Table is busy", "#fca5a5"); Kit.sfx("hit"); return; }
+    prep = newPizza();
+    Kit.sfx("click");
+    return;
+  }
+  if (!prep) { popup(PREP.cx, PREP.y + 30, "Grab dough first", "#fca5a5"); Kit.sfx("hit"); return; }
+  if (id === "sauce") { if (!prep.sauce) { prep.sauce = true; Kit.sfx("click"); } return; }
+  if (id === "cheese") {
+    if (!prep.sauce) { popup(PREP.cx, PREP.y + 30, "Sauce goes first", "#fca5a5"); Kit.sfx("hit"); return; }
+    if (!prep.cheese) { prep.cheese = true; prep.cheeseBlobs = scatter(9); Kit.sfx("click"); }
+    return;
+  }
+  // toppings toggle so mistakes can be picked back off
+  const has = prep.toppings.find((t) => t.id === id);
+  if (has) { prep.toppings = prep.toppings.filter((t) => t !== has); Kit.sfx("hit"); return; }
+  if (!prep.cheese) { popup(PREP.cx, PREP.y + 30, "Add cheese first", "#fca5a5"); Kit.sfx("hit"); return; }
+  prep.toppings.push({ id, pts: scatter(id === "pepperoni" ? 7 : 6) });
+  Kit.sfx("click");
+}
+
+function putInOven(slot) {
+  if (!prep) return;
+  if (!prep.sauce || !prep.cheese) { popup(PREP.cx, PREP.y + 30, "Needs sauce and cheese", "#fca5a5"); Kit.sfx("hit"); return; }
+  if (slot === undefined) slot = ovens.findIndex((o, i) => !o && i < ovenCount());
+  if (slot < 0 || slot >= ovenCount() || ovens[slot]) { popup(OVENS[0].x + 98, OVENS[0].y, "Ovens are full", "#fca5a5"); Kit.sfx("hit"); return; }
+  ovens[slot] = prep;
+  prep = null;
+  Kit.sfx("jump");
+}
+
+function takeOut(slot) {
+  const p = ovens[slot];
+  if (!p) return;
+  const free = ready.findIndex((r) => !r);
+  if (free < 0) { popup(READY[0].x + 60, READY[0].y, "Tray is full", "#fca5a5"); Kit.sfx("hit"); return; }
+  ready[free] = p;
+  ovens[slot] = null;
+  selReady = free;
+  Kit.sfx(bakeState(p.bake).ok ? "coin" : "hit");
+}
+
+function bakeState(b) {
+  if (b < 0.6) return { label: "Raw", ok: false, color: "#fde68a" };
+  if (b < 0.85) return { label: "Light", ok: true, color: "#fbbf24" };
+  if (b < 1.1) return { label: "Perfect", ok: true, perfect: true, color: "#22c55e" };
+  if (b < 1.3) return { label: "Crispy", ok: true, crispy: true, color: "#f97316" };
+  return { label: "Burnt", ok: false, color: "#1f2937" };
+}
+
+function serve(slot) {
+  const c = customers[slot];
+  if (!c || (phase !== "open" && phase !== "closing")) return;
+  let idx = selReady;
+  if (idx < 0 || !ready[idx]) {
+    const filled = ready.map((r, i) => (r ? i : -1)).filter((i) => i >= 0);
+    if (filled.length === 1) idx = filled[0];
+    else { popup(SLOT_X[slot], 200, filled.length ? "Pick a pizza from the tray" : "No pizza ready", "#fca5a5"); Kit.sfx("hit"); return; }
+  }
+  const p = ready[idx];
+  ready[idx] = null;
+  selReady = ready.findIndex((r) => r);
+  const bs = bakeState(p.bake);
+  const want = [...c.toppings].sort().join(","), got = p.toppings.map((t) => t.id).sort().join(",");
+  if (want !== got || !bs.ok) {
+    // wrong pizza: it gets binned and the customer gets grumpier
+    c.patience -= c.maxPatience * 0.3;
+    popup(SLOT_X[slot], 170, !bs.ok ? `${bs.label}! No thanks` : "That's not my order!", "#fca5a5");
+    Kit.sfx("hit");
+    return;
+  }
+  const perfectBake = c.crispy ? bs.crispy : bs.perfect;
+  const price = 8 + c.toppings.length * 3 + (c.crispy ? 2 : 0);
+  const moodFrac = Math.max(0, c.patience / c.maxPatience);
+  const tip = Math.round((2 + 6 * moodFrac) * (perfectBake ? 1 : 0.35) * (1 + up.sign * 0.5));
+  money += price + tip;
+  earned += price + tip;
+  dayStats.served++;
+  dayStats.income += price;
+  dayStats.tips += tip;
+  if (perfectBake) dayStats.perfect++;
+  popup(SLOT_X[slot], 170, `+$${price}${tip ? `  tip $${tip}` : ""}`, "#facc15");
+  Kit.sfx("coin");
+  customerLeaves(slot, true);
+  updateHud();
+}
+
+function trash() {
+  if (ready[selReady]) { ready[selReady] = null; selReady = ready.findIndex((r) => r); Kit.sfx("hit"); return; }
+  if (prep) { prep = null; Kit.sfx("hit"); }
+}
+
+function popup(x, y, text, color) {
+  popups.push({ x, y, text, color, t: 1.4 });
+}
+
+// ---------- day flow ----------
+function loseHeart(slot) {
+  hearts--;
+  dayStats.angry++;
+  popup(SLOT_X[slot], 170, "Stormed out!", "#ef4444");
+  Kit.sfx("lose");
+  if (hearts <= 0) gameOver();
+}
+
+async function endDay() {
+  phase = "summary";
+  Kit.sfx("win");
+  updateHud();
+  const lines = `Served ${dayStats.served} customers (${dayStats.perfect} perfect bakes)\nSales $${dayStats.income} + tips $${dayStats.tips}\nAngry customers: ${dayStats.angry}`;
+  if (day >= DAYS) {
+    const best = Kit.finish(ID, earned);
+    await Kit.overlay("Season complete!", `${lines}\n\nTotal earned over ${DAYS} days: $${earned}\nBest: $${best}`, "Play again");
+    newGame();
+    return;
+  }
+  hearts = Math.min(MAX_HEARTS, hearts + 1);
+  await shop(`Day ${day} done!`, lines);
+  day++;
+  startDay();
+  const fresh = TOPPINGS.find((t) => t.day === day);
+  if (fresh) popup(W / 2, 250, `New topping on the menu: ${fresh.name}!`, "#86efac");
+}
+
+async function gameOver() {
+  phase = "over";
+  const best = Kit.finish(ID, earned);
+  await new Promise((r) => setTimeout(r, 600));
+  await Kit.overlay("Shop closed!", `Too many unhappy customers on day ${day}.\nTotal earned: $${earned}\nBest: $${best}`, "Play again");
+  newGame();
+}
+
+function shop(title, text) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text;
+    const m = document.createElement("div");
+    m.className = "money";
+    const list = document.createElement("div");
+    list.className = "shop";
+    const go = document.createElement("button");
+    go.className = "kit-btn";
+    go.textContent = `Open for day ${day + 1}`;
+    panel.append(h, p, m, list, go);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    function render() {
+      m.textContent = `Cash: $${money}   Hearts: ${hearts}/${MAX_HEARTS}`;
+      list.innerHTML = "";
+      UPGRADES.forEach((u, i) => {
+        const lvl = up[u.id];
+        const b = document.createElement("button");
+        b.className = "kit-btn";
+        const maxed = lvl >= u.max;
+        const cost = maxed ? 0 : u.cost[lvl];
+        b.disabled = maxed || money < cost;
+        b.innerHTML = `<span>${i + 1}. ${u.name}${u.max > 1 ? ` (${lvl}/${u.max})` : ""}<small>${u.desc}</small></span><span class="cost">${maxed ? "Owned" : "$" + cost}</span>`;
+        b.addEventListener("click", () => buy(i));
+        list.appendChild(b);
+      });
+    }
+    function buy(i) {
+      const u = UPGRADES[i];
+      const lvl = up[u.id];
+      if (lvl >= u.max || money < u.cost[lvl]) { Kit.sfx("hit"); return; }
+      money -= u.cost[lvl];
+      up[u.id]++;
+      Kit.sfx("coin");
+      updateHud();
+      render();
+      go.focus();
+    }
+    render();
+    go.focus();
+    const shownAt = performance.now();
+    function close() {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      if (document.activeElement) document.activeElement.blur();
+      resolve();
+    }
+    function onKey(e) {
+      if (performance.now() - shownAt < 400) return;
+      const d = ["Digit1", "Digit2", "Digit3", "Digit4", "Digit5"].indexOf(e.code);
+      if (d >= 0) { e.preventDefault(); e.stopPropagation(); buy(d); }
+      else if (e.code === "Enter" || e.code === "Space") {
+        e.preventDefault(); e.stopPropagation();
+        if (document.activeElement && document.activeElement !== go && list.contains(document.activeElement)) document.activeElement.click();
+        else close();
+      }
+    }
+    go.addEventListener("click", close);
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+// ---------- input ----------
+const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  if (phase !== "open" && phase !== "closing") return;
+  const p = Kit.pointer(canvas, e);
+  for (const b of BINS) if (inRect(p, b)) return useBin(b.id);
+  if (inRect(p, OVEN_BTN)) return putInOven();
+  if (inRect(p, TRASH)) return trash();
+  for (let i = 0; i < 3; i++) {
+    if (inRect(p, OVENS[i])) {
+      if (i >= ovenCount()) return;
+      if (ovens[i]) takeOut(i);
+      else putInOven(i);
+      return;
+    }
+    if (inRect(p, READY[i])) {
+      if (ready[i]) { selReady = selReady === i ? -1 : i; Kit.sfx("click"); }
+      return;
+    }
+  }
+  if (inRect(p, PREP) && prep && prep.cheese) return putInOven();
+  if (p.y < 250) {
+    for (let i = 0; i < slotCount(); i++) if (Math.abs(p.x - SLOT_X[i]) < 90 && customers[i]) return serve(i);
+  }
+});
+Kit.onKey((code) => {
+  if (phase !== "open" && phase !== "closing") return;
+  const bin = BINS.find((b) => code === "Key" + b.key || code === "Digit" + b.key);
+  if (bin) return useBin(bin.id);
+  if (code === "KeyB" || code === "Enter") return putInOven();
+  if (code === "Space") {
+    // take out the most-baked pizza
+    let best = -1;
+    ovens.forEach((o, i) => { if (o && (best < 0 || o.bake > ovens[best].bake)) best = i; });
+    if (best >= 0) takeOut(best);
+    return;
+  }
+  if (code === "KeyX" || code === "Backspace") return trash();
+  if (code === "Tab") {
+    const filled = ready.map((r, i) => (r ? i : -1)).filter((i) => i >= 0);
+    if (filled.length) selReady = filled[(filled.indexOf(selReady) + 1) % filled.length];
+    return;
+  }
+  const s = ["KeyQ", "KeyW", "KeyE", "KeyR"].indexOf(code);
+  if (s >= 0) serve(s);
+});
+addEventListener("keydown", (e) => { if (e.code === "Tab" && (phase === "open" || phase === "closing")) e.preventDefault(); });
+
+// ---------- update ----------
+function update(dt) {
+  clock += dt;
+  if (phase === "open" || phase === "closing") {
+    dayTime -= dt;
+    if (phase === "open" && dayTime <= 0) { phase = "closing"; popup(W / 2, 250, "Closing time - finish your orders!", "#93c5fd"); }
+    spawnTimer -= dt;
+    if (phase === "open" && spawnTimer <= 0) {
+      spawnCustomer();
+      const base = Math.max(3.2, 8.5 - day * 0.75);
+      spawnTimer = Kit.rand(base * 0.75, base * 1.3);
+    }
+    for (let i = 0; i < 4; i++) {
+      const c = customers[i];
+      if (!c) continue;
+      c.enter = Math.min(1, c.enter + dt * 2.5);
+      c.patience -= dt;
+      if (c.patience <= 0) {
+        customerLeaves(i, false);
+        loseHeart(i);
+        if (phase === "over") return;
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      const o = ovens[i];
+      if (!o) continue;
+      o.bake += dt * bakeSpeed();
+      if (o.bake > 1.1 && Math.random() < dt * (o.bake > 1.3 ? 20 : 6))
+        smoke.push({ x: OVENS[i].x + Kit.rand(40, 150), y: OVENS[i].y + 30, t: 1, dark: o.bake > 1.3 });
+    }
+    // once the doors are shut and the last customer is gone, wrap up the day
+    if (phase === "closing" && customers.every((c) => !c) && dayTime < -1) endDay();
+  }
+  for (const l of leaving) l.t += dt * 1.8;
+  leaving = leaving.filter((l) => l.t < 1);
+  for (const p of popups) { p.t -= dt; p.y -= 26 * dt; }
+  popups = popups.filter((p) => p.t > 0);
+  for (const s of smoke) { s.t -= dt; s.y -= 40 * dt; }
+  smoke = smoke.filter((s) => s.t > 0);
+}
+
+// ---------- drawing ----------
+function crustColor(b) {
+  const stops = [[0, [245, 222, 179]], [0.85, [226, 170, 92]], [1.1, [196, 120, 55]], [1.3, [130, 70, 35]], [1.6, [45, 35, 30]]];
+  for (let i = 1; i < stops.length; i++) {
+    if (b <= stops[i][0]) {
+      const [a0, c0] = stops[i - 1], [a1, c1] = stops[i];
+      const t = (b - a0) / (a1 - a0);
+      return `rgb(${c0.map((v, k) => Math.round(v + (c1[k] - v) * t)).join(",")})`;
+    }
+  }
+  return "rgb(45,35,30)";
+}
+
+function drawTopping(id, x, y, s, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot || 0);
+  if (id === "pepperoni") {
+    ctx.fillStyle = "#b91c1c"; ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#7f1d1d";
+    for (const [dx, dy] of [[-0.35, -0.2], [0.3, 0.1], [-0.05, 0.4]]) { ctx.beginPath(); ctx.arc(dx * s, dy * s, s * 0.14, 0, Math.PI * 2); ctx.fill(); }
+  } else if (id === "mushroom") {
+    ctx.fillStyle = "#e7d7c1"; ctx.beginPath(); ctx.arc(0, 0, s * 0.85, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#d6c3a5"; ctx.fillRect(-s * 0.25, 0, s * 0.5, s * 0.6);
+  } else if (id === "pepper") {
+    ctx.strokeStyle = "#16a34a"; ctx.lineWidth = s * 0.35;
+    ctx.strokeRect(-s * 0.6, -s * 0.6, s * 1.2, s * 1.2);
+  } else if (id === "olive") {
+    ctx.strokeStyle = "#111827"; ctx.lineWidth = s * 0.4;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.55, 0, Math.PI * 2); ctx.stroke();
+  } else if (id === "onion") {
+    ctx.strokeStyle = "#c084fc"; ctx.lineWidth = s * 0.22;
+    ctx.beginPath(); ctx.arc(0, 0, s * 0.75, 0, Math.PI * 1.4); ctx.stroke();
+  } else if (id === "pineapple") {
+    ctx.fillStyle = "#fde047"; ctx.fillRect(-s * 0.55, -s * 0.55, s * 1.1, s * 1.1);
+    ctx.fillStyle = "#eab308"; ctx.fillRect(-s * 0.55, s * 0.25, s * 1.1, s * 0.3);
+  }
+  ctx.restore();
+}
+
+function drawPizza(x, y, r, p) {
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(x, y + r * 0.12, r, r * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = crustColor(p.bake);
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  if (p.sauce) {
+    ctx.fillStyle = p.bake > 1.3 ? "#4a1d16" : "#dc2626";
+    ctx.beginPath(); ctx.arc(x, y, r * 0.84, 0, Math.PI * 2); ctx.fill();
+  }
+  if (p.cheese) {
+    ctx.fillStyle = p.bake > 1.3 ? "#57442a" : p.bake > 0.85 ? "#fbbf24" : "#fde68a";
+    ctx.beginPath(); ctx.arc(x, y, r * 0.76, 0, Math.PI * 2); ctx.fill();
+    if (p.cheeseBlobs) {
+      ctx.fillStyle = p.bake > 0.85 ? "rgba(217,119,6,.35)" : "rgba(255,255,255,.35)";
+      for (const [dx, dy] of p.cheeseBlobs) { ctx.beginPath(); ctx.arc(x + dx * r, y + dy * r, r * 0.1, 0, Math.PI * 2); ctx.fill(); }
+    }
+  }
+  for (const t of p.toppings) for (const [dx, dy, rot] of t.pts) drawTopping(t.id, x + dx * r, y + dy * r, r * 0.11, rot);
+  if (p.bake > 1.3) { ctx.fillStyle = "rgba(20,15,10,.45)"; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+}
+
+// order icon: a little pizza with one of each wanted topping
+const ICON_PTS = [[-0.3, -0.25, 0.3], [0.32, -0.15, 1.2], [0, 0.35, 2.1], [-0.35, 0.25, 0.7], [0.3, 0.32, 1.9]];
+function drawOrder(x, y, c) {
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.roundRect(x - 74, y, 148, 84, 12); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x - 10, y + 84); ctx.lineTo(x, y + 98); ctx.lineTo(x + 10, y + 84); ctx.fill();
+  const r = 30, px = x - 34, py = y + 42;
+  ctx.fillStyle = c.crispy ? crustColor(1.2) : crustColor(0.95);
+  ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#dc2626"; ctx.beginPath(); ctx.arc(px, py, r * 0.84, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fbbf24"; ctx.beginPath(); ctx.arc(px, py, r * 0.76, 0, Math.PI * 2); ctx.fill();
+  c.toppings.forEach((id, i) => {
+    for (let k = 0; k < 2; k++) {
+      const [dx, dy, rot] = ICON_PTS[(i * 2 + k) % ICON_PTS.length];
+      drawTopping(id, px + dx * r, py + dy * r, r * 0.16, rot);
+    }
+  });
+  // topping list as mini icons on the right
+  c.toppings.forEach((id, i) => {
+    const ix = x + 14 + (i % 2) * 28, iy = y + 20 + Math.floor(i / 2) * 26;
+    ctx.fillStyle = "#f1f5f9"; ctx.beginPath(); ctx.roundRect(ix - 12, iy - 12, 24, 24, 5); ctx.fill();
+    drawTopping(id, ix, iy, 7, 0.4);
+  });
+  if (!c.toppings.length) {
+    ctx.fillStyle = "#64748b"; ctx.font = `800 12px ${FONT}`; ctx.textAlign = "center";
+    ctx.fillText("Plain", x + 28, y + 36);
+  }
+  if (c.crispy) {
+    // flame badge = wants it crispy
+    ctx.fillStyle = "#f97316";
+    ctx.beginPath(); ctx.moveTo(x + 56, y + 76); ctx.quadraticCurveTo(x + 40, y + 62, x + 52, y + 46); ctx.quadraticCurveTo(x + 54, y + 58, x + 60, y + 56); ctx.quadraticCurveTo(x + 70, y + 66, x + 56, y + 76); ctx.fill();
+    ctx.fillStyle = "#ea580c"; ctx.font = `800 11px ${FONT}`; ctx.textAlign = "center";
+    ctx.fillText("CRISPY", x + 22, y + 74);
+  }
+}
+
+function drawCustomer(x, c, alpha, mood) {
+  ctx.globalAlpha = alpha;
+  const by = 120 + Math.sin(clock * 3 + c.bob) * 1.5;
+  Kit.brick(ctx, x - 34, by + 46, 68, 70, c.shirt, 8);         // torso
+  Kit.brick(ctx, x - 26, by, 52, 46, c.skin, 8);              // head
+  ctx.fillStyle = c.hair; ctx.fillRect(x - 26, by, 52, 10);   // hair
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x - 14, by + 18, 7, 7); ctx.fillRect(x + 7, by + 18, 7, 7);
+  ctx.strokeStyle = "#111"; ctx.lineWidth = 3;
+  ctx.beginPath();
+  if (mood > 0.5) ctx.arc(x, by + 30, 8, 0.2 * Math.PI, 0.8 * Math.PI);
+  else if (mood > 0.25) { ctx.moveTo(x - 7, by + 36); ctx.lineTo(x + 7, by + 36); }
+  else ctx.arc(x, by + 42, 8, 1.2 * Math.PI, 1.8 * Math.PI);
+  ctx.stroke();
+  if (mood <= 0.25) { ctx.fillStyle = "#ef4444"; ctx.fillRect(x - 16, by + 12, 10, 3); ctx.fillRect(x + 6, by + 12, 10, 3); }
+  ctx.globalAlpha = 1;
+}
+
+function keycap(k, x, y) {
+  ctx.fillStyle = "#1e293b";
+  ctx.beginPath(); ctx.roundRect(x, y, 18, 17, 4); ctx.fill();
+  label(k, x + 9, y + 13, 11, "#e2e8f0");
+}
+
+function label(text, x, y, size, color, align = "center", weight = 800) {
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align;
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, y);
+}
+
+function draw() {
+  // shop wall
+  ctx.fillStyle = "#7c2d12";
+  ctx.fillRect(0, 0, W, 250);
+  for (let y = 0, row = 0; y < 220; y += 22, row++)
+    for (let x = row % 2 ? -30 : 0; x < W; x += 60) {
+      ctx.fillStyle = (x / 60 + row) % 3 ? "#9a3412" : "#a3451b";
+      ctx.fillRect(x + 2, y + 2, 56, 18);
+    }
+
+  // customers
+  for (let i = 0; i < 4; i++) {
+    const x = SLOT_X[i];
+    if (i >= slotCount()) {
+      ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.roundRect(x - 60, 110, 120, 80, 10); ctx.fill();
+      label("Upgrade", x, 146, 14, "#fcd34d");
+      label("counter", x, 164, 14, "#fcd34d");
+      continue;
+    }
+    const c = customers[i];
+    if (c) drawCustomer(x + (1 - c.enter) * 60, c, c.enter, c.patience / c.maxPatience);
+  }
+  for (const l of leaving) drawCustomer(l.x + (l.happy ? -1 : 1) * l.t * 90, l.c, 1 - l.t, l.happy ? 1 : 0);
+  // counter
+  ctx.fillStyle = "#713f12"; ctx.fillRect(0, 202, W, 48);
+  for (let x = 0, i = 0; x < W; x += 75, i++) Kit.brick(ctx, x + 1, 206, 73, 40, i % 2 ? "#a16207" : "#b45309", 4);
+  ctx.fillStyle = "#713f12"; ctx.fillRect(0, 202, W, 6);
+  for (let i = 0; i < slotCount(); i++) {
+    const x = SLOT_X[i], c = customers[i];
+    if (!c) continue;
+    const mood = c.patience / c.maxPatience;
+    drawOrder(x, 6, c);
+    // patience bar on the counter
+    ctx.fillStyle = "rgba(0,0,0,.4)"; ctx.fillRect(x - 60, 218, 120, 12);
+    ctx.fillStyle = mood > 0.5 ? "#22c55e" : mood > 0.25 ? "#facc15" : "#ef4444";
+    ctx.fillRect(x - 59, 219, 118 * Math.max(0, mood), 10);
+    label(["Q", "W", "E", "R"][i], x + 74, 233, 12, "#fde68a");
+  }
+
+  // kitchen floor
+  ctx.fillStyle = "#1e293b"; ctx.fillRect(0, 250, W, H - 250);
+  for (let y = 250; y < H; y += 40) for (let x = (y / 40) % 2 ? 0 : 40; x < W; x += 80) { ctx.fillStyle = "#243247"; ctx.fillRect(x, y, 40, 40); }
+  ctx.fillStyle = "#0f172a"; ctx.fillRect(0, 250, W, 14);
+
+  // bins
+  for (const b of BINS) {
+    const top = TOPPINGS.find((t) => t.id === b.id);
+    const locked = top && !unlocked(top);
+    Kit.brick(ctx, b.x, b.y, b.w, b.h, locked ? "#334155" : "#475569", 8);
+    ctx.fillStyle = locked ? "#1e293b" : "#e2e8f0";
+    ctx.beginPath(); ctx.roundRect(b.x + 8, b.y + 10, 42, 42, 6); ctx.fill();
+    if (!locked) {
+      if (b.id === "dough") { ctx.fillStyle = crustColor(0); ctx.beginPath(); ctx.arc(b.x + 29, b.y + 31, 15, 0, Math.PI * 2); ctx.fill(); }
+      else if (b.id === "sauce") { ctx.fillStyle = "#dc2626"; ctx.beginPath(); ctx.arc(b.x + 29, b.y + 31, 15, 0, Math.PI * 2); ctx.fill(); }
+      else if (b.id === "cheese") { ctx.fillStyle = "#fde047"; ctx.fillRect(b.x + 16, b.y + 20, 26, 20); ctx.fillStyle = "#eab308"; ctx.beginPath(); ctx.arc(b.x + 24, b.y + 28, 3, 0, Math.PI * 2); ctx.arc(b.x + 35, b.y + 34, 3, 0, Math.PI * 2); ctx.fill(); }
+      else drawTopping(b.id, b.x + 29, b.y + 31, 11, 0.3);
+    }
+    label(b.name, b.x + 56, b.y + 30, 13, locked ? "#64748b" : "#fff", "left");
+    if (locked) label(`Day ${top.day}`, b.x + 56, b.y + 48, 12, "#64748b", "left", 700);
+    else keycap(b.key, b.x + 56, b.y + 36);
+  }
+
+  // prep table
+  Kit.brick(ctx, PREP.x, PREP.y, PREP.w, PREP.h, "#92400e", 10);
+  ctx.fillStyle = "#b45309"; ctx.beginPath(); ctx.roundRect(PREP.x + 10, PREP.y + 30, PREP.w - 20, PREP.h - 100, 8); ctx.fill();
+  label("PREP TABLE", PREP.x + PREP.w / 2, PREP.y + 21, 13, "#fde68a");
+  if (prep) drawPizza(PREP.cx, PREP.cy, PREP.r, prep);
+  else label("Click Dough to start", PREP.cx, PREP.cy + 5, 15, "rgba(255,255,255,.55)");
+  const canBake = prep && prep.sauce && prep.cheese;
+  Kit.brick(ctx, OVEN_BTN.x, OVEN_BTN.y, OVEN_BTN.w, OVEN_BTN.h, canBake ? "#16a34a" : "#57534e", 8);
+  label("Bake it (B)", OVEN_BTN.x + OVEN_BTN.w / 2, OVEN_BTN.y + 27, 15, canBake ? "#fff" : "#a8a29e");
+  Kit.brick(ctx, TRASH.x, TRASH.y, TRASH.w, TRASH.h, "#475569", 6);
+  ctx.fillStyle = "#1e293b"; ctx.fillRect(TRASH.x + 14, TRASH.y + 14, 32, 30);
+  ctx.fillStyle = "#94a3b8"; ctx.fillRect(TRASH.x + 10, TRASH.y + 8, 40, 6);
+  label("X", TRASH.x + TRASH.w / 2, TRASH.y + 35, 12, "#cbd5e1");
+
+  // ovens
+  for (let i = 0; i < 3; i++) {
+    const o = OVENS[i];
+    const locked = i >= ovenCount();
+    Kit.brick(ctx, o.x, o.y, o.w, o.h, locked ? "#334155" : "#57534e", 10);
+    ctx.fillStyle = locked ? "#1e293b" : "#1c1917";
+    ctx.beginPath(); ctx.roundRect(o.x + 10, o.y + 10, o.w - 20, o.h - 34, 8); ctx.fill();
+    if (locked) { label("Upgrade for a 3rd oven", o.x + o.w / 2, o.y + 50, 13, "#64748b"); continue; }
+    const p = ovens[i];
+    if (p) {
+      // glowing inside
+      ctx.fillStyle = `rgba(249,115,22,${0.25 + Math.sin(clock * 6 + i) * 0.08})`;
+      ctx.beginPath(); ctx.roundRect(o.x + 10, o.y + 10, o.w - 20, o.h - 34, 8); ctx.fill();
+      drawPizza(o.x + o.w / 2, o.y + 42, 28, p);
+      // bake meter with zones
+      const mx = o.x + 12, mw = o.w - 24, my = o.y + o.h - 18, scale = mw / 1.5;
+      const zones = [[0, 0.6, "#78716c"], [0.6, 0.85, "#fbbf24"], [0.85, 1.1, "#22c55e"], [1.1, 1.3, "#f97316"], [1.3, 1.5, "#111827"]];
+      for (const [a, b, col] of zones) { ctx.fillStyle = col; ctx.fillRect(mx + a * scale, my, (b - a) * scale, 10); }
+      const px = mx + Math.min(1.5, p.bake) * scale;
+      ctx.fillStyle = "#fff"; ctx.fillRect(px - 2, my - 4, 4, 18);
+      const st = bakeState(p.bake);
+      label(st.label, o.x + o.w - 16, o.y + 26, 12, st.label === "Burnt" ? "#f87171" : st.color, "right");
+    } else {
+      label(`Oven ${i + 1}`, o.x + o.w / 2, o.y + 48, 14, "#78716c");
+      ctx.fillStyle = "#44403c"; ctx.fillRect(o.x + 12, o.y + o.h - 18, o.w - 24, 10);
+    }
+  }
+  for (const s of smoke) {
+    ctx.fillStyle = s.dark ? `rgba(30,30,30,${s.t * 0.6})` : `rgba(226,232,240,${s.t * 0.35})`;
+    ctx.fillRect(s.x - 6, s.y - 6, 12, 12);
+  }
+
+  // ready tray
+  for (let i = 0; i < 3; i++) {
+    const r = READY[i];
+    const sel = i === selReady && ready[i];
+    Kit.brick(ctx, r.x, r.y, r.w, r.h, sel ? "#2563eb" : "#334155", 10);
+    if (ready[i]) {
+      drawPizza(r.x + r.w / 2, r.y + 44, 32, ready[i]);
+      const st = bakeState(ready[i].bake);
+      label(st.label, r.x + r.w / 2, r.y + r.h - 10, 12, st.ok ? "#fff" : "#fca5a5");
+    } else label("Tray", r.x + r.w / 2, r.y + 58, 13, "#64748b");
+  }
+  if (selReady >= 0 && ready[selReady]) {
+    const r = READY[selReady];
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4, 11); ctx.stroke();
+  }
+
+  // header strip: day clock + hearts
+  ctx.fillStyle = "rgba(15,23,42,.85)";
+  ctx.beginPath(); ctx.roundRect(W / 2 - 150, 252, 300, 22, 6); ctx.fill();
+  const tLeft = Math.max(0, Math.ceil(dayTime));
+  label(phase === "closing" ? `Day ${day} - closing` : `Day ${day}  -  ${Math.floor(tLeft / 60)}:${String(tLeft % 60).padStart(2, "0")}`, W / 2 - 50, 268, 13, "#fff");
+  for (let i = 0; i < MAX_HEARTS; i++) {
+    const hx = W / 2 + 40 + i * 20, hy = 263;
+    ctx.fillStyle = i < hearts ? "#ef4444" : "#475569";
+    ctx.beginPath();
+    ctx.arc(hx - 3.5, hy - 2, 4.5, 0, Math.PI * 2); ctx.arc(hx + 3.5, hy - 2, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(hx - 8, hy); ctx.lineTo(hx + 8, hy); ctx.lineTo(hx, hy + 8); ctx.fill();
+  }
+
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.font = `800 17px ${FONT}`; ctx.textAlign = "center";
+    ctx.fillStyle = "#000"; ctx.fillText(p.text, p.x + 2, p.y + 2);
+    ctx.fillStyle = p.color; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const game = Kit.loop(update, draw);
+newGame();
+phase = "menu";
+draw();
+game.start();
+Kit.overlay("Pizza Shop",
+  "Customers order at the counter. Build each pizza: dough, sauce,\ncheese, then exactly the toppings they asked for.\nBake it and pull it out in the green zone (orange for crispy),\nthen click the customer to serve before they lose patience.\nSpend your earnings on upgrades after each of the 7 days.\n\nMouse: click ingredients, ovens, tray and customers\nKeys: D S C dough/sauce/cheese, 1-6 toppings, B bake,\nSpace take out, Tab pick from tray, Q W E R serve, X trash",
+  "Open the shop").then(() => { phase = "open"; });
+</script>
+</body>
+</html>

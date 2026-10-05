@@ -113,6 +113,7 @@ function burst(x, y, n, colors, spd) {
 }
 
 function update(dt) {
+  if (!(dt > 0)) return;   // the first frame after start can report a tiny negative dt
   player.rotor += dt * 40;
   for (const p of particles) {
     p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt * (p.grav ?? 1); p.life -= dt;

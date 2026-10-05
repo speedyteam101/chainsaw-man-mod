@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Color Sort</title>
+<link rel="stylesheet" href="../kit.css">
+<style>.kit-stage canvas:focus { outline: none; }</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "color-sort";
+const { canvas, ctx, W, H } = Kit.stage(780, 620);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const CAP = 4;
+const COLORS = ["#ef4444", "#fb923c", "#facc15", "#84cc16", "#16a34a", "#14b8a6", "#38bdf8", "#2563eb", "#a855f7", "#ec4899", "#92400e", "#e5e7eb"];
+const BLOCK_H = 40, TUBE_W = 62;
+
+let level, tubes, start, history, selected, cursor, moves, extraUsed, flying, phase, layout, buttons, popups, celebrate;
+try { level = Math.max(1, Number(localStorage.getItem("blockos.color-sort.level")) || 1); } catch (_) { level = 1; }
+
+// ---------- rules ----------
+const topOf = (t) => t[t.length - 1];
+function runLength(t) {
+  let n = 0;
+  for (let i = t.length - 1; i >= 0 && t[i] === topOf(t); i--) n++;
+  return n;
+}
+function canPour(ts, a, b) {
+  if (a === b || !ts[a].length) return false;
+  const dst = ts[b];
+  const cap = dst.cap ?? CAP;
+  if (dst.length >= cap) return false;
+  return !dst.length || topOf(dst) === topOf(ts[a]);
+}
+function pourCount(ts, a, b) {
+  return Math.min(runLength(ts[a]), (ts[b].cap ?? CAP) - ts[b].length);
+}
+function isDone(ts) {
+  return ts.every((t) => !t.length || (t.length === CAP && t.every((c) => c === t[0])));
+}
+
+// ---------- generation with a solver check ----------
+function solvable(initial) {
+  const seen = new Set();
+  let nodes = 0;
+  const key = (ts) => ts.map((t) => t.join(",")).sort().join("|");
+  function dfs(ts) {
+    if (isDone(ts)) return true;
+    if (++nodes > 40000) return false;
+    const k = key(ts);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    const movesList = [];
+    for (let a = 0; a < ts.length; a++) {
+      if (!ts[a].length) continue;
+      const uniform = ts[a].every((c) => c === ts[a][0]);
+      for (let b = 0; b < ts.length; b++) {
+        if (!canPour(ts, a, b)) continue;
+        if (uniform && !ts[b].length) continue; // pointless move
+        movesList.push([a, b, ts[b].length ? 0 : 1]);
+      }
+    }
+    movesList.sort((x, y) => x[2] - y[2]);
+    for (const [a, b] of movesList) {
+      const next = ts.map((t) => t.slice());
+      const n = pourCount(ts, a, b);
+      for (let i = 0; i < n; i++) next[b].push(next[a].pop());
+      if (dfs(next)) return true;
+    }
+    return false;
+  }
+  return dfs(initial.map((t) => t.slice()));
+}
+
+function colorsFor(lv) { return Math.min(COLORS.length, 3 + Math.floor((lv - 1) * 0.5)); }
+
+function generate(lv) {
+  const k = colorsFor(lv);
+  let candidate = null;
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const pool = [];
+    for (let c = 0; c < k; c++) for (let i = 0; i < CAP; i++) pool.push(c);
+    for (let i = pool.length - 1; i > 0; i--) { const j = Kit.randInt(0, i); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    const ts = [];
+    for (let t = 0; t < k; t++) ts.push(pool.slice(t * CAP, t * CAP + CAP));
+    ts.push([], []);
+    // avoid tubes that start finished or almost finished
+    if (ts.some((t) => t.length && runLength(t) >= 3)) continue;
+    candidate = ts;
+    if (solvable(ts)) return ts;
+  }
+  // practically never reached: the solver gave up, so hand over the last shuffle (undo and the extra tube still help)
+  return candidate;
+}
+
+function startLevel(sameLayout) {
+  if (!sameLayout) start = generate(level);
+  tubes = start.map((t) => t.slice());
+  history = [];
+  selected = -1;
+  cursor = 0;
+  moves = 0;
+  extraUsed = false;
+  flying = null;
+  popups = [];
+  celebrate = 0;
+  phase = "play";
+  computeLayout();
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Level ${level}<small>Moves ${moves} &middot; Best level ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- layout ----------
+function computeLayout() {
+  const n = tubes.length;
+  const rows = n > 8 ? 2 : 1;
+  const perRow = Math.ceil(n / rows);
+  const tubeH = CAP * BLOCK_H + 26;
+  const gap = Math.min(40, (W - 40 - perRow * TUBE_W) / Math.max(1, perRow - 1));
+  layout = [];
+  for (let i = 0; i < n; i++) {
+    const row = rows === 2 && i >= perRow ? 1 : 0;
+    const inRow = row ? n - perRow : perRow;
+    const idx = row ? i - perRow : i;
+    const rowW = inRow * TUBE_W + (inRow - 1) * gap;
+    const x = (W - rowW) / 2 + idx * (TUBE_W + gap);
+    const areaTop = 110, areaH = H - 110 - 90;
+    const y = rows === 1 ? areaTop + (areaH - tubeH) / 2 + 20 : areaTop + 10 + row * (tubeH + 40);
+    layout.push({ x, y, w: TUBE_W, h: tubeH });
+  }
+  const by = H - 70;
+  buttons = [
+    { id: "undo", label: "Undo (Z)", x: W / 2 - 300, y: by, w: 140, h: 48, color: "#3b82f6" },
+    { id: "extra", label: "+ Tube (T)", x: W / 2 - 145, y: by, w: 140, h: 48, color: "#a855f7" },
+    { id: "restart", label: "Restart (R)", x: W / 2 + 5, y: by, w: 140, h: 48, color: "#f59e0b" },
+    { id: "skip", label: "New level (N)", x: W / 2 + 160, y: by, w: 140, h: 48, color: "#475569" },
+  ];
+}
+
+// ---------- actions ----------
+function pick(i) {
+  if (phase !== "play" || flying) return;
+  cursor = i;
+  if (selected < 0) {
+    if (!tubes[i].length) { Kit.sfx("hit"); return; }
+    selected = i;
+    Kit.sfx("click");
+    return;
+  }
+  if (selected === i) { selected = -1; return; }
+  if (!canPour(tubes, selected, i)) {
+    // switch selection to the new tube if it has blocks
+    Kit.sfx("hit");
+    selected = tubes[i].length ? i : -1;
+    return;
+  }
+  pour(selected, i);
+}
+
+function pour(a, b) {
+  const n = pourCount(tubes, a, b);
+  history.push({ tubes: tubes.map((t) => { const c = t.slice(); if (t.cap) c.cap = t.cap; return c; }), extraUsed });
+  const color = topOf(tubes[a]);
+  const fromSlot = tubes[a].length - 1;
+  for (let i = 0; i < n; i++) tubes[a].pop();
+  flying = { a, b, n, color, t: 0, fromSlot, toSlot: tubes[b].length };
+  selected = -1;
+  moves++;
+  Kit.sfx("jump");
+  updateHud();
+}
+
+function landFlying() {
+  const f = flying;
+  for (let i = 0; i < f.n; i++) tubes[f.b].push(f.color);
+  flying = null;
+  const t = tubes[f.b];
+  if (t.length === CAP && t.every((c) => c === t[0])) {
+    Kit.sfx("coin");
+    popups.push({ x: layout[f.b].x + TUBE_W / 2, y: layout[f.b].y - 14, t: 1, text: "Sorted!" });
+  } else Kit.sfx("click");
+  if (isDone(tubes)) win();
+}
+
+function undo() {
+  if (phase !== "play" || flying || !history.length) { Kit.sfx("hit"); return; }
+  const h = history.pop();
+  tubes = h.tubes;
+  extraUsed = h.extraUsed;
+  selected = -1;
+  moves++;
+  Kit.sfx("click");
+  computeLayout();
+  updateHud();
+}
+
+function addTube() {
+  if (phase !== "play" || flying) return;
+  if (extraUsed) { Kit.sfx("hit"); popups.push({ x: W / 2, y: 96, t: 1.2, text: "Only one extra tube per level" }); return; }
+  history.push({ tubes: tubes.map((t) => { const c = t.slice(); if (t.cap) c.cap = t.cap; return c; }), extraUsed });
+  const t = [];
+  t.cap = CAP;
+  tubes.push(t);
+  extraUsed = true;
+  Kit.sfx("coin");
+  computeLayout();
+}
+
+async function win() {
+  phase = "won";
+  celebrate = 1.5;
+  Kit.sfx("win");
+  const best = Kit.finish(ID, level);
+  const stars = moves <= colorsFor(level) * 3 ? 3 : moves <= colorsFor(level) * 4.5 ? 2 : 1;
+  await new Promise((r) => setTimeout(r, 900));
+  await Kit.overlay(`Level ${level} sorted!`, `${moves} moves${extraUsed ? " (used the extra tube)" : ""}\nRating: ${"*".repeat(stars)}${"-".repeat(3 - stars)}\nBest level reached: ${best}`, "Next level");
+  level++;
+  try { localStorage.setItem("blockos.color-sort.level", String(level)); } catch (_) {}
+  startLevel(false);
+}
+
+// ---------- input ----------
+function hitTest(p) {
+  for (const b of buttons) if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return { button: b.id };
+  for (let i = 0; i < layout.length; i++) {
+    const l = layout[i];
+    if (p.x >= l.x - 10 && p.x <= l.x + l.w + 10 && p.y >= l.y - 40 && p.y <= l.y + l.h + 10) return { tube: i };
+  }
+  return null;
+}
+function doButton(id) {
+  if (id === "undo") undo();
+  if (id === "extra") addTube();
+  if (id === "restart" && phase === "play") { Kit.sfx("click"); startLevel(true); }
+  if (id === "skip" && phase === "play") { Kit.sfx("click"); startLevel(false); }
+}
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.button === 2) { selected = -1; return; }
+  const hit = hitTest(Kit.pointer(canvas, e));
+  if (!hit) { selected = -1; return; }
+  if (hit.button) doButton(hit.button);
+  else pick(hit.tube);
+});
+Kit.onKey((code) => {
+  if (phase !== "play") return;
+  if (code === "ArrowLeft" || code === "KeyA") cursor = (cursor - 1 + tubes.length) % tubes.length;
+  else if (code === "ArrowRight" || code === "KeyD") cursor = (cursor + 1) % tubes.length;
+  else if (code === "ArrowUp" || code === "KeyW" || code === "ArrowDown" || code === "KeyS") {
+    // jump between rows when there are two
+    const half = Math.ceil(tubes.length / 2);
+    if (tubes.length > 8) cursor = cursor < half ? Math.min(tubes.length - 1, cursor + half) : cursor - half;
+  } else if (code === "Space" || code === "Enter") pick(cursor);
+  else if (code === "KeyZ" || code === "Backspace" || code === "KeyU") undo();
+  else if (code === "KeyT") addTube();
+  else if (code === "KeyR") doButton("restart");
+  else if (code === "KeyN") doButton("skip");
+  else if (/^Digit[0-9]$/.test(code)) {
+    const i = (Number(code.slice(5)) + 9) % 10;
+    if (i < tubes.length) pick(i);
+  }
+});
+
+// ---------- loop ----------
+function update(dt) {
+  if (flying) {
+    flying.t += dt / 0.28;
+    if (flying.t >= 1) landFlying();
+  }
+  for (const p of popups) { p.t -= dt; p.y -= 24 * dt; }
+  popups = popups.filter((p) => p.t > 0);
+  if (celebrate > 0) celebrate -= dt;
+}
+
+function slotPos(i, slot, lifted) {
+  const l = layout[i];
+  return { x: l.x + 6, y: l.y + l.h - 10 - (slot + 1) * BLOCK_H + 2 - (lifted ? 46 : 0) };
+}
+
+function drawBlock(x, y, color) {
+  Kit.brick(ctx, x, y, TUBE_W - 12, BLOCK_H - 4, COLORS[color], 6);
+  ctx.fillStyle = "rgba(0,0,0,.16)";
+  ctx.beginPath(); ctx.arc(x + 15, y + BLOCK_H / 2, 6, 0, Math.PI * 2); ctx.arc(x + TUBE_W - 27, y + BLOCK_H / 2, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.28)";
+  ctx.beginPath(); ctx.arc(x + 15, y + BLOCK_H / 2 - 2, 6, 0, Math.PI * 2); ctx.arc(x + TUBE_W - 27, y + BLOCK_H / 2 - 2, 6, 0, Math.PI * 2); ctx.fill();
+}
+
+function draw() {
+  ctx.fillStyle = "#14202b";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff"; ctx.font = `800 28px ${FONT}`;
+  ctx.fillText(`Level ${level}`, 24, 46);
+  ctx.fillStyle = "#93c5fd"; ctx.font = `700 15px ${FONT}`;
+  ctx.fillText(`${colorsFor(level)} colors  -  ${moves} moves`, 24, 72);
+
+  for (let i = 0; i < tubes.length; i++) {
+    const l = layout[i];
+    const done = tubes[i].length === CAP && tubes[i].every((c) => c === tubes[i][0]);
+    // tube glass
+    ctx.fillStyle = done ? "rgba(34,197,94,.12)" : "rgba(255,255,255,.06)";
+    ctx.beginPath(); ctx.roundRect(l.x, l.y, l.w, l.h, [6, 6, 18, 18]); ctx.fill();
+    ctx.strokeStyle = i === cursor ? "#facc15" : done ? "#22c55e" : "rgba(203,213,225,.55)";
+    ctx.lineWidth = i === cursor ? 4 : 3;
+    ctx.beginPath(); ctx.roundRect(l.x, l.y, l.w, l.h, [6, 6, 18, 18]); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    ctx.fillRect(l.x + 6, l.y + 8, 4, l.h - 26);
+    // rim
+    Kit.brick(ctx, l.x - 6, l.y - 6, l.w + 12, 12, tubes[i].cap ? "#a855f7" : "#64748b", 4);
+    tubes[i].forEach((c, slot) => {
+      const lifted = i === selected && slot >= tubes[i].length - runLength(tubes[i]);
+      const p = slotPos(i, slot, lifted);
+      drawBlock(p.x, p.y, c);
+    });
+    if (tubes.length <= 10) {
+      ctx.fillStyle = "#64748b"; ctx.font = `700 12px ${FONT}`; ctx.textAlign = "center";
+      ctx.fillText((i + 1) % 10, l.x + l.w / 2, l.y + l.h + 18);
+    }
+  }
+
+  if (flying) {
+    const e = flying.t < 0.5 ? 2 * flying.t * flying.t : 1 - Math.pow(-2 * flying.t + 2, 2) / 2;
+    for (let k = 0; k < flying.n; k++) {
+      const from = slotPos(flying.a, flying.fromSlot - k, true);
+      const to = slotPos(flying.b, flying.toSlot + k, false);
+      const x = from.x + (to.x - from.x) * e;
+      const y = from.y + (to.y - from.y) * e - Math.sin(e * Math.PI) * 70;
+      drawBlock(x, y, flying.color);
+    }
+  }
+
+  for (const b of buttons) {
+    const off = (b.id === "extra" && extraUsed) || (b.id === "undo" && !history.length);
+    Kit.brick(ctx, b.x, b.y, b.w, b.h, off ? "#334155" : b.color, 8);
+    ctx.fillStyle = off ? "#64748b" : "#fff"; ctx.font = `800 15px ${FONT}`; ctx.textAlign = "center";
+    ctx.fillText(b.label, b.x + b.w / 2, b.y + 30);
+  }
+
+  ctx.textAlign = "center";
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.font = `800 16px ${FONT}`;
+    ctx.fillStyle = "#86efac"; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  if (celebrate > 0) {
+    for (let i = 0; i < 40; i++) {
+      const x = (i * 97 + celebrate * 300 * (i % 3 + 1)) % W;
+      const y = ((i * 53) % H + (1.5 - celebrate) * 400) % H;
+      ctx.fillStyle = COLORS[i % COLORS.length];
+      ctx.fillRect(x, y, 8, 8);
+    }
+  }
+}
+
+const game = Kit.loop(update, draw);
+startLevel(false);
+phase = "menu";
+draw();
+game.start();
+Kit.overlay("Color Sort",
+  `Pour blocks between tubes until every tube holds a single color.\nYou can only pour onto the same color or into an empty tube.\nStuck? Undo, or add one extra tube per level.\n\nMouse: click a tube, then click where to pour\nKeys: Left/Right + Space, 1-9 pick tubes, Z undo, T extra tube${level > 1 ? `\n\nContinuing at level ${level}` : ""}`,
+  "Play").then(() => { phase = "play"; });
+</script>
+</body>
+</html>

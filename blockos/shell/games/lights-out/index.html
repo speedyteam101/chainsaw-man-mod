@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lights Out</title>
+<link rel="stylesheet" href="../kit.css">
+<style>.kit-stage canvas:focus { outline: none; }</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "lights-out";
+const { canvas, ctx, W, H } = Kit.stage(640, 720);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const BOARD = 480, BY = 150;
+
+let level, total, hints, n, lights, solution, par, limit, moves, cursor, phase, glow, ripples, hintCell, levelPoints;
+
+function sizeFor(lv) { return Math.min(7, 3 + Math.floor(lv / 3)); }
+
+// Builds a board by pressing random cells on a dark grid, so it is always solvable.
+function newLevel() {
+  n = sizeFor(level);
+  lights = Array.from({ length: n }, () => new Array(n).fill(false));
+  solution = Array.from({ length: n }, () => new Array(n).fill(false));
+  const presses = Math.min(Math.floor(n * n * 0.55), 2 + level);
+  const cells = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) cells.push([r, c]);
+  for (let i = cells.length - 1; i > 0; i--) { const j = Kit.randInt(0, i); [cells[i], cells[j]] = [cells[j], cells[i]]; }
+  for (const [r, c] of cells.slice(0, presses)) { toggleAround(r, c); solution[r][c] = !solution[r][c]; }
+  if (litCount() === 0) return newLevel();
+  par = presses;
+  limit = presses * 2 + 4;
+  moves = 0;
+  cursor = { r: Math.floor(n / 2), c: Math.floor(n / 2) };
+  glow = Array.from({ length: n }, () => new Array(n).fill(0));
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) glow[r][c] = lights[r][c] ? 1 : 0;
+  ripples = [];
+  hintCell = null;
+  phase = "play";
+  updateHud();
+}
+
+function newRun() {
+  level = 1;
+  total = 0;
+  hints = 3;
+  newLevel();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${total}<small>Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+function toggleAround(r, c) {
+  for (const [dr, dc] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const rr = r + dr, cc = c + dc;
+    if (rr >= 0 && cc >= 0 && rr < n && cc < n) lights[rr][cc] = !lights[rr][cc];
+  }
+}
+function litCount() {
+  let k = 0;
+  for (const row of lights) for (const v of row) if (v) k++;
+  return k;
+}
+
+function press(r, c) {
+  if (phase !== "play") return;
+  cursor = { r, c };
+  toggleAround(r, c);
+  // the remaining solution is the original press set XOR whatever the player pressed
+  solution[r][c] = !solution[r][c];
+  if (hintCell && hintCell.r === r && hintCell.c === c) hintCell = null;
+  moves++;
+  ripples.push({ r, c, t: 0 });
+  Kit.sfx("click");
+  if (litCount() === 0) return levelClear();
+  if (moves >= limit) return runOver();
+}
+
+function useHint() {
+  if (phase !== "play") return;
+  if (hints <= 0) { Kit.sfx("hit"); return; }
+  const cells = [];
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (solution[r][c]) cells.push({ r, c });
+  if (!cells.length) return;
+  hintCell = Kit.pick(cells);
+  hints--;
+  Kit.sfx("coin");
+}
+
+async function levelClear() {
+  phase = "clear";
+  const perfect = moves <= par;
+  levelPoints = 50 * n + 20 * Math.max(0, limit - moves) + (perfect ? 100 : 0);
+  total += levelPoints;
+  const best = Kit.finish(ID, total);
+  Kit.sfx("win");
+  updateHud();
+  await new Promise((r) => setTimeout(r, 700));
+  await Kit.overlay(perfect ? "Perfect!" : "Lights out!",
+    `Level ${level} cleared in ${moves} moves (par ${par}).\n+${levelPoints} points${perfect ? " (incl. +100 perfect bonus)" : ""}\nRun score: ${total}   Best: ${best}`, "Next level");
+  level++;
+  if (level % 4 === 0) hints++;
+  newLevel();
+}
+
+async function runOver() {
+  phase = "over";
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, total);
+  await new Promise((r) => setTimeout(r, 700));
+  await Kit.overlay("Out of moves!", `You ran out of moves on level ${level}.\nRun score: ${total}\nBest: ${best}`, "New run");
+  newRun();
+}
+
+// ---------- layout + input ----------
+function geom() {
+  const cell = Math.floor(BOARD / n);
+  const ox = Math.floor((W - cell * n) / 2);
+  return { cell, ox, oy: BY };
+}
+const BTN_HINT = { x: W / 2 - 170, y: H - 74, w: 160, h: 48 };
+const BTN_RESET = { x: W / 2 + 10, y: H - 74, w: 160, h: 48 };
+const inBtn = (p, b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  if (phase !== "play" || e.button !== 0) return;
+  const p = Kit.pointer(canvas, e);
+  if (inBtn(p, BTN_HINT)) { useHint(); return; }
+  if (inBtn(p, BTN_RESET)) { restartLevelPrompt(); return; }
+  const { cell, ox, oy } = geom();
+  const c = Math.floor((p.x - ox) / cell), r = Math.floor((p.y - oy) / cell);
+  if (r >= 0 && c >= 0 && r < n && c < n) press(r, c);
+});
+Kit.onKey((code) => {
+  if (phase !== "play") return;
+  const d = { ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0], ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1] }[code];
+  if (d) cursor = { r: (cursor.r + d[0] + n) % n, c: (cursor.c + d[1] + n) % n };
+  else if (code === "Space" || code === "Enter") press(cursor.r, cursor.c);
+  else if (code === "KeyH") useHint();
+  else if (code === "KeyN") restartLevelPrompt();
+});
+
+// Two-button confirm so a stray click can't throw a run away.
+function restartLevelPrompt() {
+  if (phase !== "play") return;
+  phase = "prompt";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  const panel = document.createElement("div");
+  panel.className = "kit-panel";
+  const h = document.createElement("h1");
+  h.textContent = "Start a new run?";
+  const p = document.createElement("p");
+  p.textContent = `Your run score of ${total} will be recorded\nand a fresh run starts at level 1.`;
+  const keep = document.createElement("button");
+  keep.className = "kit-btn";
+  keep.textContent = "Keep playing";
+  const quit = document.createElement("button");
+  quit.className = "kit-btn";
+  quit.style.cssText = "background:#475569;box-shadow:0 4px 0 #2b313a;margin-left:10px";
+  quit.textContent = "New run";
+  panel.append(h, p, keep, quit);
+  o.appendChild(panel);
+  document.body.appendChild(o);
+  keep.focus();
+  const close = (restart) => {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    if (restart) { Kit.finish(ID, total); newRun(); } else phase = "play";
+  };
+  function onKey(e) {
+    if (e.code === "Enter" || e.code === "Space") { e.preventDefault(); e.stopPropagation(); close(document.activeElement === quit); }
+    else if (["ArrowLeft", "ArrowRight", "Tab"].includes(e.code)) { e.preventDefault(); e.stopPropagation(); (document.activeElement === keep ? quit : keep).focus(); }
+  }
+  keep.addEventListener("click", () => close(false));
+  quit.addEventListener("click", () => close(true));
+  addEventListener("keydown", onKey, true);
+}
+
+// ---------- loop ----------
+let clock = 0;
+function update(dt) {
+  clock += dt;
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const target = lights[r][c] ? 1 : 0;
+    glow[r][c] += (target - glow[r][c]) * Math.min(1, dt * 14);
+  }
+  for (const rp of ripples) rp.t += dt * 2.5;
+  ripples = ripples.filter((rp) => rp.t < 1);
+}
+
+function mix(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (s) => Math.round(((pa >> s) & 255) * (1 - t) + ((pb >> s) & 255) * t);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
+function draw() {
+  ctx.fillStyle = "#0e1220";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  // header
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff"; ctx.font = `800 28px ${FONT}`;
+  ctx.fillText(`Level ${level}`, 32, 50);
+  ctx.fillStyle = "#94a3b8"; ctx.font = `700 15px ${FONT}`;
+  ctx.fillText(`${n} x ${n}   Par ${par}   Lights on ${litCount()}`, 32, 76);
+  // move meter
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#fff"; ctx.font = `800 22px ${FONT}`;
+  ctx.fillText(`${limit - moves}`, W - 32, 50);
+  ctx.fillStyle = "#94a3b8"; ctx.font = `700 13px ${FONT}`;
+  ctx.fillText("MOVES LEFT", W - 32, 70);
+  const left = limit - moves;
+  const segW = Math.min(18, (W - 64) / limit);
+  for (let i = 0; i < limit; i++) {
+    const on = i < left;
+    Kit.brick(ctx, 32 + i * segW, 100, segW - 3, 18, on ? (left <= 3 ? "#ef4444" : i < par ? "#facc15" : "#a3a3a3") : "#1e2538", 3);
+  }
+
+  const { cell, ox, oy } = geom();
+  ctx.fillStyle = "#070a12";
+  ctx.beginPath(); ctx.roundRect(ox - 12, oy - 12, cell * n + 24, cell * n + 24, 14); ctx.fill();
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const g = glow[r][c];
+      const x = ox + c * cell + 4, y = oy + r * cell + 4, s = cell - 8;
+      if (g > 0.05) {
+        ctx.fillStyle = `rgba(250,204,21,${0.22 * g})`;
+        ctx.beginPath(); ctx.roundRect(x - 6, y - 6, s + 12, s + 12, 14); ctx.fill();
+      }
+      Kit.brick(ctx, x, y, s, s, mix("#2a3147", "#facc15", g), 10);
+      // studs light up too
+      const studR = s * 0.12;
+      for (const [sx, sy] of [[0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]]) {
+        ctx.fillStyle = "rgba(0,0,0,.2)";
+        ctx.beginPath(); ctx.arc(x + s * sx, y + s * sy + 2, studR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = mix("#363f5a", "#fef08a", g);
+        ctx.beginPath(); ctx.arc(x + s * sx, y + s * sy, studR, 0, Math.PI * 2); ctx.fill();
+      }
+      if (hintCell && hintCell.r === r && hintCell.c === c) {
+        ctx.strokeStyle = `rgba(56,189,248,${0.6 + Math.sin(clock * 8) * 0.4})`;
+        ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.roundRect(x - 2, y - 2, s + 4, s + 4, 12); ctx.stroke();
+      }
+    }
+  for (const rp of ripples) {
+    ctx.strokeStyle = `rgba(255,255,255,${0.5 * (1 - rp.t)})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(ox + rp.c * cell + cell / 2, oy + rp.r * cell + cell / 2, cell * (0.3 + rp.t * 1.1), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (phase === "play") {
+    ctx.strokeStyle = "#f472b6"; ctx.lineWidth = 3;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.roundRect(ox + cursor.c * cell + 1, oy + cursor.r * cell + 1, cell - 2, cell - 2, 12); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  Kit.brick(ctx, BTN_HINT.x, BTN_HINT.y, BTN_HINT.w, BTN_HINT.h, hints > 0 ? "#0ea5e9" : "#334155", 8);
+  Kit.brick(ctx, BTN_RESET.x, BTN_RESET.y, BTN_RESET.w, BTN_RESET.h, "#475569", 8);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = `800 16px ${FONT}`;
+  ctx.fillText(`Hint (H) x${hints}`, BTN_HINT.x + BTN_HINT.w / 2, BTN_HINT.y + 30);
+  ctx.fillText("New run (N)", BTN_RESET.x + BTN_RESET.w / 2, BTN_RESET.y + 30);
+}
+
+const game = Kit.loop(update, draw);
+newRun();
+phase = "menu";
+game.start();
+Kit.overlay("Lights Out",
+  "Pressing a brick flips it and its four neighbors.\nTurn every light off before you run out of moves.\nBeat the par for a perfect bonus - boards grow as you go.\n\nMouse: click a brick\nKeys: arrows + Space, H for a hint",
+  "Play").then(() => { phase = "play"; });
+</script>
+</body>
+</html>

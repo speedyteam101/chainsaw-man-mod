@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reversi</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "reversi";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(640, 720);
+canvas.style.outline = "none";
+const CELL = 68, BX = (W - CELL * 8) / 2, BY = 100;
+const BLACK = 1, WHITE = -1;
+const LEVELS = {
+  easy: { name: "Easy", depth: 1, random: 0.3, exact: 0 },
+  medium: { name: "Medium", depth: 3, random: 0, exact: 8 },
+  hard: { name: "Hard", depth: 6, random: 0, exact: 12 },
+};
+const DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+// Classic square weights: corners are gold, the squares next to them are dangerous.
+const WEIGHTS = [
+  120, -25, 20, 5, 5, 20, -25, 120,
+  -25, -45, -5, -5, -5, -5, -45, -25,
+  20, -5, 15, 3, 3, 15, -5, 20,
+  5, -5, 3, 3, 3, 3, -5, 5,
+  5, -5, 3, 3, 3, 3, -5, 5,
+  20, -5, 15, 3, 3, 15, -5, 20,
+  -25, -45, -5, -5, -5, -5, -45, -25,
+  120, -25, 20, 5, 5, 20, -25, 120,
+];
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft" || c === "KeyW" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight" || c === "KeyS" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- rules ---------- */
+function startBoard() {
+  const b = new Array(64).fill(0);
+  b[27] = WHITE; b[36] = WHITE; b[28] = BLACK; b[35] = BLACK;
+  return b;
+}
+
+// Squares flipped if `side` plays at `sq` (empty list = illegal).
+function flipsFor(b, sq, side) {
+  if (b[sq]) return [];
+  const out = [];
+  const r0 = sq >> 3, c0 = sq & 7;
+  for (const [dr, dc] of DIRS) {
+    let r = r0 + dr, c = c0 + dc;
+    const line = [];
+    while (r >= 0 && r < 8 && c >= 0 && c < 8 && b[r * 8 + c] === -side) { line.push(r * 8 + c); r += dr; c += dc; }
+    if (line.length && r >= 0 && r < 8 && c >= 0 && c < 8 && b[r * 8 + c] === side) out.push(...line);
+  }
+  return out;
+}
+
+function legalMoves(b, side) {
+  const out = [];
+  for (let sq = 0; sq < 64; sq++) {
+    if (b[sq]) continue;
+    const f = flipsFor(b, sq, side);
+    if (f.length) out.push({ sq, flips: f });
+  }
+  return out;
+}
+
+function play(b, m, side) {
+  const nb = b.slice();
+  nb[m.sq] = side;
+  for (const s of m.flips) nb[s] = side;
+  return nb;
+}
+
+const count = (b, side) => b.reduce((n, v) => n + (v === side ? 1 : 0), 0);
+
+/* ---------- CPU ---------- */
+// Score from black's point of view.
+function evaluate(b) {
+  let pos = 0;
+  for (let sq = 0; sq < 64; sq++) if (b[sq]) pos += WEIGHTS[sq] * b[sq];
+  const mob = legalMoves(b, BLACK).length - legalMoves(b, WHITE).length;
+  return pos + mob * 8;
+}
+
+function negamax(b, side, depth, alpha, beta, exact, passed) {
+  const moves = legalMoves(b, side);
+  if (!moves.length) {
+    if (passed || !legalMoves(b, -side).length) {
+      const diff = count(b, side) - count(b, -side);
+      return diff * 1000; // game over: discs decide
+    }
+    return -negamax(b, -side, depth, -beta, -alpha, exact, true);
+  }
+  if (depth <= 0 && !exact) return side * evaluate(b);
+  // try corners and good squares first so pruning works well
+  moves.sort((a, c) => WEIGHTS[c.sq] - WEIGHTS[a.sq]);
+  let best = -Infinity;
+  for (const m of moves) {
+    const v = -negamax(play(b, m, side), -side, depth - 1, -beta, -alpha, exact, false);
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function cpuChoose(b, side, level) {
+  const moves = legalMoves(b, side);
+  if (moves.length === 1) return moves[0];
+  if (Math.random() < level.random) return Kit.pick(moves);
+  const empties = b.filter((v) => !v).length;
+  const exact = empties <= level.exact;
+  let best = [], bestV = -Infinity;
+  for (const m of moves) {
+    const v = -negamax(play(b, m, side), -side, level.depth - 1, -Infinity, Infinity, exact, false) + (exact ? 0 : Math.random() * 2);
+    if (v > bestV + 0.5) { bestV = v; best = [m]; }
+    else if (Math.abs(v - bestV) <= 0.5) best.push(m);
+  }
+  return Kit.pick(best);
+}
+
+/* ---------- state ---------- */
+let mode = "cpu", levelKey = "medium";
+let board, turn, legal = [], phase = "menu", round = 0, lastSq = -1, cursor = 19, result = null;
+let flipping = []; // { sq, t, from, to }
+let toast = null, tally = { black: 0, white: 0 }, hoverSq = -1;
+
+const isHuman = (side) => mode === "2p" || side === BLACK;
+const name = (side) => (mode === "cpu" ? (side === BLACK ? "You" : "CPU") : side === BLACK ? "Black" : "White");
+
+function newGame() {
+  board = startBoard();
+  turn = BLACK;
+  lastSq = -1;
+  flipping = [];
+  result = null;
+  round++;
+  beginTurn(false);
+}
+
+function updateHud() {
+  if (mode === "cpu") Kit.hud(`${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0} discs</small>`);
+  else Kit.hud(`Black ${tally.black} - ${tally.white} White<small>2 players</small>`);
+}
+
+function beginTurn(justPassed) {
+  legal = legalMoves(board, turn);
+  updateHud();
+  if (!legal.length) {
+    if (justPassed || !legalMoves(board, -turn).length) return gameOver();
+    showToast(`${name(turn)} ${mode === "cpu" && turn === BLACK ? "have" : "has"} no moves - pass!`);
+    Kit.sfx("hit");
+    turn = -turn;
+    const myRound = round;
+    phase = "wait";
+    setTimeout(() => { if (round === myRound) beginTurn(true); }, 1100);
+    return;
+  }
+  if (isHuman(turn)) {
+    phase = "input";
+    if (!legal.some((m) => m.sq === cursor)) cursor = legal[0].sq;
+  } else {
+    phase = "cpu";
+    const myRound = round;
+    const t0 = performance.now();
+    setTimeout(() => {
+      if (round !== myRound) return;
+      const m = cpuChoose(board, turn, LEVELS[levelKey]);
+      const wait = Math.max(0, 550 - (performance.now() - t0));
+      setTimeout(() => { if (round === myRound) place(m); }, wait);
+    }, 50);
+  }
+}
+
+function place(m) {
+  const side = turn;
+  board[m.sq] = side;
+  lastSq = m.sq;
+  const r0 = m.sq >> 3, c0 = m.sq & 7;
+  for (const s of m.flips) {
+    const d = Math.max(Math.abs((s >> 3) - r0), Math.abs((s & 7) - c0));
+    board[s] = side;
+    flipping.push({ sq: s, t: -d * 0.07, to: side });
+  }
+  Kit.sfx(m.flips.length >= 5 ? "coin" : "click");
+  phase = "anim";
+  const myRound = round;
+  const longest = Math.max(...m.flips.map((s) => Math.max(Math.abs((s >> 3) - r0), Math.abs((s & 7) - c0))));
+  setTimeout(() => {
+    if (round !== myRound) return;
+    turn = -turn;
+    beginTurn(false);
+  }, 260 + longest * 70);
+}
+
+async function gameOver() {
+  phase = "end";
+  const b = count(board, BLACK), w = count(board, WHITE);
+  result = b > w ? BLACK : w > b ? WHITE : 0;
+  const myRound = round;
+  let title, text;
+  if (mode === "cpu") {
+    title = result === BLACK ? "You win!" : result === WHITE ? "CPU wins" : "It's a tie";
+    const best = Kit.finish(ID, b);
+    text = `Final score: You ${b} - ${w} CPU\nBest: ${best} discs`;
+    Kit.sfx(result === BLACK ? "win" : result === WHITE ? "lose" : "score");
+  } else {
+    if (result === BLACK) tally.black++; else if (result === WHITE) tally.white++;
+    title = result ? `${name(result)} wins!` : "It's a tie";
+    text = `Black ${b} - ${w} White\nSeries: Black ${tally.black} - ${tally.white} White`;
+    Kit.finish(ID);
+    Kit.sfx(result ? "win" : "score");
+  }
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1000));
+  if (round !== myRound) return;
+  const again = await choose(title, text, [
+    { label: "Play again", value: "again" },
+    { label: "Change mode", value: "menu", color: "blue" },
+  ]);
+  if (again === "again") newGame(); else menu();
+}
+
+async function menu() {
+  phase = "menu";
+  round++;
+  mode = await choose("Reversi",
+    "Place a disc so it traps a line of your opponent's discs between two of yours - they all flip to your colour! Lines can go across, down or diagonally.\n\n" +
+    "Most discs at the end wins. Dots show where you can play.\nMouse: click a dot.  Keys: Arrows + Space.",
+    [
+      { label: "1 Player vs CPU", value: "cpu", hint: "you are black" },
+      { label: "2 Players", value: "2p", color: "blue", hint: "pass and play" },
+    ]);
+  if (mode === "cpu") {
+    levelKey = await choose("Difficulty", "How sharp should the CPU be?", [
+      { label: "Easy", value: "easy", hint: "plays for fun", selected: levelKey === "easy" },
+      { label: "Medium", value: "medium", color: "orange", hint: "knows the corners", selected: levelKey === "medium" },
+      { label: "Hard", value: "hard", color: "red", hint: "deep search", selected: levelKey === "hard" },
+    ]);
+  } else tally = { black: 0, white: 0 };
+  newGame();
+}
+
+function showToast(t) { toast = { text: t, t: 1.6 }; }
+
+/* ---------- input ---------- */
+function tryPlace(sq) {
+  if (phase !== "input") return;
+  cursor = sq;
+  const m = legal.find((x) => x.sq === sq);
+  if (m) place(m);
+  else Kit.sfx("hit");
+}
+function sqAt(e) {
+  const p = Kit.pointer(canvas, e);
+  const c = Math.floor((p.x - BX) / CELL), r = Math.floor((p.y - BY) / CELL);
+  return r >= 0 && r < 8 && c >= 0 && c < 8 ? r * 8 + c : -1;
+}
+canvas.addEventListener("mousedown", (e) => { const sq = sqAt(e); if (sq >= 0) tryPlace(sq); });
+canvas.addEventListener("mousemove", (e) => {
+  hoverSq = sqAt(e);
+  canvas.style.cursor = phase === "input" && legal.some((m) => m.sq === hoverSq) ? "pointer" : "default";
+});
+canvas.addEventListener("mouseleave", () => { hoverSq = -1; });
+const MOVES = {
+  ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0],
+  ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1],
+};
+Kit.onKey((code) => {
+  if (phase !== "input") return;
+  if (MOVES[code]) {
+    const [dr, dc] = MOVES[code];
+    cursor = Kit.clamp((cursor >> 3) + dr, 0, 7) * 8 + Kit.clamp((cursor & 7) + dc, 0, 7);
+    hoverSq = -1;
+  } else if (code === "Space" || code === "Enter" || code === "NumpadEnter") tryPlace(cursor);
+});
+
+/* ---------- drawing ---------- */
+function update(dt) {
+  for (const f of flipping) f.t += dt;
+  flipping = flipping.filter((f) => f.t < 0.3);
+  if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
+}
+
+function text(str, x, y, size, color, weight, align) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function disc(x, y, side, scaleY, R) {
+  R = R || CELL * 0.4;
+  const black = side === BLACK;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, Math.max(0.05, scaleY));
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.arc(0, 4, R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = black ? "#0b0d10" : "#c8cdd3";
+  ctx.beginPath(); ctx.arc(0, 3, R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = black ? "#2b2f35" : "#f8fafc";
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+  // stud
+  ctx.fillStyle = black ? "#3a3f46" : "#e5e7eb";
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.55, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = black ? "rgba(255,255,255,.12)" : "rgba(255,255,255,.9)";
+  ctx.beginPath(); ctx.arc(-R * 0.18, -R * 0.2, R * 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (!board) return;
+  const nb = count(board, BLACK), nw = count(board, WHITE);
+  // score panels
+  Kit.brick(ctx, BX, 16, 160, 56, "#2b2f35", 10);
+  disc(BX + 32, 44, BLACK, 1, 18);
+  text(String(nb), BX + 110, 45, 28, "#fff", 800);
+  Kit.brick(ctx, W - BX - 160, 16, 160, 56, "#e5e7eb", 10);
+  disc(W - BX - 128, 44, WHITE, 1, 18);
+  text(String(nw), W - BX - 50, 45, 28, "#1f2328", 800);
+  let status = "";
+  if (phase === "cpu") status = "CPU is thinking...";
+  else if (phase === "input") status = mode === "cpu" ? "Your move" : `${name(turn)} to move`;
+  else if (phase === "end") status = result === 0 ? "Tie game" : mode === "cpu" ? (result === BLACK ? "You win!" : "CPU wins") : `${name(result)} wins!`;
+  text(status, W / 2, 45, 19, "#f2f4f5", 800);
+  if (phase === "input" || phase === "cpu") {
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(turn === BLACK ? BX : W - BX - 160, 76, 160, 4);
+  }
+  // share bar
+  const total = nb + nw || 1;
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillRect(BX, BY - 14, CELL * 8, 6);
+  ctx.fillStyle = "#3a3f46";
+  ctx.fillRect(BX, BY - 14, CELL * 8 * (nb / total), 6);
+  // board
+  ctx.fillStyle = "#0b4f2c";
+  ctx.beginPath(); ctx.roundRect(BX - 10, BY - 6, CELL * 8 + 20, CELL * 8 + 20, 12); ctx.fill();
+  ctx.fillStyle = "#166534";
+  ctx.beginPath(); ctx.roundRect(BX - 10, BY - 10, CELL * 8 + 20, CELL * 8 + 20, 12); ctx.fill();
+  for (let sq = 0; sq < 64; sq++) {
+    const x = BX + (sq & 7) * CELL, y = BY + (sq >> 3) * CELL;
+    ctx.fillStyle = ((sq >> 3) + (sq & 7)) % 2 ? "#15803d" : "#168a41";
+    ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+    ctx.fillStyle = "rgba(255,255,255,.07)";
+    ctx.fillRect(x + 4, y + 4, CELL - 8, 4);
+  }
+  // star points
+  ctx.fillStyle = "#0b4f2c";
+  for (const [r, c] of [[2, 2], [2, 6], [6, 2], [6, 6]]) { ctx.beginPath(); ctx.arc(BX + c * CELL, BY + r * CELL, 5, 0, 7); ctx.fill(); }
+  const showLegal = phase === "input";
+  const preview = showLegal ? legal.find((m) => m.sq === (hoverSq >= 0 ? hoverSq : cursor)) : null;
+  for (let sq = 0; sq < 64; sq++) {
+    const x = BX + (sq & 7) * CELL + CELL / 2, y = BY + (sq >> 3) * CELL + CELL / 2;
+    if (board[sq]) {
+      const f = flipping.find((q) => q.sq === sq);
+      if (f) {
+        const k = Kit.clamp(f.t / 0.3, 0, 1);
+        const side = k < 0.5 ? -f.to : f.to;
+        disc(x, y - Math.sin(k * Math.PI) * 10, side, Math.abs(Math.cos(k * Math.PI)));
+      } else disc(x, y, board[sq], 1);
+      if (sq === lastSq) {
+        ctx.fillStyle = "#ef4444";
+        ctx.fillRect(x - 4, y - 4, 8, 8);
+      }
+      if (preview && preview.flips.includes(sq)) {
+        ctx.strokeStyle = "#facc15";
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(x, y, CELL * 0.4 + 2, 0, Math.PI * 2); ctx.stroke();
+      }
+    } else if (showLegal && legal.some((m) => m.sq === sq)) {
+      if (preview && preview.sq === sq) {
+        ctx.globalAlpha = 0.5;
+        disc(x, y, turn, 1);
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = turn === BLACK ? "rgba(10,12,14,.6)" : "rgba(255,255,255,.75)";
+        ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  if (phase === "input" && hoverSq < 0) {
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(BX + (cursor & 7) * CELL + 3, BY + (cursor >> 3) * CELL + 3, CELL - 6, CELL - 6);
+    ctx.setLineDash([]);
+  }
+  text(preview ? `Flips ${preview.flips.length} disc${preview.flips.length === 1 ? "" : "s"}` : "Click a dot to place a disc", W / 2, H - 30, 15, preview ? "#facc15" : "#6b7280", 700);
+  if (toast) {
+    ctx.globalAlpha = Math.min(1, toast.t * 3);
+    ctx.font = `800 20px ${FONT}`;
+    const w = ctx.measureText(toast.text).width + 40;
+    Kit.brick(ctx, W / 2 - w / 2, BY + CELL * 4 - 28, w, 56, "#f2f4f5", 10);
+    text(toast.text, W / 2, BY + CELL * 4, 20, "#1f2328", 800);
+    ctx.globalAlpha = 1;
+  }
+}
+
+board = startBoard();
+turn = BLACK;
+updateHud();
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

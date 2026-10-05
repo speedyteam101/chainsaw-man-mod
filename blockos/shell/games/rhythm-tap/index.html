@@ -302,7 +302,7 @@ async function endSong(cleared) {
   await new Promise((r) => setTimeout(r, 900));
   if (audio) { master.gain.cancelScheduledValues(audio.currentTime); master.gain.setValueAtTime(0.55, audio.currentTime + 0.05); }
   menu(cleared ? `Grade ${grade}!` : "Song failed",
-    `${song.name} (${DIFFS[diffIdx].name})\nScore ${score}   Best ${best}\nPerfect ${counts.perfect}   Good ${counts.good}   Miss ${counts.miss}\nMax combo ${maxCombo}   Accuracy ${Math.round(acc * 100)}%`);
+    `${song.name} (${DIFFS[diffIdx].name})\nScore ${score}  /  Best ${best}\nPerfect ${counts.perfect}  /  Good ${counts.good}  /  Miss ${counts.miss}\nMax combo ${maxCombo}  /  Accuracy ${Math.round(acc * 100)}%`);
 }
 
 // ---------- menu ----------
@@ -344,7 +344,7 @@ function menu(title, text) {
   bests.className = "bests";
   const hint = document.createElement("div");
   hint.className = "hint";
-  hint.textContent = "Up/Down: song   Left/Right: difficulty   Enter: play" + (muted() ? "\n(Sound is muted)" : "");
+  hint.textContent = "Up/Down: song  /  Left/Right: difficulty  /  Enter: play" + (muted() ? "\n(Sound is muted)" : "");
   panel.append(h, p, songsBox, diffBox, bests, hint);
   o.appendChild(panel);
   document.body.appendChild(o);
@@ -477,7 +477,7 @@ function draw() {
   }
 
   // notes
-  if (chart && (phase === "play" || phase === "results")) {
+  if (chart && phase === "play") {
     const t = songTime(), spd = DIFFS[diffIdx].speed;
     for (const nt of chart) {
       if (nt.hit) continue;
@@ -557,7 +557,7 @@ const game = Kit.loop(update, draw);
 laneFlash = [0, 0, 0, 0];
 phase = "menu";
 game.start();
-menu("Rhythm Tap", "Tap each brick as it lands on its pad, in time with the music.\nHit streaks build a combo multiplier - misses drain your life.\n\nKeys: D F J K (or the arrow keys)   Mouse: click the lanes");
+menu("Rhythm Tap", "Tap each brick as it lands on its pad, in time with the music.\nHit streaks build a combo multiplier - misses drain your life.\n\nKeys: D F J K (or the arrow keys)\nMouse: click the lanes");
 </script>
 </body>
 </html>

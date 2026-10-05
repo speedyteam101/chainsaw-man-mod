@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tower Climb</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "tower-climb";
+const T = 30, COLS = 20, SH = 12;            // tile size, tower width in tiles, rows per section
+const { ctx, W, H } = Kit.stage(COLS * T, 720);
+const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+
+const PW = 20, PH = 28;
+const RUN = 220, ACCEL = 2200, GRAV = 1800, JUMP = 610, MAX_FALL = 900, CLIMB = 160;
+const COYOTE = 0.1, BUFFER = 0.12;
+const START_LIVES = 5;
+
+let objs, sections, player, camY, checkpoint, lives, maxHeight, t, dead, deathTimer, built, flash, msg, msgT;
+
+// ---------- generation ----------
+// Everything is stored in pixels; rows go up as numbers go down (row 0 is the ground floor).
+function rect(kind, col, row, wCols, hRows, extra) {
+  return Object.assign({ kind, x: col * T, y: row * T, w: wCols * T, h: hRows * T }, extra || {});
+}
+
+const THEMES = [
+  { id: "basic", from: 0, color: "#3b82f6" },
+  { id: "kill", from: 1, color: "#22c55e" },
+  { id: "conveyor", from: 1, color: "#f59e0b" },
+  { id: "vanish", from: 2, color: "#e2e8f0" },
+  { id: "moving", from: 3, color: "#a855f7" },
+  { id: "laser", from: 4, color: "#14b8a6" },
+  { id: "truss", from: 5, color: "#f97316" },
+  { id: "mixed", from: 7, color: "#ec4899" },
+];
+
+function buildSection(k) {
+  const base = -k * SH;                 // floor row of this section
+  const top = base - SH;                // floor row of the next section
+  const avail = THEMES.filter((th) => th.from <= k);
+  const theme = k === 0 ? THEMES[0] : Kit.pick(avail.slice(1).concat(avail.length > 3 ? [] : [THEMES[0]]));
+  const diff = Math.min(1, k / 25);
+  const prevHole = k === 0 ? null : sections[k - 1].hole;
+  const prevPad = k === 0 ? -99 : sections[k - 1].pad;
+  const sec = { k, theme: theme.id, color: theme.color, base, top };
+
+  // walk upward from the floor with zig-zag steps
+  let cx = prevHole === null ? 4 : (prevHole < COLS / 2 ? Kit.randInt(prevHole + 4, COLS - 4) : Kit.randInt(3, prevHole - 4));
+  let cr = base, cw = 3;
+  let dir = cx < COLS / 2 ? 1 : -1;
+  let guard = 0;
+  const steps = [{ c: cx, r: base, w: 3 }];
+  while (cr - (top + 2) > 3 && guard++ < 20) {
+    const type = theme.id === "mixed" ? Kit.pick(["basic", "kill", "conveyor", "vanish", "moving", "laser"]) : theme.id;
+    if (type === "truss" && cr - (top + 2) >= 6) {
+      // climb a truss beside the platform, then hop to the next ledge
+      const blocked = (c) => cr === base && prevHole !== null && (Math.abs(c - prevPad) < 3 || Math.abs(c - prevHole) < 3);
+      let tc = null;
+      for (const d of [dir, -dir]) {
+        const c = cx + d * (Math.floor(cw / 2) + 1);
+        if (c < 1 || c > COLS - 2 || c + d * 3 < 2 || c + d * 3 > COLS - 3 || blocked(c)) continue;
+        tc = c; dir = d; break;
+      }
+      if (tc !== null) {
+        const len = Kit.randInt(4, 5);
+        objs.push(rect("truss", tc, cr - len, 1, len));
+        if (Math.random() < 0.5 + diff * 0.4 && tc - dir >= 1 && tc - dir <= COLS - 2) objs.push(rect("kill", tc - dir, cr - len + 1, 1, 1));
+        steps.push({ c: tc, r: cr, w: 1 });
+        cr = cr - len;
+        cx = tc + dir * 3;
+        cw = 3;
+        objs.push(rect("solid", cx - 1, cr, 3, 1, { color: sec.color }));
+        steps.push({ c: cx, r: cr, w: 3 });
+        continue;
+      }
+    }
+    const dy = Math.random() < 0.25 + diff * 0.4 ? 3 : 2;
+    let nr = Math.max(cr - dy, top + 4);
+    const reach = cr - nr >= 3 ? 4 : 5;
+    // try a few spots; avoid ones that hang just above an earlier step (you'd bonk your head)
+    let nx = null;
+    for (const d of [dir, -dir]) {
+      for (const dist of [Kit.randInt(3, reach), 3, reach]) {
+        const c = cx + d * dist;
+        if (c < 2 || c > COLS - 3) continue;
+        if (clashes(c, nr, steps) || (prevHole !== null && cr === base && (Math.abs(c - prevHole) < 6 || Math.abs(c - prevPad) < 4))) continue;
+        nx = c; dir = d; break;
+      }
+      if (nx !== null) break;
+    }
+    if (nx === null) { dir = cx < COLS / 2 ? 1 : -1; nx = Kit.clamp(cx + dir * 3, 2, COLS - 3); }
+    cw = placeStep(type === "truss" ? "basic" : type, nx, nr, sec, diff, cr);
+    steps.push({ c: nx, r: nr, w: cw });
+    cx = nx;
+    cr = nr;
+  }
+  // final step two rows under the hole in the next floor
+  const fr = top + 2;
+  let fx = cx + dir * Kit.randInt(3, 4);
+  if (fx < 2 || fx > COLS - 3) { dir = -dir; fx = cx + dir * Kit.randInt(3, 4); }
+  fx = Kit.clamp(fx, 2, COLS - 3);
+  objs.push(rect("solid", fx - 1, fr, 3, 1, { color: sec.color }));
+  sec.hole = fx;
+  // next floor with a 3-wide hole above the final step, plus its checkpoint pad
+  objs.push(rect("solid", 1, top, fx - 2, 1, { color: "#64748b", floor: true }));
+  objs.push(rect("solid", fx + 2, top, COLS - 1 - (fx + 2), 1, { color: "#64748b", floor: true }));
+  const padCol = fx < COLS / 2 ? fx + 3 : fx - 5;
+  objs.push(rect("checkpoint", padCol, top - 1, 3, 1, { section: k + 1, on: false }));
+  sec.pad = padCol + 1;
+  sections.push(sec);
+}
+
+// true if a step at column c, row r would sit 1-4 rows above an earlier step it overlaps
+function clashes(c, r, steps) {
+  return steps.some((s) => s.r - r >= 1 && s.r - r <= 4 && s.r !== undefined && Math.abs(s.c - c) <= (s.w + 3) / 2 + 1 && s !== steps[steps.length - 1]);
+}
+
+function placeStep(type, nx, nr, sec, diff, prevRow) {
+  const c = sec.color;
+  if (type === "kill" || type === "conveyor") nx = Kit.clamp(nx, 3, COLS - 4);   // wide steps stay off the walls
+  if (type === "kill") {
+    objs.push(rect("solid", nx - 2, nr, 5, 1, { color: c }));
+    objs.push(rect("kill", nx, nr - 1, 1, 1));
+    return 5;
+  }
+  if (type === "conveyor") {
+    objs.push(rect("conveyor", nx - 2, nr, 5, 1, { speed: Kit.pick([-1, 1]) * (90 + diff * 70) }));
+    return 5;
+  }
+  if (type === "vanish") {
+    objs.push(rect("vanish", nx - 1, nr, 3, 1, { timer: 0, gone: 0, delay: 0.55 - diff * 0.2 }));
+    return 3;
+  }
+  if (type === "moving") {
+    const amp = 2;
+    const cxp = Kit.clamp(nx, 1 + amp + 1.5, COLS - 1 - amp - 1.5);
+    objs.push(rect("moving", cxp - 1.5, nr, 3, 1, { baseX: (cxp - 1.5) * T, amp: amp * T, period: Kit.rand(3.4, 2.6) - diff * 0.6, phase: Math.random() * 6, dx: 0 }));
+    return 3;
+  }
+  if (type === "laser") {
+    objs.push(rect("solid", nx - 1, nr, 3, 1, { color: c }));
+    // a timed beam across the gap between the two steps
+    const lr = nr + Math.floor((prevRow - nr) / 2);
+    if (prevRow - nr >= 2) objs.push(rect("laser", 1, lr, COLS - 2, 1, { on: 1.1 + diff * 0.6, off: 1.6 - diff * 0.4, phase: Math.random() * 3 }));
+    return 3;
+  }
+  objs.push(rect("solid", nx - 1, nr, 3, 1, { color: c }));
+  return 3;
+}
+
+function ensureSections(row) {
+  // build until we have sections well above the given row
+  while (built * -SH > row - SH * 2) buildSection(built++);
+}
+
+// ---------- state ----------
+function reset() {
+  objs = [];
+  sections = [];
+  built = 0;
+  objs.push(rect("solid", 1, 0, COLS - 2, 3, { color: "#64748b", floor: true }));    // ground floor
+  ensureSections(0);
+  checkpoint = { x: 3 * T, y: -PH, section: 0 };
+  player = { x: checkpoint.x, y: checkpoint.y, vx: 0, vy: 0, grounded: false, ground: null, coyote: 0, buffer: 0, climbing: false, face: 1 };
+  camY = player.y - H * 0.6;
+  lives = START_LIVES;
+  maxHeight = 0;
+  t = 0;
+  dead = false;
+  deathTimer = 0;
+  flash = 0;
+  msg = "";
+  msgT = 0;
+  updateHud();
+}
+
+const sectionNow = () => Math.max(0, Math.floor(maxHeight / SH));
+function updateHud() {
+  Kit.hud(`Height ${maxHeight} m<small>Stage ${checkpoint.section + 1} · Lives ${lives} · Best ${Kit.best(ID) ?? 0} m</small>`);
+}
+
+// ---------- input ----------
+Kit.onKey((code) => {
+  if (code === "Space" || code === "ArrowUp" || code === "KeyW") player.buffer = BUFFER;
+});
+
+// ---------- physics ----------
+function solidNow(o) {
+  if (o.kind === "solid" || o.kind === "conveyor" || o.kind === "moving") return true;
+  if (o.kind === "vanish") return o.gone <= 0;
+  return false;
+}
+function laserOn(o) {
+  const cyc = o.on + o.off;
+  const p = (t + o.phase) % cyc;
+  return p < o.on;
+}
+function laserWarn(o) {
+  const cyc = o.on + o.off;
+  const p = (t + o.phase) % cyc;
+  return p > cyc - 0.45;
+}
+const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+function update(dt) {
+  if (!(dt > 0)) return;   // the first frame after start can report a tiny negative dt
+  t += dt;
+  flash = Math.max(0, flash - dt * 2);
+  msgT -= dt;
+  const near = objs.filter((o) => o.y > camY - 200 && o.y < camY + H + 200);
+  for (const o of near) {
+    if (o.kind === "moving") {
+      const nx = o.baseX + Math.sin((t / o.period) * Math.PI * 2 + o.phase) * o.amp;
+      o.dx = nx - o.x;
+      o.x = nx;
+    } else if (o.kind === "vanish") {
+      if (o.timer > 0) { o.timer -= dt; if (o.timer <= 0) { o.gone = 2.4; } }
+      else if (o.gone > 0) o.gone -= dt;
+    }
+  }
+  updateParticles(dt);
+
+  if (dead) {
+    deathTimer -= dt;
+    if (deathTimer <= 0) respawn();
+    return;
+  }
+
+  const left = Kit.key("ArrowLeft") || Kit.key("KeyA");
+  const right = Kit.key("ArrowRight") || Kit.key("KeyD");
+  const up = Kit.key("ArrowUp") || Kit.key("KeyW");
+  const down = Kit.key("ArrowDown") || Kit.key("KeyS");
+  const want = (right ? 1 : 0) - (left ? 1 : 0);
+  if (want) player.face = want;
+  const target = want * RUN;
+  const a = ACCEL * dt * (player.grounded ? 1 : 0.7);
+  if (player.vx < target) player.vx = Math.min(target, player.vx + a);
+  else if (player.vx > target) player.vx = Math.max(target, player.vx - a);
+
+  // truss climbing
+  const box = { x: player.x, y: player.y, w: PW, h: PH };
+  const truss = near.find((o) => o.kind === "truss" && overlap(box, o));
+  if (truss && (up || down) && !player.climbing) player.climbing = true;
+  if (!truss && player.climbing) {
+    player.climbing = false;
+    if (up) player.vy = -340;   // little hop over the top of the truss
+  }
+
+  player.buffer -= dt;
+  player.coyote -= dt;
+  if (player.grounded) player.coyote = COYOTE;
+  if (player.climbing) {
+    player.vy = up ? -CLIMB : down ? CLIMB : 0;
+    if (Kit.key("Space") && player.buffer > 0) {
+      player.climbing = false;
+      player.vy = -JUMP * 0.9;
+      player.buffer = 0;
+      Kit.sfx("jump");
+    }
+  } else {
+    if (player.buffer > 0 && player.coyote > 0) {
+      player.vy = -JUMP;
+      player.buffer = 0;
+      player.coyote = 0;
+      Kit.sfx("jump");
+    }
+    // variable jump height
+    const holding = Kit.key("Space") || up;
+    player.vy += GRAV * dt * (player.vy < 0 && !holding ? 2.2 : 1);
+    player.vy = Math.min(player.vy, MAX_FALL);
+  }
+
+  // ride moving platforms and conveyors
+  if (player.grounded && player.ground) {
+    if (player.ground.kind === "moving") player.x += player.ground.dx;
+    if (player.ground.kind === "conveyor") player.x += player.ground.speed * dt;
+  }
+
+  // horizontal move
+  player.x += player.vx * dt;
+  player.x = Kit.clamp(player.x, T, W - T - PW);
+  for (const o of near) {
+    if (!solidNow(o)) continue;
+    const b = { x: player.x, y: player.y, w: PW, h: PH };
+    if (!overlap(b, o)) continue;
+    if (player.x + PW / 2 < o.x + o.w / 2) player.x = o.x - PW; else player.x = o.x + o.w;
+    player.vx = 0;
+  }
+  // vertical move
+  const wasGrounded = player.grounded;
+  player.grounded = false;
+  player.ground = null;
+  player.y += player.vy * dt;
+  for (const o of near) {
+    if (!solidNow(o)) continue;
+    const b = { x: player.x, y: player.y, w: PW, h: PH };
+    if (!overlap(b, o)) continue;
+    if (player.vy >= 0 && player.y + PH - player.vy * dt <= o.y + 4) {
+      player.y = o.y - PH;
+      player.vy = 0;
+      player.grounded = true;
+      player.ground = o;
+    } else if (player.vy < 0) {
+      player.y = o.y + o.h;
+      player.vy = 0;
+    } else {
+      player.y = o.y - PH;
+      player.grounded = true;
+      player.ground = o;
+    }
+  }
+  if (player.grounded && !wasGrounded) burst(player.x + PW / 2, player.y + PH, 4, ["#cbd5e1"], 60);
+  if (player.grounded && player.ground && player.ground.kind === "vanish" && player.ground.timer <= 0 && player.ground.gone <= 0) player.ground.timer = player.ground.delay;
+
+  // hazards and triggers
+  const b = { x: player.x + 2, y: player.y + 2, w: PW - 4, h: PH - 4 };
+  for (const o of near) {
+    if (o.kind === "kill" && overlap(b, o)) return die("Touched a kill brick!");
+    if (o.kind === "laser" && laserOn(o) && overlap(b, { x: o.x, y: o.y + T / 2 - 4, w: o.w, h: 8 })) return die("Zapped by a laser!");
+    if (o.kind === "checkpoint" && !o.on && overlap(b, { x: o.x, y: o.y, w: o.w, h: o.h + 4 })) reachCheckpoint(o);
+  }
+  if (player.y > checkpoint.y + T * 9) return die("You fell too far!");
+
+  // score and camera
+  const h = Math.max(0, Math.floor(-(player.y + PH) / T));
+  if (h > maxHeight) { maxHeight = h; updateHud(); }
+  ensureSections(Math.floor(player.y / T));
+  const targetCam = player.y - H * 0.55;
+  camY += (targetCam - camY) * Math.min(1, dt * 6);
+}
+
+function reachCheckpoint(o) {
+  o.on = true;
+  checkpoint = { x: o.x + o.w / 2 - PW / 2, y: o.y - PH + T, section: o.section };
+  Kit.sfx("score");
+  burst(o.x + o.w / 2, o.y, 18, ["#facc15", "#22c55e", "#fff"], 200);
+  msg = `Stage ${o.section + 1}!`;
+  msgT = 1.6;
+  if (o.section % 5 === 0 && lives < 9) {
+    lives++;
+    msg += "  +1 life";
+    Kit.sfx("win");
+  }
+  updateHud();
+}
+
+function die(reason) {
+  dead = true;
+  deathTimer = 0.9;
+  flash = 0.8;
+  lives--;
+  msg = reason;
+  msgT = 1.2;
+  Kit.sfx("hit");
+  burst(player.x + PW / 2, player.y + PH / 2, 24, ["#f97316", "#facc15", "#1d4ed8", "#fde68a"], 260);
+  updateHud();
+}
+
+async function respawn() {
+  if (lives <= 0) {
+    game.stop();
+    Kit.sfx("lose");
+    const best = Kit.finish(ID, maxHeight);
+    updateHud();
+    await Kit.overlay("Out of lives!", `You climbed ${maxHeight} m and reached stage ${checkpoint.section + 1}.\nBest: ${best} m`, "Climb again");
+    reset();
+    game.start();
+    return;
+  }
+  dead = false;
+  player.x = checkpoint.x;
+  player.y = checkpoint.y - T;
+  player.vx = 0;
+  player.vy = 0;
+  player.climbing = false;
+}
+
+// ---------- particles ----------
+let particles = [];
+function burst(x, y, n, colors, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Math.random() * spd;
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: Kit.rand(0.3, 0.8), size: Kit.randInt(3, 7), color: Kit.pick(colors) });
+  }
+}
+function updateParticles(dt) {
+  for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 700 * dt; q.life -= dt; }
+  particles = particles.filter((q) => q.life > 0);
+}
+
+// ---------- drawing ----------
+const BANDS = ["#1e293b", "#1e1b4b", "#3b0764", "#4a044e", "#422006", "#052e16", "#083344"];
+function drawBackground() {
+  const sec = Math.max(0, Math.floor(-camY / (SH * T)));
+  const bg = BANDS[sec % BANDS.length];
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  // brick wall pattern inside the tower (slight parallax)
+  const py = camY * 0.6;
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  const startRow = Math.floor(py / 20) - 1;
+  for (let r = startRow; r < startRow + H / 20 + 3; r++) {
+    const y = r * 20 - py;
+    const off = (r & 1) * 30;
+    for (let x = -60 + off; x < W; x += 60) ctx.fillRect(x + 2, y + 2, 56, 16);
+  }
+  // round windows showing the sky
+  for (let r = startRow - (startRow % 12) - 12; r < startRow + 48; r += 12) {
+    const y = r * 20 - py;
+    for (const x of [120, W - 160]) {
+      ctx.fillStyle = "#0ea5e9";
+      ctx.fillRect(x, y, 40, 56);
+      ctx.fillStyle = "#7dd3fc";
+      ctx.fillRect(x + 4, y + 4, 32, 20);
+      ctx.fillStyle = "rgba(0,0,0,.35)";
+      ctx.fillRect(x + 18, y, 4, 56);
+    }
+  }
+}
+
+function drawObj(o) {
+  const y = o.y - camY;
+  if (y > H + 10 || y + o.h < -10) return;
+  const x = o.x;
+  switch (o.kind) {
+    case "solid":
+      for (let i = 0; i < o.w; i += T) Kit.brick(ctx, x + i, y, Math.min(T, o.w - i), Math.min(o.h, T), o.color, 4);
+      if (o.h > T) { ctx.fillStyle = "#475569"; ctx.fillRect(x, y + T, o.w, o.h - T); }
+      break;
+    case "conveyor": {
+      Kit.brick(ctx, x, y, o.w, o.h, "#78716c", 5);
+      ctx.fillStyle = "#fbbf24";
+      const off = ((t * o.speed) % 24 + 24) % 24;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x + 4, y + 4, o.w - 8, o.h - 8);
+      ctx.clip();
+      for (let i = -24; i < o.w + 24; i += 24) {
+        const ax = x + i + off;
+        const s = Math.sign(o.speed);
+        ctx.beginPath();
+        ctx.moveTo(ax, y + 8); ctx.lineTo(ax + 8 * s, y + 15); ctx.lineTo(ax, y + 22);
+        ctx.lineTo(ax + 4 * s, y + 22); ctx.lineTo(ax + 12 * s, y + 15); ctx.lineTo(ax + 4 * s, y + 8);
+        ctx.fill();
+      }
+      ctx.restore();
+      break;
+    }
+    case "vanish": {
+      if (o.gone > 0) {
+        ctx.strokeStyle = "rgba(226,232,240,.25)";
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(x + 2, y + 2, o.w - 4, o.h - 4);
+        ctx.setLineDash([]);
+        break;
+      }
+      ctx.globalAlpha = o.timer > 0 ? 0.35 + 0.65 * (Math.floor(t * 20) % 2) : 1;
+      Kit.brick(ctx, x, y, o.w, o.h, "#e2e8f0", 4);
+      ctx.fillStyle = "#94a3b8";
+      for (let i = 8; i < o.w; i += 20) ctx.fillRect(x + i, y + 12, 8, 4);
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "moving":
+      Kit.brick(ctx, x, y, o.w, o.h, "#a855f7", 5);
+      ctx.fillStyle = "#e9d5ff";
+      ctx.fillRect(x + 8, y + 12, 8, 6);
+      ctx.fillRect(x + o.w - 16, y + 12, 8, 6);
+      break;
+    case "kill": {
+      const pulse = 0.75 + Math.sin(t * 8) * 0.25;
+      ctx.fillStyle = `rgba(239,68,68,${0.25 * pulse})`;
+      ctx.fillRect(x - 4, y - 4, o.w + 8, o.h + 8);
+      Kit.brick(ctx, x + 2, y + 2, o.w - 4, o.h - 4, "#ef4444", 4);
+      ctx.fillStyle = "#fecaca";
+      ctx.fillRect(x + 8, y + 8, o.w - 16, 4);
+      break;
+    }
+    case "truss":
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x + 5, y, o.w - 10, o.h);
+      ctx.beginPath();
+      for (let i = 0; i < o.h; i += 15) { ctx.moveTo(x + 5, y + i); ctx.lineTo(x + o.w - 5, y + i + 15); ctx.moveTo(x + 5, y + i + 15); ctx.lineTo(x + o.w - 5, y + i); }
+      ctx.stroke();
+      break;
+    case "laser": {
+      const on = laserOn(o), warn = laserWarn(o);
+      // emitters on both walls
+      Kit.brick(ctx, x - 10, y + 6, 14, 18, "#334155", 3);
+      Kit.brick(ctx, x + o.w - 4, y + 6, 14, 18, "#334155", 3);
+      if (on) {
+        ctx.fillStyle = "rgba(45,212,191,.3)";
+        ctx.fillRect(x, y + T / 2 - 8, o.w, 16);
+        ctx.fillStyle = "#5eead4";
+        ctx.fillRect(x, y + T / 2 - 3, o.w, 6);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(x, y + T / 2 - 1, o.w, 2);
+      } else if (warn && Math.floor(t * 16) % 2) {
+        ctx.fillStyle = "rgba(94,234,212,.35)";
+        ctx.fillRect(x, y + T / 2 - 1, o.w, 2);
+      }
+      break;
+    }
+    case "checkpoint": {
+      Kit.brick(ctx, x, y + o.h - 10, o.w, 10, o.on ? "#facc15" : "#16a34a", 3);
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fillRect(x + o.w / 2 - 2, y - 30, 4, o.h + 20);
+      ctx.fillStyle = o.on ? "#facc15" : "#22c55e";
+      const wave = Math.sin(t * 6) * 2;
+      ctx.fillRect(x + o.w / 2 + 2, y - 30 + wave * 0.3, 22, 14);
+      ctx.fillRect(x + o.w / 2 + 2, y - 30, 22 + wave, 14);
+      break;
+    }
+  }
+}
+
+function drawPlayer() {
+  if (dead) return;
+  const x = Math.round(player.x), y = Math.round(player.y - camY);
+  const run = player.grounded && Math.abs(player.vx) > 20 ? Math.sin(t * 20) : 0;
+  ctx.fillStyle = "#1d4ed8";
+  ctx.fillRect(x + 3 + run * 2, y + PH - 9, 6, 9);
+  ctx.fillRect(x + PW - 9 - run * 2, y + PH - 9, 6, 9);
+  Kit.brick(ctx, x, y + 11, PW, PH - 19, "#22c55e", 3);
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(x - 3, y + 12 + run * 2, 4, 9);
+  ctx.fillRect(x + PW - 1, y + 12 - run * 2, 4, 9);
+  Kit.brick(ctx, x + 2, y, PW - 4, 12, "#fcd34d", 3);
+  ctx.fillStyle = "#111";
+  const ex = x + PW / 2 + player.face * 2;
+  ctx.fillRect(ex - 5, y + 3, 3, 3);
+  ctx.fillRect(ex + 2, y + 3, 3, 3);
+  ctx.fillRect(ex - 3, y + 8, 6, 1);
+}
+
+function drawWalls() {
+  for (const x of [0, W - T]) {
+    const off = ((camY % 20) + 20) % 20;
+    for (let y = -off; y < H; y += 20) {
+      const r = Math.floor((y + camY) / 20);
+      ctx.fillStyle = r % 2 ? "#57534e" : "#4b4642";
+      ctx.fillRect(x, y, T, 20);
+      ctx.fillStyle = "rgba(0,0,0,.25)";
+      ctx.fillRect(x, y + 19, T, 1);
+      ctx.fillRect(x + (r % 2 ? 10 : 20), y, 1, 20);
+    }
+  }
+}
+
+function draw() {
+  drawBackground();
+  for (const o of objs) drawObj(o);
+  drawPlayer();
+  for (const q of particles) {
+    ctx.globalAlpha = Kit.clamp(q.life * 2, 0, 1);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(q.x - q.size / 2, q.y - camY - q.size / 2, q.size, q.size);
+  }
+  ctx.globalAlpha = 1;
+  drawWalls();
+  // lives as hearts-shaped bricks
+  for (let i = 0; i < lives; i++) {
+    const hx = 40 + i * 22;
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(hx, 18, 7, 7);
+    ctx.fillRect(hx + 9, 18, 7, 7);
+    ctx.fillRect(hx, 23, 16, 6);
+    ctx.fillRect(hx + 3, 29, 10, 4);
+    ctx.fillRect(hx + 6, 33, 4, 3);
+  }
+  // height meter on the right wall
+  ctx.fillStyle = "rgba(0,0,0,.4)";
+  ctx.fillRect(W - 22, 60, 12, H - 120);
+  const best = Kit.best(ID) || 0;
+  const span = Math.max(60, best + 12, maxHeight + 12);
+  ctx.fillStyle = "#22c55e";
+  const hh = (H - 124) * (maxHeight / span);
+  ctx.fillRect(W - 20, H - 62 - hh, 8, hh);
+  if (best) {
+    const by = H - 62 - (H - 124) * (best / span);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(W - 26, by - 1, 20, 3);
+  }
+  if (msgT > 0) {
+    ctx.globalAlpha = Kit.clamp(msgT * 2, 0, 1);
+    ctx.font = `900 30px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#000";
+    ctx.fillText(msg, W / 2 + 2, 152);
+    ctx.fillStyle = dead ? "#fca5a5" : "#fde68a";
+    ctx.fillText(msg, W / 2, 150);
+    ctx.globalAlpha = 1;
+  }
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(239,68,68,${flash * 0.35})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+const game = Kit.loop(update, draw);
+reset();
+draw();
+Kit.overlay("Tower Climb", "Climb an endless tower of obstacle stages.\nRed bricks and lasers are deadly. Conveyors push you,\nwhite blocks crumble, purple ones move. Climb trusses with Up.\nEvery stage has a checkpoint flag. You get 5 lives\n(+1 every 5 stages). Your height is your score!\n\nLeft / Right or A / D to run\nSpace / Up / W to jump, Up / Down on a truss to climb", "Climb").then(() => game.start());
+</script>
+</body>
+</html>

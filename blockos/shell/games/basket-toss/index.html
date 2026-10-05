@@ -39,7 +39,7 @@ function reset() {
   netT = 0;
   cooldown = 0;
   hoop = { x: BASE_HOOP.x, y: BASE_HOOP.y, vx: 0, vy: 0 };
-  shooter = { x: 330 };
+  shooter = { x: 420 };
   aim = { angle: -0.95, power: 0.62 };
   dragging = null;
   updateHud();
@@ -56,8 +56,8 @@ function handPos() { return { x: shooter.x + 14, y: FLOOR - 112 }; }
 
 function newSpot() {
   const lv = level();
-  if (lv >= 2) shooter.x = Kit.randInt(120, 560);
-  else shooter.x = 330;
+  if (lv >= 2) shooter.x = Kit.randInt(110, 600);
+  else shooter.x = 420;
 }
 
 function shoot() {
@@ -264,7 +264,7 @@ function drawGym() {
     for (let k = 0; k < 24; k++) {
       const x = 12 + k * 24 + (row % 2) * 10, y = 314 + row * 38;
       const bob = streak >= 3 ? Math.abs(Math.sin(time * 8 + k + row)) * 5 : Math.sin(time * 2 + k * 1.3) * 1;
-      ctx.fillStyle = colors[(k * 7 + row * 3) % colors.length];
+      ctx.fillStyle = colors[(k * 5 + row * 3 + ((k * k) >> 2)) % colors.length];
       ctx.fillRect(x, y - bob + 12, 16, 16);
       ctx.fillStyle = "#fcd34d";
       ctx.fillRect(x + 3, y - bob, 10, 10);

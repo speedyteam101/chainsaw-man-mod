@@ -84,6 +84,7 @@ function burst(x, y, n, colors, spd) {
 }
 
 function update(dt) {
+  if (!(dt > 0)) return;   // the first frame after start can report a tiny negative dt
   t += dt;
   for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 700 * dt; q.life -= dt; }
   particles = particles.filter((q) => q.life > 0);

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkers</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "checkers";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(640, 720);
+canvas.style.outline = "none";
+const CELL = 70, BX = (W - CELL * 8) / 2, BY = 88;
+const RED = 1, BLACK = -1;
+const LEVELS = {
+  easy: { name: "Easy", depth: 2, random: 0.35, points: 100 },
+  medium: { name: "Medium", depth: 4, random: 0, points: 200 },
+  hard: { name: "Hard", depth: 7, random: 0, points: 300 },
+};
+const NO_PROGRESS_LIMIT = 80; // plies without a capture or a man moving = draw
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft" || c === "KeyW" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight" || c === "KeyS" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- rules ---------- */
+// Board: 64 squares, 0 empty, +1 red man, +2 red king, -1 black man, -2 black king. Red starts at the bottom.
+const inside = (r, c) => r >= 0 && r < 8 && c >= 0 && c < 8;
+const ALL_DIRS = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+const RED_DIRS = [[-1, -1], [-1, 1]], BLACK_DIRS = [[1, -1], [1, 1]];
+const dirsFor = (p) => (Math.abs(p) === 2 ? ALL_DIRS : p > 0 ? RED_DIRS : BLACK_DIRS);
+const kingRow = (p) => (p > 0 ? 0 : 7);
+
+function startBoard() {
+  const b = new Array(64).fill(0);
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if ((r + c) % 2 === 0) continue;
+    if (r < 3) b[r * 8 + c] = BLACK;
+    else if (r > 4) b[r * 8 + c] = RED;
+  }
+  return b;
+}
+
+function jumps(b, sq, p, path, caps, out) {
+  const r = sq >> 3, c = sq & 7;
+  let extended = false;
+  for (const [dr, dc] of dirsFor(p)) {
+    const lr = r + 2 * dr, lc = c + 2 * dc;
+    if (!inside(lr, lc)) continue;
+    const mid = (r + dr) * 8 + (c + dc), land = lr * 8 + lc;
+    if (b[mid] && Math.sign(b[mid]) !== Math.sign(p) && !caps.includes(mid) && b[land] === 0) {
+      extended = true;
+      const np = path.concat(land), nc = caps.concat(mid);
+      // a man that reaches the far row is crowned and its turn ends
+      if (Math.abs(p) === 1 && lr === kingRow(p)) out.push({ path: np, caps: nc });
+      else jumps(b, land, p, np, nc, out);
+    }
+  }
+  if (!extended && caps.length) out.push({ path, caps });
+}
+
+function genMoves(b, side) {
+  const caps = [], simple = [];
+  for (let sq = 0; sq < 64; sq++) {
+    const p = b[sq];
+    if (!p || Math.sign(p) !== side) continue;
+    b[sq] = 0; // the moving piece leaves its square
+    jumps(b, sq, p, [sq], [], caps);
+    b[sq] = p;
+    if (caps.length) continue;
+    const r = sq >> 3, c = sq & 7;
+    for (const [dr, dc] of dirsFor(p)) {
+      const nr = r + dr, nc = c + dc;
+      if (inside(nr, nc) && !b[nr * 8 + nc]) simple.push({ path: [sq, nr * 8 + nc], caps: [] });
+    }
+  }
+  return caps.length ? caps : simple;
+}
+
+function applyMove(b, m) {
+  const nb = b.slice();
+  const from = m.path[0], to = m.path[m.path.length - 1];
+  let p = nb[from];
+  nb[from] = 0;
+  for (const s of m.caps) nb[s] = 0;
+  if (Math.abs(p) === 1 && (to >> 3) === kingRow(p)) p *= 2;
+  nb[to] = p;
+  return nb;
+}
+
+/* ---------- CPU: negamax with alpha-beta ---------- */
+const CENTER = [];
+for (let sq = 0; sq < 64; sq++) {
+  const r = sq >> 3, c = sq & 7;
+  CENTER[sq] = (3.5 - Math.abs(3.5 - c)) + (3.5 - Math.abs(3.5 - r)) * 0.5;
+}
+// Score from red's point of view.
+function evaluate(b) {
+  let s = 0, redCount = 0, blackCount = 0;
+  for (let sq = 0; sq < 64; sq++) {
+    const p = b[sq];
+    if (!p) continue;
+    const r = sq >> 3;
+    let v;
+    if (Math.abs(p) === 2) v = 175 + CENTER[sq] * 2;
+    else {
+      const adv = p > 0 ? 7 - r : r; // rows advanced
+      v = 100 + adv * 4 + CENTER[sq] * 1.5;
+      if ((p > 0 && r === 7) || (p < 0 && r === 0)) v += 10; // back row guard
+    }
+    if (p > 0) { s += v; redCount++; } else { s -= v; blackCount++; }
+  }
+  // when ahead, trading down is good
+  if (redCount && blackCount) s += (redCount - blackCount) * 120 / (redCount + blackCount);
+  return s;
+}
+
+let nodes = 0;
+function negamax(b, side, depth, alpha, beta, ply) {
+  nodes++;
+  const moves = genMoves(b, side);
+  if (!moves.length) return -100000 + ply;
+  const forcedCapture = moves[0].caps.length > 0;
+  if ((depth <= 0 && !forcedCapture) || depth <= -6) return side * evaluate(b);
+  moves.sort((a, c) => c.caps.length - a.caps.length);
+  let best = -Infinity;
+  for (const m of moves) {
+    const v = -negamax(applyMove(b, m), -side, depth - 1, -beta, -alpha, ply + 1);
+    if (v > best) best = v;
+    if (v > alpha) alpha = v;
+    if (alpha >= beta) break;
+  }
+  return best;
+}
+
+function cpuChoose(b, side, level) {
+  const moves = genMoves(b, side);
+  if (moves.length === 1) return moves[0];
+  if (Math.random() < level.random) return Kit.pick(moves);
+  nodes = 0;
+  let best = [], bestV = -Infinity;
+  for (const m of moves) {
+    const v = -negamax(applyMove(b, m), -side, level.depth - 1, -Infinity, Infinity, 1) + Math.random() * 3;
+    if (v > bestV + 0.5) { bestV = v; best = [m]; }
+    else if (Math.abs(v - bestV) <= 0.5) best.push(m);
+  }
+  return Kit.pick(best);
+}
+
+/* ---------- game state ---------- */
+let mode = "cpu", levelKey = "medium";
+let board, turn, phase = "menu", selected = null, partial = null, forcedPiece = null, legal = [];
+let cursor = 5 * 8 + 0, anim = null, lastMove = null, quiet = 0, round = 0, result = null;
+let fades = [], tally = { red: 0, black: 0 };
+
+const isHuman = (side) => mode === "2p" || side === RED;
+const sideName = (side) => (side === RED ? "Red" : mode === "cpu" ? "CPU" : "Black");
+
+function newGame() {
+  board = startBoard();
+  turn = RED;
+  selected = null; partial = null; forcedPiece = null;
+  lastMove = null; quiet = 0; result = null; fades = [];
+  round++;
+  beginTurn();
+}
+
+function updateHud() {
+  if (mode === "cpu") Kit.hud(`${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  else Kit.hud(`Red ${tally.red} - ${tally.black} Black<small>2 players</small>`);
+}
+
+function beginTurn() {
+  legal = genMoves(board, turn);
+  updateHud();
+  if (!legal.length) return gameOver(-turn);
+  if (quiet >= NO_PROGRESS_LIMIT) return gameOver(0);
+  if (isHuman(turn)) {
+    phase = "input";
+    partial = null; forcedPiece = null; selected = null;
+    // put the keyboard cursor on a piece that can move
+    if (!legal.some((m) => m.path[0] === cursor)) cursor = legal[0].path[0];
+  } else {
+    phase = "cpu";
+    const myRound = round;
+    const t0 = performance.now();
+    setTimeout(() => {
+      if (round !== myRound) return;
+      const m = cpuChoose(board, turn, LEVELS[levelKey]);
+      const wait = Math.max(0, 450 - (performance.now() - t0));
+      setTimeout(() => { if (round === myRound) playMove(m, 0, () => endTurn(m)); }, wait);
+    }, 50);
+  }
+}
+
+// Animates the steps of move `m` starting at step index `from`, applying each to the board.
+function playMove(m, from, done) {
+  phase = "anim";
+  const steps = [];
+  for (let i = from; i < m.path.length - 1; i++) steps.push({ a: m.path[i], b: m.path[i + 1], cap: m.caps[i] });
+  const myRound = round;
+  const next = () => {
+    if (round !== myRound) return;
+    const s = steps.shift();
+    if (!s) return done();
+    anim = { a: s.a, b: s.b, piece: board[s.a], t: 0, dur: s.cap !== undefined ? 0.22 : 0.18, onEnd: () => {
+      board[s.b] = board[s.a];
+      board[s.a] = 0;
+      if (s.cap !== undefined) {
+        fades.push({ sq: s.cap, piece: board[s.cap], t: 0 });
+        board[s.cap] = 0;
+        Kit.sfx("hit");
+      } else Kit.sfx("click");
+      anim = null;
+      next();
+    } };
+  };
+  next();
+}
+
+function endTurn(m) {
+  const to = m.path[m.path.length - 1];
+  const moved = board[to];
+  const wasMan = Math.abs(moved) === 1;
+  if (wasMan && (to >> 3) === kingRow(moved)) { board[to] = moved * 2; Kit.sfx("coin"); }
+  quiet = m.caps.length || wasMan ? 0 : quiet + 1;
+  lastMove = m;
+  turn = -turn;
+  beginTurn();
+}
+
+async function gameOver(winner) {
+  phase = "end";
+  result = winner;
+  const myRound = round;
+  const reds = board.filter((p) => p > 0).length;
+  let title, text, score;
+  if (mode === "cpu") {
+    if (winner === RED) {
+      score = LEVELS[levelKey].points + reds * 20;
+      title = "You win!";
+      text = `You beat the ${LEVELS[levelKey].name} CPU with ${reds} piece${reds === 1 ? "" : "s"} left.\nScore: ${score}`;
+      Kit.sfx("win");
+    } else if (winner === BLACK) {
+      score = 0;
+      title = "CPU wins";
+      text = "The CPU cleared the board or blocked every move.";
+      Kit.sfx("lose");
+    } else {
+      score = Math.round(LEVELS[levelKey].points / 4);
+      title = "Draw";
+      text = `No captures for a long time - it's a draw.\nScore: ${score}`;
+      Kit.sfx("score");
+    }
+    const best = Kit.finish(ID, score);
+    text += `\nBest: ${best}`;
+  } else {
+    if (winner === RED) tally.red++;
+    else if (winner === BLACK) tally.black++;
+    title = winner === 0 ? "Draw" : `${sideName(winner)} wins!`;
+    text = `Series: Red ${tally.red} - ${tally.black} Black`;
+    Kit.sfx(winner === 0 ? "score" : "win");
+    Kit.finish(ID);
+  }
+  updateHud();
+  await new Promise((r) => setTimeout(r, 900));
+  if (round !== myRound) return;
+  const again = await choose(title, text, [
+    { label: "Play again", value: "again" },
+    { label: "Change mode", value: "menu", color: "blue" },
+  ]);
+  if (again === "again") newGame();
+  else menu();
+}
+
+async function menu() {
+  phase = "menu";
+  round++;
+  mode = await choose("Checkers",
+    "Move diagonally forward on the dark squares. Jump over enemy pieces to capture them - captures are required, and you must keep jumping if you can. Reach the far side to become a King, which moves both ways.\n\n" +
+    "Mouse: click a piece, then a square.\nKeys: Arrows move the cursor, Space selects.",
+    [
+      { label: "1 Player vs CPU", value: "cpu", hint: "you are red" },
+      { label: "2 Players", value: "2p", color: "blue", hint: "pass and play" },
+    ]);
+  if (mode === "cpu") {
+    levelKey = await choose("Difficulty", "How far ahead should the CPU look?", [
+      { label: "Easy", value: "easy", hint: "makes mistakes", selected: levelKey === "easy" },
+      { label: "Medium", value: "medium", color: "orange", hint: "looks 4 moves ahead", selected: levelKey === "medium" },
+      { label: "Hard", value: "hard", color: "red", hint: "deep search", selected: levelKey === "hard" },
+    ]);
+  } else tally = { red: 0, black: 0 };
+  newGame();
+}
+
+/* ---------- human input ---------- */
+// Moves still possible for the current selection / partial jump.
+function candidates() {
+  if (partial) return partial.moves;
+  if (selected === null) return [];
+  return legal.filter((m) => m.path[0] === selected);
+}
+function nextSteps() {
+  const step = partial ? partial.step : 0;
+  return [...new Set(candidates().map((m) => m.path[step + 1]))];
+}
+
+function clickSquare(sq) {
+  if (phase !== "input") return;
+  cursor = sq;
+  const steps = nextSteps();
+  if (steps.includes(sq)) {
+    const step = partial ? partial.step : 0;
+    const moves = candidates().filter((m) => m.path[step + 1] === sq);
+    const m = moves[0];
+    const finished = moves.every((x) => x.path.length === step + 2);
+    // play only this step
+    const one = { path: [m.path[step], sq], caps: m.caps.length ? [m.caps[step]] : [] };
+    playMove(one, 0, () => {
+      if (finished) { partial = null; selected = null; endTurn(m); }
+      else { partial = { moves, step: step + 1 }; selected = sq; phase = "input"; }
+    });
+    return;
+  }
+  if (partial) { Kit.sfx("hit"); return; } // must finish the jump
+  if (board[sq] && Math.sign(board[sq]) === turn) {
+    if (legal.some((m) => m.path[0] === sq)) { selected = sq; Kit.sfx("click"); }
+    else {
+      selected = null;
+      Kit.sfx("hit");
+      if (legal[0].caps.length) flashMsg("You must capture!");
+    }
+  } else selected = null;
+}
+
+let msg = null;
+function flashMsg(text) { msg = { text, t: 1.6 }; }
+
+canvas.addEventListener("mousedown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  const c = Math.floor((p.x - BX) / CELL), r = Math.floor((p.y - BY) / CELL);
+  if (!inside(r, c)) return;
+  clickSquare(r * 8 + c);
+});
+let hoverSq = -1;
+canvas.addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  const c = Math.floor((p.x - BX) / CELL), r = Math.floor((p.y - BY) / CELL);
+  hoverSq = inside(r, c) ? r * 8 + c : -1;
+  const clickable = hoverSq >= 0 && phase === "input" && (nextSteps().includes(hoverSq) || legal.some((m) => m.path[0] === hoverSq));
+  canvas.style.cursor = clickable ? "pointer" : "default";
+});
+const MOVES = {
+  ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0],
+  ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1],
+};
+Kit.onKey((code) => {
+  if (phase !== "input") return;
+  if (MOVES[code]) {
+    const [dr, dc] = MOVES[code];
+    const r = Kit.clamp((cursor >> 3) + dr, 0, 7), c = Kit.clamp((cursor & 7) + dc, 0, 7);
+    cursor = r * 8 + c;
+  } else if (code === "Space" || code === "Enter" || code === "NumpadEnter") clickSquare(cursor);
+});
+
+/* ---------- drawing ---------- */
+function update(dt) {
+  if (anim) {
+    anim.t += dt;
+    if (anim.t >= anim.dur) { const f = anim.onEnd; f(); }
+  }
+  for (const f of fades) f.t += dt;
+  fades = fades.filter((f) => f.t < 0.4);
+  if (msg) { msg.t -= dt; if (msg.t <= 0) msg = null; }
+}
+
+const sqX = (sq) => BX + (sq & 7) * CELL + CELL / 2;
+const sqY = (sq) => BY + (sq >> 3) * CELL + CELL / 2;
+
+function drawPiece(x, y, p, scale, alpha) {
+  const red = p > 0;
+  const R = CELL * 0.38 * (scale || 1);
+  ctx.save();
+  ctx.globalAlpha = alpha === undefined ? 1 : alpha;
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.ellipse(x, y + R * 0.25, R, R * 0.95, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = red ? "#991b1b" : "#111827";
+  ctx.beginPath(); ctx.arc(x, y + 4, R, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = red ? "#ef4444" : "#374151";
+  ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fill();
+  // stud ring
+  ctx.strokeStyle = red ? "#fca5a5" : "#6b7280";
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, y, R * 0.62, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,.18)";
+  ctx.beginPath(); ctx.arc(x - R * 0.3, y - R * 0.35, R * 0.28, 0, Math.PI * 2); ctx.fill();
+  if (Math.abs(p) === 2) {
+    // crown
+    const s = R * 0.5;
+    ctx.fillStyle = "#facc15";
+    ctx.beginPath();
+    ctx.moveTo(x - s, y + s * 0.6);
+    ctx.lineTo(x - s, y - s * 0.5);
+    ctx.lineTo(x - s * 0.5, y);
+    ctx.lineTo(x, y - s * 0.8);
+    ctx.lineTo(x + s * 0.5, y);
+    ctx.lineTo(x + s, y - s * 0.5);
+    ctx.lineTo(x + s, y + s * 0.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#a16207";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function text(str, x, y, size, color, weight, align) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (!board) return;
+  // header
+  const reds = board.filter((p) => p > 0).length, blacks = board.filter((p) => p < 0).length;
+  let status = "";
+  if (phase === "cpu" || (phase === "anim" && !isHuman(turn))) status = "CPU is thinking...";
+  else if (phase === "input" || phase === "anim") status = mode === "2p" ? `${sideName(turn)} to move` : "Your move";
+  else if (phase === "end") status = result === 0 ? "Draw" : mode === "cpu" ? (result === RED ? "You win!" : "CPU wins") : `${sideName(result)} wins!`;
+  Kit.brick(ctx, BX, 16, 150, 52, "#ef4444", 10);
+  drawPiece(BX + 30, 42, 1, 0.55);
+  text(String(reds), BX + 100, 43, 26, "#fff", 800);
+  Kit.brick(ctx, W - BX - 150, 16, 150, 52, "#374151", 10);
+  drawPiece(W - BX - 120, 42, -1, 0.55);
+  text(String(blacks), W - BX - 50, 43, 26, "#fff", 800);
+  text(status, W / 2, 42, 20, turn === RED ? "#fca5a5" : "#d1d5db", 800);
+  if (phase === "input" || phase === "anim") {
+    ctx.fillStyle = turn === RED ? "#ef4444" : "#9ca3af";
+    ctx.fillRect(turn === RED ? BX : W - BX - 150, 72, 150, 4);
+  }
+  // board frame
+  ctx.fillStyle = "#5b3514";
+  ctx.beginPath();
+  ctx.roundRect(BX - 12, BY - 8, CELL * 8 + 24, CELL * 8 + 24, 12);
+  ctx.fill();
+  ctx.fillStyle = "#7c4a1e";
+  ctx.beginPath();
+  ctx.roundRect(BX - 12, BY - 12, CELL * 8 + 24, CELL * 8 + 24, 12);
+  ctx.fill();
+  const steps = phase === "input" ? nextSteps() : [];
+  const movable = phase === "input" && !partial ? new Set(legal.map((m) => m.path[0])) : new Set();
+  for (let sq = 0; sq < 64; sq++) {
+    const r = sq >> 3, c = sq & 7;
+    const x = BX + c * CELL, y = BY + r * CELL;
+    const dark = (r + c) % 2 === 1;
+    ctx.fillStyle = dark ? "#3f6212" : "#ecdcb4";
+    ctx.fillRect(x, y, CELL, CELL);
+    if (dark) {
+      ctx.fillStyle = "rgba(255,255,255,.06)";
+      ctx.fillRect(x + 3, y + 3, CELL - 6, 4);
+    }
+    if (lastMove && phase !== "anim" && (lastMove.path[0] === sq || lastMove.path[lastMove.path.length - 1] === sq)) {
+      ctx.fillStyle = "rgba(250,204,21,.22)";
+      ctx.fillRect(x, y, CELL, CELL);
+    }
+    if (movable.has(sq) && selected === null) {
+      ctx.strokeStyle = "rgba(250,204,21,.55)";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x + 3, y + 3, CELL - 6, CELL - 6);
+    }
+    if (sq === selected) {
+      ctx.fillStyle = "rgba(250,204,21,.4)";
+      ctx.fillRect(x, y, CELL, CELL);
+    }
+  }
+  // pieces
+  for (let sq = 0; sq < 64; sq++) {
+    const p = board[sq];
+    if (!p || (anim && anim.a === sq)) continue;
+    const lift = sq === selected ? 4 : 0;
+    drawPiece(sqX(sq), sqY(sq) - lift, p);
+  }
+  for (const f of fades) drawPiece(sqX(f.sq), sqY(f.sq), f.piece, 1 + f.t, 1 - f.t / 0.4);
+  if (anim) {
+    const k = Math.min(1, anim.t / anim.dur);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    const x = sqX(anim.a) + (sqX(anim.b) - sqX(anim.a)) * e;
+    const y = sqY(anim.a) + (sqY(anim.b) - sqY(anim.a)) * e - Math.sin(k * Math.PI) * (Math.abs(anim.b - anim.a) > 10 ? 22 : 8);
+    drawPiece(x, y, anim.piece, 1 + Math.sin(k * Math.PI) * 0.12);
+  }
+  // destinations
+  for (const sq of steps) {
+    ctx.fillStyle = "rgba(250,204,21,.85)";
+    ctx.beginPath();
+    ctx.arc(sqX(sq), sqY(sq), 11, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // keyboard cursor
+  if (phase === "input") {
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(BX + (cursor & 7) * CELL + 2, BY + (cursor >> 3) * CELL + 2, CELL - 4, CELL - 4);
+    ctx.setLineDash([]);
+  }
+  const hintText = phase === "input" && legal.length && legal[0].caps.length ? "Capture available - you must jump!" : "Click a piece, then a highlighted square";
+  text(hintText, W / 2, H - 28, 15, legal.length && legal[0].caps.length && phase === "input" ? "#facc15" : "#6b7280", 700);
+  if (msg) {
+    ctx.globalAlpha = Math.min(1, msg.t * 3);
+    Kit.brick(ctx, W / 2 - 130, BY + CELL * 4 - 26, 260, 52, "#f2f4f5", 10);
+    text(msg.text, W / 2, BY + CELL * 4, 20, "#b91c1c", 800);
+    ctx.globalAlpha = 1;
+  }
+}
+
+board = startBoard();
+turn = RED;
+legal = [];
+updateHud();
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

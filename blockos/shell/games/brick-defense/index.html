@@ -237,6 +237,7 @@ function creepPos(c) {
 }
 
 function update(rawDt) {
+  if (!(rawDt > 0)) return;   // the first frame after start can report a tiny negative dt
   if (over || !started) return;
   const dt = rawDt * speedMul;
   // effects
@@ -499,6 +500,11 @@ function drawPanel() {
   ctx.textAlign = "left";
   ctx.fillStyle = "#2b2f35";
   ctx.fillRect(MX + 3, 0, PANEL - 3, 46);
+  Kit.brick(ctx, x, 14, 18, 18, "#ef4444", 4);
+  ctx.fillStyle = "#f2f4f5";
+  ctx.font = `900 13px ${FONT}`;
+  ctx.fillText("BRICK", x + 24, 22);
+  ctx.fillText("DEFENSE", x + 24, 36);
   ctx.font = `800 20px ${FONT}`;
   ctx.fillStyle = "#facc15";
   ctx.fillText(`$${money}`, x, 78);
@@ -545,7 +551,7 @@ function drawPanel() {
   } else {
     ctx.fillStyle = "#a7adb4";
     ctx.font = `600 12px ${FONT}`;
-    const tips = placing ? ["Click grass to build.", "Right click / X to cancel."] : ["Pick a tower, then click", "the grass to build it.", "Click a tower to upgrade", "or sell it."];
+    const tips = placing ? ["Click the grass to", "build. Right click", "or X to cancel."] : ["Pick a tower, then", "click the grass to", "build it. Click a", "tower to upgrade", "or sell it."];
     tips.forEach((s, i) => ctx.fillText(s, x, y + 14 + i * 16));
   }
 

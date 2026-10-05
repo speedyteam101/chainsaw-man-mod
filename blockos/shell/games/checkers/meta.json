@@ -1,0 +1,1 @@
+{"id":"checkers","title":"Checkers","genre":"Board","color":"#ef4444","description":"Classic 8x8 checkers with forced captures, multi-jumps and crowned kings. Take on a CPU at three levels or play a friend.","controls":"Click a piece then a square (or Arrows + Space)","scoreLabel":"Best win score","lowerIsBetter":false}

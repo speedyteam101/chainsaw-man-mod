@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dots and Boxes</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "dots-boxes";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(640, 720);
+canvas.style.outline = "none";
+const AREA = 500, AX = (W - AREA) / 2, AY = 130;
+const PLAYER_COLORS = { 1: { main: "#3b82f6", dark: "#1d4ed8", light: "#93c5fd" }, 2: { main: "#ef4444", dark: "#b91c1c", light: "#fca5a5" } };
+const SIZES = { small: 4, medium: 5, large: 6 };
+const LEVELS = {
+  easy: { name: "Easy" },
+  normal: { name: "Normal" },
+  hard: { name: "Hard" },
+};
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft" || c === "KeyW" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight" || c === "KeyS" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- board model ---------- */
+// lines[i] = { t: "h"|"v", r, c, boxes: [box indices] }, boxes[b] = { r, c, lines: [4 line indices] }
+let N = 5, SP = AREA / N;
+let lines = [], boxes = [], drawn = [], owner = [], lineIndex = {};
+
+function buildBoard(n) {
+  N = n;
+  SP = AREA / N;
+  lines = []; boxes = []; lineIndex = {};
+  for (let r = 0; r <= n; r++) for (let c = 0; c < n; c++) { lineIndex[`h${r},${c}`] = lines.length; lines.push({ t: "h", r, c, boxes: [] }); }
+  for (let r = 0; r < n; r++) for (let c = 0; c <= n; c++) { lineIndex[`v${r},${c}`] = lines.length; lines.push({ t: "v", r, c, boxes: [] }); }
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+    const b = boxes.length;
+    const ls = [lineIndex[`h${r},${c}`], lineIndex[`h${r + 1},${c}`], lineIndex[`v${r},${c}`], lineIndex[`v${r},${c + 1}`]];
+    boxes.push({ r, c, lines: ls });
+    for (const l of ls) lines[l].boxes.push(b);
+  }
+  drawn = new Array(lines.length).fill(0);
+  owner = new Array(boxes.length).fill(0);
+}
+
+const sides = (d, b) => boxes[b].lines.reduce((n, l) => n + (d[l] ? 1 : 0), 0);
+const completes = (d, l) => lines[l].boxes.filter((b) => sides(d, b) === 3).length;
+// A safe line does not hand the opponent a box (no box reaches 3 sides).
+const isSafe = (d, l) => lines[l].boxes.every((b) => sides(d, b) < 2);
+
+// How many boxes the next player could grab in a row after line `l` is drawn.
+function giveaway(d, l) {
+  const g = d.slice();
+  g[l] = 1;
+  let taken = 0, progress = true;
+  while (progress) {
+    progress = false;
+    for (let b = 0; b < boxes.length; b++) {
+      if (sides(g, b) === 3) {
+        const miss = boxes[b].lines.find((x) => !g[x]);
+        g[miss] = 1;
+        taken += lines[miss].boxes.filter((bb) => sides(g, bb) === 4).length;
+        progress = true;
+      }
+    }
+  }
+  return taken;
+}
+
+/* ---------- CPU ---------- */
+function cpuChoose(level) {
+  const open = [];
+  for (let l = 0; l < lines.length; l++) if (!drawn[l]) open.push(l);
+  const capture = open.filter((l) => completes(drawn, l) > 0);
+  const safe = open.filter((l) => !completes(drawn, l) && isSafe(drawn, l));
+  if (level === "easy") {
+    if (capture.length && Math.random() < 0.75) return Kit.pick(capture);
+    if (safe.length && Math.random() < 0.7) return Kit.pick(safe);
+    return Kit.pick(open);
+  }
+  if (capture.length) {
+    if (level === "hard") {
+      const dd = doubleDeal(capture, safe);
+      if (dd !== null) return dd;
+    }
+    // prefer lines that complete two boxes at once
+    capture.sort((a, b) => completes(drawn, b) - completes(drawn, a));
+    return capture[0];
+  }
+  if (safe.length) return Kit.pick(safe);
+  // every move gives something away: give away as little as possible
+  let best = [], bestN = Infinity;
+  for (const l of open) {
+    const n = giveaway(drawn, l);
+    if (n < bestN) { bestN = n; best = [l]; } else if (n === bestN) best.push(l);
+  }
+  return Kit.pick(best);
+}
+
+// Endgame trick: with the last two boxes of a chain on offer and no safe moves elsewhere,
+// decline them so the opponent has to open the next (bigger) chain for us.
+function doubleDeal(capture, safe) {
+  if (safe.length) return null;
+  const capBoxes = new Set();
+  for (const l of capture) for (const b of lines[l].boxes) if (sides(drawn, b) === 3) capBoxes.add(b);
+  if (capBoxes.size !== 1) return null;
+  const a = [...capBoxes][0];
+  const L = boxes[a].lines.find((x) => !drawn[x]);
+  const bNeighbor = lines[L].boxes.find((x) => x !== a);
+  if (bNeighbor === undefined || sides(drawn, bNeighbor) !== 2) return null;
+  const M = boxes[bNeighbor].lines.find((x) => !drawn[x] && x !== L);
+  const beyond = lines[M].boxes.find((x) => x !== bNeighbor);
+  if (beyond !== undefined && sides(drawn, beyond) >= 2) return null; // chain keeps going
+  // only worth it if enough boxes remain elsewhere
+  const left = owner.filter((o) => !o).length - 2;
+  if (left < 3) return null;
+  return M;
+}
+
+/* ---------- game state ---------- */
+let mode = "cpu", levelKey = "normal", sizeKey = "medium";
+let turn = 1, scores = { 1: 0, 2: 0 }, phase = "menu", round = 0, last = -1, hover = -1, cursor = 0;
+let pops = []; // box fill animations { b, t }
+let lineAnims = []; // { l, t }
+let tally = { 1: 0, 2: 0 };
+
+const isHuman = (p) => mode === "2p" || p === 1;
+const pname = (p) => (mode === "cpu" ? (p === 1 ? "You" : "CPU") : p === 1 ? "Blue" : "Red");
+
+function newGame() {
+  buildBoard(SIZES[sizeKey]);
+  turn = 1;
+  scores = { 1: 0, 2: 0 };
+  last = -1; hover = -1; cursor = 0;
+  pops = []; lineAnims = [];
+  round++;
+  beginTurn();
+}
+
+function updateHud() {
+  if (mode === "cpu") Kit.hud(`${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0} boxes</small>`);
+  else Kit.hud(`Blue ${tally[1]} - ${tally[2]} Red<small>2 players</small>`);
+}
+
+function beginTurn() {
+  updateHud();
+  if (drawn.every((d) => d)) return gameOver();
+  if (isHuman(turn)) { phase = "input"; return; }
+  phase = "cpu";
+  const myRound = round;
+  setTimeout(() => {
+    if (round !== myRound) return;
+    drawLine(cpuChoose(levelKey));
+  }, last >= 0 && lines[last] && completesNow ? 380 : 600);
+}
+
+let completesNow = false;
+function drawLine(l) {
+  if (drawn[l]) return;
+  drawn[l] = turn;
+  last = l;
+  lineAnims.push({ l, t: 0 });
+  let made = 0;
+  for (const b of lines[l].boxes) {
+    if (!owner[b] && sides(drawn, b) === 4) { owner[b] = turn; made++; pops.push({ b, t: 0 }); }
+  }
+  completesNow = made > 0;
+  if (made) { scores[turn] += made; Kit.sfx(made > 1 ? "coin" : "score"); }
+  else { Kit.sfx("click"); turn = turn === 1 ? 2 : 1; }
+  beginTurn();
+}
+
+async function gameOver() {
+  phase = "end";
+  const myRound = round;
+  const a = scores[1], b = scores[2];
+  const winner = a > b ? 1 : b > a ? 2 : 0;
+  let title, text;
+  if (mode === "cpu") {
+    title = winner === 1 ? "You win!" : winner === 2 ? "CPU wins" : "It's a tie";
+    const best = Kit.finish(ID, a);
+    text = `You ${a} - ${b} CPU\nBest: ${best} boxes`;
+    Kit.sfx(winner === 1 ? "win" : winner === 2 ? "lose" : "score");
+  } else {
+    if (winner) tally[winner]++;
+    title = winner ? `${pname(winner)} wins!` : "It's a tie";
+    text = `Blue ${a} - ${b} Red\nSeries: Blue ${tally[1]} - ${tally[2]} Red`;
+    Kit.finish(ID);
+    Kit.sfx(winner ? "win" : "score");
+  }
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1000));
+  if (round !== myRound) return;
+  const again = await choose(title, text, [
+    { label: "Play again", value: "again" },
+    { label: "Change mode", value: "menu", color: "blue" },
+  ]);
+  if (again === "again") newGame(); else menu();
+}
+
+async function menu() {
+  phase = "menu";
+  round++;
+  mode = await choose("Dots and Boxes",
+    "Take turns drawing a line between two dots. Close the fourth side of a box to claim it - and take another turn!\n\nMost boxes wins. Careful: drawing the third side of a box hands it to your opponent.\n\n" +
+    "Mouse: click between two dots.\nKeys: Arrows move, X switches across/down, Space draws.",
+    [
+      { label: "1 Player vs CPU", value: "cpu", hint: "you are blue" },
+      { label: "2 Players", value: "2p", color: "blue", hint: "pass and play" },
+    ]);
+  if (mode === "cpu") {
+    levelKey = await choose("Difficulty", "How clever should the CPU be?", [
+      { label: "Easy", value: "easy", hint: "careless", selected: levelKey === "easy" },
+      { label: "Normal", value: "normal", color: "orange", hint: "avoids giving boxes", selected: levelKey === "normal" },
+      { label: "Hard", value: "hard", color: "red", hint: "knows chain tricks", selected: levelKey === "hard" },
+    ]);
+  } else tally = { 1: 0, 2: 0 };
+  sizeKey = await choose("Board size", "How many boxes?", [
+    { label: "Small", value: "small", hint: "4 x 4", selected: sizeKey === "small" },
+    { label: "Medium", value: "medium", color: "orange", hint: "5 x 5", selected: sizeKey === "medium" },
+    { label: "Large", value: "large", color: "red", hint: "6 x 6", selected: sizeKey === "large" },
+  ]);
+  newGame();
+}
+
+/* ---------- input ---------- */
+function lineEnds(l) {
+  const L = lines[l];
+  const x = AX + L.c * SP, y = AY + L.r * SP;
+  return L.t === "h" ? [x, y, x + SP, y] : [x, y, x, y + SP];
+}
+function nearestLine(px, py) {
+  let best = -1, bestD = SP * 0.36;
+  for (let l = 0; l < lines.length; l++) {
+    if (drawn[l]) continue;
+    const [x1, y1, x2, y2] = lineEnds(l);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    // distance measured mostly across the line, so clicks near the middle register
+    const along = lines[l].t === "h" ? Math.abs(px - mx) / (SP / 2) : Math.abs(py - my) / (SP / 2);
+    const across = lines[l].t === "h" ? Math.abs(py - my) : Math.abs(px - mx);
+    if (along > 1) continue;
+    const d = across + along * 6;
+    if (d < bestD) { bestD = d; best = l; }
+  }
+  return best;
+}
+canvas.addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  hover = phase === "input" ? nearestLine(p.x, p.y) : -1;
+  canvas.style.cursor = hover >= 0 ? "pointer" : "default";
+});
+canvas.addEventListener("mouseleave", () => { hover = -1; });
+canvas.addEventListener("mousedown", (e) => {
+  if (phase !== "input") return;
+  const p = Kit.pointer(canvas, e);
+  const l = nearestLine(p.x, p.y);
+  if (l >= 0) { cursor = l; drawLine(l); hover = -1; }
+});
+
+function moveCursor(dr, dc) {
+  const L = lines[cursor];
+  const maxR = L.t === "h" ? N : N - 1, maxC = L.t === "h" ? N - 1 : N;
+  const r = Kit.clamp(L.r + dr, 0, maxR), c = Kit.clamp(L.c + dc, 0, maxC);
+  cursor = lineIndex[`${L.t}${r},${c}`];
+}
+Kit.onKey((code, e) => {
+  if (phase !== "input") return;
+  hover = -1;
+  if (code === "ArrowUp" || code === "KeyW") moveCursor(-1, 0);
+  else if (code === "ArrowDown" || code === "KeyS") moveCursor(1, 0);
+  else if (code === "ArrowLeft" || code === "KeyA") moveCursor(0, -1);
+  else if (code === "ArrowRight" || code === "KeyD") moveCursor(0, 1);
+  else if (code === "KeyX" || code === "Tab") {
+    e.preventDefault();
+    const L = lines[cursor];
+    cursor = L.t === "h" ? lineIndex[`v${Math.min(L.r, N - 1)},${L.c}`] : lineIndex[`h${L.r},${Math.min(L.c, N - 1)}`];
+  } else if (code === "Space" || code === "Enter" || code === "NumpadEnter") {
+    if (!drawn[cursor]) drawLine(cursor); else Kit.sfx("hit");
+  }
+});
+
+/* ---------- drawing ---------- */
+function update(dt) {
+  for (const p of pops) p.t += dt;
+  pops = pops.filter((p) => p.t < 0.5);
+  for (const a of lineAnims) a.t += dt;
+  lineAnims = lineAnims.filter((a) => a.t < 0.25);
+}
+
+function text(str, x, y, size, color, weight, align) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawBar(l, color, grow) {
+  const [x1, y1, x2, y2] = lineEnds(l);
+  const t = 12;
+  const g = grow === undefined ? 1 : grow;
+  if (lines[l].t === "h") {
+    const len = (x2 - x1) * g;
+    Kit.brick(ctx, (x1 + x2) / 2 - len / 2, y1 - t / 2, len, t, color, 4);
+  } else {
+    const len = (y2 - y1) * g;
+    Kit.brick(ctx, x1 - t / 2, (y1 + y2) / 2 - len / 2, t, len, color, 4);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (!lines.length) return;
+  // score panels
+  for (const p of [1, 2]) {
+    const x = p === 1 ? AX : W - AX - 190;
+    const col = PLAYER_COLORS[p];
+    Kit.brick(ctx, x, 18, 190, 64, col.main, 10);
+    text(pname(p), x + 16, 50, 20, "#fff", 800, "left");
+    text(String(scores[p]), x + 174, 51, 34, "#fff", 800, "right");
+    if ((phase === "input" || phase === "cpu") && turn === p) {
+      ctx.fillStyle = "#facc15";
+      ctx.fillRect(x, 88, 190, 5);
+    }
+  }
+  let status = "";
+  if (phase === "cpu") status = "CPU's turn";
+  else if (phase === "input") status = mode === "cpu" ? "Your turn" : `${pname(turn)}'s turn`;
+  text(status, W / 2, 50, 18, turn === 1 ? PLAYER_COLORS[1].light : PLAYER_COLORS[2].light, 800);
+  // board backing
+  ctx.fillStyle = "#22252a";
+  ctx.beginPath();
+  ctx.roundRect(AX - 30, AY - 30, AREA + 60, AREA + 60, 16);
+  ctx.fill();
+  // claimed boxes
+  for (let b = 0; b < boxes.length; b++) {
+    if (!owner[b]) {
+      // hint: boxes with 3 sides glow
+      if (sides(drawn, b) === 3 && phase === "input") {
+        ctx.fillStyle = "rgba(250,204,21,.12)";
+        ctx.fillRect(AX + boxes[b].c * SP + 8, AY + boxes[b].r * SP + 8, SP - 16, SP - 16);
+      }
+      continue;
+    }
+    const pop = pops.find((p) => p.b === b);
+    const k = pop ? Math.min(1, pop.t / 0.25) : 1;
+    const s = (SP - 18) * (pop ? 0.6 + 0.4 * k + Math.sin(k * Math.PI) * 0.15 : 1);
+    const cx = AX + boxes[b].c * SP + SP / 2, cy = AY + boxes[b].r * SP + SP / 2;
+    const col = PLAYER_COLORS[owner[b]];
+    Kit.brick(ctx, cx - s / 2, cy - s / 2, s, s, col.main, 8);
+    ctx.fillStyle = "rgba(255,255,255,.22)";
+    ctx.beginPath(); ctx.arc(cx, cy, s * 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,.15)";
+    ctx.beginPath(); ctx.arc(cx, cy + 2, s * 0.2, 0, Math.PI); ctx.fill();
+  }
+  // lines
+  for (let l = 0; l < lines.length; l++) {
+    if (!drawn[l]) continue;
+    const a = lineAnims.find((q) => q.l === l);
+    const col = PLAYER_COLORS[drawn[l]];
+    drawBar(l, l === last ? col.light : col.main, a ? Math.min(1, a.t / 0.18) : 1);
+  }
+  const target = hover >= 0 ? hover : phase === "input" && !drawn[cursor] && hover < 0 && kbdActive ? cursor : -1;
+  if (phase === "input" && target >= 0) {
+    ctx.globalAlpha = 0.5;
+    drawBar(target, PLAYER_COLORS[turn].main);
+    ctx.globalAlpha = 1;
+  }
+  if (phase === "input" && kbdActive && hover < 0) {
+    const [x1, y1, x2, y2] = lineEnds(cursor);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(Math.min(x1, x2) - 10, Math.min(y1, y2) - 10, Math.abs(x2 - x1) + 20, Math.abs(y2 - y1) + 20);
+    ctx.setLineDash([]);
+  }
+  // dots as studs
+  for (let r = 0; r <= N; r++) for (let c = 0; c <= N; c++) {
+    const x = AX + c * SP, y = AY + r * SP;
+    ctx.fillStyle = "#9ca3af";
+    ctx.beginPath(); ctx.arc(x, y + 2, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#e5e7eb";
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(x - 2, y - 2, 3, 0, Math.PI * 2); ctx.fill();
+  }
+  const left = owner.filter((o) => !o).length;
+  text(`${left} box${left === 1 ? "" : "es"} left`, W / 2, H - 34, 15, "#6b7280", 700);
+}
+
+let kbdActive = false;
+addEventListener("keydown", (e) => { if (e.code.startsWith("Arrow") || e.code === "KeyX" || e.code === "Tab") kbdActive = true; });
+addEventListener("mousemove", () => { kbdActive = false; });
+
+buildBoard(5);
+updateHud();
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

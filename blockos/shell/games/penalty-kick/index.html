@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Penalty Kick</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "penalty-kick";
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+
+// Goal space: gx in [-1, 1] post to post, gy in [0, 1] ground to crossbar.
+const GOAL = { cx: 480, ground: 300, halfW: 235, height: 176 };
+const SPOT = { x: 480, y: 470 };
+const toScreen = (gx, gy) => ({ x: GOAL.cx + gx * GOAL.halfW, y: GOAL.ground - gy * GOAL.height });
+const toGoal = (x, y) => ({ gx: (x - GOAL.cx) / GOAL.halfW, gy: (GOAL.ground - y) / GOAL.height });
+const KICKS = 5;
+
+let state, stateT, round, results, aim, power, powerDir, ball, keeper, shot, msg, msgColor, time, diveQueued, crowdHype, netBulge, shooter;
+
+function newMatch() {
+  results = { you: [], cpu: [] };
+  round = 0;
+  startShoot();
+  updateHud();
+}
+
+function points() {
+  const goals = results.you.filter(Boolean).length;
+  const saves = results.cpu.filter((r) => !r).length;
+  return { goals, saves };
+}
+
+function updateHud() {
+  const g = results.you.filter(Boolean).length, c = results.cpu.filter(Boolean).length;
+  Kit.hud(`You ${g} - ${c} CPU<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+function resetKeeper() {
+  keeper = { gx: 0, gy: 0.32, tx: 0, ty: 0.32, diving: false, dive: 0, dir: 0, speed: 2.5, delay: 0 };
+}
+
+function startShoot() {
+  state = "aim";
+  stateT = 0;
+  aim = aim || { gx: 0.5, gy: 0.4 };
+  power = 0;
+  powerDir = 1;
+  ball = { x: SPOT.x, y: SPOT.y, r: 22, spin: 0, visible: true };
+  shooter = { x: SPOT.x - 70, y: SPOT.y + 40, run: 0, kick: 0 };
+  resetKeeper();
+  msg = "Your kick: aim";
+  msgColor = "#fff";
+  netBulge = 0;
+}
+
+function startKeep() {
+  state = "kready";
+  stateT = 0;
+  ball = { x: SPOT.x, y: SPOT.y, r: 22, spin: 0, visible: true };
+  shooter = { x: SPOT.x - 120 + Math.random() * 40, y: SPOT.y + 50, run: 0, kick: 0, cpu: true };
+  resetKeeper();
+  keeper.speed = 2.7;
+  diveQueued = false;
+  msg = "Your save: get ready";
+  msgColor = "#fff";
+  netBulge = 0;
+}
+
+// ---------- shooting ----------
+function lockAim() {
+  if (state !== "aim") return;
+  state = "power";
+  stateT = 0;
+  power = 0;
+  powerDir = 1;
+  msg = "Set the power";
+  Kit.sfx("click");
+}
+
+function lockPower() {
+  if (state !== "power") return;
+  state = "runup";
+  stateT = 0;
+  msg = "";
+  Kit.sfx("click");
+  // where the ball really goes: overhit balls rise, all shots scatter a little
+  const scatter = 0.05 + Math.max(0, power - 0.8) * 0.25;
+  let gx = aim.gx + Kit.rand(-scatter, scatter);
+  let gy = aim.gy + Kit.rand(-scatter, scatter) + Math.max(0, power - 0.86) * 4.2;
+  gy = Math.max(0.03, gy);
+  const T = 0.95 - 0.5 * Math.min(1, power);
+  shot = { gx, gy, T, t: 0, by: "you", result: null };
+  // CPU keeper decides: sometimes reads the kick, otherwise guesses
+  const read = Math.random() < 0.28 + round * 0.04;
+  if (read) { keeper.tx = gx + Kit.rand(-0.15, 0.15); keeper.ty = gy + Kit.rand(-0.15, 0.15); }
+  else { keeper.tx = Kit.pick([-0.75, -0.4, 0, 0.4, 0.75]); keeper.ty = Kit.pick([0.25, 0.5, 0.75]); }
+  keeper.tx = Kit.clamp(keeper.tx, -0.9, 0.9);
+  keeper.ty = Kit.clamp(keeper.ty, 0.2, 0.85);
+  keeper.delay = Kit.rand(0.1, 0.22);
+  keeper.speed = 2.3 + Math.min(0.6, round * 0.08);
+}
+
+// ---------- keeping ----------
+function cpuKick() {
+  // a committed keeper gets punished more often
+  let gx, gy;
+  if (keeper.diving && Math.random() < 0.7) gx = -Math.sign(keeper.tx || 1) * Kit.rand(0.45, 0.9);
+  else gx = Kit.pick([-1, 1]) * Kit.rand(0.15, 0.92);
+  gy = Kit.rand(0.08, 0.88);
+  // occasional miss
+  if (Math.random() < 0.12) {
+    if (Math.random() < 0.5) gx = Math.sign(gx) * Kit.rand(1.05, 1.3);
+    else gy = Kit.rand(1.05, 1.3);
+  }
+  shot = { gx, gy, T: Kit.rand(0.55, 0.78) - Math.min(0.12, round * 0.02), t: 0, by: "cpu", result: null };
+  Kit.sfx("hit");
+}
+
+function playerDive(gx, gy) {
+  if (keeper.diving || (state !== "kready" && state !== "flight") || (shot && shot.by !== "cpu" && state === "flight")) return;
+  if (state === "flight" && shot.t > shot.T) return;
+  keeper.diving = true;
+  keeper.tx = Kit.clamp(gx, -1.05, 1.05);
+  keeper.ty = Kit.clamp(gy, 0.12, 0.95);
+  keeper.delay = 0;
+  Kit.sfx("jump");
+}
+
+function keyDive() {
+  if (diveQueued) return;
+  diveQueued = true;
+  setTimeout(() => {
+    diveQueued = false;
+    const dx = (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0) - (Kit.key("ArrowLeft") || Kit.key("KeyA") ? 1 : 0);
+    const up = Kit.key("ArrowUp") || Kit.key("KeyW");
+    const down = Kit.key("ArrowDown") || Kit.key("KeyS");
+    playerDive(dx * 0.8, up ? 0.78 : down ? 0.15 : dx ? 0.35 : 0.6);
+  }, 60);
+}
+
+// ---------- input ----------
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointermove", (e) => {
+  if (state !== "aim") return;
+  const p = Kit.pointer(canvas, e);
+  const g = toGoal(p.x, p.y);
+  aim.gx = Kit.clamp(g.gx, -1.25, 1.25);
+  aim.gy = Kit.clamp(g.gy, 0, 1.3);
+});
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (state === "aim") {
+    const g = toGoal(p.x, p.y);
+    aim.gx = Kit.clamp(g.gx, -1.25, 1.25);
+    aim.gy = Kit.clamp(g.gy, 0, 1.3);
+    lockAim();
+  } else if (state === "power") lockPower();
+  else if (state === "kready" || state === "flight") {
+    const g = toGoal(p.x, p.y);
+    playerDive(g.gx, g.gy);
+  }
+});
+Kit.onKey((code) => {
+  if (code === "Space" || code === "Enter") {
+    if (state === "aim") lockAim();
+    else if (state === "power") lockPower();
+  }
+  if ((state === "kready" || state === "flight") && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "KeyA", "KeyD", "KeyW", "KeyS"].includes(code)) keyDive();
+});
+
+// ---------- update ----------
+function update(dt) {
+  time += dt;
+  stateT += dt;
+  netBulge = Math.max(0, netBulge - dt * 1.5);
+  crowdHype = Math.max(0, (crowdHype || 0) - dt);
+
+  if (state === "aim") {
+    const mx = (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0) - (Kit.key("ArrowLeft") || Kit.key("KeyA") ? 1 : 0);
+    const my = (Kit.key("ArrowUp") || Kit.key("KeyW") ? 1 : 0) - (Kit.key("ArrowDown") || Kit.key("KeyS") ? 1 : 0);
+    aim.gx = Kit.clamp(aim.gx + mx * 1.3 * dt, -1.25, 1.25);
+    aim.gy = Kit.clamp(aim.gy + my * 1.1 * dt, 0, 1.3);
+    // the keeper bounces on his toes
+    keeper.gx = Math.sin(time * 2) * 0.08;
+  } else if (state === "power") {
+    power += powerDir * dt * 1.45;
+    if (power >= 1) { power = 1; powerDir = -1; }
+    if (power <= 0) { power = 0; powerDir = 1; }
+    keeper.gx = Math.sin(time * 2) * 0.08;
+  } else if (state === "runup") {
+    shooter.x += 150 * dt;
+    shooter.y -= 70 * dt;
+    shooter.run += dt * 14;
+    if (stateT > 0.42) { state = "flight"; stateT = 0; shooter.kick = 0.3; Kit.sfx("hit"); }
+  } else if (state === "kready") {
+    // the CPU taker runs up; player may shuffle (but diving early is a gamble)
+    if (!keeper.diving) {
+      const mx = (Kit.key("ArrowRight") ? 1 : 0) - (Kit.key("ArrowLeft") ? 1 : 0);
+      keeper.gx = Kit.clamp(keeper.gx + mx * 0.6 * dt, -0.3, 0.3);
+    }
+    if (stateT > 0.9) {
+      shooter.x += 150 * dt;
+      shooter.y -= 70 * dt;
+      shooter.run += dt * 14;
+    }
+    if (stateT > 1.35) { cpuKick(); state = "flight"; stateT = 0; shooter.kick = 0.3; }
+  } else if (state === "flight") {
+    shot.t += dt;
+    const t = Math.min(1, shot.t / shot.T);
+    const target = toScreen(shot.gx, shot.gy);
+    const ease = 1 - Math.pow(1 - t, 1.6);
+    ball.x = SPOT.x + (target.x - SPOT.x) * ease;
+    ball.y = SPOT.y + (target.y - SPOT.y) * ease - Math.sin(Math.PI * t) * 40 * (1 - shot.gy * 0.5);
+    ball.r = 22 - 12 * ease;
+    ball.spin += dt * 20;
+    if (shot.t >= shot.T && !shot.result) resolveShot();
+  } else if (state === "result") {
+    // ball after the outcome
+    ball.x += ball.vx * dt;
+    ball.y += ball.vy * dt;
+    ball.vy += ball.g * dt;
+    if (ball.floor && ball.y > ball.floor) { ball.y = ball.floor; ball.vy *= -0.4; ball.vx *= 0.7; }
+    if (stateT > 1.8) nextKick();
+  }
+  shooter.kick = Math.max(0, shooter.kick - dt);
+
+  // keeper movement
+  if (state === "flight" || state === "result" || keeper.diving) {
+    if (keeper.delay > 0) keeper.delay -= dt;
+    else if (state === "flight" || keeper.diving) {
+      if (!keeper.diving && shot && shot.by === "you") keeper.diving = true;
+      if (keeper.diving) {
+        const dx = keeper.tx - keeper.gx, dy = keeper.ty - keeper.gy, d = Math.hypot(dx, dy);
+        const step = keeper.speed * dt;
+        if (d > step) { keeper.gx += (dx / d) * step; keeper.gy += (dy / d) * step; }
+        else { keeper.gx = keeper.tx; keeper.gy = keeper.ty; }
+        keeper.dive = Math.min(1, keeper.dive + dt * 4);
+        keeper.dir = Math.sign(keeper.tx);
+      }
+    }
+  }
+}
+
+function keeperReaches(gx, gy) {
+  // reach shape: wide when diving sideways, tall when standing
+  const lying = keeper.dive * Math.min(1, Math.abs(keeper.tx) * 1.6);
+  const rx = 0.16 + 0.12 * lying, ry = 0.38 - 0.12 * lying;
+  const dx = (gx - keeper.gx) / rx, dy = (gy - keeper.gy) / ry;
+  return dx * dx + dy * dy <= 1;
+}
+
+function resolveShot() {
+  const { gx, gy } = shot;
+  const post = (Math.abs(Math.abs(gx) - 1) < 0.035 && gy < 1.03) || (Math.abs(gy - 1) < 0.04 && Math.abs(gx) < 1.03);
+  let res;
+  if (post) res = "post";
+  else if (Math.abs(gx) > 1 || gy > 1) res = gy > 1 ? "over" : "wide";
+  else if (keeperReaches(gx, gy)) res = "saved";
+  else res = "goal";
+  shot.result = res;
+  state = "result";
+  stateT = 0;
+  const scored = res === "goal";
+  const byYou = shot.by === "you";
+  (byYou ? results.you : results.cpu).push(scored);
+  ball.g = 900;
+  if (res === "goal") {
+    ball.vx = 0; ball.vy = 20; ball.floor = GOAL.ground - 4; netBulge = 1;
+    msg = byYou ? "GOAL!" : "They score";
+    msgColor = byYou ? "#22c55e" : "#ef4444";
+    Kit.sfx(byYou ? "win" : "lose");
+    if (byYou) crowdHype = 2;
+  } else if (res === "saved") {
+    ball.vx = (ball.x - toScreen(keeper.gx, keeper.gy).x) * 3 + Kit.rand(-120, 120);
+    ball.vy = 160;
+    ball.floor = SPOT.y - 40;
+    msg = byYou ? "Saved!" : "GREAT SAVE!";
+    msgColor = byYou ? "#ef4444" : "#22c55e";
+    Kit.sfx(byYou ? "lose" : "win");
+    if (!byYou) crowdHype = 2;
+  } else if (res === "post") {
+    ball.vx = -Math.sign(gx || 1) * 220; ball.vy = -120; ball.floor = SPOT.y - 60;
+    msg = "Off the woodwork!";
+    msgColor = byYou ? "#ef4444" : "#22c55e";
+    Kit.sfx("hit");
+  } else {
+    ball.vx = Math.sign(gx) * 160; ball.vy = -60; ball.floor = 9999;
+    msg = res === "over" ? "Over the bar!" : "Wide!";
+    msgColor = byYou ? "#ef4444" : "#22c55e";
+    Kit.sfx(byYou ? "lose" : "coin");
+  }
+  updateHud();
+}
+
+function decided() {
+  const yg = results.you.filter(Boolean).length, cg = results.cpu.filter(Boolean).length;
+  const yt = results.you.length, ct = results.cpu.length;
+  if (yt <= KICKS || ct < KICKS) {
+    const yLeft = KICKS - Math.min(KICKS, yt), cLeft = KICKS - Math.min(KICKS, ct);
+    if (yt <= KICKS && ct <= KICKS) {
+      if (yg + yLeft < cg) return "cpu";
+      if (cg + cLeft < yg) return "you";
+      return null;
+    }
+  }
+  // sudden death: after equal numbers of kicks beyond five
+  if (yt === ct && yt >= KICKS && yg !== cg) return yg > cg ? "you" : "cpu";
+  return null;
+}
+
+function nextKick() {
+  const winner = decided();
+  if (winner) return endMatch(winner);
+  if (results.you.length > results.cpu.length) startKeep();
+  else { round++; startShoot(); }
+}
+
+async function endMatch(winner) {
+  state = "over";
+  game.stop();
+  const { goals, saves } = points();
+  const pts = goals * 100 + saves * 100 + (winner === "you" ? 500 : 0);
+  const best = Kit.finish(ID, pts);
+  Kit.sfx(winner === "you" ? "win" : "lose");
+  const yg = results.you.filter(Boolean).length, cg = results.cpu.filter(Boolean).length;
+  await Kit.overlay(winner === "you" ? "You win the shootout!" : "The CPU wins", `Final: You ${yg} - ${cg} CPU\nGoals scored: ${goals}   Kicks stopped: ${saves}\nPoints: ${pts}   Best: ${best}`, "Play again");
+  newMatch();
+  game.start();
+}
+
+// ---------- drawing ----------
+function drawStadium() {
+  // sky and stands
+  ctx.fillStyle = "#0b1d3a";
+  ctx.fillRect(0, 0, W, 120);
+  const colors = ["#ef4444", "#3b82f6", "#facc15", "#f2f4f5", "#22c55e", "#a855f7"];
+  for (let row = 0; row < 6; row++) {
+    ctx.fillStyle = row % 2 ? "#1e293b" : "#273449";
+    ctx.fillRect(0, 22 + row * 18, W, 18);
+    for (let k = 0; k < 64; k++) {
+      const hop = crowdHype > 0 ? Math.abs(Math.sin(time * 10 + k * 0.7 + row)) * 4 : 0;
+      ctx.fillStyle = colors[(k * 3 + row * 5 + (k >> 2)) % colors.length];
+      ctx.fillRect(4 + k * 15 + (row % 2) * 7, 26 + row * 18 - hop, 9, 10);
+    }
+  }
+  // floodlights
+  for (const x of [60, 900]) {
+    ctx.fillStyle = "#4b5563";
+    ctx.fillRect(x - 3, 0, 6, 24);
+    ctx.fillStyle = "#fef9c3";
+    ctx.fillRect(x - 22, 0, 44, 12);
+  }
+  // advertising boards (plain colored blocks)
+  for (let k = 0; k < 8; k++) Kit.brick(ctx, k * 120 + 2, 128, 116, 22, ["#2563eb", "#16a34a", "#dc2626", "#f59e0b"][k % 4], 4);
+  // pitch with perspective stripes
+  const top = 150, bot = H;
+  for (let i = 0; i < 9; i++) {
+    const y0 = top + Math.pow(i / 9, 1.6) * (bot - top), y1 = top + Math.pow((i + 1) / 9, 1.6) * (bot - top);
+    ctx.fillStyle = i % 2 ? "#2f9e44" : "#37b24d";
+    ctx.fillRect(0, y0, W, y1 - y0 + 1);
+  }
+  // box lines
+  ctx.strokeStyle = "rgba(255,255,255,.85)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(120, GOAL.ground + 4); ctx.lineTo(840, GOAL.ground + 4);              // goal line
+  ctx.moveTo(220, GOAL.ground + 4); ctx.lineTo(160, 360); ctx.lineTo(800, 360); ctx.lineTo(740, GOAL.ground + 4); // six-yard box
+  ctx.moveTo(60, GOAL.ground + 4); ctx.lineTo(-40, 520); ctx.moveTo(900, GOAL.ground + 4); ctx.lineTo(1000, 520); // penalty box sides
+  ctx.stroke();
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.ellipse(SPOT.x, SPOT.y + 16, 9, 4, 0, 0, 7); ctx.fill();
+}
+
+function drawGoal() {
+  const tl = toScreen(-1, 1), br = toScreen(1, 0);
+  const depth = 40;
+  // net
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  ctx.fillRect(tl.x + 10, tl.y - 10 - depth * 0.3, br.x - tl.x - 20, br.y - tl.y + 10);
+  ctx.strokeStyle = "rgba(255,255,255,.35)";
+  ctx.lineWidth = 1;
+  const bulge = netBulge * 18;
+  const bx = shot && shot.result === "goal" ? toScreen(shot.gx, shot.gy) : null;
+  for (let x = tl.x + 10; x <= br.x - 10; x += 14) {
+    ctx.beginPath();
+    for (let y = tl.y - 12; y <= br.y; y += 8) {
+      let ox = 0, oy = 0;
+      if (bx) { const d = Math.hypot(x - bx.x, y - bx.y); const k = Math.max(0, 1 - d / 90) * bulge; oy = -k * 0.4; ox = (x - bx.x) * k * 0.02; }
+      ctx.lineTo(x + ox, y + oy);
+    }
+    ctx.stroke();
+  }
+  for (let y = tl.y - 12; y <= br.y; y += 14) {
+    ctx.beginPath(); ctx.moveTo(tl.x + 10, y); ctx.lineTo(br.x - 10, y); ctx.stroke();
+  }
+  // posts and crossbar (white blocks)
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.fillRect(tl.x - 4, br.y, br.x - tl.x + 8, 6);
+  Kit.brick(ctx, tl.x - 12, tl.y - 12, 12, br.y - tl.y + 12, "#f2f4f5", 3);
+  Kit.brick(ctx, br.x, tl.y - 12, 12, br.y - tl.y + 12, "#f2f4f5", 3);
+  Kit.brick(ctx, tl.x - 12, tl.y - 12, br.x - tl.x + 24, 12, "#f2f4f5", 3);
+}
+
+function drawKeeper() {
+  const p = toScreen(keeper.gx, keeper.gy);
+  const lying = keeper.dive * Math.min(1, Math.abs(keeper.tx) * 1.6);
+  const ang = keeper.dir * lying * 1.35;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(0, GOAL.ground - p.y + 2, 30, 6, 0, 0, 7); ctx.fill();
+  ctx.rotate(ang);
+  const kit = "#facc15", dark = "#a16207";
+  // legs
+  ctx.fillStyle = "#1f2937";
+  ctx.fillRect(-14, 22, 11, 34); ctx.fillRect(3, 22, 11, 34);
+  // body
+  Kit.brick(ctx, -18, -22, 36, 48, kit, 5);
+  ctx.fillStyle = dark;
+  ctx.fillRect(-18, 2, 36, 6);
+  // arms up and out
+  const spread = 0.4 + keeper.dive * 0.9 + (state === "aim" || state === "power" ? Math.sin(time * 4) * 0.1 : 0);
+  for (const s of [-1, 1]) {
+    ctx.save();
+    ctx.translate(s * 16, -16);
+    ctx.rotate(s * (Math.PI / 2 + 0.3 - spread));
+    ctx.fillStyle = kit;
+    ctx.fillRect(-5, -34, 10, 34);
+    ctx.fillStyle = "#22c55e";
+    ctx.fillRect(-7, -44, 14, 13);
+    ctx.restore();
+  }
+  // head
+  Kit.brick(ctx, -12, -48, 24, 24, "#fcd34d", 5);
+  ctx.fillStyle = "#1f2937";
+  ctx.fillRect(-6, -40, 4, 4); ctx.fillRect(3, -40, 4, 4);
+  ctx.fillRect(-13, -50, 26, 7);
+  ctx.restore();
+}
+
+function drawShooter() {
+  const s = shooter;
+  const leg = Math.sin(s.run) * 8;
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(0, 8, 34, 9, 0, 0, 7); ctx.fill();
+  const shirt = s.cpu ? "#ef4444" : "#3b82f6";
+  // seen from behind
+  ctx.fillStyle = "#f2f4f5";
+  ctx.fillRect(-18, -46 + leg, 15, 50 - leg);
+  ctx.save();
+  ctx.translate(10, -46);
+  ctx.rotate(s.kick > 0 ? -0.9 : -leg * 0.02);
+  ctx.fillRect(-7, 0, 15, 50);
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(-8, 44, 17, 10);
+  ctx.restore();
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(-19, 0 + leg * 0.2, 17, 10);
+  Kit.brick(ctx, -24, -110, 48, 66, shirt, 6);
+  ctx.fillStyle = "rgba(255,255,255,.85)";
+  ctx.font = "bold 26px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("9", 0, -66);
+  ctx.fillStyle = shirt;
+  ctx.fillRect(-36, -104, 12, 40); ctx.fillRect(24, -104, 12, 40);
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(-36, -66, 12, 10); ctx.fillRect(24, -66, 12, 10);
+  Kit.brick(ctx, -16, -144, 32, 34, "#7c4a24", 6);
+  ctx.restore();
+}
+
+function drawBall() {
+  if (!ball.visible) return;
+  ctx.save();
+  ctx.translate(ball.x, ball.y);
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  if (state !== "flight") { ctx.beginPath(); ctx.ellipse(2, ball.r * 0.8, ball.r, ball.r * 0.35, 0, 0, 7); ctx.fill(); }
+  ctx.rotate(ball.spin);
+  ctx.fillStyle = "#fff";
+  ctx.beginPath(); ctx.arc(0, 0, ball.r, 0, 7); ctx.fill();
+  ctx.fillStyle = "#1f2937";
+  const r = ball.r;
+  ctx.fillRect(-r * 0.25, -r * 0.25, r * 0.5, r * 0.5);
+  for (const [x, y] of [[-0.75, -0.2], [0.55, -0.55], [0.5, 0.5], [-0.35, 0.65]]) ctx.fillRect(x * r - r * 0.13, y * r - r * 0.13, r * 0.26, r * 0.26);
+  ctx.restore();
+}
+
+function drawUI() {
+  // scoreboard pips
+  Kit.brick(ctx, 12, 160, 214, 70, "rgba(15,17,19,.75)", 8);
+  ctx.font = "bold 14px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  for (const [row, label, list] of [[0, "YOU", results.you], [1, "CPU", results.cpu]]) {
+    const y = 182 + row * 30;
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, 24, y + 5);
+    const n = Math.max(KICKS, list.length);
+    for (let i = 0; i < n; i++) {
+      const x = 74 + i * (n > 5 ? 140 / n : 28);
+      ctx.fillStyle = i < list.length ? (list[i] ? "#22c55e" : "#ef4444") : "#4b5563";
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
+    }
+  }
+  ctx.textAlign = "center";
+  // aim reticle
+  if (state === "aim" || state === "power") {
+    const p = toScreen(aim.gx, aim.gy);
+    ctx.strokeStyle = state === "aim" ? "#facc15" : "rgba(250,204,21,.6)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(p.x - 14, p.y - 14, 28, 28);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(p.x - 2, p.y - 2, 4, 4);
+  }
+  if (state === "power") {
+    const x = 860, y = 200, h = 240;
+    Kit.brick(ctx, x - 6, y - 6, 44, h + 12, "rgba(15,17,19,.8)", 8);
+    const g = ctx.createLinearGradient(0, y + h, 0, y);
+    g.addColorStop(0, "#22c55e"); g.addColorStop(0.7, "#facc15"); g.addColorStop(0.86, "#fb923c"); g.addColorStop(1, "#ef4444");
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y + h - h * power, 32, h * power);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y + h - h * 0.86, 32, 0.01);
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.fillText("POWER", x + 16, y + h + 24);
+  }
+  if (state === "kready" && !keeper.diving) {
+    ctx.font = "bold 16px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.fillText("Click where to dive, or press an arrow (Up + Left/Right for high corners)", W / 2, 520);
+  }
+  if (msg) {
+    const big = state === "result";
+    ctx.font = big ? "900 60px system-ui, sans-serif" : "bold 26px system-ui, sans-serif";
+    const y = big ? 352 : 362;
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    ctx.fillText(msg, W / 2 + 3, y + 3);
+    ctx.fillStyle = msgColor;
+    ctx.fillText(msg, W / 2, y);
+  }
+}
+
+function draw() {
+  drawStadium();
+  drawGoal();
+  const ballBehind = state === "result" && shot && shot.result === "goal";
+  if (ballBehind) drawBall();
+  drawKeeper();
+  if (!ballBehind) {
+    if (state === "flight" && shot.t / shot.T > 0.5) { drawShooter(); drawBall(); }
+    else { drawBall(); drawShooter(); }
+  } else drawShooter();
+  drawUI();
+}
+
+time = 0;
+newMatch();
+const game = Kit.loop(update, draw);
+draw();
+Kit.overlay("Penalty Kick",
+  "A five-kick shootout. You shoot, then you keep, turn about.\n\nShooting: move the mouse (or arrows) to aim, click / Space to lock,\nthen click / Space again to set power. Too much power sails high!\n\nKeeping: click where you want to dive, or press an arrow\n(hold Up with Left / Right for the top corners). Dive too early and the taker may notice.",
+  "Kick off").then(() => game.start());
+</script>
+</body>
+</html>

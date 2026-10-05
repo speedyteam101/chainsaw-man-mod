@@ -1,0 +1,1 @@
+{"id":"lights-out","title":"Lights Out","genre":"Puzzle","color":"#facc15","description":"Every press flips a brick and its four neighbors - switch off all the lights within the move limit as the boards grow from 3x3 to 7x7.","controls":"Click a brick / Arrows + Space, H for a hint","scoreLabel":"Best run score","lowerIsBetter":false}
