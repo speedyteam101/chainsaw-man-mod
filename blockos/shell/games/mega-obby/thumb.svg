@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3fa9f5"/><stop offset="1" stop-color="#bfe6ff"/></linearGradient>
+  </defs>
+  <rect width="480" height="270" fill="url(#sky)"/>
+  <!-- clouds far below -->
+  <g fill="#ffffff" opacity=".85">
+    <rect x="0" y="236" width="480" height="34"/>
+    <rect x="30" y="222" width="90" height="20"/><rect x="190" y="226" width="120" height="16"/><rect x="360" y="218" width="100" height="24"/>
+  </g>
+  <g fill="#ffffff" opacity=".7"><rect x="300" y="26" width="80" height="16"/><rect x="318" y="14" width="40" height="14"/><rect x="40" y="40" width="60" height="12"/></g>
+  <!-- far spiral of tiny platforms -->
+  <g opacity=".55">
+    <rect x="250" y="62" width="14" height="5" fill="#a855f7"/><rect x="274" y="56" width="14" height="5" fill="#ec4899"/><rect x="298" y="50" width="14" height="5" fill="#ef4444"/>
+    <rect x="322" y="46" width="14" height="5" fill="#fb923c"/><rect x="346" y="44" width="14" height="5" fill="#facc15"/><rect x="370" y="46" width="14" height="5" fill="#22c55e"/>
+    <rect x="394" y="52" width="14" height="5" fill="#14b8a6"/><rect x="418" y="60" width="14" height="5" fill="#3b82f6"/>
+  </g>
+  <!-- gold finish platform at the top right -->
+  <rect x="410" y="78" width="60" height="10" fill="#eab308"/><rect x="410" y="88" width="60" height="5" fill="#a16207"/>
+  <rect x="432" y="58" width="16" height="20" fill="#facc15"/><rect x="426" y="52" width="28" height="8" fill="#fde047"/>
+  <!-- stepping platforms rising to the right -->
+  <g>
+    <rect x="300" y="122" width="50" height="10" fill="#3b82f6"/><rect x="300" y="132" width="50" height="6" fill="#1d4ed8"/>
+    <rect x="360" y="100" width="40" height="10" fill="#a855f7"/><rect x="360" y="110" width="40" height="6" fill="#7e22ce"/>
+  </g>
+  <!-- spinner platform -->
+  <rect x="150" y="150" width="120" height="14" fill="#22c55e"/><rect x="150" y="164" width="120" height="8" fill="#15803d"/>
+  <g fill="#86efac"><rect x="158" y="146" width="12" height="4"/><rect x="182" y="146" width="12" height="4"/><rect x="206" y="146" width="12" height="4"/><rect x="230" y="146" width="12" height="4"/><rect x="254" y="146" width="12" height="4"/></g>
+  <rect x="204" y="122" width="12" height="28" fill="#334155"/>
+  <polygon points="150,126 270,140 270,148 150,134" fill="#ff2d2d"/>
+  <!-- checkpoint pad in front -->
+  <rect x="40" y="196" width="130" height="22" fill="#334155"/><rect x="40" y="218" width="130" height="10" fill="#1e293b"/>
+  <rect x="54" y="192" width="102" height="8" fill="#22c55e"/>
+  <rect x="160" y="150" width="6" height="46" fill="#e2e8f0"/>
+  <!-- kill brick strip -->
+  <rect x="280" y="190" width="120" height="16" fill="#ff2d2d"/><rect x="280" y="206" width="120" height="6" fill="#b91c1c"/>
+  <rect x="270" y="212" width="140" height="10" fill="#94a3b8"/>
+  <!-- blocky player jumping -->
+  <g transform="translate(98 104)">
+    <rect x="-14" y="0" width="28" height="26" fill="#facc15"/>
+    <rect x="-10" y="6" width="5" height="7" fill="#111"/><rect x="5" y="6" width="5" height="7" fill="#111"/>
+    <rect x="-8" y="17" width="16" height="3" fill="#111"/>
+    <rect x="-22" y="26" width="44" height="40" fill="#ef4444"/>
+    <rect x="-36" y="10" width="14" height="38" fill="#facc15" transform="rotate(-20 -29 26)"/>
+    <rect x="22" y="10" width="14" height="38" fill="#facc15" transform="rotate(20 29 26)"/>
+    <rect x="-21" y="66" width="20" height="36" fill="#3b82f6" transform="rotate(10 -11 66)"/>
+    <rect x="1" y="66" width="20" height="36" fill="#3b82f6" transform="rotate(-12 11 66)"/>
+    <rect x="-16" y="-8" width="32" height="9" fill="#2563eb"/><rect x="-16" y="-2" width="40" height="4" fill="#1d4ed8"/>
+  </g>
+</svg>
