@@ -1,0 +1,54 @@
+name: BlockOS (Mac app)
+
+on:
+  push:
+    paths:
+      - "blockos/**"
+      - ".github/workflows/blockos-mac.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A newer push replaces a build that's still running (macOS minutes are expensive).
+concurrency:
+  group: blockos-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: blockos/mac-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Build BlockOS.app (Apple Silicon and Intel)
+        run: ./build.sh arm64 x64
+
+      - name: Upload zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: blockos-mac
+          path: blockos/mac-app/build/BlockOS-mac-*.zip
+
+      # Keeps one release called "BlockOS for Mac" with the newest build, so there's
+      # always a simple download link on the repository's Releases page.
+      - name: Publish to the "blockos" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view blockos >/dev/null 2>&1; then
+            gh release create blockos --target "$GITHUB_SHA" --prerelease \
+              --title "BlockOS for Mac" \
+              --notes "Download BlockOS-mac-arm64.zip for Apple Silicon Macs (M-series chips) or BlockOS-mac-x64.zip for Intel Macs. Unzip it and drag BlockOS.app to Applications. The first time, open System Settings → Privacy & Security and click Open Anyway."
+          fi
+          gh release upload blockos build/BlockOS-mac-*.zip --clobber

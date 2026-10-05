@@ -55,6 +55,10 @@ for arch in "${ARCHES[@]}"; do
     echo "warning: no codesign/rcodesign found; the $arch app is unsigned and may not open" >&2
   fi
 
-  (cd "$BUILD/BlockOS-darwin-$arch" && zip -qry "$BUILD/BlockOS-mac-$arch.zip" BlockOS.app)
+  if command -v ditto >/dev/null 2>&1; then
+    ditto -c -k --keepParent "$APP" "$BUILD/BlockOS-mac-$arch.zip"   # the macOS way; keeps signatures intact
+  else
+    (cd "$BUILD/BlockOS-darwin-$arch" && zip -qry "$BUILD/BlockOS-mac-$arch.zip" BlockOS.app)
+  fi
   echo "    $BUILD/BlockOS-mac-$arch.zip"
 done
