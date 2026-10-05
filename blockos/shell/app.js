@@ -316,7 +316,8 @@
             On the web version you can join servers that have an internet address starting with <code>wss://</code>.</p></div>`
         : `<div class="panel"><h2>Host a server</h2>
             <p class="hint">Turns this computer into a game server. Your friends join it from their BlockOS using the address shown above.</p>
-            ${hosting ? '<button class="btn red" id="stopHost">Stop hosting</button>' : '<button class="btn green" id="startHost">Start hosting</button>'}</div>`;
+            ${hosting ? '<button class="btn red" id="stopHost">Stop hosting</button>' : '<button class="btn green" id="startHost">Start hosting</button>'}</div>
+          ${internetPanel()}`;
       page.innerHTML = `<h1 class="page-title">Play Online</h1>
         <div class="panel"><h2>Status</h2><p>${status}</p>${addr ? '<button class="btn" id="goOffline">Go offline</button>' : ""}</div>
         ${hostPanel}
@@ -335,6 +336,15 @@
       const stop = $("#stopHost");
       if (stop) stop.onclick = async () => { await setHosting(false); setServer(""); render(); };
       $("#joinBtn").onclick = () => joinServer($("#joinAddr").value);
+      const goPublic = $("#goPublic");
+      if (goPublic) goPublic.onclick = () => setInternet(true);
+      const stopPublic = $("#stopPublic");
+      if (stopPublic) stopPublic.onclick = () => setInternet(false);
+      const copyPublic = $("#copyPublic");
+      if (copyPublic) copyPublic.onclick = async () => {
+        try { await navigator.clipboard.writeText(onlineInfo.internet.url); toast("Address copied. Send it to your friends."); }
+        catch (_) { const r = document.createRange(); r.selectNodeContents($("#publicAddr")); getSelection().removeAllRanges(); getSelection().addRange(r); }
+      };
       $("#joinAddr").onkeydown = (e) => { if (e.key === "Enter") joinServer(e.target.value); };
     },
 
@@ -474,6 +484,52 @@
   async function loadOnlineInfo() {
     try { onlineInfo = await api("/api/online"); } catch (_) { onlineInfo = null; }
   }
+  // Friends anywhere in the world: the Mac/Windows app opens a Cloudflare tunnel to your server.
+  function internetPanel() {
+    const net = onlineInfo && onlineInfo.internet;
+    if (!net) return "";   // only the Mac and Windows app can do this
+    const note = `<p class="hint">Gives your server an internet address so friends anywhere in the world can join. BlockOS downloads
+      a free connector from Cloudflare the first time (about 20 MB). The address changes every time you start it.
+      Only send it to people you know.</p>`;
+    let body;
+    if (net.status === "on") {
+      body = `<p>Friends anywhere join by typing this under <b>Join a server</b>:</p>
+        <div class="code-row"><code class="public-addr" id="publicAddr">${esc(net.url)}</code><button class="btn" id="copyPublic">Copy</button></div>
+        <p class="hint">Keep BlockOS open while people play. Cloudflare's free connections have no uptime guarantee, so if it stops, start it again.</p>
+        <button class="btn red" id="stopPublic">Stop internet hosting</button>`;
+    } else if (net.status === "starting") {
+      body = `${note}<p><b>Connecting to the internet...</b> This can take up to a minute the first time.</p>`;
+    } else {
+      body = `${note}${net.status === "error" ? `<p class="bad">${esc(net.error || "Something went wrong.")}</p>` : ""}
+        <button class="btn green" id="goPublic">${net.status === "error" ? "Try again" : "Let friends anywhere join"}</button>`;
+    }
+    return `<div class="panel"><h2>Friends anywhere</h2>${body}</div>`;
+  }
+  let internetPoll = 0;
+  async function setInternet(on) {
+    try {
+      onlineInfo = await api("/api/online", { internet: on });
+      if (on) setServer(`ws://127.0.0.1:${onlineInfo.port}`);   // the host plays on their own server
+    } catch (e) {
+      toast(`Couldn't ${on ? "start" : "stop"} internet hosting: ${esc(e.message)}`);
+    }
+    render();
+    watchInternet();
+  }
+  // While the connection is starting, check every 2 seconds and update the page.
+  function watchInternet() {
+    clearInterval(internetPoll);
+    if (!onlineInfo || !onlineInfo.internet || onlineInfo.internet.status !== "starting") return;
+    internetPoll = setInterval(async () => {
+      try { onlineInfo = await api("/api/online"); } catch (_) { return; }
+      if (onlineInfo.internet.status !== "starting") {
+        clearInterval(internetPoll);
+        if (onlineInfo.internet.status === "on") toast("Your server is on the internet! Copy the address and send it to your friends.");
+        if (view.page === "online") render();
+      }
+    }, 2000);
+  }
+
   async function setHosting(on) {
     try {
       onlineInfo = await api("/api/online", { host: on });
@@ -489,11 +545,14 @@
   function normalizeAddress(text) {
     let a = String(text || "").trim();
     if (!a) return "";
-    if (!/^wss?:\/\//i.test(a)) {
-      a = a.replace(/^https?:\/\//i, "");
-      a = "ws://" + (/:\d+$/.test(a) ? a : `${a}:${DEFAULT_GAME_PORT}`);
-    }
-    return a;
+    if (/^https:\/\//i.test(a)) return a.replace(/^https:/i, "wss:");
+    if (/^wss?:\/\//i.test(a)) return a;
+    a = a.replace(/^http:\/\//i, "");
+    const host = a.split("/")[0];
+    // A local address (192.168.1.23, localhost) uses BlockOS's own game port; an internet name
+    // (like happy-blocks.trycloudflare.com) is reached over a secure connection.
+    if (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?$/i.test(host)) return "ws://" + (/:\d+$/.test(host) ? host : `${host}:${DEFAULT_GAME_PORT}`);
+    return "wss://" + host;
   }
   function joinServer(text) {
     const url = normalizeAddress(text);
@@ -931,7 +990,7 @@
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
   updateOnlinePill();
   lobbyConnect();
-  loadOnlineInfo();
+  loadOnlineInfo().then(watchInternet);
   loadSysInfo().then(() => render());
   setTimeout(() => $("#boot").classList.add("done"), 1300);
   setTimeout(() => $("#boot").remove(), 1900);

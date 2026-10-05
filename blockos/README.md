@@ -136,8 +136,13 @@ Open **Play Online** in BlockOS.
 - **Same Wi-Fi:** one person clicks **Start hosting**. Everyone else types the address it shows
   (like `192.168.1.23`) under **Join a server**. Games marked **Online** then put you all in the
   same world, where you see each other's avatars.
-- **Over the internet:** someone has to run the game server on a computer with a public address.
-  See [`multiplayer/README.md`](multiplayer/README.md).
+- **Friends anywhere in the world (Mac and Windows app):** the host clicks **Start hosting**, then
+  **Let friends anywhere join**. BlockOS downloads Cloudflare's free connector (`cloudflared`, about
+  20 MB, the first time only) and shows an address like `wss://happy-blocks-123.trycloudflare.com`.
+  Friends type it under **Join a server**. Keep BlockOS open while people play. The address
+  changes each time, and Cloudflare's free tunnels have no uptime guarantee.
+- **Your own always-on server:** run the game server on a computer or cloud server with a public
+  address. See [`multiplayer/README.md`](multiplayer/README.md).
 
 **Chat:** in an online game press `/` (or tap **Chat**), type, and press Enter. Messages show in the
 chat log and as bubbles over heads in 3D games.

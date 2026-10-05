@@ -13,6 +13,7 @@ const { pathToFileURL } = require("url");
 // Packaged: the desktop is copied next to this file. Running from the repo: use ../shell.
 const SHELL_DIR = app.isPackaged ? path.join(__dirname, "shell") : path.join(__dirname, "..", "shell");
 const relay = require(app.isPackaged ? "./relay.js" : "../multiplayer/relay.js");
+const { createTunnel } = require("./tunnel.js");
 
 // "Host a server" on the Play Online page runs the game server inside the app.
 const GAME_PORT = 8790;
@@ -23,8 +24,11 @@ function lanAddresses() {
     .filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i.address);
 }
 
+// "Let friends anywhere join": a Cloudflare quick tunnel to the game server (see tunnel.js).
+const tunnel = createTunnel({ dir: () => path.join(app.getPath("userData"), "bin"), fetch: (u) => net.fetch(u), port: GAME_PORT });
+
 function onlineInfo() {
-  return { hosting: !!gameServer, port: GAME_PORT, addresses: gameServer ? lanAddresses() : [] };
+  return { hosting: !!gameServer, port: GAME_PORT, addresses: gameServer ? lanAddresses() : [], internet: tunnel.info() };
 }
 
 async function setHosting(on) {
@@ -33,8 +37,19 @@ async function setHosting(on) {
     await server.ready;   // throws if the port is busy
     gameServer = server;
   } else if (!on && gameServer) {
+    tunnel.stop();
     await gameServer.close();
     gameServer = null;
+  }
+  return onlineInfo();
+}
+
+async function setInternet(on) {
+  if (on) {
+    await setHosting(true);
+    tunnel.start();
+  } else {
+    tunnel.stop();
   }
   return onlineInfo();
 }
@@ -91,7 +106,10 @@ async function handleApi(request, pathname) {
   try { data = await request.json(); } catch (_) { return json(400, { error: "bad json" }); }
 
   if (pathname === "/api/online") {
-    try { return json(200, await setHosting(!!data.host)); } catch (e) { return json(500, { error: e.message }); }
+    try {
+      if ("internet" in data) return json(200, await setInternet(!!data.internet));
+      return json(200, await setHosting(!!data.host));
+    } catch (e) { return json(500, { error: e.message }); }
   }
   if (pathname === "/api/launch") {
     const cmd = NATIVE_APPS[data.app];
@@ -154,3 +172,4 @@ app.whenReady().then(() => {
   });
 });
 app.on("window-all-closed", () => app.quit());
+app.on("before-quit", () => tunnel.stop());

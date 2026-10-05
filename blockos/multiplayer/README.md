@@ -15,7 +15,15 @@ One person opens **Play Online** in BlockOS and clicks **Start hosting**. Everyo
 address it shows (like `192.168.1.23`) under **Join a server**. On a Mac, macOS may ask whether
 BlockOS may accept incoming network connections; click **Allow**.
 
-## Playing over the internet
+## Playing over the internet, the easy way
+
+In the BlockOS app for Mac or Windows, the host clicks **Start hosting** and then **Let friends
+anywhere join** on the Play Online page. BlockOS opens a free Cloudflare quick tunnel (see
+`mac-app/tunnel.js`) and shows a `wss://...trycloudflare.com` address for friends to join. No
+account is needed, but the address changes every time and Cloudflare gives no uptime guarantee
+for these tunnels.
+
+## Playing over the internet with your own server
 
 Friends who aren't on your Wi-Fi need a server with a public address:
 

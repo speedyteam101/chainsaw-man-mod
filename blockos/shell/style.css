@@ -445,3 +445,5 @@ select {
 .dm-send input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg2); }
 .dm-note { margin: 0; color: var(--muted); font-size: 12px; }
 .dm-count { display: inline-block; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--red); color: #fff; font-style: normal; font-size: 11px; line-height: 18px; }
+.public-addr { font-size: 15px; padding: 8px 12px !important; overflow-wrap: anywhere; }
+.panel .bad { color: var(--red); font-weight: 700; }
