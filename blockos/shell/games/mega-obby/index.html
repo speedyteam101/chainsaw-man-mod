@@ -61,6 +61,22 @@ class Frame {
   spinFwd(m, a) { if (this.h % 2) m.rotation.set(a * (this.h === 1 ? 1 : -1), 0, 0); else m.rotation.set(0, 0, a * (this.h === 0 ? -1 : 1)); m.updateMatrixWorld(); }
 }
 
+// Fewer draw calls: the kit gives every box six material groups; regroup the faces so each part
+// draws as two batches (sides + studded top), or one when the top looks the same as the sides.
+// (Not used on parts whose material we swap later.)
+function slim(mesh) {
+  const g = mesh.geometry, mats = mesh.material;
+  if (!mesh.isMesh || !Array.isArray(mats) || !g.index || g.userData.slim) return;
+  g.userData.slim = true;
+  if (mats.every((m) => m === mats[0])) { g.clearGroups(); mesh.material = mats[0]; return; }
+  const idx = g.index.array, out = new idx.constructor(idx.length);
+  let o = 0;
+  for (const face of [0, 1, 3, 4, 5, 2]) for (let k = 0; k < 6; k++) out[o++] = idx[face * 6 + k];
+  g.setIndex(new THREE.BufferAttribute(out, 1));
+  g.clearGroups(); g.addGroup(0, 30, 0); g.addGroup(30, 6, 1);
+  mesh.material = [mats[0], mats[2]];
+}
+
 // ------------------------------------------------------------------ shared systems
 const anims = [];          // fn(t, dt)
 const hazards = [];        // { mesh, on: () => bool }  kill when touched while on
@@ -537,6 +553,11 @@ function buildSecret(F) {
     else Kit.sfx("coin");
     banner("Secret found!", "There's always something off the path");
   } });
+}
+
+{
+  const keep = new Set([...fallers.map((q) => q.m), ...pads.map((p) => p.glow)]);
+  for (const m of world.parts) if (!keep.has(m)) slim(m);
 }
 
 // a sea of clouds far below, so you can feel the height

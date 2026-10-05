@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f8fe0"/><stop offset="1" stop-color="#b9e3ff"/></linearGradient>
+  </defs>
+  <rect width="480" height="270" fill="url(#sky)"/>
+  <g fill="#ffffff" opacity=".75"><rect x="30" y="40" width="70" height="14"/><rect x="46" y="30" width="34" height="12"/><rect x="380" y="60" width="80" height="14"/><rect x="398" y="50" width="40" height="12"/></g>
+  <!-- ground -->
+  <rect x="0" y="236" width="480" height="34" fill="#3f8a35"/>
+  <rect x="0" y="236" width="480" height="5" fill="#57a84a"/>
+  <!-- tower frame: sections stacked, each with its own color -->
+  <g>
+    <rect x="170" y="186" width="140" height="50" fill="#ef4444" opacity=".14"/>
+    <rect x="170" y="136" width="140" height="50" fill="#facc15" opacity=".14"/>
+    <rect x="170" y="86" width="140" height="50" fill="#22c55e" opacity=".14"/>
+    <rect x="170" y="36" width="140" height="50" fill="#3b82f6" opacity=".14"/>
+    <rect x="170" y="0" width="140" height="36" fill="#a855f7" opacity=".14"/>
+    <g fill="none" stroke-width="5">
+      <path d="M170 236 V186 M310 236 V186 M170 186 H310" stroke="#ef4444"/>
+      <path d="M170 186 V136 M310 186 V136 M170 136 H310" stroke="#facc15"/>
+      <path d="M170 136 V86 M310 136 V86 M170 86 H310" stroke="#22c55e"/>
+      <path d="M170 86 V36 M310 86 V36 M170 36 H310" stroke="#3b82f6"/>
+      <path d="M170 36 V0 M310 36 V0" stroke="#a855f7"/>
+    </g>
+  </g>
+  <!-- obstacles inside -->
+  <rect x="190" y="214" width="34" height="8" fill="#94a3b8"/><rect x="240" y="200" width="30" height="8" fill="#94a3b8"/><rect x="276" y="188" width="24" height="8" fill="#94a3b8"/>
+  <rect x="226" y="176" width="64" height="9" fill="#475569"/>
+  <polygon points="200,158 300,150 300,156 200,164" fill="#ff2d2d"/>
+  <rect x="184" y="166" width="40" height="8" fill="#eab308"/>
+  <rect x="236" y="120" width="44" height="8" fill="#16a34a"/><rect x="190" y="104" width="30" height="8" fill="#16a34a"/>
+  <rect x="178" y="122" width="124" height="5" fill="#ff6a00" opacity=".85"/>
+  <rect x="250" y="70" width="40" height="8" fill="#2563eb"/><rect x="196" y="56" width="34" height="8" fill="#2563eb"/>
+  <rect x="234" y="44" width="18" height="6" fill="#4ade80"/>
+  <!-- top with trophy -->
+  <rect x="216" y="22" width="48" height="8" fill="#ca8a04"/>
+  <rect x="234" y="2" width="12" height="20" fill="#facc15"/>
+  <!-- a stopwatch -->
+  <rect x="393" y="86" width="14" height="10" fill="#334155"/>
+  <circle cx="400" cy="124" r="30" fill="#0f1113" opacity=".8"/>
+  <circle cx="400" cy="124" r="24" fill="#f8fafc"/>
+  <path d="M400 124 V106" stroke="#111" stroke-width="4"/>
+  <path d="M400 124 L414 132" stroke="#ef4444" stroke-width="4"/>
+  <circle cx="400" cy="124" r="3" fill="#111"/>
+  <!-- climbing player -->
+  <g transform="translate(206 128) scale(.85)">
+    <rect x="-12" y="0" width="24" height="22" fill="#facc15"/>
+    <rect x="-8" y="6" width="4" height="6" fill="#111"/><rect x="4" y="6" width="4" height="6" fill="#111"/>
+    <rect x="-18" y="22" width="36" height="32" fill="#3b82f6"/>
+    <rect x="-30" y="6" width="12" height="32" fill="#facc15" transform="rotate(-25 -24 22)"/>
+    <rect x="18" y="6" width="12" height="32" fill="#facc15" transform="rotate(25 24 22)"/>
+    <rect x="-17" y="54" width="16" height="28" fill="#22c55e" transform="rotate(12 -9 54)"/>
+    <rect x="1" y="54" width="16" height="28" fill="#22c55e" transform="rotate(-14 9 54)"/>
+  </g>
+  <!-- a second climber below -->
+  <g transform="translate(272 168) scale(.55)">
+    <rect x="-12" y="0" width="24" height="22" fill="#facc15"/>
+    <rect x="-18" y="22" width="36" height="32" fill="#ef4444"/>
+    <rect x="-17" y="54" width="16" height="28" fill="#1f2937"/><rect x="1" y="54" width="16" height="28" fill="#1f2937"/>
+    <rect x="-30" y="22" width="12" height="30" fill="#facc15"/><rect x="18" y="22" width="12" height="30" fill="#facc15"/>
+  </g>
+</svg>

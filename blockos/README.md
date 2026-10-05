@@ -12,13 +12,15 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 
 ![BlockOS home screen](docs/home.png)
 ![The Game Menu](docs/menu.png)
+![Dungeon Quest, a 3D RPG](docs/dungeon-quest.png)
+![Survival Island, a 3D survival game](docs/survival-island.png)
 
 ## What's inside
 
 | Part | Where | What it does |
 | --- | --- | --- |
 | Desktop shell | `shell/` | The BlockOS desktop: Home, Discover, Avatar (with a shop), Apps, Settings, the Game Menu and the in-game menu. Plain HTML/CSS/JS, works offline. |
-| Games | `shell/games/` | 58 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
+| Games | `shell/games/` | 65 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
 | 3D kit | `shell/games/kit3d.js` | Roblox-style 3D worlds (bundled three.js): studded parts, your avatar as a 3D character, camera, physics, other online players. |
 | Game server | `multiplayer/relay.js` | Lets players play together online (Node.js). Hosted from the Play Online page, or on the internet. |
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
@@ -126,19 +128,20 @@ play as your own avatar.
 
 ## Games
 
-58 original games, sorted by genre in the Game Menu.
+65 original games, sorted by genre in the Game Menu. Every game awards badges.
 
 | Genre | Games |
 | --- | --- |
-| **Action** | Battle Tanks, Blob Rush, Disaster Island, Getaway, Sword Duel, The Floor Is Lava |
+| **Action** | Battle Tanks, Blob Rush, Disaster Island, Getaway, Sword Arena (3D, online), Sword Duel, The Floor Is Lava |
 | **Adventure** | Maze Escape |
 | **Arcade** | Bonk-a-Block, Brick Breaker, Brick Pinball, Brick Snake, Cave Copter, Flap Block, Ninja Run, Rhythm Tap, Road Hopper, Sky Jumper, Space Blaster, Tower Stack |
 | **Board** | Checkers, Dots and Boxes, Four in a Row, Reversi, Tic Tac Block |
 | **Card** | Solitaire |
-| **Obby** | Obby Run, Tower Climb |
+| **Obby** | Mega Obby (3D, online), Obby Run, Tower Climb, Tower Rush (3D, online) |
 | **Puzzle** | Block Drop, Brick 2048, Bubble Pop, Color Echo, Color Sort, Gem Bricks, Lights Out, Math Blitz, Memory Bricks, Mine Sweep, Pipe Connect, Pixel Logic, Slide Puzzle, Sudoku Blocks |
+| **RPG** | Brick Legends, Dungeon Quest (3D, online), Survival Island (3D, online) |
 | **Racing** | Kart Dash, Turbo Lanes, Typing Racer |
-| **Simulator** | Brick Tycoon, Fishing Frenzy, Mining Sim, Pet Hatchery, Pizza Shop |
+| **Simulator** | Brick Plaza (3D, online), Brick Tycoon, Fishing Frenzy, Mining Sim, Pet Hatchery, Pizza Shop |
 | **Sports** | Air Hockey, Basket Toss, Block Bowling, Block Golf, Paddle Clash, Penalty Kick |
 | **Strategy** | Brick Defense |
 | **Word** | Word Bricks, Word Search |
@@ -149,7 +152,8 @@ play as your own avatar.
    as a starting point. It uses the shared helpers in `shell/games/kit.js` (canvas setup, keyboard,
    game loop, start/game-over screens, sounds, best scores), which are documented at the top of that file.
 2. Add a `thumb.svg` (480 x 270) for the game card.
-3. Add a `meta.json` (copy brick-snake's) and run `python3 blockos/tools/gen-catalog.py` to rebuild `shell/games/catalog.js`.
+3. Add a `meta.json` (copy brick-snake's; add `"is3d": true` / `"multiplayer": true` if they apply) and run `python3 blockos/tools/gen-catalog.py` to rebuild `shell/games/catalog.js`.
+   For a 3D game, start from `shell/games/_example3d/` and the API notes at the top of `shell/games/kit3d.js`.
 4. Call `Kit.finish("my-game", score)` when a round ends so the player earns Bricks.
 
 On an installed system, copy the changed `shell/` folder to `/opt/blockos/shell`, or simply run

@@ -43,16 +43,26 @@ const SPAWN = [0, 0, 40];
 
 const world = new World({ sky: "#93d2ff", fogNear: 220, fogFar: 650 });
 window.world = world;
-world.baseplate(320, "#4b9b3f");
+world.baseplate(200, "#4b9b3f");
+// cheap flat grass all around the baseplate (no overlap, so it costs almost nothing to draw)
+{
+  const mat = new THREE.MeshBasicMaterial({ color: "#4f9a44" });
+  for (const [x, z, w, d] of [[0, -350, 900, 500], [0, 350, 900, 500], [-350, 0, 500, 200], [350, 0, 500, 200]]) {
+    const g = new THREE.Mesh(new THREE.PlaneGeometry(w, d, 4, 4), mat);
+    g.rotation.x = -Math.PI / 2; g.position.set(x, -0.02, z); world.scene.add(g);
+  }
+}
 world.spawnPad(SPAWN);
-world.label("TOWER RUSH", { pos: [0, 12, 52], height: 4 });
+world.label("TOWER RUSH", { pos: [-20, 13, 30], height: 4 });
 // a little lobby: benches and a path to the tower
 world.part({ size: [6, 0.2, 24], pos: [0, 0.1, 22], color: "#d6d3d1", studs: false });
 for (const x of [-9, 9]) {
   world.part({ size: [5, 1, 1.6], pos: [x, 0.5, 44], color: "#a16207", material: "wood" });
-  world.part({ size: [1, 6, 1], pos: [x * 1.6, 3, 30], color: "#6b4f2a", material: "wood" });
-  world.part({ size: [4.5, 4, 4.5], pos: [x * 1.6, 7, 30], color: "#16a34a" });
+  world.part({ size: [1, 6, 1], pos: [x * 2.6, 3, 30], color: "#6b4f2a", material: "wood" });
+  world.part({ size: [4.5, 4, 4.5], pos: [x * 2.6, 7, 30], color: "#16a34a" });
 }
+
+for (const m of world.parts) slim(m);
 
 // ------------------------------------------------------------------ helpers
 function mulberry32(a) {
@@ -88,6 +98,22 @@ function L(s) {
 function alongX(s) { s = ((s % PER) + PER) % PER; return s < 9.5 || (s >= 28.5 && s < 47.5) || s >= 66.5; }
 function outward(s) { const [x, f] = L(s); return alongX(s) ? [0, Math.sign(f)] : [Math.sign(x), 0]; }
 function travel(s) { s = ((s % PER) + PER) % PER; return s < 9.5 ? [1, 0] : s < 28.5 ? [0, -1] : s < 47.5 ? [-1, 0] : s < 66.5 ? [0, 1] : [1, 0]; }
+
+// Fewer draw calls: the kit gives every box six material groups; regroup the faces so each part
+// draws as two batches (sides + studded top), or one when the top looks the same as the sides.
+// (Not used on parts whose material we swap later.)
+function slim(mesh) {
+  const g = mesh.geometry, mats = mesh.material;
+  if (!mesh.isMesh || !Array.isArray(mats) || !g.index || g.userData.slim) return;
+  g.userData.slim = true;
+  if (mats.every((m) => m === mats[0])) { g.clearGroups(); mesh.material = mats[0]; return; }
+  const idx = g.index.array, out = new idx.constructor(idx.length);
+  let o = 0;
+  for (const face of [0, 1, 3, 4, 5, 2]) for (let k = 0; k < 6; k++) out[o++] = idx[face * 6 + k];
+  g.setIndex(new THREE.BufferAttribute(out, 1));
+  g.clearGroups(); g.addGroup(0, 30, 0); g.addGroup(30, 6, 1);
+  mesh.material = [mats[0], mats[2]];
+}
 
 // ------------------------------------------------------------------ the tower's moving bits
 let towerParts = [];
@@ -182,7 +208,8 @@ const SECTIONS = {
   },
   sweepers(S) {
     const T = tiers(S, 4, S.c);
-    T.forEach((t, k) => spinArms(S, t.top + 1.5, 5, 11, (0.7 + S.d * 0.4) * (k % 2 ? -1 : 1), 2, k));
+    // (no arms on the lowest tier: they'd reach down to people climbing up from the section below)
+    T.forEach((t, k) => { if (k > 0) spinArms(S, t.top + 1.5, 5, 11, (0.7 + S.d * 0.4) * (k % 2 ? -1 : 1), 2, k); });
     return 17;
   },
   lava(S) {
@@ -203,7 +230,7 @@ const SECTIONS = {
   },
   ladder(S) {
     const n = 10, size = 2.2 - S.d * 0.4;
-    for (let k = 0; k < n; k++) blkAt(S, 3 + k * 4.8, 3 * (k + 1), size, k % 2 ? "#f8fafc" : S.c);
+    for (let k = 0; k < n; k++) blkAt(S, 12 + k * 4.8, 3 * (k + 1), size, k % 2 ? "#f8fafc" : S.c);
     return 3 * (n + 1);
   },
   pushers(S) {
@@ -225,25 +252,26 @@ const SECTIONS = {
     return 17;
   },
   bounce(S) {
-    const P = [[3, 1], [12.5, 11], [22, 21], [31.5, 31]];
-    P.forEach(([s, top], k) => {
-      const [x, f] = L(s);
-      S.F.blk(x, top, f, 5, 5, k === 3 ? "#e2e8f0" : S.c);
-      if (k < 3) launchPad(S.F, x, top, f, 3.6, 15);
-    });
+    for (let k = 0; k < 6; k++) {
+      const [x, f] = L(3 + k * 10.5), top = 1 + k * 6;
+      S.F.blk(x, top, f, 5, 5, k === 5 ? "#e2e8f0" : S.c);
+      if (k < 5) launchPad(S.F, x, top, f, 3.6, 12);
+    }
     return 34;
   },
   pillar(S) {
-    const H = 21, w = 2 - S.d * 0.4, e = 4.5 + w / 2, lo = -4.5 - w, hi = 4.5 + w;
+    const H = 25, w = 2 - S.d * 0.4, e = 4.5 + w / 2, lo = -4.5 - w, hi = 4.5 + w;
     // a pillar in the middle (thin enough that the ledges around it never bump your head)
     S.F.part({ at: [0, (12.5 + H - 1) / 2, 0], size: [7, H - 1 - 12.5, 7], color: "#475569" });
     // six ledges circling the pillar, each starting after the previous one's corner
+    // a first step out on the +x side (away from where the section below ends), then the ledges
+    S.F.blk(5.5, 3.5, 8.5, 3, 3, "#e2e8f0");
     const faces = [
-      [[lo, hi], e, true], [[3.5, lo], e, false], [[3.5, lo], -e, true],
-      [[-3.5, hi], -e, false], [[-3.5, hi], e, true], [[3.5, lo], e, false],
+      [[3.5, lo], e, false], [[3.5, lo], -e, true], [[-3.5, hi], -e, false],
+      [[-3.5, hi], e, true], [[3.5, lo], e, false], [[3.5, lo], -e, true],
     ];
     faces.forEach(([[a, b], c, alongXf], k) => {
-      const top = 3 + k * 3, len = Math.abs(b - a), mid = (a + b) / 2;
+      const top = 7 + k * 3, len = Math.abs(b - a), mid = (a + b) / 2;
       if (alongXf) S.F.blk(mid, top, c, len, w, k % 2 ? "#f8fafc" : S.c);
       else S.F.blk(c, top, mid, w, len, k % 2 ? "#f8fafc" : S.c);
     });
@@ -251,20 +279,25 @@ const SECTIONS = {
   },
   elevators(S) {
     const w = 0.9 + S.d * 0.4;
-    [[4, 1], [13, 9.5], [22, 18]].forEach(([s, b], k) => {
+    [[33, 1], [42, 9.5], [51, 18]].forEach(([s, b], k) => {
       const [x, f] = L(s);
       const m = S.F.part({ at: [x, b - 0.5, f], size: [5, 1, 5], color: S.c, moving: true });
       anims.push(() => S.F.place(m, x, b + 4.25 * (1 - Math.cos(rt * w + k * Math.PI)) - 0.5, f));
     });
-    blkAt(S, 31, 26.5, 5, "#e2e8f0");
+    blkAt(S, 60, 26.5, 5, "#e2e8f0");
     return 29.5;
   },
   killSteps(S) {
+    let side = 1, edge = -1;
     for (let k = 0; k < 9; k++) {
       const s = 5 + k * 7, top = 2.3 * (k + 1), [x, f] = L(s), [ox, of] = outward(s);
       S.F.blk(x, top, f, 6, 6, S.c);
-      const side = k % 2 ? -1 : 1;   // the outer half is red, then the inner half...
-      S.F.part({ at: [x + ox * side * 1.8, top + 0.15, f + of * side * 1.8], size: alongX(s) ? [6, 0.3, 2.4] : [2.4, 0.3, 6], color: "#ff2d2d", material: "neon", kill: true, studs: false });
+      // a red strip along the outer edge, then the inner edge... (always the outer edge right after
+      // a corner, so a strip never lies across your path)
+      const e = CORNERS.filter((c) => c <= s).length;
+      side = e !== edge || k === 8 ? 1 : -side;
+      edge = e;
+      S.F.part({ at: [x + ox * side * 2.1, top + 0.15, f + of * side * 2.1], size: alongX(s) ? [6, 0.3, 1.8] : [1.8, 0.3, 6], color: "#ff2d2d", material: "neon", kill: true, studs: false });
     }
     return 2.3 * 10;
   },
@@ -358,12 +391,9 @@ function buildTower(seed, forceKeys) {
     // (sections are never mirrored: each one ends on the far side of the loop from where the next one starts)
     const S = { F: new Frame(new THREE.Vector3(0, y, 0), 1), d: k / (SECTION_COUNT - 1), c, rng, tip: "" };
     const H = SECTIONS[key](S);
-    // corner posts and a ring at the top of the section, so you can see the floors
-    for (const [cx, cz] of [[-14.5, -14.5], [14.5, -14.5], [-14.5, 14.5], [14.5, 14.5]]) {
-      track(world.part({ size: [1, H, 1], pos: [cx, y + H / 2, cz], color: c, collide: false, studs: false }));
-    }
-    for (const [cx, cz, sx, sz] of [[0, -14.5, 30, 0.6], [0, 14.5, 30, 0.6], [-14.5, 0, 0.6, 30], [14.5, 0, 0.6, 30]]) {
-      track(world.part({ size: [sx, 0.6, sz], pos: [cx, y + H, cz], color: c, material: "neon", collide: false, studs: false, shadow: false }));
+    // a colored ring at the top of the section, so you can see the floors
+    for (const [cx, cz, sx, sz] of [[0, -14.5, 30, 0.35], [0, 14.5, 30, 0.35], [-14.5, 0, 0.35, 30], [14.5, 0, 0.35, 30]]) {
+      track(world.part({ size: [sx, 0.35, sz], pos: [cx, y + H, cz], color: c, material: "neon", collide: false, studs: false, shadow: false }));
     }
     const lab = world.label(String(k + 1), { pos: [14.5, y + 3, 14.5], height: 2.6 });
     track(lab);
@@ -371,6 +401,10 @@ function buildTower(seed, forceKeys) {
     y += H;
     if (k < SECTION_COUNT - 1) pad(y, c);
   });
+  // four tall corner posts frame the whole tower
+  for (const [cx, cz] of [[-14.5, -14.5], [14.5, -14.5], [-14.5, 14.5], [14.5, 14.5]]) {
+    track(world.part({ size: [1, y, 1], pos: [cx, y / 2, cz], color: "#e2e8f0", collide: false, studs: false }));
+  }
   // the top
   track(world.part({ size: [8, 1, 8], pos: [0, y - 0.5, 0], color: "#ca8a04" }));
   const fin = track(world.part({ size: [6, 0.3, 6], pos: [0, y + 0.15, 0], color: "#fde047", material: "neon", collide: false, studs: false, onTouch: () => reachTop() }));
@@ -378,6 +412,8 @@ function buildTower(seed, forceKeys) {
   track(world.part({ size: [3, 2.4, 3], pos: [0, y + 11.2, 0], color: "#facc15", material: "neon", collide: false, studs: false }));
   const topLab = world.label("TOP", { pos: [0, y + 15, 0], height: 3.4, color: "#fde047" });
   track(topLab);
+  const keep = new Set([...fallers.map((q) => q.m), ...blinkers.map((q) => q.m)]);
+  for (const m of towerParts) if (!keep.has(m)) slim(m);
   tower = { seed, sections, top: y, fin };
   return tower;
 }
@@ -431,7 +467,7 @@ function startRound(seed, timeLeft, forceKeys) {
   rt = ROUND - left;
   best = 0; won = false; scored = false;
   world.checkpoint(SPAWN);
-  if (me.alive) { me.pos.set(...SPAWN); me.vel.set(0, 0, 0); me.yaw = world.cam.yaw = 0; }
+  if (me.alive) { me.pos.set(...SPAWN); me.vel.set(0, 0, 0); me.yaw = world.cam.yaw = 0; world.cam.pitch = 0.02; world.cam.dist = 18; }
   fallTop = me.pos.y;
   if (playing) banner("New tower!", `${SECTION_COUNT} sections - reach the top in ${fmt(left)}`, 3);
 }
@@ -459,7 +495,7 @@ function reachTop() {
   if (!playing || phase !== "play" || won) return;
   won = true;
   wins++;
-  wonAt = ROUND - left;
+  wonAt = Math.max(0, ROUND - left);
   best = heightOf(tower.top);
   try { localStorage.setItem("blockos.towerrush.wins", String(wins)); } catch (_) {}
   Kit.sfx("win");
