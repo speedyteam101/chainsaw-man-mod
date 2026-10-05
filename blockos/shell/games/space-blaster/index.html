@@ -48,12 +48,22 @@ function makeRock(size, x, y, vx, vy) {
   const cells = [];
   const hue = Kit.pick([24, 30, 210, 220, 260, 15]);
   const sat = hue > 200 ? 18 : 28;
+  // Chunky, always-connected blob: the core is solid, edge cells are knocked off at random.
+  const keep = [];
   for (let i = 0; i < spec.n; i++) {
+    keep.push([]);
     for (let j = 0; j < spec.n; j++) {
       const d = Math.hypot(i - c, j - c);
-      if (spec.n > 2 && d > c + 0.2 && Math.random() < 0.75) continue; // knock off corners
-      if (spec.n >= 5 && d > 1.4 && Math.random() < 0.25) continue; // ragged edges
-      if (spec.n === 2 && cells.length === 3 && Math.random() < 0.3) continue;
+      let p = 1;
+      if (spec.n === 5) p = d <= 1.5 ? 1 : d <= 2 ? 0.85 : d <= 2.3 ? 0.55 : 0;
+      else if (spec.n === 3) p = d <= 1 ? 1 : 0.45;
+      keep[i].push(Math.random() < p);
+    }
+  }
+  if (spec.n === 2 && Math.random() < 0.4) keep[Kit.randInt(0, 1)][Kit.randInt(0, 1)] = false;
+  for (let i = 0; i < spec.n; i++) {
+    for (let j = 0; j < spec.n; j++) {
+      if (!keep[i][j]) continue;
       const l = Kit.randInt(36, 54);
       cells.push({ x: (i - c) * spec.cell, y: (j - c) * spec.cell, color: `hsl(${hue},${sat}%,${l}%)` });
     }
@@ -530,19 +540,16 @@ function draw() {
   // lives
   for (let i = 0; i < lives; i++) {
     ctx.save();
-    ctx.translate(26 + i * 30, 54);
+    ctx.translate(26 + i * 30, 56);
     ctx.rotate(-Math.PI / 2);
     ctx.scale(0.7, 0.7);
     drawShipShape(ctx, false);
     ctx.restore();
   }
-  ctx.fillStyle = "#f2f4f5";
-  ctx.font = `800 22px ${FONT}`;
-  ctx.textAlign = "left";
-  ctx.fillText(String(score), 14, 30);
   ctx.fillStyle = "rgba(242,244,245,.55)";
   ctx.font = `700 14px ${FONT}`;
-  ctx.fillText(`WAVE ${wave}`, 14, 84);
+  ctx.textAlign = "left";
+  ctx.fillText(`WAVE ${wave}`, 14, 30);
 
   if (banner) {
     ctx.globalAlpha = Math.min(1, banner.t * 2);
