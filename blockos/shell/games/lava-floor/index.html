@@ -13,6 +13,9 @@
 const ID = "lava-floor";
 const COLS = 15, ROWS = 11, TS = 44;
 const { canvas, ctx, W, H } = Kit.stage(720, 560);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let leapedLava = false;   // the hop-over-lava badge is checked once per visit
 const GX = (W - COLS * TS) / 2, GY = 62;            // top-left corner of the arena
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 
@@ -117,6 +120,8 @@ function playerTile() {
 let lastPattern = "";
 function startWave() {
   wave++;
+  if (wave - 1 >= 5) badge("wave-5", "Hot Feet", "Survive 5 waves of lava.");
+  if (wave - 1 >= 15) badge("wave-15", "Lava Walker", "Survive 15 waves of lava.");
   const pool = Object.keys(PATTERNS).filter((k) => PATTERNS[k].from <= wave && k !== lastPattern);
   const key = Kit.pick(pool);
   lastPattern = key;
@@ -227,6 +232,8 @@ function update(dt) {
       const v = c.gem ? 250 : 50;
       score += v;
       coinCount += c.gem ? 5 : 1;
+      if (c.gem) badge("gem", "Gem Snatcher", "Grab a blue gem before it fades.");
+      if (coinCount >= 30) badge("coins-30", "Coin Collector", "Collect 30 coins in one run.");
       Kit.sfx("coin");
       popups.push({ x: c.x, y: c.y, text: "+" + v, t: 0, color: c.gem ? "#67e8f9" : "#facc15" });
       puff(c.x, c.y, c.gem ? "#67e8f9" : "#facc15", 10);
@@ -241,6 +248,10 @@ function update(dt) {
   updateHud();
 
   // burn?
+  if (player.hop > 0 && !leapedLava) {
+    const t = tileUnder(player.x, player.y);
+    if (t && t.s === LAVA) { leapedLava = true; badge("lava-leap", "Lava Leap", "Hop clean over a lava tile."); }
+  }
   if (player.hop <= 0) {
     const t = tileUnder(player.x, player.y);
     if (t && t.s === LAVA) die();
@@ -360,29 +371,19 @@ function drawPlayer() {
   ctx.beginPath(); ctx.ellipse(p.x, p.y + 10, 14 - air * 5, 6 - air * 2, 0, 0, Math.PI * 2); ctx.fill();
   const y = p.y - air * 26;
   const s = 1 + air * 0.25;
+  if (Math.abs(p.face.x) > 0.2) p.facing = p.face.x > 0 ? 1 : -1;
+  const moving = Math.hypot(p.vx, p.vy) > 30;
+  // your own avatar, feet on the brick
   ctx.save();
-  ctx.translate(p.x, y);
+  ctx.translate(p.x, y + 12);
   ctx.scale(s, s);
-  const step = Math.sin(p.walk * 2) * (Math.hypot(p.vx, p.vy) > 30 ? 3 : 0);
-  // legs
-  ctx.fillStyle = "#1e3a8a";
-  ctx.fillRect(-9, 4 + step, 7, 9);
-  ctx.fillRect(2, 4 - step, 7, 9);
-  // arms
-  ctx.fillStyle = "#facc15";
-  ctx.fillRect(-15, -6 - step, 5, 11);
-  ctx.fillRect(10, -6 + step, 5, 11);
-  // torso + head
-  Kit.brick(ctx, -11, -8, 22, 15, "#3b82f6", 3);
-  Kit.brick(ctx, -8, -22, 16, 14, "#facc15", 3);
-  // face looks where you're heading
-  const fx = p.face.x * 3, fy = Math.max(-1, p.face.y) * 2;
-  ctx.fillStyle = "#111827";
-  if (p.face.y > -0.7) {
-    ctx.fillRect(-5 + fx, -18 + fy, 3, 3);
-    ctx.fillRect(2 + fx, -18 + fy, 3, 3);
-    ctx.fillRect(-2 + fx, -13 + fy, 4, 1.5);
-  }
+  Kit.drawAvatar(ctx, 0, 0, 36, {
+    look: ME.avatar,
+    facing: p.facing || 1,
+    walk: moving ? p.walk * 2 : 0,
+    air: p.hop > 0,
+    name: ME.name,
+  });
   ctx.restore();
 }
 

@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Brick Plaza</title><link rel="stylesheet" href="../kit.css">
+<style>
+  #prompt { position: fixed; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 15; display: none;
+    background: rgba(20, 22, 25, .86); border: 1px solid #3a3f46; padding: 8px 16px; border-radius: 10px; font-weight: 800; white-space: nowrap; }
+  #prompt b { display: inline-block; background: #facc15; color: #111; border-radius: 6px; padding: 0 8px; margin-right: 8px; }
+  #emotes { position: fixed; left: 12px; bottom: 12px; z-index: 15; display: flex; gap: 6px; }
+  #emotes button { border: 0; border-radius: 8px; padding: 7px 11px; font: inherit; font-size: 13px; font-weight: 800; color: #fff;
+    background: rgba(20, 22, 25, .8); cursor: pointer; }
+  #emotes button span { color: #facc15; margin-right: 5px; }
+  #emotes button.on { background: #3b82f6; }
+  #banner { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 16; display: none; text-align: center;
+    background: rgba(20, 22, 25, .86); border: 2px solid #3a3f46; padding: 6px 18px; border-radius: 12px; font-weight: 800; font-size: 18px; }
+  #banner.it { border-color: #ef4444; color: #fecaca; }
+  #banner small { display: block; font-size: 12px; color: #a7adb4; font-weight: 700; }
+  #arc { position: fixed; left: 50%; top: 58%; transform: translate(-50%, -50%); z-index: 40; display: none; width: 380px;
+    background: #1e1b4b; border: 3px solid #22d3ee; border-radius: 14px; padding: 14px 18px; text-align: center; box-shadow: 0 0 40px rgba(34, 211, 238, .35); }
+  #arc h2 { margin: 0 0 4px; font-size: 20px; color: #f0abfc; letter-spacing: 1px; }
+  #arc p { margin: 4px 0 10px; color: #c7d2fe; font-size: 13px; font-weight: 700; }
+  #arcbar { position: relative; height: 34px; background: #0f0d2e; border-radius: 8px; overflow: hidden; border: 2px solid #4338ca; }
+  #arczone { position: absolute; top: 0; bottom: 0; background: #22c55e; }
+  #arcmark { position: absolute; top: -2px; bottom: -2px; width: 10px; margin-left: -5px; background: #facc15; border-radius: 3px; box-shadow: 0 0 10px #facc15; }
+  #arcdots { margin-top: 10px; display: flex; gap: 6px; justify-content: center; }
+  #arcdots i { width: 16px; height: 16px; border-radius: 4px; background: #312e81; }
+  #arcdots i.hit { background: #22c55e; } #arcdots i.miss { background: #ef4444; }
+</style>
+</head>
+<body>
+<div id="prompt"></div>
+<div id="banner"></div>
+<div id="emotes"></div>
+<div id="arc"><h2>BRICK STRIKER</h2><p id="arctext">Press E when the block is in the green!</p><div id="arcbar"><div id="arczone"></div><div id="arcmark"></div></div><div id="arcdots"></div></div>
+<script src="../kit.js"></script>
+<script type="module">
+import { World, THREE } from "../kit3d.js";
+
+const ID = "brick-plaza";
+const world = new World({ sky: "#8fd3ff", fogNear: 200, fogFar: 520 });
+window.world = world;
+const net = Kit.net(ID, { room: "main" });
+const now = () => performance.now();
+const $ = (id) => document.getElementById(id);
+
+// ======================================================================= helpers
+const occluders = [];
+function P(size, pos, color, o) {
+  const m = world.part(Object.assign({ size, pos, color }, o || {}));
+  if (o && o.occ) occluders.push(m);
+  return m;
+}
+const deco = (size, pos, color, o) => P(size, pos, color, Object.assign({ collide: false, studs: false, shadow: false }, o));
+const OCC = { occ: true };
+
+const matCache = new Map();
+const lam = (c) => { if (!matCache.has(c)) matCache.set(c, new THREE.MeshLambertMaterial({ color: c })); return matCache.get(c); };
+const basic = (c) => { const k = "b" + c; if (!matCache.has(k)) matCache.set(k, new THREE.MeshBasicMaterial({ color: c })); return matCache.get(k); };
+function mesh(geo, mat, x, y, z) { const m = new THREE.Mesh(geo, mat); m.position.set(x || 0, y || 0, z || 0); m.castShadow = true; return m; }
+
+let actx = null;
+function tone(freqs, len, type, vol, gap) {
+  try { if (localStorage.getItem("blockos.muted") === "1") return; } catch (_) {}
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    let t = actx.currentTime;
+    for (const f of freqs) {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "sine"; o.frequency.value = f;
+      g.gain.setValueAtTime(vol || 0.1, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len);
+      o.connect(g).connect(actx.destination);
+      o.start(t); o.stop(t + len);
+      t += gap || 0;
+    }
+  } catch (_) {}
+}
+const save = (k, v) => { try { localStorage.setItem("brick-plaza." + k, JSON.stringify(v)); } catch (_) {} };
+const load = (k, d) => { try { const v = JSON.parse(localStorage.getItem("brick-plaza." + k)); return v == null ? d : v; } catch (_) { return d; } };
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+
+// ======================================================================= interactables & seats
+const interacts = [];
+function addInteract(pos, r, label, act, extra) {
+  const it = Object.assign({ pos: new THREE.Vector3(pos[0], pos[1], pos[2]), r, label, act }, extra || {});
+  interacts.push(it);
+  return it;
+}
+const YAW = { n: 0, s: Math.PI, e: -Math.PI / 2, w: Math.PI / 2 };
+const DIR = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+// A bench: the sitter looks toward `face`.
+function bench(x, z, face, base, color, label) {
+  base = base ?? 0;
+  color = color || "#9a5b2e";
+  const along = face === "n" || face === "s";
+  const d = DIR[face];
+  P(along ? [6, 0.6, 2] : [2, 0.6, 6], [x, base + 1.7, z], color, { material: "wood" });
+  for (const s of [-2.3, 2.3]) P([0.6, 1.4, 1.6], [x + (along ? s : 0), base + 0.7, z + (along ? 0 : s)], "#4b5563", { shadow: false });
+  P(along ? [6, 2.4, 0.5] : [0.5, 2.4, 6], [x - d[0] * 1.25, base + 3.2, z - d[1] * 1.25], color, { material: "wood" });
+  addInteract([x, base + 2, z], 3.2, label || "Sit on bench", () => sitAt([x, base + 2, z], YAW[face]));
+}
+function seatSpot(x, y, z, face, label, r) {
+  addInteract([x, y, z], r || 3, label, () => sitAt([x, y, z], YAW[face]));
+}
+
+// ======================================================================= the world
+const GRASS = "#5cae4c";
+function ground(x0, x1, z0, z1) { P([x1 - x0, 2, z1 - z0], [(x0 + x1) / 2, -1, (z0 + z1) / 2], GRASS); }
+// The ground has a hole where the swimming pool is.
+ground(-160, 58, -160, 160); ground(92, 160, -160, 160); ground(58, 92, -160, 43); ground(58, 92, 77, 160);
+
+// Lamps glow at night (they share one material, so recoloring it changes them all).
+const LAMP = "#fff0a6", WIN = "#fde7a0";
+let lampMat = null, winMat = null;
+function lamp(x, z, base) {
+  base = base || 0;
+  P([0.6, 9, 0.6], [x, base + 4.5, z], "#374151", { shadow: false });
+  P([2, 0.4, 2], [x, base + 10.9, z], "#374151", { studs: false });
+  const b = P([1.4, 1.4, 1.4], [x, base + 9.9, z], LAMP, { material: "neon", collide: false, shadow: false });
+  lampMat = b.material[0];
+}
+function tree(x, z, s) {
+  s = s || 1;
+  P([1.6, 7 * s, 1.6], [x, 3.5 * s, z], "#7c4a23", { material: "wood" });
+  P([7 * s, 4.5 * s, 7 * s], [x, 7 * s + 2, z], "#2f8f3a");
+  P([4.4 * s, 3 * s, 4.4 * s], [x, 7 * s + 2 + 3.7 * s, z], "#3fa34d");
+}
+
+// ---------------- plaza + fountain
+P([76, 0.2, 76], [0, 0.1, 0], "#d9d4ca");
+P([30, 0.1, 30], [0, 0.25, 0], "#bdb4a5");
+P([120, 0.2, 17], [0, 0.1, -46.5], "#cfc8bb");     // sidewalk in front of the shops
+P([18, 0.2, 10], [47, 0.1, 0], "#cfc8bb");         // path to the house
+P([16, 0.2, 24], [0, 0.1, 50], "#cfc8bb");         // path to the stage
+const FB = 0.3;
+for (const [sx, sz, w, d] of [[0, -8.5, 18, 1], [0, 8.5, 18, 1], [-8.5, 0, 1, 16], [8.5, 0, 1, 16]]) P([w, 1.6, d], [sx, FB + 0.8, sz], "#e5e7eb");
+deco([16, 1.1, 16], [0, FB + 0.55, 0], "#38bdf8", { material: "glass" });
+P([2, 5, 2], [0, FB + 2.5, 0], "#f1f5f9");
+P([6, 0.6, 6], [0, FB + 5.3, 0], "#e2e8f0");
+deco([5.2, 0.3, 5.2], [0, FB + 5.55, 0], "#7dd3fc", { material: "glass" });
+const spout = deco([0.8, 3, 0.8], [0, FB + 7.2, 0], "#bae6fd", { material: "neon" });
+const drops = [];
+for (let i = 0; i < 8; i++) drops.push(deco([0.5, 0.5, 0.5], [0, 8, 0], "#bae6fd", { material: "neon" }));
+bench(0, 12.5, "n", FB); bench(0, -12.5, "s", FB); bench(12.5, 0, "w", FB); bench(-12.5, 0, "e", FB);
+for (const [x, z] of [[-36, -36], [36, -36], [-36, 36], [36, 36], [-20, -40], [20, -40], [10, 42], [-10, 42], [45, 8], [-60, -5], [-90, -25], [-48, 36], [52, 36], [70, 34]]) lamp(x, z, 0.2);
+addInteract([0, FB, 9.8], 4, "Toss a coin in the fountain", () => tossCoin());
+addInteract([0, FB, -9.8], 4, "Toss a coin in the fountain", () => tossCoin());
+
+// ---------------- bell tower
+P([7, 1, 7], [-28, 0.7, -28], "#9ca3af");
+P([1.2, 13, 1.2], [-31, 7.7, -28], "#78716c"); P([1.2, 13, 1.2], [-25, 7.7, -28], "#78716c");
+P([8, 1.4, 1.6], [-28, 14.9, -28], "#57534e");
+P([9, 0.8, 3.4], [-28, 16, -28], "#b91c1c");
+const bell = new THREE.Group();
+bell.position.set(-28, 14.2, -28);
+bell.add(mesh(new THREE.CylinderGeometry(0.6, 1.6, 2.6, 14), lam("#eab308"), 0, -1.3, 0));
+bell.add(mesh(new THREE.SphereGeometry(0.35, 8, 6), lam("#78350f"), 0, -2.8, 0));
+world.scene.add(bell);
+let bellSwing = 0;
+addInteract([-28, 1.2, -28], 5.5, "Ring the bell", () => ringBell(true));
+
+// ---------------- Tag sign + teleport pads
+P([0.5, 4, 0.5], [16, 2.2, 24], "#374151");
+P([6, 3, 0.4], [16, 5.5, 24], "#dc2626");
+world.label("TAG", { pos: [16, 5.5, 24.5], height: 2.2 });
+addInteract([16, 0.2, 25.5], 4.5, "Start a round of Tag", () => requestTag());
+P([5, 0.3, 5], [-16, 0.35, 24], "#a855f7", { material: "neon", onTouch: () => teleport(82, 0.5, -85, -Math.PI / 2) });
+world.label("To Tag Court", { pos: [-16, 4, 24], height: 1.2 });
+
+// ---------------- shops
+function shop(cx, o) {
+  const z0 = -79, z1 = -55, H = 12, zc = (z0 + z1) / 2;
+  P([28, 0.2, 22], [cx, 0.1, zc], o.floor, { studs: false });
+  P([30, H, 1], [cx, H / 2, z0 + 0.5], o.wall, OCC);
+  P([1, H, 24], [cx - 14.5, H / 2, zc], o.wall, OCC);
+  P([1, H, 24], [cx + 14.5, H / 2, zc], o.wall, OCC);
+  const fz = z1 - 0.5;
+  for (const s of [-1, 1]) {
+    P([11, 3, 1], [cx + s * 9.5, 1.5, fz], o.wall, OCC);
+    P([11, 5, 1], [cx + s * 9.5, 5.5, fz], "#cfeeff", { material: "glass" });
+    P([11, 4, 1], [cx + s * 9.5, 10, fz], o.wall, OCC);
+  }
+  P([8, 4, 1], [cx, 10, fz], o.wall, OCC);
+  P([32, 1, 26], [cx, H + 0.5, zc], o.roof, OCC);
+  P([32, 0.8, 1], [cx, H + 1.4, z1 + 0.5], o.trim, { studs: false });
+  P([12, 0.4, 3], [cx, 8.4, z1 + 1.5], o.trim, { studs: false });
+  deco([10, 0.15, 6], [cx, H - 0.1, zc], "#fffbe6", { material: "neon" });
+  world.label(o.name, { pos: [cx, H + 3, z1 + 0.5], height: 2.6, color: o.label || "#ffffff" });
+}
+// Cafe
+shop(-45, { name: "CAFE", wall: "#f3d7a6", roof: "#7c2d12", floor: "#fef3c7", trim: "#dc2626" });
+P([16, 3.2, 2.4], [-45, 1.8, -69], "#8b5a2b", { material: "wood" });
+P([16.8, 0.4, 3], [-45, 3.6, -69], "#f5f5f4", { studs: false });
+P([2.4, 2.2, 1.6], [-50, 4.9, -69.4], "#64748b");
+deco([4, 1.6, 2], [-40, 4.6, -69], "#e0f2fe", { material: "glass" });
+deco([1, 0.6, 1], [-40.8, 4.2, -69], "#f472b6"); deco([1, 0.6, 1], [-39.2, 4.2, -69], "#a16207");
+P([12, 4, 0.3], [-45, 7.5, -78.3], "#1f2937", { studs: false });
+world.label("MENU", { pos: [-45, 8.6, -77.2], height: 1.3, color: "#fde68a" });
+world.label("Ice cream  Donut  Soda", { pos: [-45, 6.9, -77.2], height: 0.8 });
+for (const tx of [-54, -36]) {
+  P([0.8, 2.8, 0.8], [tx, 1.6, -61], "#4b5563", { shadow: false });
+  P([4.4, 0.4, 4.4], [tx, 3.2, -61], "#f8fafc", { studs: false });
+  for (const s of [-1, 1]) {
+    P([1.6, 1.8, 1.6], [tx + s * 3.6, 1.1, -61], "#ef4444");
+    seatSpot(tx + s * 3.6, 2, -61, s < 0 ? "e" : "w", "Sit on stool", 2.4);
+  }
+}
+addInteract([-45, 0.2, -66.3], 4, "Buy a snack", () => buySnack());
+// Clothing shop
+const HATS = ["Party Hat", "Top Hat", "Royal Crown", "Halo", "Chef Hat", "Bunny Ears"];
+shop(0, { name: "THREADS", wall: "#f9a8d4", roof: "#6b21a8", floor: "#fdf2f8", trim: "#a855f7" });
+const hatDisplays = [];
+HATS.forEach((name, i) => {
+  const x = -10 + i * 4;
+  P([2.4, 3, 2.4], [x, 1.7, -75], "#f8fafc", { studs: false });
+  const h = makeHat(i);
+  h.scale.setScalar(1.5);
+  h.position.set(x, 3.25, -75);
+  world.scene.add(h);
+  hatDisplays.push(h);
+  addInteract([x, 0.2, -72.6], 2.1, "", () => toggleHat(i), { hat: i });
+});
+const paintPad = deco([5, 0.2, 5], [-10, 0.32, -61], "#ec4899", { material: "neon" });
+world.label("Shirt Paint", { pos: [-10, 8.5, -62], height: 1.1 });
+addInteract([-10, 0.2, -61], 3, "Paint your shirt", () => paintShirt());
+P([0.3, 6, 6], [14.2, 4, -63], "#e2e8f0", { studs: false });
+deco([0.2, 6.6, 6.6], [14.35, 4, -63], "#a855f7");
+P([6, 0.3, 0.3], [4, 6.5, -64], "#9ca3af", { collide: false });
+["#ef4444", "#3b82f6", "#22c55e", "#facc15"].forEach((c, i) => deco([1.2, 2.2, 0.3], [1.8 + i * 1.5, 5.2, -64], c));
+// Arcade
+shop(45, { name: "ARCADE", wall: "#3730a3", roof: "#1e1b4b", floor: "#1e1b4b", trim: "#22d3ee", label: "#67e8f9" });
+const CAB = ["#be185d", "#0e7490", "#7c3aed", "#ea580c"];
+const SCREEN = ["#22d3ee", "#f472b6", "#a3e635", "#facc15"];
+CAB.forEach((c, i) => {
+  const x = 35 + i * 6;
+  P([3.6, 6.4, 2.6], [x, 3.4, -76], c);
+  deco([2.8, 2, 0.2], [x, 4.6, -74.62], SCREEN[i], { material: "neon" });
+  deco([3.6, 0.8, 0.3], [x, 6.2, -74.6], "#fef08a", { material: "neon" });
+  P([3.6, 0.5, 1.2], [x, 3, -74.2], "#111827", { studs: false });
+  addInteract([x, 0.2, -72], 2.6, "Play Brick Striker", () => startArcade());
+});
+world.label("BRICK STRIKER", { pos: [44, 9, -76], height: 1.2, color: "#f0abfc" });
+P([2.4, 3.4, 10], [55.2, 1.9, -63], "#a855f7");
+P([3, 0.4, 10.6], [55.2, 3.8, -63], "#f5f3ff", { studs: false });
+deco([24, 0.05, 0.6], [45, 0.23, -66], "#22d3ee", { material: "neon" });
+deco([24, 0.05, 0.6], [45, 0.23, -70], "#f472b6", { material: "neon" });
+
+// ---------------- the house (two stories, front door and balcony facing the plaza)
+const HW = "#f6e3c3", HR = "#b91c1c";
+P([26, 0.2, 26], [70, 0.1, 0], "#c08a52", { material: "wood", studs: false });
+P([28, 10, 1], [70, 5, -13.5], HW, OCC); P([28, 10, 1], [70, 5, 13.5], HW, OCC);
+P([1, 10, 26], [83.5, 5, 0], HW, OCC);
+P([1, 10, 10], [56.5, 5, -8], HW, OCC); P([1, 10, 10], [56.5, 5, 8], HW, OCC); P([1, 2, 6], [56.5, 9, 0], HW, OCC);
+// second floor (with a hole over the stairs)
+P([28, 1, 22], [70, 10.5, 3], "#a8743f", { material: "wood", occ: true });
+P([4, 1, 6], [82, 10.5, -11], "#a8743f", { material: "wood", occ: true });
+P([24, 1, 1], [68, 10.5, -13.5], HW, OCC);
+P([1, 1, 5], [56.5, 10.5, -10.5], HW, OCC);
+for (let k = 1; k <= 11; k++) P([2, k, 5], [57 + 2 * k, k / 2, -10.5], "#d6a46a", { material: "wood" });
+P([22, 2.6, 0.4], [67, 12.3, -7.8], "#7c4a23", { material: "wood" });
+P([28, 9, 1], [70, 15.5, -13.5], HW, OCC); P([28, 9, 1], [70, 15.5, 13.5], HW, OCC);
+P([1, 9, 26], [83.5, 15.5, 0], HW, OCC);
+P([1, 9, 10], [56.5, 15.5, -8], HW, OCC); P([1, 9, 10], [56.5, 15.5, 8], HW, OCC); P([1, 2, 6], [56.5, 19, 0], HW, OCC);
+P([30, 1, 30], [70, 20.5, 0], HR, OCC); P([24, 1, 24], [70, 21.5, 0], HR, OCC); P([16, 1, 16], [70, 22.5, 0], HR, OCC); P([8, 1, 8], [70, 23.5, 0], HR, OCC);
+P([3, 5, 3], [78, 23, -8], "#78716c", OCC);
+// balcony
+P([7, 1, 14], [52.5, 10.5, 0], "#a8743f", { material: "wood" });
+P([0.4, 2.6, 14], [49.2, 12.3, 0], "#f8fafc"); P([7, 2.6, 0.4], [52.5, 12.3, -6.8], "#f8fafc"); P([7, 2.6, 0.4], [52.5, 12.3, 6.8], "#f8fafc");
+P([1, 10, 1], [49.5, 5, -6.5], "#f8fafc"); P([1, 10, 1], [49.5, 5, 6.5], "#f8fafc");
+deco([6, 0.1, 6], [70, 9.92, 4], "#fffbe6", { material: "neon" });
+deco([6, 0.1, 6], [70, 19.92, 4], "#fffbe6", { material: "neon" });
+// windows (they light up at night)
+for (const y of [5, 15.5]) {
+  for (const x of [64, 76]) { deco([4, 3, 0.1], [x, y, -14.06], WIN, { material: "neon" }); deco([4, 3, 0.1], [x, y, 14.06], WIN, { material: "neon" }); }
+  for (const z of [-6, 6]) deco([0.1, 3, 4], [84.06, y, z], WIN, { material: "neon" });
+  for (const z of [-9, 9]) winMat = deco([0.1, 3, 3], [55.94, y, z], WIN, { material: "neon" }).material[0];
+}
+// furniture
+P([7, 1.6, 2], [70, 1, 12.4], "#57534e");
+P([6, 3.5, 0.6], [70, 3.6, 12.7], "#111827");
+deco([5.4, 3, 0.1], [70, 3.6, 12.35], "#60a5fa", { material: "neon" });
+P([8, 1.4, 3], [70, 0.9, 4], "#2563eb"); P([8, 3.4, 1], [70, 1.9, 2], "#1d4ed8");
+P([1, 2.2, 4], [65.5, 1.3, 3.5], "#1d4ed8"); P([1, 2.2, 4], [74.5, 1.3, 3.5], "#1d4ed8");
+seatSpot(70, 1.6, 4, "s", "Sit on couch", 3.5);
+deco([12, 0.05, 9], [70, 0.23, 6.5], "#7c3aed");
+P([1.4, 6, 6], [82.3, 3.2, 5], "#8b5a2b", { material: "wood" });
+P([6, 1.6, 8], [77, 11.8, 7], "#3b82f6"); P([5, 0.6, 1.6], [77, 12.9, 10], "#f8fafc"); P([6.4, 3, 0.6], [77, 12.5, 11.4], "#8b5a2b", { material: "wood" });
+seatSpot(77, 12.6, 6, "n", "Sit on bed", 3.5);
+P([5, 0.4, 2.4], [62, 13.6, 11.6], "#8b5a2b", { material: "wood" }); P([0.5, 2.2, 2], [60, 12.2, 11.6], "#57534e"); P([0.5, 2.2, 2], [64, 12.2, 11.6], "#57534e");
+P([1.8, 1.8, 1.8], [62, 11.9, 9.4], "#ef4444");
+seatSpot(62, 12.8, 9.4, "s", "Sit on chair", 2.4);
+deco([10, 0.05, 8], [70, 11.03, 3], "#14b8a6");
+
+// ---------------- park
+for (const [x, z, s] of [[-55, -35, 1], [-72, -42, 1.1], [-92, -32, 1], [-102, -12, 1.2], [-60, -16, 0.9], [-100, 12, 1], [-66, 18, 1.1], [-50, 6, 0.8], [-86, 18, 0.9]]) tree(x, z, s);
+P([16, 0.6, 1], [-78, 0.3, -23.5], "#a8a29e"); P([16, 0.6, 1], [-78, 0.3, -12.5], "#a8a29e");
+P([1, 0.6, 10], [-85.5, 0.3, -18], "#a8a29e"); P([1, 0.6, 10], [-70.5, 0.3, -18], "#a8a29e");
+deco([14, 0.3, 10], [-78, 0.16, -18], "#38bdf8", { material: "glass" });
+bench(-78, -8.5, "n", 0, "#9a5b2e", "Sit by the pond"); bench(-78, -27.5, "s", 0, "#9a5b2e", "Sit by the pond");
+for (const [bx, bz] of [[-60, -2], [-95, -4], [-58, -30]]) {
+  P([6, 0.4, 2], [bx, 0.2, bz], "#7c4a23", { studs: false });
+  ["#f43f5e", "#facc15", "#a855f7", "#f97316"].forEach((c, i) => {
+    deco([0.2, 1, 0.2], [bx - 2.2 + i * 1.5, 0.9, bz], "#16a34a");
+    P([0.9, 0.9, 0.9], [bx - 2.2 + i * 1.5, 1.6, bz], c, { collide: false, shadow: false });
+  });
+}
+P([6, 0.4, 3.5], [-95, 3, 10], "#a16207", { material: "wood" }); P([0.6, 2.8, 0.6], [-95, 1.4, 10], "#57534e");
+for (const s of [-1, 1]) { P([6, 0.6, 1.4], [-95, 1.7, 10 + s * 3], "#a16207", { material: "wood" }); P([0.6, 1.4, 1.2], [-95, 0.7, 10 + s * 3], "#57534e"); seatSpot(-95, 2, 10 + s * 3, s < 0 ? "s" : "n", "Sit at the picnic table", 2.6); }
+P([22, 2, 2], [-60, 1, -46], "#2f7d32"); P([2, 2, 18], [-44, 1, -10], "#2f7d32");
+world.label("PARK", { pos: [-60, 4, -46], height: 1.5 });
+
+// ---------------- playground
+P([62, 0.2, 58], [-74, 0.1, 62], "#e8d29a", { studs: false });
+for (const [x, z] of [[-60.6, 57.4], [-55.4, 57.4], [-60.6, 62.6], [-55.4, 62.6]]) P([0.8, 18, 0.8], [x, 9, z], "#2563eb");
+P([6, 1, 6], [-58, 11.5, 60], "#f97316");
+P([6, 2.4, 0.4], [-58, 13.2, 62.8], "#facc15");
+P([7.4, 1, 7.4], [-58, 18.5, 60], "#ef4444"); P([4, 1, 4], [-58, 19.5, 60], "#ef4444");
+for (let k = 1; k <= 11; k++) P([1.4, k, 4], [-55 + (11 - k) * 1.4 + 0.7, k / 2, 60], k % 2 ? "#22c55e" : "#16a34a");
+// slides: invisible ramps (see rampStep) under tilted decorative boards
+const ramps = [
+  { axis: "x", a0: -61, a1: -91, h0: 12, h1: 0.2, c0: 58, c1: 62 },
+  { axis: "z", a0: 57, a1: 37, h0: 12, h1: 0.2, c0: -60, c1: -56 },
+];
+{
+  const L1 = Math.hypot(30, 11.8), t1 = Math.atan2(11.8, 30);
+  deco([L1, 0.5, 4], [-76, 5.85, 60], "#facc15", { rot: [0, 0, t1] });
+  deco([L1, 0.9, 0.3], [-76, 6.4, 58.1], "#ef4444", { rot: [0, 0, t1] }); deco([L1, 0.9, 0.3], [-76, 6.4, 61.9], "#ef4444", { rot: [0, 0, t1] });
+  const L2 = Math.hypot(20, 11.8), t2 = Math.atan2(11.8, 20);
+  deco([4, 0.5, L2], [-58, 5.85, 47], "#22d3ee", { rot: [-t2, 0, 0] });
+  deco([0.3, 0.9, L2], [-59.9, 6.4, 47], "#a855f7", { rot: [-t2, 0, 0] }); deco([0.3, 0.9, L2], [-56.1, 6.4, 47], "#a855f7", { rot: [-t2, 0, 0] });
+  deco([0.6, 6, 0.6], [-70, 3, 58], "#6b7280"); deco([0.6, 6, 0.6], [-70, 3, 62], "#6b7280");
+  deco([0.6, 6, 0.6], [-60, 3, 50], "#6b7280"); deco([0.6, 6, 0.6], [-56, 3, 50], "#6b7280");
+}
+// swings
+for (const x of [-100.5, -87.5]) for (const z of [80.5, 83.5]) P([0.6, 10.6, 0.6], [x, 5.3, z], "#dc2626");
+P([14, 0.8, 0.8], [-94, 10.4, 82], "#b91c1c");
+const swings = [];
+for (const x of [-97, -91]) {
+  const g = new THREE.Group();
+  g.position.set(x, 10, 82);
+  const chain = new THREE.BoxGeometry(0.12, 7.8, 0.12);
+  g.add(mesh(chain, lam("#4b5563"), -0.95, -3.9, 0), mesh(chain, lam("#4b5563"), 0.95, -3.9, 0));
+  g.add(mesh(new THREE.BoxGeometry(2.2, 0.3, 1.2), lam("#1f2937"), 0, -7.9, 0));
+  world.scene.add(g);
+  const sw = { group: g, x };
+  swings.push(sw);
+  addInteract([x, 2.2, 82], 2.6, "Sit on swing", () => sitAt([x, 2.25, 82], 0, sw));
+}
+// trampoline
+P([10, 1, 10], [-75, 0.5, 82], "#1f2937");
+let bounceStreak = 0, lastBounce = 0, bestBounce = 0;
+P([8, 0.4, 8], [-75, 1.2, 82], "#22d3ee", { material: "neon", studs: false, onTouch: () => {
+  const t = now();
+  bounceStreak = t - lastBounce < 2400 ? bounceStreak + 1 : 0;
+  lastBounce = t;
+  me.vel.y = Math.min(150, 66 + bounceStreak * 19);
+  me.onGround = false;
+  if (emote.id) clearEmote();
+  tone([300 + bounceStreak * 60, 500 + bounceStreak * 60], 0.18, "triangle", 0.08, 0.06);
+} });
+world.label("BOUNCE!", { pos: [-75, 4, 87.5], height: 1.2, color: "#67e8f9" });
+world.label("PLAYGROUND", { pos: [-74, 4.5, 34], height: 1.6 });
+
+// ---------------- pool (a real hole in the ground)
+P([34, 1, 34], [75, -4.5, 60], "#7dd3fc", { studs: false });
+P([34, 4, 0.6], [75, -2, 43.3], "#e0f2fe"); P([34, 4, 0.6], [75, -2, 76.7], "#e0f2fe");
+P([0.6, 4, 32.8], [58.3, -2, 60], "#e0f2fe"); P([0.6, 4, 32.8], [91.7, -2, 60], "#e0f2fe");
+for (let k = 1; k <= 3; k++) P([2, 4 - k, 8], [58.6 + (k - 1) * 2 + 1, -4 + (4 - k) / 2, 60], "#bae6fd", { studs: false });
+deco([32.8, 3.4, 32.8], [75, -2.3, 60], "#38bdf8", { material: "glass" });
+P([46, 0.2, 6], [75, 0.1, 40], "#f1e4c8"); P([46, 0.2, 6], [75, 0.1, 80], "#f1e4c8");
+P([6, 0.2, 34], [55, 0.1, 60], "#f1e4c8"); P([6, 0.2, 34], [95, 0.1, 60], "#f1e4c8");
+P([3, 1, 3], [96.5, 0.7, 60], "#64748b");
+let prevVy = 0;
+P([10, 0.4, 2.4], [90.5, 1.4, 60], "#f8fafc", { studs: false, onTouch: () => {
+  if (prevVy < -18) { me.vel.y = 78; me.onGround = false; tone([220, 440], 0.2, "triangle", 0.08, 0.05); }
+} });
+for (const x of [64, 72, 80, 88]) {
+  P([2.4, 1, 5], [x, 0.7, 40.4], "#f8fafc", { studs: false });
+  P([2.4, 2.6, 0.5], [x, 1.5, 37.6], "#38bdf8");
+  seatSpot(x, 1.2, 40.6, "s", "Relax on the lounge chair", 2.6);
+}
+for (const [x, c] of [[68, "#f43f5e"], [84, "#facc15"]]) { P([0.4, 7, 0.4], [x, 3.7, 38.5], "#e5e7eb", { shadow: false }); P([6, 0.5, 6], [x, 7.4, 38.5], c, { studs: false }); }
+for (const [x, z] of [[54, 49], [56, 49], [54, 51], [56, 51]]) P([0.4, 5.8, 0.4], [x, 3.1, z], "#f8fafc", { shadow: false });
+P([2.6, 0.5, 2.6], [55, 6.25, 50], "#ef4444", { studs: false });
+world.label("SPLASH POOL", { pos: [75, 6, 36], height: 1.6, color: "#bae6fd" });
+const POOL = { x0: 58.6, x1: 91.4, z0: 43.6, z1: 76.4, top: -0.6 };
+
+// ---------------- stage
+P([40, 3, 18], [0, 1.5, 75], "#334155");
+for (const s of [-1, 1]) { P([8, 1, 2], [s * 14, 0.5, 63], "#475569"); P([8, 2, 2], [s * 14, 1, 65], "#475569"); }
+const tiles = [];
+for (let c = 0; c < 5; c++) for (let r = 0; r < 3; r++) tiles.push(P([6.6, 0.2, 4.2], [-14 + c * 7, 3.1, 68.5 + r * 4.5], "#ffffff", { material: "neon", studs: false, shadow: false }));
+const TILE_COLORS = ["#ef4444", "#f97316", "#facc15", "#22c55e", "#3b82f6", "#a855f7"].map((c) => new THREE.MeshBasicMaterial({ color: c }));
+P([40, 16, 1], [0, 8, 84.5], "#1e293b", OCC);
+for (const s of [-1, 1]) { P([2, 16, 2], [s * 19, 11, 68], "#475569"); P([4, 7, 3], [s * 16, 6.5, 80], "#111827"); }
+P([40, 1.2, 1.2], [0, 19.6, 68], "#475569", { studs: false });
+const spots = [];
+for (let i = 0; i < 5; i++) spots.push(P([1.2, 1.2, 1.2], [-14 + i * 7, 18.5, 68], "#ffffff", { material: "neon", collide: false, shadow: false }));
+P([8, 3, 2.4], [0, 4.5, 79.5], "#0f172a");
+deco([8, 0.5, 0.1], [0, 5, 78.25], "#f0abfc", { material: "neon" });
+world.label("BRICK PLAZA", { pos: [0, 13.5, 82.6], height: 3.4, color: "#fde68a" });
+
+// ---------------- tag court
+const COURT = { x0: 78, x1: 132, z0: -106, z1: -64 };
+P([56, 0.2, 44], [105, 0.1, -85], "#1d4ed8");
+P([56, 5, 1], [105, 2.5, -106.5], "#e2e8f0"); P([56, 5, 1], [105, 2.5, -63.5], "#e2e8f0");
+P([1, 5, 42], [132.5, 2.5, -85], "#e2e8f0");
+P([1, 5, 17], [77.5, 2.5, -97.5], "#e2e8f0"); P([1, 5, 17], [77.5, 2.5, -72.5], "#e2e8f0");
+for (const [x, z] of [[92, -74], [120, -96], [96, -98], [118, -73], [108, -86]]) P([4, 3, 4], [x, 1.7, z], "#b45309", { material: "wood" });
+P([12, 2.5, 1], [104, 1.45, -76], "#f97316"); P([12, 2.5, 1], [106, 1.45, -95], "#f97316");
+P([2, 6, 2], [92, 3.2, -89], "#e2e8f0"); P([2, 6, 2], [122, 3.2, -84], "#e2e8f0");
+P([4, 0.3, 4], [81, 0.35, -68], "#22c55e", { material: "neon", onTouch: () => teleport(0, 0.4, 30, 0) });
+world.label("To Plaza", { pos: [81, 3.5, -68], height: 1.1 });
+P([0.5, 4, 0.5], [81, 2.2, -103], "#374151"); P([6, 3, 0.4], [81, 5.5, -103], "#dc2626");
+world.label("TAG", { pos: [81, 5.5, -102.6], height: 2 });
+addInteract([81, 0.2, -101], 4.5, "Start a round of Tag", () => requestTag());
+world.label("TAG COURT", { pos: [105, 8, -64], height: 2.6 });
+const COURT_SPOTS = [[84, -70], [84, -100], [127, -69], [127, -101], [100, -68], [112, -102], [97, -86], [114, -86]];
+
+// ---------------- sky: stars for the night
+const starGeo = new THREE.BufferGeometry();
+{
+  const a = [];
+  for (let i = 0; i < 320; i++) {
+    const th = Math.random() * Math.PI * 2, ph = Math.random() * 1.3;
+    a.push(Math.cos(th) * Math.sin(ph) * 600, Math.cos(ph) * 600, Math.sin(th) * Math.sin(ph) * 600);
+  }
+  starGeo.setAttribute("position", new THREE.Float32BufferAttribute(a, 3));
+}
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, fog: false, transparent: true, opacity: 0 });
+const stars = new THREE.Points(starGeo, starMat);
+world.scene.add(stars);
+
+// ======================================================================= characters, emotes, outfits
+function makeHat(i) {
+  const g = new THREE.Group();
+  switch (i) {
+    case 0: g.add(mesh(new THREE.ConeGeometry(0.55, 1.5, 12), lam("#ec4899"), 0, 0.75, 0), mesh(new THREE.SphereGeometry(0.22, 8, 6), lam("#facc15"), 0, 1.55, 0)); break;
+    case 1: g.add(mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.2, 14), lam("#1f2328"), 0, 0.65, 0), mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.1, 16), lam("#111111"), 0, 0.05, 0), mesh(new THREE.CylinderGeometry(0.56, 0.56, 0.22, 14), lam("#a855f7"), 0, 0.3, 0)); break;
+    case 2: g.add(mesh(new THREE.CylinderGeometry(0.66, 0.66, 0.3, 16), lam("#facc15"), 0, 0.15, 0));
+      for (let k = 0; k < 5; k++) { const a = (k / 5) * Math.PI * 2; g.add(mesh(new THREE.ConeGeometry(0.17, 0.5, 4), lam("#facc15"), Math.cos(a) * 0.5, 0.5, Math.sin(a) * 0.5)); }
+      g.add(mesh(new THREE.BoxGeometry(0.2, 0.2, 0.1), basic("#ef4444"), 0, 0.15, -0.66)); break;
+    case 3: { const h = mesh(new THREE.TorusGeometry(0.6, 0.09, 8, 24), basic("#fde68a"), 0, 0.9, 0); h.rotation.x = Math.PI / 2; g.add(h); break; }
+    case 4: g.add(mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.7, 14), lam("#ffffff"), 0, 0.35, 0), mesh(new THREE.SphereGeometry(0.75, 12, 8), lam("#f8fafc"), 0, 0.95, 0)); break;
+    case 5: for (const x of [-0.3, 0.3]) {
+      const e = mesh(new THREE.BoxGeometry(0.3, 1.3, 0.14), lam("#ffffff"), x, 0.65, 0); e.rotation.z = -x * 0.5; g.add(e);
+      const n = mesh(new THREE.BoxGeometry(0.16, 1.0, 0.04), lam("#f9a8d4"), x, 0.65, -0.08); n.rotation.z = -x * 0.5; g.add(n);
+    } break;
+  }
+  return g;
+}
+function makeSnack(i) {
+  const g = new THREE.Group();
+  if (i === 1) {
+    const c = mesh(new THREE.ConeGeometry(0.3, 0.9, 10), lam("#d6a35c"), 0, 0.45, 0); c.rotation.x = Math.PI; g.add(c);
+    g.add(mesh(new THREE.SphereGeometry(0.38, 10, 8), lam("#f9a8d4"), 0, 1.0, 0));
+  } else if (i === 2) {
+    const d = mesh(new THREE.TorusGeometry(0.35, 0.17, 8, 16), lam("#f472b6"), 0, 0.5, 0); g.add(d);
+  } else {
+    g.add(mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.9, 10), lam("#ef4444"), 0, 0.45, 0), mesh(new THREE.BoxGeometry(0.06, 0.6, 0.06), lam("#f8fafc"), 0.08, 1.1, 0));
+  }
+  return g;
+}
+const SHIRTS = [0xef4444, 0xf97316, 0xfacc15, 0x22c55e, 0x14b8a6, 0x3b82f6, 0xa855f7, 0xec4899, 0xf8fafc, 0x1f2328];
+
+// Wraps a character so emotes can move an inner "body" without fighting the kit's positioning.
+function rig(model) {
+  if (model.userData.fx) return model.userData.fx;
+  const body = new THREE.Group();
+  for (const c of [...model.children]) if (c !== model.userData.nameTag) body.add(c);
+  model.add(body);
+  const head = body.children.find((c) => c.isGroup && Math.abs(c.position.y - 4.6) < 0.01);
+  const torso = body.children.find((c) => c.isMesh && Math.abs(c.position.y - 3) < 0.01);
+  const fx = { em: 0, seq: null, t: 0, hat: -1, hatObj: null, shirt: -1, snack: 0, snackObj: null, body, head, torso,
+    origTorso: torso && Array.isArray(torso.material) ? torso.material[0].color.getHex() : 0, L: model.userData.limbs, label: null };
+  model.userData.fx = fx;
+  const orig = model.userData.animate;
+  model.userData.animate = (dt, speed, air) => { fx.t += dt; orig(dt, speed, air); pose(fx); };
+  return fx;
+}
+function pose(fx) {
+  const b = fx.body, t = fx.t, L = fx.L;
+  b.position.set(0, 0, 0); b.rotation.set(0, 0, 0);
+  L.armL.rotation.z = L.armR.rotation.z = 0;
+  switch (fx.em) {
+    case 1: L.armR.rotation.x = Math.PI * 0.92; L.armR.rotation.z = 0.25 + Math.sin(t * 11) * 0.35; break;
+    case 2: {
+      const s = Math.sin(t * 8);
+      L.armL.rotation.x = 1.6 + s * 0.9; L.armR.rotation.x = 1.6 - s * 0.9;
+      L.armL.rotation.z = -0.5; L.armR.rotation.z = 0.5;
+      L.legL.rotation.x = Math.max(0, s) * 0.7; L.legR.rotation.x = Math.max(0, -s) * 0.7;
+      b.rotation.y = Math.sin(t * 4) * 0.5; b.position.y = Math.abs(Math.sin(t * 8)) * 0.35;
+      break;
+    }
+    case 3: {
+      const j = Math.abs(Math.sin(t * 7));
+      L.armL.rotation.x = L.armR.rotation.x = Math.PI * 0.9;
+      L.armL.rotation.z = -0.35 - j * 0.25; L.armR.rotation.z = 0.35 + j * 0.25;
+      L.legL.rotation.x = L.legR.rotation.x = 0;
+      b.position.y = j * 1.3;
+      break;
+    }
+    case 4: L.legL.rotation.x = L.legR.rotation.x = Math.PI / 2; L.armL.rotation.x = L.armR.rotation.x = 0.35; b.position.y = -1.5; break;
+  }
+  if (fx.snack) { L.armR.rotation.x = 1.9 + Math.max(0, Math.sin(t * 5)) * 0.7; L.armR.rotation.z = -0.3; }
+}
+function setHat(fx, i) {
+  if (fx.hat === i || !fx.head) return;
+  if (fx.hatObj) { fx.head.remove(fx.hatObj); fx.hatObj = null; }
+  fx.hat = i;
+  const orig = fx.head.children.find((c) => c.isGroup);
+  if (orig) orig.visible = i < 0;
+  if (i >= 0) { fx.hatObj = makeHat(i); fx.hatObj.position.y = 0.6; fx.head.add(fx.hatObj); }
+}
+function setShirt(fx, i) {
+  if (fx.shirt === i || !fx.torso) return;
+  fx.shirt = i;
+  fx.torso.material[0].color.setHex(i < 0 ? fx.origTorso : SHIRTS[i]);
+}
+function setSnack(fx, i) {
+  if (fx.snack === i) return;
+  if (fx.snackObj) { fx.L.armR.remove(fx.snackObj); fx.snackObj = null; }
+  fx.snack = i;
+  if (i) { fx.snackObj = makeSnack(i); fx.snackObj.position.set(0, -2.15, 0); fx.snackObj.rotation.x = Math.PI; fx.L.armR.add(fx.snackObj); }
+}
+
+// ---------------- NPCs
+function npc(look, name, x, y, z, yaw, em) {
+  const m = world.character(look, name);
+  const fx = rig(m);
+  fx.em = em || 0;
+  m.position.set(x, y, z);
+  m.rotation.y = yaw || 0;
+  return m;
+}
+const statics = [
+  npc({ head: "#f2c48d", torso: "#7c2d12", arms: "#f2c48d", legs: "#1f2328", face: "smile", hat: "cap" }, "Barista Bo", -45, 0.2, -72.6, Math.PI),
+  npc({ head: "#e0ac69", torso: "#db2777", arms: "#e0ac69", legs: "#6b21a8", face: "wink", hat: "tophat", shirt: "star" }, "Shopkeeper Lu", 10, 0.2, -61, Math.PI / 2),
+  npc({ head: "#facc15", torso: "#0e7490", arms: "#facc15", legs: "#1e293b", face: "cool", hat: "headphones" }, "Ticket Tina", 58, 0.2, -63, Math.PI / 2),
+  npc({ head: "#8d5524", torso: "#111827", arms: "#8d5524", legs: "#7c3aed", face: "cool", hat: "headphones", shirt: "bolt" }, "DJ Blox", 0, 3, 82, 0, 2),
+  npc({ head: "#f5cd30", torso: "#ef4444", arms: "#f5cd30", legs: "#ef4444", face: "determined", hat: "cap" }, "Lifeguard Lin", 55, 6.5, 50, -Math.PI / 2, 4),
+];
+const barista = statics[0];
+
+// Simple NPC physics (same rules as the player: boxes, step up 1 stud, gravity).
+function boxNear(m, x0, x1, z0, z1) { const b = m.userData.part.box; return b.max.x > x0 && b.min.x < x1 && b.max.z > z0 && b.min.z < z1; }
+function npcCollide(n, axis, solids) {
+  let hit = false;
+  for (const m of solids) {
+    const b = m.userData.part.box;
+    if (n.pos.x + 0.95 <= b.min.x || n.pos.x - 0.95 >= b.max.x || n.pos.y + 5.2 <= b.min.y || n.pos.y >= b.max.y || n.pos.z + 0.95 <= b.min.z || n.pos.z - 0.95 >= b.max.z) continue;
+    if (axis === "y") {
+      if (n.vy > 0) n.pos.y = b.min.y - 5.2; else { n.pos.y = b.max.y; n.onGround = true; }
+      n.vy = 0;
+    } else {
+      const rise = b.max.y - n.pos.y;
+      if (rise > 0 && rise <= 1.1 && n.onGround) { n.pos.y = b.max.y; continue; }
+      if (axis === "x") n.pos.x = n.pos.x > (b.min.x + b.max.x) / 2 ? b.max.x + 0.951 : b.min.x - 0.951;
+      else n.pos.z = n.pos.z > (b.min.z + b.max.z) / 2 ? b.max.z + 0.951 : b.min.z - 0.951;
+      hit = true;
+    }
+  }
+  return hit;
+}
+function npcMove(n, vx, vz, dt) {
+  const steps = Math.ceil(dt / (1 / 60));
+  let blocked = false;
+  for (let i = 0; i < steps; i++) {
+    const h = dt / steps;
+    n.vy = Math.max(-160, n.vy - 196.2 * h);
+    n.pos.x += vx * h; if (npcCollide(n, "x", n.solids)) blocked = true;
+    n.pos.z += vz * h; if (npcCollide(n, "z", n.solids)) blocked = true;
+    n.onGround = false;
+    n.pos.y += n.vy * h; npcCollide(n, "y", n.solids);
+  }
+  return blocked;
+}
+function faceDir(n, vx, vz, dt) {
+  if (Math.abs(vx) + Math.abs(vz) < 0.1) return;
+  let d = Math.atan2(-vx, -vz) - n.model.rotation.y;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  n.model.rotation.y += d * Math.min(1, dt * 10);
+}
+
+// Townsfolk who stroll around the fountain.
+const walkers = [
+  { name: "Townie Tess", look: { head: "#f1c27d", torso: "#14b8a6", arms: "#f1c27d", legs: "#374151", face: "smile", hat: "cone" }, i: 0 },
+  { name: "Townie Max", look: { head: "#c68642", torso: "#f97316", arms: "#c68642", legs: "#1e3a8a", face: "grin", hat: "none", shirt: "stripes" }, i: 4 },
+].map((w) => {
+  const a = (w.i / 8) * Math.PI * 2;
+  const n = { ...w, model: npc(w.look, w.name, 0, 0, 0), pos: new THREE.Vector3(Math.cos(a) * 22, 0.5, Math.sin(a) * 22), vy: 0, onGround: false, pause: 0, waveT: 0 };
+  n.fx = n.model.userData.fx;
+  addInteract([0, 0, 0], 4, "High five " + w.name, () => { n.waveT = 2.5; n.pause = 2.5; n.fx.em = 1; n.fx.t = 0; setEmote(1); Kit.sfx("coin"); world.bubble(n.model, Kit.pick(["Nice to meet you!", "Great day for it!", "Love your look!", "Have you tried the slide?"])); }, { follow: n });
+  return n;
+});
+
+// Tag bots (used when you play Tag offline or alone online).
+const BOT_LOOKS = [
+  { head: "#fcd34d", torso: "#22c55e", arms: "#fcd34d", legs: "#14532d", face: "grin", hat: "cap" },
+  { head: "#fda4af", torso: "#8b5cf6", arms: "#fda4af", legs: "#312e81", face: "wink", hat: "wizard" },
+  { head: "#93c5fd", torso: "#f59e0b", arms: "#93c5fd", legs: "#7c2d12", face: "robot", hat: "none" },
+];
+const bots = ["Bot Pip", "Bot Rex", "Bot Zoe"].map((name, i) => {
+  const [x, z] = COURT_SPOTS[i * 2 + 1];
+  const b = { key: "b" + i, name, model: npc(BOT_LOOKS[i], name, x, 0.3, z), pos: new THREE.Vector3(x, 0.3, z), vy: 0, onGround: false, tags: 0, jumpAt: 0, side: i % 2 ? 1 : -1, wp: null };
+  return b;
+});
+
+// ======================================================================= the player
+const me = world.spawnPlayer({ pos: [0, 0.4, 30] });
+const myFx = rig(me.group);
+window.me = me;
+// solids lists for NPC physics, after the world is built
+const plazaSolids = world.solids.filter((m) => boxNear(m, -40, 40, -40, 40));
+const courtSolids = world.solids.filter((m) => boxNear(m, 70, 140, -112, -58));
+walkers.forEach((w) => (w.solids = plazaSolids));
+bots.forEach((b) => (b.solids = courtSolids));
+
+// ---------------- emotes
+const EMOTES = ["", "Wave", "Dance", "Cheer", "Sit"];
+const emote = { id: 0, seq: 0, t: 0 };
+const usedEmotes = new Set(load("emotes", []));
+const emoteBar = $("emotes");
+for (let i = 1; i <= 4; i++) {
+  const b = document.createElement("button");
+  b.tabIndex = -1;
+  b.innerHTML = `<span>${i}</span>${EMOTES[i]}`;
+  b.addEventListener("mousedown", (e) => e.preventDefault());
+  b.addEventListener("click", () => { if (started) setEmote(i); });
+  emoteBar.appendChild(b);
+}
+function setEmote(id, force) {
+  if (arcade.on) return;
+  if (!force && id === emote.id && id !== 1 && id !== 3) { clearEmote(); return; }
+  emote.id = id; emote.seq++; emote.t = 0;
+  myFx.em = id; myFx.t = 0;
+  [...emoteBar.children].forEach((b, i) => b.classList.toggle("on", i + 1 === id));
+  if (!usedEmotes.has(id)) {
+    usedEmotes.add(id);
+    save("emotes", [...usedEmotes]);
+    if (usedEmotes.size >= 4) badge("emotes", "Show-Off", "Used every emote: wave, dance, cheer and sit.");
+  }
+  if (id === 2 && onStage()) badge("stage", "Star of the Stage", "Danced on the Brick Plaza stage.");
+}
+function clearEmote() {
+  emote.id = 0; myFx.em = 0;
+  [...emoteBar.children].forEach((b) => b.classList.remove("on"));
+}
+const onStage = () => Math.abs(me.pos.x) < 20 && me.pos.z > 66 && me.pos.z < 84 && me.pos.y > 2.5;
+
+// ---------------- seats
+let seat = null;
+function sitAt(pos, yaw, swing) {
+  seat = { anchor: new THREE.Vector3(pos[0], pos[1], pos[2]), yaw, swing: swing || null, t: 0 };
+  me.pos.copy(seat.anchor); me.vel.set(0, 0, 0); me.yaw = yaw;
+  setEmote(4, true);
+}
+function standUp() {
+  if (seat && seat.swing) seat.swing.group.rotation.x = 0;
+  if (seat) me.pos.y += 0.3;
+  seat = null;
+  if (emote.id === 4) clearEmote();
+}
+function teleport(x, y, z, yaw) {
+  if (seat) standUp();
+  me.pos.set(x, y, z); me.vel.set(0, 0, 0);
+  if (yaw !== undefined) { me.yaw = yaw; world.cam.yaw = yaw; }
+  Kit.sfx("score");
+}
+
+// ---------------- outfits & snacks
+const HAT_KEY = "hat", SHIRT_KEY = "shirt";
+function toggleHat(i) {
+  setHat(myFx, myFx.hat === i ? -1 : i);
+  save(HAT_KEY, myFx.hat);
+  Kit.sfx("click");
+}
+function paintShirt() {
+  setShirt(myFx, myFx.shirt + 1 >= SHIRTS.length ? -1 : myFx.shirt + 1);
+  save(SHIRT_KEY, myFx.shirt);
+  tone([520, 780], 0.12, "square", 0.05, 0.05);
+}
+setHat(myFx, Math.min(HATS.length - 1, load(HAT_KEY, -1)));
+setShirt(myFx, Math.min(SHIRTS.length - 1, load(SHIRT_KEY, -1)));
+let snackUntil = 0;
+function buySnack() {
+  const i = Kit.randInt(1, 3);
+  setSnack(myFx, i);
+  snackUntil = now() + 6000;
+  Kit.sfx("coin");
+  barista.userData.fx.em = 1; barista.userData.fx.t = 0;
+  world.bubble(barista, Kit.pick(["One " + ["", "ice cream", "donut", "soda"][i] + ", coming up!", "Enjoy!", "On the house today!"]));
+  badge("snack", "Snack Time", "Bought a snack at the Brick Plaza cafe.");
+}
+
+// ---------------- coin toss & bell
+const coinGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.1, 12);
+const coins = [];
+function tossCoin() {
+  const m = mesh(coinGeo, lam("#facc15"), me.pos.x, me.pos.y + 4, me.pos.z);
+  world.scene.add(m);
+  coins.push({ m, t: 0, from: m.position.clone(), to: new THREE.Vector3(Kit.rand(-5, 5), 1.2, Kit.rand(-5, 5)) });
+  Kit.sfx("coin");
+  world.bubble(me.group, Kit.pick(["I wish for a giant slide!", "I wish for more friends!", "I wish it was always summer!", "I wish for a pet brick!"]));
+}
+function ringBell(send) {
+  bellSwing = 1;
+  tone([392, 784, 1176], 2.2, "sine", 0.09);
+  setTimeout(() => tone([392, 784, 1176], 1.8, "sine", 0.07), 700);
+  if (send && net.online) net.event({ k: "bell" });
+}
+
+// ======================================================================= arcade mini-game
+const arcade = { on: false, round: 0, hits: 0, x: 0, dir: 1, speed: 1, z0: 0, z1: 0, wait: 0 };
+let tickets = load("tickets", 0);
+function startArcade() {
+  if (seat) standUp();
+  clearEmote();
+  Object.assign(arcade, { on: true, round: 0, hits: 0, wait: 0 });
+  $("arc").style.display = "block";
+  $("arcdots").innerHTML = "<i></i><i></i><i></i><i></i><i></i>";
+  arcRound();
+}
+function arcRound() {
+  const w = 0.24 - arcade.round * 0.035;
+  arcade.z0 = Kit.rand(0.2, 0.95 - w); arcade.z1 = arcade.z0 + w;
+  arcade.x = 0; arcade.dir = 1; arcade.speed = 0.75 + arcade.round * 0.28;
+  $("arczone").style.left = arcade.z0 * 100 + "%"; $("arczone").style.width = w * 100 + "%";
+  $("arctext").textContent = `Round ${arcade.round + 1} of 5: press E when the block is in the green!`;
+}
+function arcPress() {
+  if (arcade.wait > 0) return;
+  const hit = arcade.x >= arcade.z0 && arcade.x <= arcade.z1;
+  $("arcdots").children[arcade.round].className = hit ? "hit" : "miss";
+  if (hit) { arcade.hits++; Kit.sfx("score"); } else Kit.sfx("hit");
+  arcade.round++;
+  arcade.wait = 0.7;
+  $("arctext").textContent = hit ? "Hit!" : "Missed!";
+}
+function arcStep(dt) {
+  if (arcade.wait > 0) {
+    arcade.wait -= dt;
+    if (arcade.wait <= 0) {
+      if (arcade.round >= 5) return arcEnd();
+      arcRound();
+    }
+    return;
+  }
+  arcade.x += arcade.dir * arcade.speed * dt;
+  if (arcade.x > 1) { arcade.x = 1; arcade.dir = -1; }
+  if (arcade.x < 0) { arcade.x = 0; arcade.dir = 1; }
+  $("arcmark").style.left = arcade.x * 100 + "%";
+}
+function arcEnd() {
+  const won = arcade.hits * 10 + (arcade.hits === 5 ? 25 : 0);
+  tickets += won;
+  save("tickets", tickets);
+  arcade.on = false;
+  $("arc").style.display = "none";
+  showBanner(`Brick Striker: ${arcade.hits}/5 hits`, `+${won} tickets`, 2500);
+  if (arcade.hits === 5) { Kit.sfx("win"); badge("arcade", "Arcade Ace", "Hit all 5 targets in Brick Striker."); }
+}
+
+// ======================================================================= Tag
+const tag = { active: false, mode: "", it: null, endAt: 0, ids: [], freezeUntil: 0, noBack: null, noBackUntil: 0, roundTags: 0, pending: 0 };
+let myTags = 0;
+const myKey = () => (net.online ? net.me.id : "me");
+const itSprite = world.label(" IT ", { height: 1.5, color: "#ffffff", bg: "#ef4444" });
+world.scene.remove(itSprite);
+function botsMode() { return !(net.online && net.players.size > 0) || (tag.active && tag.mode === "bots"); }
+function modelOf(k) {
+  if (k === myKey()) return me.group;
+  const b = bots.find((x) => x.key === k);
+  if (b) return b.model;
+  const r = world.remotes.get(k);
+  return r ? r.model : null;
+}
+function posOf(k) {
+  if (k === myKey()) return me.alive ? me.pos : null;
+  const b = bots.find((x) => x.key === k);
+  if (b) return b.pos;
+  const r = world.remotes.get(k);
+  return r && r.model.visible ? r.model.position : null;
+}
+function nameOf(k) {
+  if (k === myKey()) return "You";
+  const b = bots.find((x) => x.key === k);
+  if (b) return b.name;
+  const p = net.players.get(k);
+  return p ? p.name : "Someone";
+}
+function placeIt() {
+  if (itSprite.parent) itSprite.parent.remove(itSprite);
+  if (!tag.active) return;
+  const m = modelOf(tag.it);
+  if (m) { m.add(itSprite); itSprite.position.set(0, 8.4, 0); }
+}
+function requestTag() {
+  if (tag.active) { showBanner("A round of Tag is already going!", "", 2000); return; }
+  if (net.online && net.players.size > 0) {
+    if (net.isHost) hostStartTag();
+    else { net.event({ k: "tr" }); showBanner("Starting Tag...", "Waiting for the server host", 2500); }
+  } else {
+    const ids = [myKey(), "b0", "b1", "b2"];
+    startTag(Kit.pick(ids), 60, ids, "bots");
+  }
+}
+function hostStartTag() {
+  const ids = [net.me.id, ...net.players.keys()];
+  const it = Kit.pick(ids);
+  net.event({ k: "ts", it, d: 90, ids });
+  startTag(it, 90, ids, "online");
+}
+function startTag(it, dur, ids, mode) {
+  Object.assign(tag, { active: true, mode, it, endAt: now() + dur * 1000, ids, freezeUntil: now() + 3000, noBack: null, roundTags: 0 });
+  if (ids.includes(myKey())) {
+    const [x, z] = COURT_SPOTS[(ids.indexOf(myKey()) * 3 + Kit.randInt(0, 1)) % COURT_SPOTS.length];
+    teleport(x, 0.5, z, Math.atan2(x - 105, z + 85));
+    clearEmote();
+  }
+  if (mode === "bots") bots.forEach((b, i) => { const [x, z] = COURT_SPOTS[(i * 2 + 3) % COURT_SPOTS.length]; b.pos.set(x, 0.5, z); b.vy = 0; });
+  Kit.sfx("score");
+  placeIt();
+}
+function applyTagged(by, to) {
+  if (!tag.active) return;
+  tag.it = to; tag.noBack = by; tag.noBackUntil = now() + 3000; tag.freezeUntil = now() + 1500;
+  if (by === myKey()) {
+    myTags++; tag.roundTags++;
+    Kit.sfx("score");
+    if (tag.roundTags >= 3) badge("tag-3", "Tag Master", "Tagged 3 players in one round of Tag.");
+  } else {
+    const b = bots.find((x) => x.key === by);
+    if (b) b.tags++;
+  }
+  if (to === myKey()) { Kit.sfx("hit"); showBanner("You're IT!", `${nameOf(by)} tagged you. Go get someone!`, 1800); }
+  placeIt();
+}
+function doTag(by, to) {
+  if (tag.mode === "online") net.event({ k: "tg", by, to });
+  applyTagged(by, to);
+}
+function endTag(silent) {
+  if (!tag.active) return;
+  tag.active = false;
+  placeIt();
+  if (silent || !tag.ids.includes(myKey())) return;
+  if (tag.it !== myKey()) {
+    Kit.sfx("win");
+    showBanner("You win! You weren't IT at the end.", `You tagged ${tag.roundTags} this round`, 4000);
+    badge("tag-win", "Can't Catch Me", "Finished a round of Tag without being IT.");
+  } else {
+    Kit.sfx("lose");
+    showBanner("You were IT when time ran out!", `You tagged ${tag.roundTags} this round`, 4000);
+  }
+  Kit.finish(ID, tag.roundTags);
+}
+function tagStep(dt) {
+  if (!tag.active) return;
+  const t = now();
+  if (t > tag.endAt) { endTag(); return; }
+  if (tag.mode === "online" && (!net.online || tag.ids.length < 2)) { endTag(); return; }
+  const mine = tag.ids.includes(myKey());
+  // Stay inside the court during a round.
+  if (mine && (me.pos.x < COURT.x0 - 3 || me.pos.x > COURT.x1 + 3 || me.pos.z < COURT.z0 - 3 || me.pos.z > COURT.z1 + 3)) {
+    const [x, z] = Kit.pick(COURT_SPOTS);
+    teleport(x, 0.5, z);
+    showBanner("Stay in the Tag Court!", "", 1500);
+  }
+  // You're IT: touch someone.
+  if (mine && tag.it === myKey() && t > tag.freezeUntil) {
+    for (const k of tag.ids) {
+      if (k === myKey() || (k === tag.noBack && t < tag.noBackUntil)) continue;
+      const p = posOf(k);
+      if (p && Math.hypot(p.x - me.pos.x, p.z - me.pos.z) < 4 && Math.abs(p.y - me.pos.y) < 4.5) { doTag(myKey(), k); break; }
+    }
+  }
+  const left = Math.max(0, Math.ceil((tag.endAt - t) / 1000));
+  if (!bannerHold) {
+    const itMe = tag.it === myKey();
+    const frozen = t < tag.freezeUntil;
+    setBanner(itMe ? (frozen ? "You're IT! Get ready..." : "You're IT! Tag someone!") : `${nameOf(tag.it)} ${tag.it === myKey() ? "are" : "is"} IT - run!`,
+      `Tag  ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left  -  your tags: ${tag.roundTags}${mine ? "" : "  (watching)"}`, itMe);
+  }
+}
+function botStep(b, dt) {
+  const t = now();
+  let vx = 0, vz = 0, speed = 0;
+  if (tag.active && tag.mode === "bots") {
+    if (tag.it === b.key) {
+      if (t > tag.freezeUntil) {
+        let best = null, bd = 1e9;
+        for (const k of tag.ids) {
+          if (k === b.key || (k === tag.noBack && t < tag.noBackUntil)) continue;
+          const p = posOf(k);
+          if (!p) continue;
+          const d = Math.hypot(p.x - b.pos.x, p.z - b.pos.z);
+          if (d < bd) { bd = d; best = { k, p }; }
+        }
+        if (best) {
+          vx = (best.p.x - b.pos.x) / (bd || 1); vz = (best.p.z - b.pos.z) / (bd || 1); speed = 15;
+          if (bd < 3.6 && Math.abs(best.p.y - b.pos.y) < 4.5) doTag(b.key, best.k);
+          else if (best.p.y > b.pos.y + 2 && bd < 7 && b.onGround && t > b.jumpAt) { b.vy = 52; b.jumpAt = t + 900; }
+        }
+      }
+    } else {
+      const ip = posOf(tag.it);
+      const d = ip ? Math.hypot(ip.x - b.pos.x, ip.z - b.pos.z) : 999;
+      if (d < 26) {
+        vx = (b.pos.x - ip.x) / (d || 1) + (-(ip.z - b.pos.z) / (d || 1)) * 0.45 * b.side;
+        vz = (b.pos.z - ip.z) / (d || 1) + ((ip.x - b.pos.x) / (d || 1)) * 0.45 * b.side;
+        const m = 9;
+        if (b.pos.x < COURT.x0 + m) vx += (COURT.x0 + m - b.pos.x) / 3;
+        if (b.pos.x > COURT.x1 - m) vx -= (b.pos.x - COURT.x1 + m) / 3;
+        if (b.pos.z < COURT.z0 + m) vz += (COURT.z0 + m - b.pos.z) / 3;
+        if (b.pos.z > COURT.z1 - m) vz -= (b.pos.z - COURT.z1 + m) / 3;
+        const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
+        speed = 14;
+      }
+    }
+  }
+  if (!speed) {
+    if (!b.wp || Math.hypot(b.wp[0] - b.pos.x, b.wp[1] - b.pos.z) < 2) b.wp = [Kit.rand(COURT.x0 + 4, COURT.x1 - 4), Kit.rand(COURT.z0 + 4, COURT.z1 - 4)];
+    const d = Math.hypot(b.wp[0] - b.pos.x, b.wp[1] - b.pos.z) || 1;
+    vx = (b.wp[0] - b.pos.x) / d; vz = (b.wp[1] - b.pos.z) / d;
+    speed = tag.active ? 8 : 5;
+  }
+  vx *= speed; vz *= speed;
+  const blocked = npcMove(b, vx, vz, dt);
+  if (blocked) {
+    if (b.onGround && t > b.jumpAt) { b.vy = 52; b.jumpAt = t + 1100; }
+    b.side = -b.side;
+    if (Math.random() < 0.05) b.wp = null;
+  }
+  if (b.pos.y < -20) b.pos.set(105, 1, -85);
+  b.pos.x = Kit.clamp(b.pos.x, COURT.x0, COURT.x1); b.pos.z = Kit.clamp(b.pos.z, COURT.z0, COURT.z1);
+  b.model.position.copy(b.pos);
+  faceDir(b, vx, vz, dt);
+  b.model.userData.animate(dt, speed, !b.onGround);
+}
+
+// ======================================================================= banner, prompt, HUD
+let bannerHold = 0;
+function setBanner(text, small, it) {
+  const el = $("banner");
+  el.style.display = "block";
+  el.className = it ? "it" : "";
+  el.innerHTML = "";
+  el.append(document.createTextNode(text));
+  if (small) { const s = document.createElement("small"); s.textContent = small; el.append(s); }
+}
+function showBanner(text, small, ms) {
+  setBanner(text, small, false);
+  bannerHold = now() + (ms || 2000);
+}
+const AREAS = [
+  ["Plaza", (x, y, z) => Math.abs(x) < 38 && Math.abs(z) < 38],
+  ["Park", (x, y, z) => x > -110 && x < -42 && z > -48 && z < 28],
+  ["Cafe", (x, y, z) => x > -60 && x < -30 && z > -79 && z < -55],
+  ["Clothing Shop", (x, y, z) => x > -15 && x < 15 && z > -79 && z < -55],
+  ["Arcade", (x, y, z) => x > 30 && x < 60 && z > -79 && z < -55],
+  ["House (upstairs)", (x, y, z) => x > 49 && x < 84 && z > -14 && z < 14 && y > 9],
+  ["Playground", (x, y, z) => x > -110 && x < -42 && z > 32 && z < 95],
+  ["Pool", (x, y, z) => x > 50 && x < 100 && z > 35 && z < 85],
+  ["Stage", (x, y, z) => Math.abs(x) < 20 && z > 66 && z < 84 && y > 2.5],
+];
+const visited = new Set(load("areas", []));
+function areaStep() {
+  for (const [name, test] of AREAS) {
+    if (visited.has(name) || !test(me.pos.x, me.pos.y, me.pos.z)) continue;
+    visited.add(name);
+    save("areas", [...visited]);
+    Kit.toast("Discovered: " + name, `${visited.size} of ${AREAS.length} areas explored`, "#22c55e");
+    Kit.sfx("coin");
+    if (visited.size >= AREAS.length) badge("explorer", "Plaza Explorer", "Visited every area of Brick Plaza.");
+  }
+}
+
+// ======================================================================= day & night
+const DAY_LEN = 360;
+let dayT = 0.06;
+const SKY_DAY = new THREE.Color("#8fd3ff"), SKY_SET = new THREE.Color("#ff9a6b"), SKY_NIGHT = new THREE.Color("#0b1433");
+const LAMP_OFF = new THREE.Color("#d6d0b8"), LAMP_ON = new THREE.Color(LAMP), WIN_OFF = new THREE.Color("#8fb3c9"), WIN_ON = new THREE.Color(WIN);
+const HEMI_DAY = new THREE.Color("#ffffff"), HEMI_NIGHT = new THREE.Color("#8ea6ff");
+const skyCol = new THREE.Color();
+function clock() {
+  const h = (dayT * 24 + 6) % 24, hh = Math.floor(h), mm = Math.floor((h - hh) * 60 / 10) * 10;
+  return `${hh % 12 || 12}:${String(mm).padStart(2, "0")} ${hh < 12 ? "AM" : "PM"}`;
+}
+function skyStep(dt) {
+  dayT = (dayT + dt / DAY_LEN) % 1;
+  const sh = Math.sin(dayT * Math.PI * 2);
+  const day = Kit.clamp((sh + 0.2) / 0.5, 0, 1);
+  const dusk = Kit.clamp(1 - Math.abs(sh) / 0.3, 0, 1);
+  skyCol.copy(SKY_NIGHT).lerp(SKY_DAY, day).lerp(SKY_SET, dusk * 0.55);
+  world.scene.background.copy(skyCol);
+  world.scene.fog.color.copy(skyCol);
+  world.hemi.intensity = 0.35 + 0.8 * day;
+  world.hemi.color.copy(HEMI_NIGHT).lerp(HEMI_DAY, day);
+  world.sun.intensity = 0.05 + 1.55 * day;
+  const night = 1 - day;
+  if (lampMat) lampMat.color.copy(LAMP_OFF).lerp(LAMP_ON, night);
+  if (winMat) winMat.color.copy(WIN_OFF).lerp(WIN_ON, night);
+  starMat.opacity = Kit.clamp(night * 1.2 - 0.2, 0, 1);
+  stars.position.set(me.pos.x, 0, me.pos.z);
+}
+
+// ======================================================================= online
+world.online(net);
+const rawState = net.state;
+net.state = (o) => rawState(Object.assign(o, { e: emote.id, es: emote.seq, h: myFx.hat, c: myFx.shirt, sn: myFx.snack, tg: myTags }));
+const int = (v, lo, hi, d) => (Number.isInteger(v) && v >= lo && v <= hi ? v : d);
+net.on("join", (pl) => {
+  const r = world.remotes.get(pl.id);
+  if (r) rig(r.model);
+  if (net.isHost) net.event({ k: "time", v: +dayT.toFixed(4) });
+});
+net.on("state", (pl) => {
+  const r = world.remotes.get(pl.id), s = pl.state;
+  if (!r || !s) return;
+  const fx = rig(r.model);
+  const em = int(s.e, 0, 4, 0);
+  if (em !== fx.em || s.es !== fx.seq) { fx.em = em; fx.seq = s.es; fx.t = 0; }
+  setHat(fx, int(s.h, -1, HATS.length - 1, -1));
+  setShirt(fx, int(s.c, -1, SHIRTS.length - 1, -1));
+  setSnack(fx, int(s.sn, 0, 3, 0));
+});
+net.on("leave", (pl) => {
+  if (!tag.active || tag.mode !== "online") return;
+  tag.ids = tag.ids.filter((k) => k !== pl.id);
+  if (tag.it === pl.id && net.isHost && tag.ids.length >= 2) {
+    const to = Kit.pick(tag.ids);
+    net.event({ k: "tg", by: null, to });
+    applyTagged(null, to);
+  }
+  if (tag.it === pl.id) placeIt();
+});
+net.on("status", (on) => { if (!on && tag.active && tag.mode === "online") endTag(true); });
+net.on("event", (pl, e) => {
+  if (!e || typeof e !== "object") return;
+  if (e.k === "tr") { if (net.isHost && !tag.active) hostStartTag(); }
+  else if (e.k === "ts" && Array.isArray(e.ids) && e.ids.length <= 30) {
+    if (tag.active) endTag(true);
+    startTag(e.it, Kit.clamp(+e.d || 90, 10, 180), e.ids, "online");
+  } else if (e.k === "tg") { if (tag.active && tag.mode === "online") applyTagged(e.by, e.to); }
+  else if (e.k === "bell") ringBell(false);
+  else if (e.k === "time" && typeof e.v === "number" && !net.isHost) dayT = ((e.v % 1) + 1) % 1;
+});
+
+// ======================================================================= camera: pull in when a wall is in the way
+const ray = new THREE.Raycaster();
+const camTarget = new THREE.Vector3(), camDir = new THREE.Vector3();
+const baseCamera = world.updateCamera.bind(world);
+world.updateCamera = function () {
+  baseCamera();
+  camTarget.set(me.pos.x, me.pos.y + 4.5, me.pos.z);
+  camDir.copy(world.camera.position).sub(camTarget);
+  const dist = camDir.length();
+  if (dist < 0.01) return;
+  camDir.divideScalar(dist);
+  ray.set(camTarget, camDir);
+  ray.far = dist;
+  const hit = ray.intersectObjects(occluders, false)[0];
+  if (hit) world.camera.position.copy(camTarget).addScaledVector(camDir, Math.max(0.8, hit.distance - 0.5));
+};
+
+// ======================================================================= input
+let started = false;
+let current = null;
+Kit.onKey((code) => {
+  if (!started) return;
+  if (code === "KeyE") {
+    if (arcade.on) arcPress();
+    else if (current) current.act();
+    return;
+  }
+  if (arcade.on) return;
+  const n = { Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4, Numpad1: 1, Numpad2: 2, Numpad3: 3, Numpad4: 4 }[code];
+  if (n) {
+    if (n === 4 && seat) { standUp(); return; }
+    setEmote(n);
+  }
+});
+const moving = () => ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "Space"].some((k) => Kit.key(k));
+
+// ======================================================================= main loop
+let time = 0, slowT = 0, hostT = 0, sliding = false;
+function rampStep(dt) {
+  sliding = false;
+  if (seat) return;
+  for (const r of ramps) {
+    const a = r.axis === "x" ? me.pos.x : me.pos.z, c = r.axis === "x" ? me.pos.z : me.pos.x;
+    if (c < r.c0 || c > r.c1) continue;
+    const t = (a - r.a0) / (r.a1 - r.a0);
+    if (t < 0 || t > 1) continue;
+    const h = r.h0 + (r.h1 - r.h0) * t;
+    if (me.pos.y > h + 0.8 || me.pos.y < h - 2.2 || me.vel.y > 2) continue;
+    me.pos.y = h; me.vel.y = 0;
+    const dir = Math.sign(r.a1 - r.a0);
+    if (r.axis === "x") me.pos.x += dir * 26 * dt; else me.pos.z += dir * 26 * dt;
+    sliding = true;
+    if (Kit.key("Space")) me.vel.y = 40;
+  }
+}
+function update(dt) {
+  time += dt;
+  const t = now();
+  me.frozen = !started || arcade.on || !!seat || (tag.active && tag.it === myKey() && t < tag.freezeUntil && tag.ids.includes(myKey()));
+  prevVy = me.vel.y;
+
+  // seats & swings
+  if (seat) {
+    if (moving()) standUp();
+    else {
+      seat.t += dt;
+      me.pos.copy(seat.anchor); me.vel.set(0, 0, 0); me.yaw = seat.yaw;
+      if (seat.swing) {
+        const a = Math.sin(seat.t * 2.3) * Math.min(0.75, seat.t * 0.15);
+        seat.swing.group.rotation.x = a;
+        me.pos.y = 10 - 7.75 * Math.cos(a);
+        me.pos.z = 82 - 7.75 * Math.sin(a);
+      }
+    }
+  }
+  // emotes end when you move
+  if (emote.id) {
+    emote.t += dt;
+    if ((emote.id === 1 || emote.id === 3) && emote.t > 2.6) clearEmote();
+    else if ((emote.id === 2 || emote.id === 3 || (emote.id === 4 && !seat)) && emote.t > 0.15 && moving()) clearEmote();
+  }
+  if (myFx.snack && t > snackUntil) setSnack(myFx, 0);
+
+  rampStep(dt);
+  // the pool: slow, floaty, no danger
+  if (me.pos.x > POOL.x0 && me.pos.x < POOL.x1 && me.pos.z > POOL.z0 && me.pos.z < POOL.z1 && me.pos.y < POOL.top) {
+    if (me.speed !== 8) { me.speed = 8; if (prevVy < -25) tone([180, 120], 0.25, "sine", 0.1, 0.08); }
+    me.vel.y += 196.2 * 0.65 * dt;
+    if (me.vel.y < -14) me.vel.y = -14;
+    if (Kit.key("Space") && !me.frozen) me.vel.y = me.pos.y > -3.2 ? 45 : Math.max(me.vel.y, 12);
+  } else me.speed = 16;
+  // trampoline
+  if (me.pos.y > 40 && Math.abs(me.pos.x + 75) < 12 && Math.abs(me.pos.z - 82) < 12) badge("sky-high", "Sky High", "Bounced 40 studs high on the trampoline.");
+  if (me.pos.y > bestBounce && Math.abs(me.pos.x + 75) < 12 && Math.abs(me.pos.z - 82) < 12) bestBounce = me.pos.y;
+
+  if (arcade.on) arcStep(dt);
+  tagStep(dt);
+
+  // fountain, bell, coins, stage lights, hats on display, swings at rest
+  spout.scale.y = 1 + Math.sin(time * 6) * 0.15;
+  drops.forEach((d, i) => {
+    const u = (time * 0.8 + i / 8) % 1, a = (i / 8) * Math.PI * 2;
+    d.position.set(Math.cos(a) * (0.5 + 6 * u), FB + 8 + 4 * u - 10.7 * u * u, Math.sin(a) * (0.5 + 6 * u));
+  });
+  if (bellSwing > 0.001) { bellSwing *= Math.pow(0.4, dt); bell.rotation.z = Math.sin(time * 9) * 0.5 * bellSwing; }
+  for (let i = coins.length - 1; i >= 0; i--) {
+    const c = coins[i];
+    c.t += dt * 1.4;
+    c.m.position.lerpVectors(c.from, c.to, Math.min(1, c.t));
+    c.m.position.y += Math.sin(Math.min(1, c.t) * Math.PI) * 5;
+    c.m.rotation.x += dt * 12;
+    if (c.t >= 1) { world.scene.remove(c.m); coins.splice(i, 1); tone([1320, 1760], 0.25, "sine", 0.06, 0.08); }
+  }
+  const beat = Math.floor(time * 2.2);
+  tiles.forEach((m, i) => (m.material = TILE_COLORS[(i * 7 + beat) % TILE_COLORS.length]));
+  spots.forEach((m, i) => (m.material = TILE_COLORS[(i + beat) % TILE_COLORS.length]));
+  paintPad.material = TILE_COLORS[Math.floor(time * 1.5) % TILE_COLORS.length];
+  hatDisplays.forEach((h, i) => (h.rotation.y = time * 0.8 + i));
+  for (const sw of swings) if (!seat || seat.swing !== sw) sw.group.rotation.x *= 0.95;
+
+  // NPCs
+  for (const m of statics) m.userData.animate(dt, 0, false);
+  for (const fx of statics.map((m) => m.userData.fx)) if (fx.em === 1 && fx.t > 2.5) fx.em = 0;
+  for (const w of walkers) {
+    let vx = 0, vz = 0;
+    if (w.waveT > 0) { w.waveT -= dt; if (w.waveT <= 0) w.fx.em = 0; }
+    if (w.pause > 0) w.pause -= dt;
+    else {
+      const a = (w.i / 8) * Math.PI * 2, tx = Math.cos(a) * 22, tz = Math.sin(a) * 22;
+      const d = Math.hypot(tx - w.pos.x, tz - w.pos.z);
+      if (d < 1.5) { w.i = (w.i + 1) % 8; if (Math.random() < 0.3) w.pause = Kit.rand(1, 3); }
+      else { vx = ((tx - w.pos.x) / d) * 7; vz = ((tz - w.pos.z) / d) * 7; }
+    }
+    npcMove(w, vx, vz, dt);
+    w.model.position.copy(w.pos);
+    if (w.waveT > 0) faceDir(w, me.pos.x - w.pos.x, me.pos.z - w.pos.z, dt); else faceDir(w, vx, vz, dt);
+    w.model.userData.animate(dt, Math.hypot(vx, vz), !w.onGround);
+  }
+  const showBots = botsMode();
+  for (const b of bots) {
+    b.model.visible = showBots;
+    if (showBots) botStep(b, dt);
+  }
+
+  // what can I interact with?
+  current = null;
+  if (started && !arcade.on && !seat && me.alive) {
+    let bd = 1e9;
+    for (const it of interacts) {
+      const p = it.follow ? it.follow.pos : it.pos;
+      if (it.follow && !it.follow.model.visible) continue;
+      const d = Math.hypot(p.x - me.pos.x, p.z - me.pos.z);
+      if (d < it.r && d < bd && Math.abs(p.y - me.pos.y) < 4) { bd = d; current = it; }
+    }
+  }
+  const pr = $("prompt");
+  const label = current ? (current.hat !== undefined ? (myFx.hat === current.hat ? "Take off " : "Try on ") + HATS[current.hat] : current.label) : seat ? "Move or jump to stand up" : "";
+  if (label) { pr.style.display = "block"; pr.innerHTML = current ? `<b>E</b>${label}` : label; } else pr.style.display = "none";
+
+  if (started) areaStep();
+  skyStep(dt);
+
+  // host shares the time of day now and then
+  if (net.online && net.isHost && net.players.size > 0 && (hostT += dt) > 10) { hostT = 0; net.event({ k: "time", v: +dayT.toFixed(4) }); }
+
+  if (bannerHold && t > bannerHold) { bannerHold = 0; if (!tag.active) $("banner").style.display = "none"; }
+  if (!tag.active && !bannerHold) $("banner").style.display = "none";
+
+  if ((slowT += dt) > 0.4) {
+    slowT = 0;
+    Kit.hud(`${clock()}<small>Areas ${visited.size}/${AREAS.length}  -  ${tickets} tickets</small>`);
+    const it = (k) => (tag.active && tag.it === k ? " (IT)" : "");
+    const rows = [{ name: me.name + it(myKey()), values: [myTags], me: true }];
+    for (const pl of net.players.values()) rows.push({ name: pl.name + it(pl.id), values: [(pl.state && +pl.state.tg) || 0] });
+    if (showBots && (tag.active || bots.some((b) => b.tags))) bots.forEach((b) => rows.push({ name: b.name + it(b.key), values: [b.tags] }));
+    rows.sort((a, b) => b.values[0] - a.values[0]);
+    Kit.leaderboard(["Tags"], rows);
+  }
+}
+world.start(update);
+window.game = { tag, bots, me, emote, arcade, interacts, setEmote, requestTag, teleport, get dayT() { return dayT; }, set dayT(v) { dayT = v; }, myFx, visited, startArcade, arcPress };
+
+Kit.overlay("Brick Plaza",
+  "Hang out with friends in a blocky town!\n\n" +
+  "WASD move, Space jump, drag or arrow keys to look, Shift lock\n" +
+  "E to interact: benches, cafe snacks, hats, arcade, the bell\n" +
+  "Emotes: 1 Wave  2 Dance  3 Cheer  4 Sit\n" +
+  "Press E at the TAG sign to play Tag. Online, everyone joins in!", "Hang out").then(() => { started = true; });
+</script>
+</body></html>

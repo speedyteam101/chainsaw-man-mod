@@ -13,6 +13,14 @@
 const ID = "jump-tower";
 const { canvas, ctx, W, H } = Kit.stage(480, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const HEIGHT_BADGES = [
+  [250, "height-250", "Cloud Climber", "Reach height 250."],
+  [1000, "height-1000", "Sky Scraper", "Reach height 1000."],
+  [2500, "height-2500", "Space Jumper", "Reach height 2500."],
+];
+let nextHeightBadge = 0;
 
 const GRAV = 1500, BOUNCE = 830, SPRING = 1450, JET = 1150;
 const PW = 30, PH = 34, PLW = 72, PLH = 16;
@@ -30,6 +38,7 @@ function reset() {
   player = { x: W / 2 - PW / 2, y: H - 120, vx: 0, vy: -BOUNCE, face: 1, jet: 0, squash: 0 };
   camY = 0;
   maxHeight = 0;
+  nextHeightBadge = 0;
   alive = true;
   plats.push({ x: W / 2 - PLW / 2, y: H - 60, w: PLW, type: "normal" });
   topY = H - 60;
@@ -162,6 +171,7 @@ function update(dt) {
     if (player.x + PW - 4 > e.x && player.x + 4 < e.x + e.w && player.y + PH > e.y + 4 && player.y + 4 < e.y + e.h) {
       if (player.vy > 0 && prevBottom <= e.y + 12) {
         e.dead = true;
+        badge("stomper", "Stomper", "Stomp a flying critter from above.");
         player.vy = -BOUNCE * 1.1;
         Kit.sfx("score");
         burst(e.x + e.w / 2, e.y, 14, ["#a855f7", "#f2f4f5"], 200);
@@ -177,12 +187,17 @@ function update(dt) {
       it.got = true;
       player.jet = 2.4;
       Kit.sfx("win");
+      badge("jetpack", "Rocket Rider", "Grab a jetpack.");
     }
   }
 
   // camera + score
   const h = H - 120 - player.y;
   if (alive && h > maxHeight) maxHeight = h;
+  while (nextHeightBadge < HEIGHT_BADGES.length && height() >= HEIGHT_BADGES[nextHeightBadge][0]) {
+    const [, id, name, desc] = HEIGHT_BADGES[nextHeightBadge++];
+    badge(id, name, desc);
+  }
   const targetCam = player.y - H * 0.42;
   if (targetCam < camY) camY = targetCam;
   while (topY > camY - 120) generate();
@@ -337,22 +352,18 @@ function drawPlayer() {
       Kit.brick(ctx, px - 6, oy + 10, 8, 20, "#94a3b8", 2);
       Kit.brick(ctx, px + w - 2, oy + 10, 8, 20, "#94a3b8", 2);
     }
-    // legs
-    ctx.fillStyle = "#1d4ed8";
-    ctx.fillRect(px + 5, oy + h - 9, 8, 9);
-    ctx.fillRect(px + w - 13, oy + h - 9, 8, 9);
-    Kit.brick(ctx, px, oy + h * 0.42, w, h * 0.42, "#f97316", 4);      // torso
-    Kit.brick(ctx, px + 3, oy, w - 6, h * 0.46, "#fcd34d", 5);         // head
-    ctx.fillStyle = "#111";
-    const ex = px + w / 2 + player.face * 4;
-    ctx.fillRect(ex - 7, oy + 6, 4, 5);
-    ctx.fillRect(ex + 3, oy + 6, 4, 5);
-    ctx.fillRect(ex - 4, oy + 13, 8, 2);
-    if (!alive) {
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(ex - 8, oy + 6, 6, 2);
-      ctx.fillRect(ex + 2, oy + 6, 6, 2);
-    }
+    // your own avatar, squashed a little on each bounce
+    ctx.save();
+    ctx.translate(px + w / 2, oy + h);
+    ctx.scale(1 + sq, 1 - sq);
+    if (!alive) { ctx.translate(0, -PH / 2); ctx.rotate(t * 9); ctx.translate(0, PH / 2); }   // tumbling after a knock-out
+    Kit.drawAvatar(ctx, 0, 0, PH + 4, {
+      look: ME.avatar,
+      facing: player.face,
+      air: player.vy < 150 || player.jet > 0,
+      walk: Math.abs(player.vx) > 40 ? t * 14 : 0,
+    });
+    ctx.restore();
   }
 }
 

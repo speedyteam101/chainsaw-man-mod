@@ -15,6 +15,9 @@ const ID = "gem-match";
 const N = 8, CELL = 64;
 const BX = 24, BY = 34;
 const { canvas, ctx, W, H } = Kit.stage(780, 580);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const PX = BX + N * CELL + 26;          // side panel x
 const PW = W - PX - 20;
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
@@ -77,7 +80,7 @@ function reset() {
 }
 
 function updateHud() {
-  Kit.hud(`Score ${totalScore}<small>Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Score ${totalScore}<small>${esc(ME)} &middot; Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 const inside = (r, c) => r >= 0 && c >= 0 && r < N && c < N;
@@ -147,6 +150,7 @@ function afterSwap() {
     const other = a.special === "rainbow" ? b : a;
     clear.add(rb.join(","));
     if (other.special === "rainbow") {
+      badge("double-rainbow", "Double Rainbow", "Swap two rainbow bricks together.");
       for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) clear.add(r + "," + c);
     } else {
       for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (board[r][c].color === other.color) clear.add(r + "," + c);
@@ -254,11 +258,13 @@ function beginClear(clear, create) {
     p.color = s.color;
     p.clearing = false;
     p.born = 0.4;
+    if (s.special === "rainbow") badge("rainbow", "Over the Rainbow", "Make a rainbow brick by matching 5.");
   }
   if (clear.size) {
     cx /= clear.size; cy /= clear.size;
     popups.push({ x: BX + (cx + 0.5) * CELL, y: BY + (cy + 0.5) * CELL, text: `+${pts}`, t: 1 });
   }
+  if (cascade >= 4) badge("cascade-4", "Cascade", "Set off a x4 combo.");
   if (cascade >= 2) popups.push({ x: BX + N * CELL / 2, y: BY + N * CELL / 2 - 20, text: `Combo x${cascade}!`, t: 1.2, big: true });
   Kit.sfx(triggered.size ? "hit" : cascade > 1 ? "coin" : "score");
   if (create.length) setTimeout(() => Kit.sfx("jump"), 120);
@@ -351,6 +357,8 @@ async function levelWon() {
   const bonus = moves * 60;
   addScore(bonus);
   Kit.sfx("win");
+  badge("level-1", "Gem Starter", "Complete your first level.");
+  if (level >= 5) badge("level-5", "Gem Expert", "Complete level 5.");
   await Kit.overlay(`Level ${level} complete!`, `Target ${target} reached.\nMoves left bonus: +${bonus}\nTotal score: ${totalScore}`, "Next level");
   level++;
   startLevel();

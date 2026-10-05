@@ -12,6 +12,8 @@
 "use strict";
 const ID = "kart-dash";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 
 const WORLD_W = 2400, WORLD_H = 1600;
 const HALF = 78;               // half the asphalt width
@@ -186,7 +188,7 @@ function renderWorld() {
 
 // ---------- karts ----------
 const KART_COLORS = [
-  { body: "#3b82f6", dark: "#1d4ed8", name: "You" },
+  { body: "#3b82f6", dark: "#1d4ed8", name: ME.name },
   { body: "#ef4444", dark: "#b91c1c", name: "Red" },
   { body: "#facc15", dark: "#a16207", name: "Gold" },
   { body: "#a855f7", dark: "#7e22ce", name: "Violet" },
@@ -200,6 +202,7 @@ function makeKart(i) {
     idx: wrap(N - 6 - i * 6), lap: -1, done: false, time: 0,
     boost: 0, spin: 0, shield: 0, item: null, itemT: 0, offTrack: false,
     skill: [1, 0.95, 0.97, 0.93][i], lane: i % 2 ? 30 : -30, laneT: Math.random() * 6,
+    face: 1, spun: false,
   };
 }
 
@@ -260,6 +263,7 @@ function useItem(k) {
 function spinOut(k) {
   if (k.shield > 0) { k.shield = 0; burst(k.x, k.y, "#93c5fd", 14); if (!k.ai) Kit.sfx("click"); return; }
   k.spin = 1.1;
+  k.spun = true;
   k.speed *= 0.25;
   k.boost = 0;
   burst(k.x, k.y, "#facc15", 12);
@@ -381,7 +385,11 @@ function updateKart(k, dt) {
   }
   for (const s of slicks) {
     if (s.dead || (s.owner === k.i && s.age < 0.6)) continue;
-    if (Math.hypot(s.x - k.x, s.y - k.y) < 22) { s.dead = true; spinOut(k); }
+    if (Math.hypot(s.x - k.x, s.y - k.y) < 22) {
+      s.dead = true;
+      if (s.owner === 0 && k.ai && k.shield <= 0) badge("slick-trick", "Slick Trick", "Spin out a rival with your oil slick.");
+      spinOut(k);
+    }
   }
   // dust when off track or boosting
   if ((k.offTrack && Math.abs(k.speed) > 60) || k.boost > 0) {
@@ -416,6 +424,11 @@ function playerFinished() {
   msg = place === 1 ? "You win!" : `${ordinal(place)} place`;
   msgT = 3;
   Kit.sfx(place === 1 ? "win" : "score");
+  badge("finish", "Finish Line", "Finish a race.");
+  if (place === 1) {
+    badge("first-place", "Kart Champ", "Win a race in 1st place.");
+    if (!player().spun) badge("clean-win", "Clean Racer", "Win a race without spinning out once.");
+  }
 }
 
 async function showResults() {
@@ -493,25 +506,45 @@ function drawKart(k) {
   ctx.fillStyle = k.dark;
   ctx.fillRect(-18, -11, 5, 22);          // rear spoiler
   ctx.fillRect(12, -6, 6, 12);            // nose
-  // driver helmet
-  ctx.fillStyle = "#f2f4f5";
-  ctx.fillRect(-6, -6, 12, 12);
-  ctx.fillStyle = "#1f2328";
-  ctx.fillRect(2, -4, 4, 8);
+  // driver helmet (your kart shows your avatar instead)
+  if (k.ai) {
+    ctx.fillStyle = "#f2f4f5";
+    ctx.fillRect(-6, -6, 12, 12);
+    ctx.fillStyle = "#1f2328";
+    ctx.fillRect(2, -4, 4, 8);
+  } else {
+    ctx.fillStyle = "#1f2328";
+    ctx.fillRect(-8, -7, 14, 14);   // seat
+  }
   ctx.restore();
+  if (!k.ai) {
+    // your avatar sits upright in the seat (legs tucked inside the kart)
+    const c = Math.cos(k.angle);
+    if (Math.abs(c) > 0.3) k.face = c > 0 ? 1 : -1;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(k.x - 24, k.y - 50, 48, 52);
+    ctx.clip();
+    const wob = k.spin > 0 ? Math.sin(k.spin * 30) * 0.3 : 0;
+    ctx.translate(k.x, k.y + 12);
+    ctx.rotate(wob);
+    Kit.drawAvatar(ctx, 0, 0, 30, { look: ME.avatar, facing: k.face, walk: 0.9 });
+    ctx.restore();
+  }
   if (k.shield > 0) {
     ctx.strokeStyle = `rgba(147,197,253,${0.5 + Math.sin(raceTime * 10) * 0.25})`;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(k.x, k.y, 24, 0, 7); ctx.stroke();
   }
-  if (k.ai) {
+  {
+    const up = k.ai ? 0 : 10;   // your tag sits above your avatar's head
     ctx.fillStyle = "rgba(0,0,0,.45)";
     ctx.font = "bold 11px system-ui, sans-serif";
     const tw = ctx.measureText(k.name).width;
-    ctx.fillRect(k.x - tw / 2 - 4, k.y - 36, tw + 8, 15);
-    ctx.fillStyle = k.body;
+    ctx.fillRect(k.x - tw / 2 - 4, k.y - 36 - up, tw + 8, 15);
+    ctx.fillStyle = k.ai ? k.body : "#fff";
     ctx.textAlign = "center";
-    ctx.fillText(k.name, k.x, k.y - 25);
+    ctx.fillText(k.name, k.x, k.y - 25 - up);
   }
 }
 
