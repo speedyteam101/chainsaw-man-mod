@@ -11,6 +11,7 @@
   .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
   .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
   .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices .label { white-space: nowrap; }
   .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
   .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
   .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
@@ -73,7 +74,10 @@ function choose(title, text, options) {
       const num = document.createElement("span");
       num.className = "num";
       num.textContent = i + 1;
-      b.append(num, opt.label);
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = opt.label;
+      b.append(num, label);
       if (opt.hint) {
         const s = document.createElement("small");
         s.textContent = opt.hint;
@@ -116,9 +120,9 @@ async function mainMenu() {
   updateHud();
   mode = await choose(
     "Paddle Clash",
-    "First to 7 points wins. The ball speeds up on every hit, and moving your paddle as you hit puts spin on it.",
+    "First to 7 points wins. The ball speeds up on every hit, and moving your paddle as you hit puts spin on it.\nP pauses the match.",
     [
-      { label: "1 Player vs CPU", value: "cpu", hint: "W/S, arrows or mouse" },
+      { label: "1 Player vs CPU", value: "cpu", hint: "keys or mouse" },
       { label: "2 Players", value: "2p", color: "blue", hint: "W/S vs Up/Down" },
     ]
   );

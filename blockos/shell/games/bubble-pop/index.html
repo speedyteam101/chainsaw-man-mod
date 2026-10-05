@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bubble Pop</title>
+<link rel="stylesheet" href="../kit.css">
+<style>.kit-stage canvas:focus { outline: none; }</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "bubble-pop";
+const R = 20;                       // bubble radius
+const D = R * 2;
+const ROWH = R * Math.sqrt(3);      // vertical distance between hex rows
+const COLS = 12;                    // bubbles in an even row (odd rows hold COLS - 1)
+const WALL = 16;
+const FIELD_L = WALL, FIELD_R = WALL + COLS * D;
+const { canvas, ctx, W, H } = Kit.stage(FIELD_R + WALL, 680);
+const SHOOT_X = W / 2, SHOOT_Y = H - 62;
+const DEAD_Y = H - 118;             // bubbles below this line end the game
+const MAX_ROWS = 18;
+const SPEED = 960;
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+const PALETTE = [
+  { fill: "#ef4444", dark: "#991b1b" },
+  { fill: "#3b82f6", dark: "#1e40af" },
+  { fill: "#facc15", dark: "#a16207" },
+  { fill: "#22c55e", dark: "#15803d" },
+  { fill: "#a855f7", dark: "#6b21a8" },
+  { fill: "#fb923c", dark: "#c2410c" },
+];
+
+let grid, ceilY, ceilTarget, level, score, shots, dropEvery, colorCount;
+let angle, current, next, flying, particles, fallers, popups, state, shake, aimKeys;
+
+// ---------- grid helpers ----------
+const rowCols = (r) => (r % 2 ? COLS - 1 : COLS);
+const valid = (r, c) => r >= 0 && r < MAX_ROWS && c >= 0 && c < rowCols(r);
+const cellX = (r, c) => FIELD_L + R + c * D + (r % 2 ? R : 0);
+const cellY = (r) => ceilY + R + r * ROWH;
+function neighbors(r, c) {
+  const odd = r % 2;
+  const list = odd
+    ? [[r, c - 1], [r, c + 1], [r - 1, c], [r - 1, c + 1], [r + 1, c], [r + 1, c + 1]]
+    : [[r, c - 1], [r, c + 1], [r - 1, c - 1], [r - 1, c], [r + 1, c - 1], [r + 1, c]];
+  return list.filter(([a, b]) => valid(a, b));
+}
+function emptyGrid() {
+  const g = [];
+  for (let r = 0; r < MAX_ROWS; r++) g.push(new Array(rowCols(r)).fill(-1));
+  return g;
+}
+function colorsOnBoard() {
+  const s = new Set();
+  for (const row of grid) for (const v of row) if (v >= 0) s.add(v);
+  return [...s];
+}
+function randomShotColor() {
+  const on = colorsOnBoard();
+  return on.length ? Kit.pick(on) : Kit.randInt(0, colorCount - 1);
+}
+
+// ---------- level setup ----------
+function buildLevel() {
+  grid = emptyGrid();
+  colorCount = Math.min(6, 3 + Math.floor((level - 1) / 2));
+  const rows = Math.min(9, 4 + level);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < rowCols(r); c++) {
+      // clumpy colors: often copy a neighbor above or to the left
+      let col = Kit.randInt(0, colorCount - 1);
+      const roll = Math.random();
+      if (roll < 0.35 && c > 0) col = grid[r][c - 1];
+      else if (roll < 0.6 && r > 0) {
+        const up = neighbors(r, c).filter(([a]) => a === r - 1);
+        if (up.length) col = grid[up[0][0]][up[0][1]];
+      }
+      grid[r][c] = col;
+    }
+  }
+  ceilY = ceilTarget = 0;
+  shots = 0;
+  dropEvery = Math.max(4, 9 - level);
+  current = randomShotColor();
+  next = randomShotColor();
+  flying = null;
+}
+
+function reset() {
+  level = 1;
+  score = 0;
+  angle = -Math.PI / 2;
+  particles = [];
+  fallers = [];
+  popups = [];
+  shake = 0;
+  buildLevel();
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- collision / path ----------
+// Returns true when a bubble centered at (x, y) touches the ceiling or any grid bubble.
+function touches(x, y) {
+  if (y - R <= ceilY) return true;
+  const approx = Math.round((y - ceilY - R) / ROWH);
+  for (let r = approx - 1; r <= approx + 1; r++) {
+    if (r < 0 || r >= MAX_ROWS) continue;
+    for (let c = 0; c < rowCols(r); c++) {
+      if (grid[r][c] < 0) continue;
+      const dx = cellX(r, c) - x, dy = cellY(r) - y;
+      if (dx * dx + dy * dy < (D * 0.86) ** 2) return true;
+    }
+  }
+  return false;
+}
+
+// Moves a point along the aim with wall bounces; calls visit(x, y) every few pixels.
+function trace(ang, maxLen, visit) {
+  let x = SHOOT_X, y = SHOOT_Y, vx = Math.cos(ang), vy = Math.sin(ang);
+  const step = 4;
+  for (let d = 0; d < maxLen; d += step) {
+    x += vx * step; y += vy * step;
+    if (x < FIELD_L + R) { x = 2 * (FIELD_L + R) - x; vx = -vx; }
+    if (x > FIELD_R - R) { x = 2 * (FIELD_R - R) - x; vx = -vx; }
+    if (visit(x, y, d)) return { x, y };
+  }
+  return null;
+}
+
+function snapCell(x, y) {
+  let best = null, bestD = Infinity;
+  const approx = Math.round((y - ceilY - R) / ROWH);
+  for (let r = Math.max(0, approx - 2); r <= Math.min(MAX_ROWS - 1, approx + 2); r++) {
+    for (let c = 0; c < rowCols(r); c++) {
+      if (grid[r][c] >= 0) continue;
+      const attached = r === 0 || neighbors(r, c).some(([a, b]) => grid[a][b] >= 0);
+      if (!attached) continue;
+      const d = (cellX(r, c) - x) ** 2 + (cellY(r) - y) ** 2;
+      if (d < bestD) { bestD = d; best = [r, c]; }
+    }
+  }
+  return best;
+}
+
+// ---------- shooting ----------
+function fire() {
+  if (state !== "aim" || flying) return;
+  flying = { x: SHOOT_X, y: SHOOT_Y, vx: Math.cos(angle) * SPEED, vy: Math.sin(angle) * SPEED, color: current };
+  current = next;
+  next = randomShotColor();
+  Kit.sfx("jump");
+}
+
+function swapBubbles() {
+  if (state !== "aim" || flying) return;
+  [current, next] = [next, current];
+  Kit.sfx("click");
+}
+
+function land(x, y, color) {
+  flying = null;
+  const cell = snapCell(x, y);
+  if (!cell) return;
+  const [r, c] = cell;
+  grid[r][c] = color;
+
+  // match 3+
+  const group = [[r, c]];
+  const seen = new Set([r + "," + c]);
+  for (let i = 0; i < group.length; i++) {
+    for (const [a, b] of neighbors(group[i][0], group[i][1])) {
+      const k = a + "," + b;
+      if (!seen.has(k) && grid[a][b] === color) { seen.add(k); group.push([a, b]); }
+    }
+  }
+  if (group.length >= 3) {
+    for (const [a, b] of group) {
+      burst(cellX(a, b), cellY(a), color);
+      grid[a][b] = -1;
+    }
+    const pts = group.length * 10;
+    score += pts;
+    popups.push({ x: cellX(r, c), y: cellY(r), text: "+" + pts, t: 1 });
+    Kit.sfx("score");
+    dropFloating();
+  } else {
+    Kit.sfx("click");
+    shots++;
+    if (shots % dropEvery === 0) lowerCeiling();
+  }
+
+  // make sure the queued bubbles still exist on the board
+  const on = colorsOnBoard();
+  if (on.length) {
+    if (!on.includes(current)) current = Kit.pick(on);
+    if (!on.includes(next)) next = Kit.pick(on);
+  }
+  updateHud();
+  if (!on.length) return levelClear();
+  checkDeadline();
+}
+
+function dropFloating() {
+  const seen = new Set();
+  const stack = [];
+  for (let c = 0; c < rowCols(0); c++) if (grid[0][c] >= 0) { seen.add("0," + c); stack.push([0, c]); }
+  while (stack.length) {
+    const [r, c] = stack.pop();
+    for (const [a, b] of neighbors(r, c)) {
+      const k = a + "," + b;
+      if (!seen.has(k) && grid[a][b] >= 0) { seen.add(k); stack.push([a, b]); }
+    }
+  }
+  let dropped = 0;
+  for (let r = 0; r < MAX_ROWS; r++)
+    for (let c = 0; c < rowCols(r); c++)
+      if (grid[r][c] >= 0 && !seen.has(r + "," + c)) {
+        fallers.push({ x: cellX(r, c), y: cellY(r), vx: Kit.rand(-60, 60), vy: Kit.rand(-120, 0), color: grid[r][c] });
+        grid[r][c] = -1;
+        dropped++;
+      }
+  if (dropped) {
+    const pts = dropped * 20 * Math.min(5, Math.ceil(dropped / 3));
+    score += pts;
+    popups.push({ x: W / 2, y: DEAD_Y - 40, text: `Drop x${dropped}  +${pts}`, t: 1.4 });
+    Kit.sfx("coin");
+  }
+}
+
+function lowerCeiling() {
+  ceilTarget += ROWH;
+  shake = 0.35;
+  Kit.sfx("hit");
+}
+
+function lowestBubbleY(useTarget) {
+  let maxY = -Infinity;
+  const base = useTarget ? ceilTarget : ceilY;
+  for (let r = 0; r < MAX_ROWS; r++)
+    for (let c = 0; c < rowCols(r); c++)
+      if (grid[r][c] >= 0) maxY = Math.max(maxY, base + R + r * ROWH);
+  return maxY;
+}
+
+function checkDeadline() {
+  if (lowestBubbleY(true) + R > DEAD_Y) gameOver();
+}
+
+async function levelClear() {
+  state = "between";
+  const bonus = 500 * level;
+  score += bonus;
+  updateHud();
+  Kit.sfx("win");
+  await Kit.overlay(`Level ${level} clear!`, `Board bonus +${bonus}\nScore: ${score}`, "Next level");
+  level++;
+  buildLevel();
+  updateHud();
+  state = "aim";
+}
+
+async function gameOver() {
+  state = "over";
+  Kit.sfx("lose");
+  // knock everything loose for a dramatic finish
+  for (let r = 0; r < MAX_ROWS; r++)
+    for (let c = 0; c < rowCols(r); c++)
+      if (grid[r][c] >= 0) {
+        fallers.push({ x: cellX(r, c), y: cellY(r), vx: Kit.rand(-90, 90), vy: Kit.rand(-200, 0), color: grid[r][c] });
+        grid[r][c] = -1;
+      }
+  const best = Kit.finish(ID, score);
+  await new Promise((res) => setTimeout(res, 900));
+  await Kit.overlay("Ceiling crash!", `The bubbles reached the line.\nScore: ${score}  (level ${level})\nBest: ${best}`, "Play again");
+  reset();
+  state = "aim";
+}
+
+function burst(x, y, color) {
+  for (let i = 0; i < 6; i++) {
+    const a = Kit.rand(0, Math.PI * 2), s = Kit.rand(60, 220);
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: Kit.rand(0.3, 0.6), color });
+  }
+}
+
+// ---------- input ----------
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  aimAt(p.x, p.y);
+});
+canvas.addEventListener("pointerdown", (e) => {
+  if (state !== "aim") return;
+  const p = Kit.pointer(canvas, e);
+  if (e.button === 2) { swapBubbles(); return; }
+  if (e.button !== 0) return;
+  aimAt(p.x, p.y);
+  fire();
+});
+function aimAt(x, y) {
+  if (state !== "aim") return;
+  const a = Math.atan2(Math.min(y, SHOOT_Y - 10) - SHOOT_Y, x - SHOOT_X);
+  angle = Kit.clamp(a, -Math.PI + 0.12, -0.12);
+}
+Kit.onKey((code) => {
+  if (state !== "aim") return;
+  if (code === "Space" || code === "ArrowUp" || code === "KeyW") fire();
+  if (code === "KeyX" || code === "ShiftLeft" || code === "ShiftRight" || code === "ArrowDown" || code === "KeyS") swapBubbles();
+});
+
+// ---------- update ----------
+function update(dt) {
+  if (state === "aim") {
+    const turn = (Kit.key("ArrowLeft") || Kit.key("KeyA") ? -1 : 0) + (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0);
+    if (turn) angle = Kit.clamp(angle + turn * 1.7 * dt, -Math.PI + 0.12, -0.12);
+  }
+  if (ceilY < ceilTarget) ceilY = Math.min(ceilTarget, ceilY + 140 * dt);
+  shake = Math.max(0, shake - dt);
+
+  if (flying) {
+    let remaining = SPEED * dt;
+    while (flying && remaining > 0) {
+      const step = Math.min(remaining, 6);
+      remaining -= step;
+      const f = flying;
+      f.x += (f.vx / SPEED) * step;
+      f.y += (f.vy / SPEED) * step;
+      if (f.x < FIELD_L + R) { f.x = 2 * (FIELD_L + R) - f.x; f.vx = -f.vx; Kit.sfx("click"); }
+      if (f.x > FIELD_R - R) { f.x = 2 * (FIELD_R - R) - f.x; f.vx = -f.vx; Kit.sfx("click"); }
+      if (touches(f.x, f.y)) land(f.x, f.y, f.color);
+    }
+  }
+
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; p.t -= dt; }
+  particles = particles.filter((p) => p.t > 0);
+  for (const f of fallers) { f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 1400 * dt; }
+  fallers = fallers.filter((f) => f.y < H + 40);
+  for (const p of popups) { p.t -= dt; p.y -= 30 * dt; }
+  popups = popups.filter((p) => p.t > 0);
+}
+
+// ---------- drawing ----------
+function drawBubble(x, y, color, r = R, alpha = 1) {
+  const p = PALETTE[color];
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = p.dark;
+  ctx.beginPath(); ctx.arc(x, y, r - 1, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = p.fill;
+  ctx.beginPath(); ctx.arc(x, y - 1.5, r - 3.5, 0, Math.PI * 2); ctx.fill();
+  // stud on top for the brick look
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  ctx.beginPath(); ctx.arc(x, y + 1, r * 0.42, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = p.fill;
+  ctx.beginPath(); ctx.arc(x, y - 1, r * 0.42, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  ctx.beginPath(); ctx.ellipse(x - r * 0.38, y - r * 0.45, r * 0.22, r * 0.13, -0.6, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-3, 3) * shake * 3, Kit.rand(-2, 2) * shake * 3);
+  ctx.fillStyle = "#101a2e";
+  ctx.fillRect(-10, -10, W + 20, H + 20);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 12; y < H; y += 28)
+    for (let x = 12; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  // ceiling press
+  if (ceilY > 0) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(FIELD_L, 0, FIELD_R - FIELD_L, ceilY); ctx.clip();
+    for (let y = ceilY - 24, row = 0; y > -24; y -= 24, row++)
+      for (let x = FIELD_L - (row % 2 ? 24 : 0), i = row; x < FIELD_R; x += 48, i++)
+        Kit.brick(ctx, x + 1, y + 1, 46, 22, i % 2 ? "#475569" : "#52607a", 4);
+    ctx.restore();
+  }
+  ctx.fillStyle = "#94a3b8";
+  ctx.fillRect(FIELD_L, ceilY - 4, FIELD_R - FIELD_L, 4);
+
+  // walls
+  for (let y = 0, i = 0; y < H; y += 32, i++) {
+    Kit.brick(ctx, 1, y + 1, WALL - 2, 30, i % 2 ? "#334155" : "#3f4d63", 3);
+    Kit.brick(ctx, W - WALL + 1, y + 1, WALL - 2, 30, i % 2 ? "#3f4d63" : "#334155", 3);
+  }
+
+  // deadline
+  ctx.strokeStyle = "rgba(239,68,68,.6)";
+  ctx.setLineDash([10, 8]);
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(FIELD_L, DEAD_Y); ctx.lineTo(FIELD_R, DEAD_Y); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // grid
+  for (let r = 0; r < MAX_ROWS; r++)
+    for (let c = 0; c < rowCols(r); c++)
+      if (grid[r][c] >= 0) drawBubble(cellX(r, c), cellY(r), grid[r][c]);
+
+  // aim guide
+  if (state === "aim" && !flying) {
+    ctx.fillStyle = PALETTE[current].fill;
+    let lastDot = -999;
+    trace(angle, 900, (x, y, d) => {
+      if (touches(x, y)) return true;
+      if (d - lastDot >= 18) {
+        lastDot = d;
+        ctx.globalAlpha = Math.max(0.15, 0.9 - d / 1000);
+        ctx.beginPath(); ctx.arc(x, y, 3.2, 0, Math.PI * 2); ctx.fill();
+      }
+      return false;
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // launcher
+  ctx.save();
+  ctx.translate(SHOOT_X, SHOOT_Y);
+  ctx.rotate(angle + Math.PI / 2);
+  Kit.brick(ctx, -11, -54, 22, 44, "#cbd5e1", 4);
+  ctx.restore();
+  Kit.brick(ctx, SHOOT_X - 46, SHOOT_Y + 10, 92, 34, "#64748b", 6);
+  Kit.brick(ctx, SHOOT_X - 30, SHOOT_Y + 2, 60, 18, "#94a3b8", 5);
+  if (state !== "over") drawBubble(SHOOT_X, SHOOT_Y, current);
+
+  // next bubble + shots-until-drop meter
+  ctx.fillStyle = "#cbd5e1";
+  ctx.font = `700 13px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.fillText("NEXT", SHOOT_X - 104, H - 72);
+  if (state !== "over") drawBubble(SHOOT_X - 104, H - 44, next, R * 0.8);
+  ctx.fillText("DROP", SHOOT_X + 104, H - 72);
+  const left = dropEvery - (shots % dropEvery);
+  for (let i = 0; i < dropEvery; i++) {
+    const on = i < left;
+    Kit.brick(ctx, SHOOT_X + 104 - dropEvery * 7 + i * 14, H - 56, 12, 22, on ? (left <= 2 ? "#ef4444" : "#facc15") : "#334155", 3);
+  }
+
+  for (const f of fallers) drawBubble(f.x, f.y, f.color);
+  if (flying) drawBubble(flying.x, flying.y, flying.color);
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.fillStyle = PALETTE[p.color].fill;
+    ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+  }
+  ctx.globalAlpha = 1;
+  ctx.font = `800 20px ${FONT}`;
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.fillStyle = "#000";
+    ctx.fillText(p.text, p.x + 2, p.y + 2);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+const game = Kit.loop(update, draw);
+reset();
+state = "menu";
+draw();
+game.start();
+Kit.overlay("Bubble Pop",
+  "Match 3 or more bubbles of a color to pop them.\nAnything left hanging drops for big points.\nThe ceiling lowers every few misses -\nkeep the bubbles above the red line!\n\nMouse: aim, click to shoot, right-click to swap\nKeys: Left / Right to aim, Space to shoot, X to swap",
+  "Play").then(() => { state = "aim"; });
+</script>
+</body>
+</html>

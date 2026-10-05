@@ -105,6 +105,7 @@ const shop = [
     info: () => `Owned ${S.owned[i]}   +${money((t.value * polishMult() * rebirthMult() * beltRate()) / DROP_PERIOD, true)}/s each`,
     cost: () => dropperCost(i),
     locked: () => i > 0 && S.owned[i - 1] === 0 && S.owned[i] === 0,
+    lockHint: i > 0 ? `Buy a ${TIERS[i - 1].name} first` : "",
     maxed: () => false,
     buy: () => S.owned[i]++,
   })),
@@ -114,6 +115,7 @@ const shop = [
     info: () => `Lv ${S.belt}   +25% drop speed`,
     cost: beltCost,
     locked: () => S.owned[0] === 0 && S.belt === 0,
+    lockHint: "Buy a Clay Dropper first",
     maxed: () => S.belt >= MAX_BELT,
     buy: () => S.belt++,
   },
@@ -123,6 +125,7 @@ const shop = [
     info: () => `Lv ${S.polish}   x1.5 brick value`,
     cost: polishCost,
     locked: () => S.owned[1] === 0 && S.polish === 0,
+    lockHint: "Buy a Stone Dropper first",
     maxed: () => S.polish >= MAX_POLISH,
     buy: () => S.polish++,
   },
@@ -497,7 +500,7 @@ function drawShop() {
     text(item.key, SHOP.x + 20, y + 25, 14, "#e5e7eb", "center");
     if (locked) {
       text("Locked", SHOP.x + 44, y + 18, 15, "#6b7280");
-      text("Buy the previous machine first", SHOP.x + 44, y + 36, 11, "#4b5563", "left", 600);
+      text(item.lockHint, SHOP.x + 44, y + 36, 11, "#5b636e", "left", 600);
       return;
     }
     Kit.brick(ctx, SHOP.x + 42, y + 15, 26, 20, item.color, 4);

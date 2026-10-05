@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flap Block</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "flap-block";
+const { canvas, ctx, W, H } = Kit.stage(480, 640);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+const GROUND_Y = H - 72;
+const CUBE = 32, HIT = 26, PX = 130;
+const GRAV = 1550, FLAP = -470, MAX_FALL = 760;
+const PIPE_W = 76, SPACING = 236;
+const PILLAR_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#a855f7", "#fb923c", "#14b8a6"];
+
+let cube, pillars, particles, scroll, score, state, flashT, readyT, nextGapY;
+
+function reset() {
+  cube = { y: H * 0.42, vy: 0, rot: 0, squash: 0 };
+  pillars = [];
+  particles = [];
+  scroll = 0;
+  score = 0;
+  state = "ready";
+  flashT = 0;
+  readyT = 0;
+  nextGapY = H * 0.42;
+  for (let i = 0; i < 4; i++) addPillar(W + 140 + i * SPACING);
+  updateHud();
+}
+
+const speed = () => Math.min(235, 165 + score * 1.6);
+const gapSize = () => Math.max(132, 178 - score * 1.1);
+
+function addPillar(x) {
+  // the next gap is never too far from the previous one, so every gap is reachable
+  const gap = gapSize();
+  const lo = 70 + gap / 2, hi = GROUND_Y - 50 - gap / 2;
+  nextGapY = Kit.clamp(nextGapY + Kit.rand(-170, 170), lo, hi);
+  const index = pillars.length ? pillars[pillars.length - 1].index + 1 : 0;
+  pillars.push({
+    x, gapY: nextGapY, gap, passed: false, index,
+    // after a while some pillars start sliding up and down
+    wobble: index >= 12 && Math.random() < Math.min(0.55, (index - 10) * 0.04) ? Kit.rand(22, 42) : 0,
+    phase: Math.random() * Math.PI * 2,
+    color: PILLAR_COLORS[Math.floor(index / 10) % PILLAR_COLORS.length],
+  });
+}
+
+function gapCenter(p) {
+  if (!p.wobble) return p.gapY;
+  const lo = 70 + p.gap / 2, hi = GROUND_Y - 50 - p.gap / 2;
+  return Kit.clamp(p.gapY + Math.sin(scroll * 0.012 + p.phase) * p.wobble, lo, hi);
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- input ----------
+function flap() {
+  if (state === "ready") state = "play";
+  if (state !== "play") return;
+  cube.vy = FLAP;
+  cube.squash = 1;
+  Kit.sfx("jump");
+  for (let i = 0; i < 5; i++)
+    particles.push({ x: PX - 12, y: cube.y + Kit.rand(-8, 10), vx: Kit.rand(-160, -60), vy: Kit.rand(-30, 70), life: Kit.rand(0.25, 0.45), size: Kit.rand(3, 6), color: "rgba(255,255,255,.8)" });
+}
+Kit.onKey((code) => { if (code === "Space" || code === "ArrowUp" || code === "KeyW") flap(); });
+canvas.addEventListener("pointerdown", (e) => { if (e.button === 0) flap(); });
+
+// ---------- update ----------
+function update(dt) {
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  flashT = Math.max(0, flashT - dt);
+  cube.squash = Math.max(0, cube.squash - dt * 5);
+
+  if (state === "ready") {
+    readyT += dt;
+    scroll += 90 * dt;
+    cube.y = H * 0.42 + Math.sin(readyT * 4) * 8;
+    cube.rot = 0;
+    return;
+  }
+  if (state === "play") {
+    const v = speed();
+    scroll += v * dt;
+    for (const p of pillars) p.x -= v * dt;
+    if (pillars[0].x < -PIPE_W - 20) {
+      pillars.shift();
+      addPillar(pillars[pillars.length - 1].x + SPACING);
+    }
+    for (const p of pillars) {
+      if (!p.passed && p.x + PIPE_W / 2 < PX) {
+        p.passed = true;
+        score++;
+        Kit.sfx(score % 10 === 0 ? "coin" : "score");
+        if (score % 10 === 0) flashT = 0.4;
+        updateHud();
+      }
+    }
+  }
+  // the cube falls in both play and dead states
+  cube.vy = Math.min(MAX_FALL, cube.vy + GRAV * dt);
+  cube.y += cube.vy * dt;
+  const targetRot = Kit.clamp(cube.vy / 700, -0.45, 1.35);
+  cube.rot += (targetRot - cube.rot) * Math.min(1, dt * (cube.vy > 0 ? 6 : 14));
+  if (cube.y < CUBE / 2) { cube.y = CUBE / 2; cube.vy = 0; }
+
+  if (cube.y + CUBE / 2 >= GROUND_Y) {
+    cube.y = GROUND_Y - CUBE / 2;
+    if (state === "play") crash();
+    if (state === "dead") { state = "over"; showGameOver(); }
+    return;
+  }
+  if (state === "play") {
+    const hx = PX - HIT / 2, hy = cube.y - HIT / 2;
+    for (const p of pillars) {
+      if (hx + HIT < p.x || hx > p.x + PIPE_W) continue;
+      const c = gapCenter(p);
+      if (hy < c - p.gap / 2 || hy + HIT > c + p.gap / 2) { crash(); break; }
+    }
+  }
+}
+
+function crash() {
+  state = "dead";
+  flashT = 0.3;
+  cube.vy = Math.min(cube.vy, -200);
+  Kit.sfx("hit");
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(60, 240);
+    particles.push({ x: PX, y: cube.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.4, 0.8), size: Kit.rand(3, 7), color: Kit.pick(["#facc15", "#fde68a", "#ffffff"]) });
+  }
+}
+
+async function showGameOver() {
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, score);
+  updateHud();
+  const medal = score >= 50 ? "Diamond brick!" : score >= 30 ? "Gold brick!" : score >= 15 ? "Silver brick!" : score >= 5 ? "Bronze brick!" : "";
+  await new Promise((r) => setTimeout(r, 500));
+  await Kit.overlay("Bonk!", `Pillars passed: ${score}${medal ? "\nMedal: " + medal : ""}\nBest: ${best}`, "Play again");
+  reset();
+}
+
+// ---------- drawing ----------
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (c) => Math.round(Kit.clamp(amt < 0 ? c * (1 + amt) : c + (255 - c) * amt, 0, 255));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  g.addColorStop(0, "#5ec2f7");
+  g.addColorStop(1, "#d2f0ff");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+  // sun
+  ctx.fillStyle = "rgba(255,240,170,.9)";
+  ctx.fillRect(360, 70, 54, 54);
+  ctx.fillStyle = "rgba(255,240,170,.35)";
+  ctx.fillRect(352, 62, 70, 70);
+  // blocky clouds (slow)
+  ctx.fillStyle = "rgba(255,255,255,.85)";
+  for (let i = 0; i < 5; i++) {
+    const x = ((i * 190 - scroll * 0.15) % (W + 200) + W + 200) % (W + 200) - 120;
+    const y = 60 + ((i * 83) % 150);
+    ctx.fillRect(x, y, 96, 22);
+    ctx.fillRect(x + 22, y - 16, 48, 18);
+    ctx.fillRect(x + 60, y - 8, 26, 10);
+  }
+  // far city of blocks
+  const bw = 46;
+  for (let i = -1; i < W / bw + 2; i++) {
+    const n = Math.floor(scroll * 0.3 / bw) + i;
+    const h = 60 + ((n * 73) % 9) * 14;
+    const x = i * bw - ((scroll * 0.3) % bw);
+    ctx.fillStyle = n % 2 ? "#9fd6ee" : "#a9dcf2";
+    ctx.fillRect(x, GROUND_Y - h, bw - 4, h);
+    ctx.fillStyle = "rgba(255,255,255,.35)";
+    for (let wy = GROUND_Y - h + 10; wy < GROUND_Y - 14; wy += 18)
+      for (let wx = 8; wx < bw - 12; wx += 14) ctx.fillRect(x + wx, wy, 6, 8);
+  }
+  // near bushes
+  ctx.fillStyle = "#7ccf6b";
+  for (let i = -1; i < W / 60 + 2; i++) {
+    const x = i * 60 - ((scroll * 0.6) % 60);
+    const n = Math.floor(scroll * 0.6 / 60) + i;
+    const h = 14 + ((n * 37) % 4) * 6;
+    ctx.fillRect(x, GROUND_Y - h, 54, h);
+  }
+}
+
+function drawPillarPart(x, y, h, color, capAtBottom) {
+  if (h <= 0) return;
+  ctx.fillStyle = shade(color, -0.25);
+  ctx.fillRect(x + 4, y, PIPE_W - 8, h);
+  // staggered bricks
+  const bh = 22;
+  for (let row = 0, by = capAtBottom ? y + h - bh : y; capAtBottom ? by > y - bh : by < y + h; row++, by += capAtBottom ? -bh : bh) {
+    const off = row % 2 ? 0 : -18;
+    for (let bx = x + 4 + off; bx < x + PIPE_W - 4; bx += 36) {
+      const l = Math.max(bx, x + 4), r = Math.min(bx + 35, x + PIPE_W - 4);
+      const t = Math.max(by, y), b = Math.min(by + bh - 1, y + h);
+      if (r - l > 3 && b - t > 3) Kit.brick(ctx, l, t, r - l, b - t, row % 3 === 1 ? shade(color, -0.08) : color, 3);
+    }
+  }
+  // cap block at the gap edge
+  const capH = 26, cy = capAtBottom ? y + h - capH : y;
+  Kit.brick(ctx, x - 6, cy, PIPE_W + 12, capH, shade(color, 0.12), 5);
+  // studs poke out of the top of the lower cap
+  if (!capAtBottom) {
+    ctx.fillStyle = shade(color, 0.3);
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.roundRect(x + 4 + i * 24, cy - 6, 16, 7, 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawPillars() {
+  for (const p of pillars) {
+    if (p.x > W + 20 || p.x < -PIPE_W - 20) continue;
+    const c = gapCenter(p);
+    drawPillarPart(p.x, -10, c - p.gap / 2 + 10, p.color, true);
+    drawPillarPart(p.x, c + p.gap / 2, GROUND_Y - (c + p.gap / 2), p.color, false);
+  }
+}
+
+function drawGround() {
+  ctx.fillStyle = "#3b7d2a";
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  ctx.fillStyle = "#56b13c";
+  ctx.fillRect(0, GROUND_Y, W, 14);
+  const off = scroll % 32;
+  for (let x = -off; x < W + 32; x += 32) {
+    ctx.fillStyle = "#6bc94f";
+    ctx.beginPath(); ctx.roundRect(x + 8, GROUND_Y - 5, 16, 7, 2); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    ctx.fillRect(x, GROUND_Y + 14, 2, H - GROUND_Y);
+  }
+  ctx.fillStyle = "rgba(0,0,0,.15)";
+  for (let y = GROUND_Y + 34; y < H; y += 20) ctx.fillRect(0, y, W, 2);
+}
+
+function drawCube() {
+  ctx.save();
+  ctx.translate(PX, cube.y);
+  ctx.rotate(cube.rot);
+  const sq = cube.squash * 0.18;
+  ctx.scale(1 + sq, 1 - sq);
+  const s = CUBE;
+  // stud on top
+  ctx.fillStyle = "#fde047";
+  ctx.beginPath(); ctx.roundRect(-8, -s / 2 - 6, 16, 8, 2); ctx.fill();
+  Kit.brick(ctx, -s / 2, -s / 2, s, s, "#facc15", 6);
+  // face
+  ctx.fillStyle = "#1f2328";
+  const blink = state === "ready" && Math.floor(readyT * 2) % 5 === 0;
+  if (state === "dead" || state === "over") {
+    for (const ex of [2, 10]) {
+      ctx.fillRect(ex - 3, -7, 7, 2); ctx.fillRect(ex, -10, 2, 8);
+    }
+  } else {
+    ctx.fillRect(1, blink ? -5 : -8, 5, blink ? 2 : 7);
+    ctx.fillRect(9, blink ? -5 : -8, 5, blink ? 2 : 7);
+  }
+  ctx.fillRect(2, 5, 10, 3);
+  // little wing that flaps
+  const wing = cube.squash > 0 ? -6 : Math.sin(performance.now() / 60) * 2;
+  Kit.brick(ctx, -s / 2 - 8, -2 + wing, 14, 9, "#f59e0b", 3);
+  ctx.restore();
+}
+
+function text(str, x, y, size, color) {
+  ctx.font = `900 ${size}px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = "rgba(0,0,0,.6)";
+  ctx.strokeText(str, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  drawBackground();
+  drawPillars();
+  drawGround();
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 3);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  drawCube();
+  if (flashT > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${flashT * 1.2})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+  if (state === "ready") {
+    text("Flap Block", W / 2, 150, 44, "#facc15");
+    text("Space, Up or click to flap", W / 2, H * 0.62, 20, "#ffffff");
+  } else {
+    text(String(score), W / 2, 64, 56, "#ffffff");
+  }
+}
+
+const game = Kit.loop(update, draw);
+reset();
+game.start();
+Kit.overlay(
+  "Flap Block",
+  "Flap your cube through the gaps between the brick pillars.\nEvery pillar you pass is a point. Later pillars slide up and down!\n\nSpace, Up, W or click to flap",
+  "Play"
+).then(() => { reset(); });
+</script>
+</body>
+</html>

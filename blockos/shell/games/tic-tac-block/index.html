@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tic Tac Block</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices .label { white-space: nowrap; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; text-align: right; }
+  .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+  .kit-btn.gray { background: #4b5563; --sh: #374151; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "tic-tac-block";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(600, 680);
+const CELL = 150, BX = (W - CELL * 3) / 2, BY = 120;
+const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+const P = {
+  1: { name: "X", color: "#ef4444", light: "#fca5a5", dark: "#991b1b" },
+  2: { name: "O", color: "#3b82f6", light: "#93c5fd", dark: "#1e3a8a" },
+};
+const DIFFS = {
+  easy: { name: "Easy", smart: 0.35 },
+  hard: { name: "Hard", smart: 1 },
+};
+
+let mode = "cpu", diff = DIFFS.hard;
+let phase = "menu"; // menu | input | cpu | end
+let board, turn, starter, cursor = 4, hover = -1, pop, winLine, winT, result, endTime, round = 0;
+let tally = { 1: 0, 2: 0, draw: 0 }, streak = 0;
+let parts = [];
+
+/* ---------- menus (built from the kit overlay styles) ---------- */
+
+// Resolves with the chosen option's value. Arrows / W S move, Enter or Space confirm, number keys pick.
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      const label = document.createElement("span");
+      label.className = "label";
+      label.textContent = opt.label;
+      b.append(num, label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft" || c === "KeyW" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight" || c === "KeyS" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+async function mainMenu() {
+  phase = "menu";
+  round++; // cancels any pending CPU move
+  updateHud();
+  mode = await choose(
+    "Tic Tac Block",
+    "Get three of your blocks in a row: across, down or diagonally.\n\n" +
+    "Mouse: click a square\nKeys: arrows / WASD then Space, or 1-9\n(1 is top-left, 9 is bottom-right)",
+    [
+      { label: "1 Player vs CPU", value: "cpu", hint: "you are X" },
+      { label: "2 Players", value: "2p", color: "blue", hint: "X vs O" },
+    ]
+  );
+  if (mode === "cpu") {
+    const d = await choose("Difficulty", "Easy makes mistakes. Hard never loses.\nCan you hold it to a draw?", [
+      { label: "Easy", value: "easy", hint: "plays loose", selected: diff === DIFFS.easy },
+      { label: "Hard", value: "hard", color: "red", hint: "unbeatable", selected: diff === DIFFS.hard },
+    ]);
+    diff = DIFFS[d];
+  }
+  tally = { 1: 0, 2: 0, draw: 0 };
+  streak = 0;
+  starter = 1;
+  newRound();
+}
+
+/* ---------- rules ---------- */
+
+function newRound() {
+  board = new Array(9).fill(0);
+  pop = new Array(9).fill(0);
+  turn = starter;
+  winLine = null;
+  winT = 0;
+  result = null;
+  round++;
+  updateHud();
+  nextTurn();
+}
+
+const isHuman = (p) => mode === "2p" || p === 1;
+
+function nextTurn() {
+  if (isHuman(turn)) {
+    phase = "input";
+    return;
+  }
+  phase = "cpu";
+  const myRound = round;
+  setTimeout(() => {
+    if (round !== myRound || phase !== "cpu") return;
+    place(cpuMove());
+  }, Kit.rand(380, 620));
+}
+
+function winner(b) {
+  for (const l of LINES) if (b[l[0]] && b[l[0]] === b[l[1]] && b[l[1]] === b[l[2]]) return { p: b[l[0]], line: l };
+  return null;
+}
+
+function place(i) {
+  if (board[i]) return false;
+  board[i] = turn;
+  pop[i] = 1;
+  Kit.sfx(turn === 1 ? "click" : "jump");
+  const c = cellCenter(i);
+  burst(c.x, c.y, P[turn].light, 10, 180);
+  const w = winner(board);
+  if (w) return endRound(w.p, w.line);
+  if (board.every(Boolean)) return endRound(0, null);
+  turn = 3 - turn;
+  nextTurn();
+  return true;
+}
+
+function endRound(w, line) {
+  phase = "end";
+  endTime = performance.now();
+  winLine = line;
+  winT = 0;
+  if (w) tally[w]++; else tally.draw++;
+  if (mode === "cpu") {
+    if (w === 2) streak = 0; else streak++;
+    Kit.finish(ID, streak);
+    result = w === 1 ? "You win!" : w === 2 ? "CPU wins" : "Draw!";
+    Kit.sfx(w === 1 ? "win" : w === 2 ? "lose" : "score");
+  } else {
+    result = w ? `${P[w].name} wins!` : "Draw!";
+    Kit.sfx(w ? "win" : "score");
+  }
+  if (w) {
+    for (const i of line) {
+      const c = cellCenter(i);
+      burst(c.x, c.y, P[w].color, 18, 320);
+    }
+  }
+  starter = 3 - starter;
+  updateHud();
+}
+
+function updateHud() {
+  if (phase === "menu" || mode === "2p")
+    return Kit.hud(`Tic Tac Block<small>${mode === "2p" && phase !== "menu" ? "2 Players" : "Best unbeaten " + (Kit.best(ID) ?? 0)}</small>`);
+  Kit.hud(`Unbeaten ${streak}<small>${diff.name} | Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+/* ---------- CPU: full minimax (the 3x3 tree is tiny) ---------- */
+
+function minimax(b, p, depth) {
+  const w = winner(b);
+  if (w) return w.p === 2 ? 10 - depth : depth - 10;
+  if (b.every(Boolean)) return 0;
+  let best = p === 2 ? -Infinity : Infinity;
+  for (let i = 0; i < 9; i++) {
+    if (b[i]) continue;
+    b[i] = p;
+    const s = minimax(b, 3 - p, depth + 1);
+    b[i] = 0;
+    best = p === 2 ? Math.max(best, s) : Math.min(best, s);
+  }
+  return best;
+}
+
+function cpuMove() {
+  const free = [];
+  for (let i = 0; i < 9; i++) if (!board[i]) free.push(i);
+  if (Math.random() > diff.smart) {
+    // easy: still grabs an obvious win most of the time, otherwise plays anywhere
+    for (const i of free) {
+      board[i] = 2;
+      const w = winner(board);
+      board[i] = 0;
+      if (w && Math.random() < 0.7) return i;
+    }
+    return Kit.pick(free);
+  }
+  let best = -Infinity, moves = [];
+  for (const i of free) {
+    board[i] = 2;
+    const s = minimax(board, 1, 1);
+    board[i] = 0;
+    if (s > best) { best = s; moves = [i]; }
+    else if (s === best) moves.push(i);
+  }
+  return Kit.pick(moves);
+}
+
+/* ---------- input ---------- */
+
+function humanPlace(i) {
+  if (phase !== "input" || i < 0 || i > 8) return;
+  cursor = i;
+  if (board[i]) { Kit.sfx("hit"); shakeCell = { i, t: 0.3 }; return; }
+  place(i);
+}
+let shakeCell = null;
+
+function advance() {
+  if (phase === "end" && performance.now() - endTime > 450) {
+    Kit.sfx("click");
+    newRound();
+  }
+}
+
+Kit.onKey((code) => {
+  if (phase === "menu") return;
+  if (code === "KeyM") return mainMenu();
+  if (phase === "end") {
+    if (code === "Space" || code === "Enter" || code === "NumpadEnter") advance();
+    return;
+  }
+  const r = Math.floor(cursor / 3), c = cursor % 3;
+  if (code === "ArrowLeft" || code === "KeyA") cursor = r * 3 + (c + 2) % 3;
+  else if (code === "ArrowRight" || code === "KeyD") cursor = r * 3 + (c + 1) % 3;
+  else if (code === "ArrowUp" || code === "KeyW") cursor = ((r + 2) % 3) * 3 + c;
+  else if (code === "ArrowDown" || code === "KeyS") cursor = ((r + 1) % 3) * 3 + c;
+  else if (code === "Space" || code === "Enter" || code === "NumpadEnter") humanPlace(cursor);
+  else if (/^Digit[1-9]$/.test(code)) humanPlace(Number(code.slice(-1)) - 1);
+  else if (/^Numpad[1-9]$/.test(code)) {
+    // numpad matches the grid shape: 7 8 9 on top
+    const n = Number(code.slice(-1)) - 1;
+    humanPlace((2 - Math.floor(n / 3)) * 3 + (n % 3));
+  }
+  hover = -1;
+});
+
+function cellAt(e) {
+  const p = Kit.pointer(canvas, e);
+  const c = Math.floor((p.x - BX) / CELL), r = Math.floor((p.y - BY) / CELL);
+  return c >= 0 && c < 3 && r >= 0 && r < 3 ? r * 3 + c : -1;
+}
+canvas.addEventListener("mousemove", (e) => {
+  hover = cellAt(e);
+  if (hover >= 0) cursor = hover;
+  canvas.style.cursor = phase === "input" && hover >= 0 && !board[hover] ? "pointer" : "default";
+});
+canvas.addEventListener("mouseleave", () => (hover = -1));
+canvas.addEventListener("click", (e) => {
+  if (phase === "end") return advance();
+  humanPlace(cellAt(e));
+});
+
+/* ---------- effects ---------- */
+
+function burst(x, y, color, n, speed) {
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(speed * 0.3, speed);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.4, 0.8), color, size: Kit.rand(4, 8) });
+  }
+}
+
+function update(dt) {
+  if (!board) return;
+  for (let i = 0; i < 9; i++) pop[i] = Math.max(0, pop[i] - dt * 4);
+  if (winLine) winT = Math.min(1, winT + dt * 3);
+  if (shakeCell && (shakeCell.t -= dt) <= 0) shakeCell = null;
+  for (const p of parts) { p.vy += 400 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; }
+  parts = parts.filter((p) => p.life > 0);
+}
+
+/* ---------- drawing ---------- */
+
+const cellCenter = (i) => ({ x: BX + (i % 3) * CELL + CELL / 2, y: BY + Math.floor(i / 3) * CELL + CELL / 2 });
+
+function text(str, x, y, size, color, weight) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+// X: two diagonal strokes made of five small bricks each.
+function drawX(cx, cy, s, alpha) {
+  ctx.globalAlpha = alpha;
+  const b = 20 * s, step = 19 * s;
+  for (const dir of [1, -1]) {
+    for (let k = -2; k <= 2; k++) {
+      if (dir === -1 && k === 0) continue; // centre brick is shared
+      Kit.brick(ctx, cx + k * step - b / 2, cy + k * step * dir - b / 2, b, b, P[1].color, 4 * s);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+// O: a ring of eight bricks.
+function drawO(cx, cy, s, alpha) {
+  ctx.globalAlpha = alpha;
+  const b = 22 * s, rr = 38 * s;
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * Math.PI * 2;
+    Kit.brick(ctx, cx + Math.cos(a) * rr - b / 2, cy + Math.sin(a) * rr - b / 2, b, b, P[2].color, 4 * s);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPiece(p, cx, cy, s, alpha) {
+  if (p === 1) drawX(cx, cy, s, alpha);
+  else drawO(cx, cy, s, alpha);
+}
+
+function draw() {
+  const t = performance.now() / 1000;
+  ctx.fillStyle = "#171a24";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 15; y < H; y += 30)
+    for (let x = 15; x < W; x += 30) {
+      ctx.beginPath();
+      ctx.arc(x, y, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  if (!board) return;
+
+  // baseplate
+  ctx.fillStyle = "#11141c";
+  ctx.beginPath();
+  ctx.roundRect(BX - 16, BY - 8, CELL * 3 + 32, CELL * 3 + 32, 18);
+  ctx.fill();
+  ctx.fillStyle = "#2a3142";
+  ctx.beginPath();
+  ctx.roundRect(BX - 16, BY - 16, CELL * 3 + 32, CELL * 3 + 32, 18);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.08)";
+  ctx.fillRect(BX, BY - 13, CELL * 3, 4);
+  for (let i = 0; i < 9; i++) {
+    let x = BX + (i % 3) * CELL, y = BY + Math.floor(i / 3) * CELL;
+    if (shakeCell && shakeCell.i === i) x += Math.sin(shakeCell.t * 60) * 5;
+    const active = phase === "input" && (i === cursor);
+    const dim = winLine && !winLine.includes(i);
+    ctx.fillStyle = active && !board[i] ? "#3d4760" : "#323a4f";
+    ctx.beginPath();
+    ctx.roundRect(x + 6, y + 6, CELL - 12, CELL - 12, 12);
+    ctx.fill();
+    // studs in each empty square
+    if (!board[i]) {
+      ctx.fillStyle = "rgba(255,255,255,.05)";
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(x + CELL / 2 + sx * 30, y + CELL / 2 + sy * 30, 14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (active) {
+      ctx.strokeStyle = P[turn].light;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(x + 8, y + 8, CELL - 16, CELL - 16, 10);
+      ctx.stroke();
+      if (!board[i]) drawPiece(turn, x + CELL / 2, y + CELL / 2, 0.85, 0.25);
+    }
+    if (board[i]) {
+      const s = 1 + pop[i] * 0.25 - (pop[i] > 0.75 ? (pop[i] - 0.75) * 2 : 0);
+      drawPiece(board[i], x + CELL / 2, y + CELL / 2, s, dim ? 0.35 : 1);
+    }
+  }
+
+  // winning line, drawn as it grows
+  if (winLine) {
+    const a = cellCenter(winLine[0]), b = cellCenter(winLine[2]);
+    const ex = a.x + (b.x - a.x) * winT, ey = a.y + (b.y - a.y) * winT;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(0,0,0,.35)";
+    ctx.lineWidth = 16;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y + 4);
+    ctx.lineTo(ex, ey + 4);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${0.75 + 0.25 * Math.sin(t * 8)})`;
+    ctx.lineWidth = 12;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.lineCap = "butt";
+  }
+
+  for (const p of parts) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // status
+  let status, color = "#f2f4f5";
+  if (phase === "end") {
+    status = result;
+    color = winLine ? P[board[winLine[0]]].light : "#e5e7eb";
+  } else if (phase === "cpu") {
+    status = "CPU is thinking" + ".".repeat(1 + (Math.floor(t * 3) % 3));
+    color = P[2].light;
+  } else {
+    status = mode === "cpu" ? "Your turn" : `${P[turn].name}'s turn`;
+    color = P[turn].light;
+  }
+  text(status, W / 2, 48, phase === "end" ? 34 : 26, color);
+  if (phase === "end") text("Click or press Space for the next round  |  M: change mode", W / 2, 88, 14, "rgba(242,244,245,.7)", 700);
+  else text(mode === "cpu" ? `vs CPU (${diff.name})  |  M: change mode` : "2 Players  |  M: change mode", W / 2, 88, 14, "rgba(242,244,245,.45)", 700);
+
+  // scoreboard
+  const y = BY + CELL * 3 + 50;
+  const names = mode === "cpu" ? ["You (X)", "Draws", "CPU (O)"] : ["X", "Draws", "O"];
+  const vals = [tally[1], tally.draw, tally[2]];
+  const cols = [P[1].color, "#64748b", P[2].color];
+  for (let i = 0; i < 3; i++) {
+    const x = W / 2 + (i - 1) * 180;
+    Kit.brick(ctx, x - 80, y - 22, 160, 44, cols[i], 9);
+    text(`${names[i]}  ${vals[i]}`, x, y + 1, 18, "#fff");
+  }
+}
+
+const game = Kit.loop(update, draw);
+board = new Array(9).fill(0);
+pop = new Array(9).fill(0);
+turn = 1;
+game.start();
+mainMenu();
+</script>
+</body>
+</html>

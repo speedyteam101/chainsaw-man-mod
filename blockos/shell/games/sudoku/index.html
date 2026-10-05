@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sudoku Blocks</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "sudoku";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(840, 600);
+canvas.style.outline = "none";
+const CELL = 58, BX = 28, BY = 40, BOARD = CELL * 9;
+const PX = 600, PY = 150, PAD = 68; // number pad
+const MAX_MISTAKES = 5;
+const HINT_PENALTY = 30;
+const DIFFS = {
+  easy: { name: "Easy", clues: 38, color: "#22c55e" },
+  medium: { name: "Medium", clues: 30, color: "#fb923c" },
+  hard: { name: "Hard", clues: 24, color: "#ef4444" },
+};
+const BOX_COLORS = ["#2a4a7a", "#3b3270", "#22545a", "#3b3270", "#22545a", "#2a4a7a", "#22545a", "#2a4a7a", "#3b3270"];
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft" || c === "KeyW" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight" || c === "KeyS" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- puzzle generation ---------- */
+const rowOf = (i) => Math.floor(i / 9), colOf = (i) => i % 9;
+const boxOf = (i) => Math.floor(rowOf(i) / 3) * 3 + Math.floor(colOf(i) / 3);
+const PEERS = [];
+for (let i = 0; i < 81; i++) {
+  const s = new Set();
+  for (let j = 0; j < 81; j++) {
+    if (j !== i && (rowOf(j) === rowOf(i) || colOf(j) === colOf(i) || boxOf(j) === boxOf(i))) s.add(j);
+  }
+  PEERS.push([...s]);
+}
+function popcount(m) { let n = 0; while (m) { m &= m - 1; n++; } return n; }
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Backtracking solver with bitmasks. Counts solutions up to `limit`.
+// When `randomize` is set, it fills `grid` with the first solution it finds.
+function solve(grid, limit, randomize) {
+  const rows = new Array(9).fill(0), cols = new Array(9).fill(0), boxes = new Array(9).fill(0);
+  for (let i = 0; i < 81; i++) {
+    const v = grid[i];
+    if (v) {
+      const bit = 1 << v;
+      rows[rowOf(i)] |= bit; cols[colOf(i)] |= bit; boxes[boxOf(i)] |= bit;
+    }
+  }
+  let count = 0;
+  function rec() {
+    let best = -1, bestMask = 0, bestN = 10;
+    for (let i = 0; i < 81; i++) {
+      if (grid[i]) continue;
+      const mask = ~(rows[rowOf(i)] | cols[colOf(i)] | boxes[boxOf(i)]) & 0x3fe;
+      const n = popcount(mask);
+      if (n < bestN) { best = i; bestMask = mask; bestN = n; if (n <= 1) break; }
+    }
+    if (best === -1) { count++; return; }
+    if (bestN === 0) return;
+    const r = rowOf(best), c = colOf(best), b = boxOf(best);
+    let vals = [];
+    for (let v = 1; v <= 9; v++) if (bestMask & (1 << v)) vals.push(v);
+    if (randomize) shuffle(vals);
+    for (const v of vals) {
+      const bit = 1 << v;
+      grid[best] = v; rows[r] |= bit; cols[c] |= bit; boxes[b] |= bit;
+      rec();
+      if (count >= limit) return; // leave the grid filled when stopping on a solution
+      grid[best] = 0; rows[r] &= ~bit; cols[c] &= ~bit; boxes[b] &= ~bit;
+    }
+  }
+  rec();
+  return count;
+}
+
+function generate(target) {
+  const solution = new Array(81).fill(0);
+  solve(solution, 1, true);
+  const puzzle = solution.slice();
+  let clues = 81;
+  // remove cells in symmetric pairs while the puzzle keeps exactly one solution
+  for (const i of shuffle([...Array(41).keys()])) {
+    if (clues <= target) break;
+    const j = 80 - i;
+    const a = puzzle[i], b = puzzle[j];
+    puzzle[i] = 0; puzzle[j] = 0;
+    if (solve(puzzle.slice(), 2, false) === 1) clues -= i === j ? 1 : 2;
+    else { puzzle[i] = a; puzzle[j] = b; }
+  }
+  return { puzzle, solution };
+}
+
+/* ---------- game state ---------- */
+let diffKey = "easy";
+let given, values, notes, solution, sel, notesMode, mistakes, time, undoStack;
+let phase = "menu"; // menu | play | won | over
+let flashes = []; // {cells, t}
+let floaters = []; // {text, x, y, t, color}
+let winT = 0, winOrigin = 40;
+let hoverBtn = null, shake = 0;
+
+function newGame() {
+  const g = generate(DIFFS[diffKey].clues);
+  given = g.puzzle.map((v) => v !== 0);
+  values = g.puzzle.slice();
+  solution = g.solution;
+  notes = new Array(81).fill(0);
+  sel = 40;
+  notesMode = false;
+  mistakes = 0;
+  time = 0;
+  undoStack = [];
+  flashes = [];
+  floaters = [];
+  winT = 0;
+  phase = "play";
+  updateHud();
+}
+
+function fmtTime(s) {
+  s = Math.floor(s);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+function bestKey() { return ID + "-" + diffKey; }
+function updateHud() {
+  const b = Kit.best(bestKey(), undefined, true);
+  Kit.hud(`${DIFFS[diffKey].name} ${fmtTime(time || 0)}<small>Best ${b === null ? "--" : fmtTime(b)}</small>`);
+}
+
+function countOf(n) {
+  let c = 0;
+  for (let i = 0; i < 81; i++) if (values[i] === n && values[i] === solution[i]) c++;
+  return c;
+}
+
+function record(changes) { undoStack.push(changes); if (undoStack.length > 300) undoStack.shift(); }
+function snapshot(i) { return { i, v: values[i], n: notes[i] }; }
+
+function cellCenter(i) { return { x: BX + colOf(i) * CELL + CELL / 2, y: BY + rowOf(i) * CELL + CELL / 2 }; }
+
+function input(n) {
+  if (phase !== "play" || given[sel]) { if (phase === "play") { shake = 0.25; Kit.sfx("hit"); } return; }
+  if (notesMode) {
+    if (values[sel]) return;
+    record([snapshot(sel)]);
+    notes[sel] ^= 1 << n;
+    Kit.sfx("click");
+    return;
+  }
+  if (values[sel] === n) return;
+  const changes = [snapshot(sel)];
+  values[sel] = n;
+  notes[sel] = 0;
+  if (n !== solution[sel]) {
+    record(changes);
+    mistakes++;
+    shake = 0.3;
+    Kit.sfx("hit");
+    const c = cellCenter(sel);
+    floaters.push({ text: "Oops!", x: c.x, y: c.y - 20, t: 0, color: "#f87171" });
+    if (mistakes >= MAX_MISTAKES) gameOver();
+    return;
+  }
+  // a correct number clears that pencil mark from every peer
+  for (const p of PEERS[sel]) {
+    if (notes[p] & (1 << n)) { changes.push(snapshot(p)); notes[p] &= ~(1 << n); }
+  }
+  record(changes);
+  checkGroups(sel);
+  if (values.every((v, i) => v === solution[i])) win();
+}
+
+function checkGroups(i) {
+  const r = rowOf(i), c = colOf(i), b = boxOf(i);
+  const groups = [
+    [...Array(9).keys()].map((k) => r * 9 + k),
+    [...Array(9).keys()].map((k) => k * 9 + c),
+    [...Array(81).keys()].filter((k) => boxOf(k) === b),
+  ];
+  let any = false;
+  for (const g of groups) {
+    if (g.every((k) => values[k] === solution[k])) { flashes.push({ cells: g, t: 0, origin: i }); any = true; }
+  }
+  if (countOf(values[i]) === 9) any = true;
+  Kit.sfx(any ? "score" : "click");
+}
+
+function erase() {
+  if (phase !== "play" || given[sel] || (!values[sel] && !notes[sel])) return;
+  record([snapshot(sel)]);
+  values[sel] = 0;
+  notes[sel] = 0;
+  Kit.sfx("click");
+}
+
+function undo() {
+  if (phase !== "play" || !undoStack.length) return;
+  const changes = undoStack.pop();
+  for (const ch of changes) { values[ch.i] = ch.v; notes[ch.i] = ch.n; }
+  sel = changes[0].i;
+  Kit.sfx("jump");
+}
+
+function hint() {
+  if (phase !== "play") return;
+  let target = sel;
+  if (given[target] || values[target] === solution[target]) {
+    const empty = [...Array(81).keys()].filter((i) => values[i] !== solution[i]);
+    if (!empty.length) return;
+    target = Kit.pick(empty);
+  }
+  sel = target;
+  time += HINT_PENALTY;
+  const c = cellCenter(sel);
+  floaters.push({ text: "+" + HINT_PENALTY + "s", x: c.x, y: c.y - 20, t: 0, color: "#facc15" });
+  const save = notesMode;
+  notesMode = false;
+  input(solution[sel]);
+  notesMode = save;
+}
+
+function win() {
+  phase = "won";
+  winT = 0;
+  winOrigin = sel;
+  Kit.sfx("win");
+  const secs = Math.floor(time);
+  Kit.best(bestKey(), secs, true);
+  const best = Kit.finish(ID, secs, true);
+  updateHud();
+  setTimeout(async () => {
+    const bd = Kit.best(bestKey(), undefined, true);
+    await Kit.overlay("Solved!", `${DIFFS[diffKey].name} puzzle in ${fmtTime(secs)}\nMistakes: ${mistakes}\nBest (${DIFFS[diffKey].name}): ${fmtTime(bd)}\nBest overall: ${fmtTime(best)}`, "Next puzzle");
+    menu();
+  }, 1700);
+}
+
+async function gameOver() {
+  phase = "over";
+  Kit.sfx("lose");
+  Kit.finish(ID, undefined, true);
+  await new Promise((r) => setTimeout(r, 700));
+  await Kit.overlay("Too many mistakes", `You made ${MAX_MISTAKES} mistakes.\nTake your time and use pencil marks!`, "New puzzle");
+  menu();
+}
+
+async function menu() {
+  phase = "menu";
+  const d = await choose("Sudoku Blocks",
+    "Fill every row, column and 3x3 block with the numbers 1 to 9.\n\n" +
+    "Click a cell or use Arrows / WASD, then type 1-9.\n" +
+    "N pencil marks, Backspace erase, U undo, H hint (+30s).\n" +
+    `${MAX_MISTAKES} mistakes and the puzzle is over.`,
+    [
+      { label: "Easy", value: "easy", hint: DIFFS.easy.clues + " clues", selected: diffKey === "easy" },
+      { label: "Medium", value: "medium", color: "orange", hint: DIFFS.medium.clues + " clues", selected: diffKey === "medium" },
+      { label: "Hard", value: "hard", color: "red", hint: "~" + DIFFS.hard.clues + " clues", selected: diffKey === "hard" },
+    ]);
+  diffKey = d;
+  newGame();
+}
+
+/* ---------- input ---------- */
+const BUTTONS = [
+  { id: "notes", label: "Notes (N)", x: PX, y: PY + PAD * 3 + 16, w: PAD * 3 - 8, h: 44 },
+  { id: "erase", label: "Erase", x: PX, y: PY + PAD * 3 + 70, w: (PAD * 3 - 16) / 2, h: 44 },
+  { id: "undo", label: "Undo", x: PX + (PAD * 3 - 16) / 2 + 8, y: PY + PAD * 3 + 70, w: (PAD * 3 - 16) / 2, h: 44 },
+  { id: "hint", label: "Hint", x: PX, y: PY + PAD * 3 + 124, w: (PAD * 3 - 16) / 2, h: 44 },
+  { id: "new", label: "New", x: PX + (PAD * 3 - 16) / 2 + 8, y: PY + PAD * 3 + 124, w: (PAD * 3 - 16) / 2, h: 44 },
+];
+function padRect(n) {
+  const k = n - 1;
+  return { x: PX + (k % 3) * PAD, y: PY + Math.floor(k / 3) * PAD, w: PAD - 8, h: PAD - 8 };
+}
+function hitTest(x, y) {
+  if (x >= BX && x < BX + BOARD && y >= BY && y < BY + BOARD) {
+    return { cell: Math.floor((y - BY) / CELL) * 9 + Math.floor((x - BX) / CELL) };
+  }
+  for (let n = 1; n <= 9; n++) {
+    const r = padRect(n);
+    if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return { num: n };
+  }
+  for (const b of BUTTONS) if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) return { btn: b.id };
+  return null;
+}
+function press(btn) {
+  if (btn === "notes") { notesMode = !notesMode; Kit.sfx("click"); }
+  else if (btn === "erase") erase();
+  else if (btn === "undo") undo();
+  else if (btn === "hint") hint();
+  else if (btn === "new") { Kit.sfx("click"); menu(); }
+}
+canvas.addEventListener("mousedown", (e) => {
+  if (phase !== "play") return;
+  const p = Kit.pointer(canvas, e);
+  const h = hitTest(p.x, p.y);
+  if (!h) return;
+  if (h.cell !== undefined) { sel = h.cell; }
+  else if (h.num) input(h.num);
+  else if (h.btn) press(h.btn);
+});
+canvas.addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  const h = hitTest(p.x, p.y);
+  hoverBtn = h && (h.num || h.btn) ? (h.num || h.btn) : null;
+  canvas.style.cursor = h ? "pointer" : "default";
+});
+const MOVES = {
+  ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0],
+  ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1],
+};
+Kit.onKey((code, e) => {
+  if (phase !== "play") return;
+  if (MOVES[code]) {
+    const [dr, dc] = MOVES[code];
+    sel = ((rowOf(sel) + dr + 9) % 9) * 9 + ((colOf(sel) + dc + 9) % 9);
+    e.preventDefault();
+    return;
+  }
+  const m = /^(Digit|Numpad)([0-9])$/.exec(code);
+  if (m) {
+    const n = Number(m[2]);
+    if (n === 0) erase();
+    else if (e.shiftKey) { const s = notesMode; notesMode = true; input(n); notesMode = s; }
+    else input(n);
+    return;
+  }
+  if (code === "Backspace" || code === "Delete") { e.preventDefault(); erase(); }
+  else if (code === "KeyN" || code === "KeyP") press("notes");
+  else if (code === "KeyU" || code === "KeyZ") undo();
+  else if (code === "KeyH") hint();
+});
+
+/* ---------- loop ---------- */
+function update(dt) {
+  if (phase === "play") {
+    const before = Math.floor(time);
+    time += dt;
+    if (Math.floor(time) !== before) updateHud();
+  }
+  if (phase === "won") winT += dt;
+  shake = Math.max(0, shake - dt);
+  flashes.forEach((f) => (f.t += dt));
+  flashes = flashes.filter((f) => f.t < 0.9);
+  floaters.forEach((f) => (f.t += dt));
+  floaters = floaters.filter((f) => f.t < 1);
+}
+
+function text(str, x, y, size, color, weight, align) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawBoard() {
+  const sv = values[sel];
+  const sr = rowOf(sel), sc = colOf(sel), sb = boxOf(sel);
+  const sx = shake > 0 ? Math.sin(shake * 60) * 4 : 0;
+  ctx.save();
+  ctx.translate(sx, 0);
+  // block baseplates
+  for (let b = 0; b < 9; b++) {
+    const x = BX + (b % 3) * CELL * 3, y = BY + Math.floor(b / 3) * CELL * 3;
+    Kit.brick(ctx, x + 2, y + 2, CELL * 3 - 4, CELL * 3 - 4, BOX_COLORS[b], 8);
+  }
+  for (let i = 0; i < 81; i++) {
+    const r = rowOf(i), c = colOf(i);
+    const x = BX + c * CELL + 5, y = BY + r * CELL + 5, s = CELL - 10;
+    let color = given[i] ? "#3d4450" : "#e9edf2";
+    const peer = r === sr || c === sc || boxOf(i) === sb;
+    if (phase === "play" && peer) color = given[i] ? "#4a5361" : "#c3d9f5";
+    if (phase === "play" && sv && values[i] === sv) color = given[i] ? "#14857a" : "#99e6db";
+    if (values[i] && values[i] !== solution[i]) color = "#fecaca";
+    // completed-group flash
+    for (const f of flashes) {
+      if (f.cells.includes(i)) {
+        const d = Math.hypot(r - rowOf(f.origin), c - colOf(f.origin));
+        const k = Math.max(0, 1 - Math.abs(f.t * 14 - d) / 2);
+        if (k > 0) color = mix(color, "#facc15", k);
+      }
+    }
+    if (phase === "won") {
+      const d = Math.hypot(r - rowOf(winOrigin), c - colOf(winOrigin));
+      const k = Math.max(0, 1 - Math.abs(winT * 10 - d) / 2.5);
+      const hue = (d * 30 + winT * 200) % 360;
+      if (k > 0) color = `hsl(${hue},85%,${60 + k * 10}%)`;
+    }
+    const lift = phase === "won" ? Math.max(0, 1 - Math.abs(winT * 10 - Math.hypot(r - rowOf(winOrigin), c - colOf(winOrigin))) / 2.5) * 6 : 0;
+    Kit.brick(ctx, x, y - lift, s, s, color, 6);
+    const cx = x + s / 2, cy = y + s / 2 - lift;
+    if (values[i]) {
+      const wrong = values[i] !== solution[i];
+      text(String(values[i]), cx, cy + 1, 30, given[i] ? "#ffffff" : wrong ? "#dc2626" : "#1d4ed8", given[i] ? 800 : 700);
+    } else if (notes[i]) {
+      for (let n = 1; n <= 9; n++) {
+        if (!(notes[i] & (1 << n))) continue;
+        const nx = x + 8 + ((n - 1) % 3) * ((s - 16) / 2), ny = y + 8 + Math.floor((n - 1) / 3) * ((s - 16) / 2);
+        text(String(n), nx, ny + 1, 12, sv === n ? "#0f766e" : "#5b6472", sv === n ? 800 : 700);
+      }
+    }
+  }
+  // selection
+  if (phase === "play") {
+    const x = BX + colOf(sel) * CELL + 2, y = BY + rowOf(sel) * CELL + 2;
+    ctx.strokeStyle = notesMode ? "#a855f7" : "#facc15";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.roundRect(x, y, CELL - 4, CELL - 4, 8);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function mix(a, b, k) {
+  const pa = parse(a), pb = parse(b);
+  if (!pa || !pb) return k > 0.5 ? b : a;
+  const m = pa.map((v, i) => Math.round(v + (pb[i] - v) * k));
+  return `rgb(${m[0]},${m[1]},${m[2]})`;
+}
+function parse(c) {
+  if (c[0] !== "#") return null;
+  return [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+}
+
+function drawPanel() {
+  text("Sudoku Blocks", PX + PAD * 1.5 - 4, 58, 26, "#f2f4f5", 800);
+  const d = DIFFS[diffKey];
+  Kit.brick(ctx, PX + 20, 80, PAD * 3 - 48, 26, d.color, 8);
+  text(d.name, PX + PAD * 1.5 - 4, 94, 15, "#fff", 800);
+  // mistakes as little bricks
+  text("Mistakes", PX, 128, 14, "#a7adb4", 700, "left");
+  for (let k = 0; k < MAX_MISTAKES; k++) {
+    Kit.brick(ctx, PX + 78 + k * 22, 120, 16, 16, k < mistakes ? "#ef4444" : "#3a3f46", 4);
+  }
+  for (let n = 1; n <= 9; n++) {
+    const r = padRect(n);
+    const done = countOf(n) === 9;
+    const hot = hoverBtn === n;
+    const base = done ? "#2b2f35" : notesMode ? "#7c3aed" : "#3b82f6";
+    Kit.brick(ctx, r.x, r.y - (hot && !done ? 2 : 0), r.w, r.h, hot && !done ? mix(base, "#ffffff", 0.15) : base, 8);
+    text(String(n), r.x + r.w / 2, r.y + r.h / 2 - (hot ? 2 : 0), notesMode ? 22 : 30, done ? "#5b6472" : "#fff", 800);
+    if (!done) text(String(9 - countOf(n)), r.x + r.w - 9, r.y + r.h - 11, 10, "rgba(255,255,255,.7)", 700);
+  }
+  for (const b of BUTTONS) {
+    const hot = hoverBtn === b.id;
+    let color = { notes: notesMode ? "#a855f7" : "#4b5563", erase: "#4b5563", undo: "#4b5563", hint: "#ca8a04", new: "#12b76a" }[b.id];
+    if (hot) color = mix(color, "#ffffff", 0.15);
+    Kit.brick(ctx, b.x, b.y, b.w, b.h, color, 8);
+    const label = b.id === "notes" ? (notesMode ? "Pencil: ON (N)" : "Pencil: OFF (N)") : b.label;
+    text(label, b.x + b.w / 2, b.y + b.h / 2, 16, "#fff", 800);
+  }
+  text("Shift+number also pencils", PX + PAD * 1.5 - 4, H - 22, 12, "#6b7280", 600);
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 15; y < H; y += 30) for (let x = 15; x < W; x += 30) { ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); }
+  if (!values) return;
+  drawBoard();
+  drawPanel();
+  for (const f of floaters) {
+    ctx.globalAlpha = 1 - f.t;
+    text(f.text, f.x, f.y - f.t * 30, 20, f.color, 800);
+    ctx.globalAlpha = 1;
+  }
+}
+
+// a placeholder board to show behind the menu
+const demo = generate(40);
+given = demo.puzzle.map((v) => v !== 0);
+values = demo.puzzle.slice();
+solution = demo.solution;
+notes = new Array(81).fill(0);
+sel = 40; mistakes = 0; time = 0; notesMode = false;
+updateHud();
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb8f5"/><stop offset="1" stop-color="#c8ecff"/></linearGradient>
+    <linearGradient id="lava" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd23f"/><stop offset=".2" stop-color="#ff7a1a"/><stop offset="1" stop-color="#b3121b"/></linearGradient>
+  </defs>
+  <rect width="480" height="270" fill="url(#sky)"/>
+  <g fill="#8fd0f0" opacity=".6">
+    <rect x="20" y="110" width="50" height="160"/><rect x="26" y="100" width="12" height="10"/><rect x="52" y="100" width="12" height="10"/>
+    <rect x="150" y="80" width="56" height="190"/><rect x="156" y="70" width="12" height="10"/><rect x="188" y="70" width="12" height="10"/>
+    <rect x="300" y="120" width="50" height="150"/><rect x="410" y="90" width="56" height="180"/><rect x="416" y="80" width="12" height="10"/><rect x="448" y="80" width="12" height="10"/>
+  </g>
+  <g fill="#ffffff" opacity=".7"><rect x="60" y="34" width="80" height="18"/><rect x="78" y="22" width="40" height="14"/><rect x="330" y="46" width="70" height="16"/><rect x="346" y="34" width="34" height="14"/></g>
+  <!-- start block -->
+  <rect x="-10" y="186" width="120" height="90" fill="#15803d"/>
+  <g fill="#4ade80"><rect x="6" y="176" width="16" height="8" rx="2"/><rect x="38" y="176" width="16" height="8" rx="2"/><rect x="70" y="176" width="16" height="8" rx="2"/></g>
+  <rect x="-10" y="180" width="120" height="28" rx="6" fill="#22c55e"/><rect x="-6" y="182" width="112" height="4" fill="#ffffff" opacity=".25"/>
+  <path d="M10 222h90M10 250h90M40 208v14M70 222v28M30 250v20" stroke="#0d5a2a" stroke-width="3"/>
+  <!-- checkpoint flag -->
+  <rect x="78" y="118" width="5" height="62" fill="#e5e7eb"/><path d="M83 120h34l-6 11 6 11H83z" fill="#22c55e"/>
+  <!-- floating platform with jump pad -->
+  <g fill="#4ade80"><rect x="158" y="158" width="16" height="8" rx="2"/><rect x="190" y="158" width="16" height="8" rx="2"/></g>
+  <rect x="148" y="162" width="68" height="26" rx="6" fill="#22c55e"/><rect x="152" y="164" width="60" height="4" fill="#fff" opacity=".25"/>
+  <!-- moving platform -->
+  <path d="M250 112h80" stroke="#ffffff" stroke-opacity=".5" stroke-width="4" stroke-dasharray="8 8"/>
+  <rect x="262" y="104" width="74" height="20" rx="6" fill="#14b8a6"/><rect x="266" y="106" width="66" height="4" fill="#fff" opacity=".3"/>
+  <path d="M282 114h34M278 114l8-6v12zM320 114l-8-6v12z" fill="#fff" stroke="#fff" stroke-width="3"/>
+  <!-- spinner -->
+  <g transform="rotate(-28 392 120)">
+    <rect x="336" y="114" width="112" height="14" rx="6" fill="#ef4444" stroke="#991b1b" stroke-width="3"/>
+  </g>
+  <rect x="380" y="108" width="24" height="24" rx="5" fill="#6b7280"/><rect x="388" y="116" width="8" height="8" fill="#d1d5db"/>
+  <!-- goal platform -->
+  <rect x="404" y="196" width="90" height="80" fill="#15803d"/><rect x="404" y="190" width="90" height="28" rx="6" fill="#22c55e"/>
+  <g fill="#111827"><rect x="414" y="130" width="8" height="8"/><rect x="414" y="146" width="8" height="8"/><rect x="414" y="162" width="8" height="8"/><rect x="414" y="178" width="8" height="8"/><rect x="422" y="138" width="8" height="8"/><rect x="422" y="154" width="8" height="8"/><rect x="422" y="170" width="8" height="8"/></g>
+  <g fill="#f9fafb"><rect x="422" y="130" width="8" height="8"/><rect x="422" y="146" width="8" height="8"/><rect x="422" y="162" width="8" height="8"/><rect x="422" y="178" width="8" height="8"/><rect x="414" y="138" width="8" height="8"/><rect x="414" y="154" width="8" height="8"/><rect x="414" y="170" width="8" height="8"/></g>
+  <g fill="#111827"><rect x="462" y="130" width="8" height="8"/><rect x="462" y="146" width="8" height="8"/><rect x="462" y="162" width="8" height="8"/><rect x="462" y="178" width="8" height="8"/><rect x="470" y="138" width="8" height="8"/><rect x="470" y="154" width="8" height="8"/><rect x="470" y="170" width="8" height="8"/></g>
+  <g fill="#f9fafb"><rect x="470" y="130" width="8" height="8"/><rect x="470" y="146" width="8" height="8"/><rect x="470" y="162" width="8" height="8"/><rect x="470" y="178" width="8" height="8"/><rect x="462" y="138" width="8" height="8"/><rect x="462" y="154" width="8" height="8"/><rect x="462" y="170" width="8" height="8"/></g>
+  <rect x="430" y="140" width="32" height="50" fill="#facc15" opacity=".3"/>
+  <g fill="#111827"><rect x="414" y="122" width="8" height="8"/><rect x="430" y="122" width="8" height="8"/><rect x="446" y="122" width="8" height="8"/><rect x="462" y="122" width="8" height="8"/><rect x="422" y="130" width="8" height="8"/><rect x="438" y="130" width="8" height="8"/><rect x="454" y="130" width="8" height="8"/></g>
+  <g fill="#f9fafb"><rect x="422" y="122" width="8" height="8"/><rect x="438" y="122" width="8" height="8"/><rect x="454" y="122" width="8" height="8"/><rect x="470" y="122" width="8" height="8"/><rect x="430" y="130" width="8" height="8"/><rect x="446" y="130" width="8" height="8"/><rect x="462" y="130" width="8" height="8"/></g>
+  <!-- runner mid jump -->
+  <g transform="translate(206 88) rotate(-8)">
+    <rect x="-16" y="-28" width="7" height="16" rx="2" fill="#facc15"/><rect x="17" y="-36" width="7" height="16" rx="2" fill="#facc15"/>
+    <rect x="-9" y="-6" width="11" height="16" rx="2" fill="#1e3a8a"/><rect x="4" y="-10" width="11" height="16" rx="2" fill="#1e3a8a"/>
+    <rect x="-10" y="-32" width="28" height="28" rx="4" fill="#3b82f6"/>
+    <rect x="-6" y="-52" width="22" height="20" rx="4" fill="#facc15"/>
+    <rect x="6" y="-46" width="3" height="5" fill="#111827"/><rect x="11" y="-46" width="3" height="5" fill="#111827"/><rect x="7" y="-38" width="6" height="2" fill="#111827"/>
+  </g>
+  <!-- jump pad -->
+  <rect x="190" y="152" width="22" height="10" rx="2" fill="#16a34a"/><rect x="190" y="150" width="22" height="4" fill="#facc15"/>
+  <!-- lava -->
+  <path d="M0 232 Q30 222 60 232 T120 232 T180 232 T240 232 T300 232 T360 232 T420 232 T480 232 V270 H0Z" fill="url(#lava)"/>
+  <g fill="#ffe680" opacity=".8"><circle cx="150" cy="248" r="4"/><circle cx="270" cy="252" r="3"/><circle cx="350" cy="244" r="5"/><circle cx="40" cy="256" r="3"/></g>
+</svg>

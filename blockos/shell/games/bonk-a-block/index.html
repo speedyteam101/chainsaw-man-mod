@@ -233,7 +233,7 @@ async function endRound() {
   Kit.sfx("win");
   const best = Kit.finish(ID, score);
   const acc = swings ? Math.round((bonks / swings) * 100) : 0;
-  await Kit.overlay("Time's up!", `Score: ${score}\nBest: ${best}\n\nBonks: ${bonks}   Best combo: ${bestCombo}   Accuracy: ${acc}%`, "Play again");
+  await Kit.overlay("Time's up!", `Score: ${score}\nBest: ${best}\n\nBonks: ${bonks}\nBest combo: ${bestCombo}\nAccuracy: ${acc}%`, "Play again");
   reset();
   game.start();
 }
@@ -254,8 +254,10 @@ function drawCritter(c, h) {
   const top = h.y - bh * c.rise * squash;
   const x = h.x - bw / 2;
   ctx.save();
+  // visible above the hole's centre line and inside the hole opening, so it pops out of the ground
   ctx.beginPath();
   ctx.rect(h.x - 90 * scale, h.y - 200, 180 * scale, 200);
+  ctx.ellipse(h.x, h.y, 66 * scale, 22 * scale, 0, 0, Math.PI);
   ctx.clip();
   const flash = c.hit > 0.5 && c.type !== "bomb";
   Kit.brick(ctx, x, top, bw, bh + 20, flash ? "#ffffff" : t.color, 10 * scale);
@@ -343,7 +345,7 @@ function drawCritter(c, h) {
   }
 }
 
-function drawHole(h, i) {
+function drawHole(h) {
   const rx = 66 * scale, ry = 22 * scale;
   // dirt ring
   ctx.fillStyle = "#7c4a1e";
@@ -354,12 +356,16 @@ function drawHole(h, i) {
   ctx.beginPath();
   ctx.ellipse(h.x, h.y, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (critters[i]) drawCritter(critters[i], h);
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath();
+  ctx.ellipse(h.x, h.y - ry * 0.35, rx * 0.9, ry * 0.6, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
   // key cap under the hole
-  const ky = h.y + ry + 22;
+  // key cap at the hole's lower-left, clear of any critter popping up nearby
+  const kx = h.x - rx - 4, ky = h.y + ry * 0.7;
   const label = keyLabel(h.keys[0]);
-  Kit.brick(ctx, h.x - 15, ky - 13, 30, 26, "rgba(0,0,0,.35)", 6);
-  text(label, h.x, ky + 1, 15, "rgba(255,255,255,.85)");
+  Kit.brick(ctx, kx - 15, ky - 13, 30, 26, "rgba(0,0,0,.4)", 6);
+  text(label, kx, ky + 1, 15, "rgba(255,255,255,.9)");
 }
 
 function drawMallet() {
@@ -395,6 +401,7 @@ function draw() {
       ctx.fill();
     }
   holes.forEach(drawHole);
+  holes.forEach((h, i) => critters[i] && drawCritter(critters[i], h));
   for (const p of parts) {
     ctx.globalAlpha = Math.min(1, p.life * 2);
     ctx.fillStyle = p.color;
@@ -478,7 +485,7 @@ reset();
 running = false;
 draw();
 Kit.overlay("Bonk-a-Block",
-  "Bonk the block critters before they hide! Chain bonks for a combo multiplier.\nHelmets take two bonks, gold critters add time.\nDon't bonk the bombs, and don't swing at empty holes.\nAt 30 seconds the field grows to 4x4.\n\nClick, or press the key shown under each hole\n(QWE / ASD / ZXC or numpad).",
+  "Bonk the block critters before they hide! Chain bonks for a combo multiplier.\nHelmets take two bonks, gold critters add time.\nDon't bonk the bombs, and don't swing at empty holes.\nAt 30 seconds the field grows to 4x4.\n\nClick, or press the key shown under each hole\n(QWE / ASD / ZXC or numpad; 1234 / QWER / ASDF / ZXCV on 4x4).",
   "Play").then(() => {
   reset();
   game.start();

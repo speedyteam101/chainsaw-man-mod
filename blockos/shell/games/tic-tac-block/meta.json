@@ -1,0 +1,1 @@
+{"id":"tic-tac-block","title":"Tic Tac Block","genre":"Board","color":"#ef4444","description":"The classic three-in-a-row duel, built from bricks. Take on an easy CPU or an unbeatable one, or play a friend with a running scoreboard.","controls":"Click a square, or arrows / WASD then Space, or keys 1-9; M to change mode","scoreLabel":"Best unbeaten streak","lowerIsBetter":false}

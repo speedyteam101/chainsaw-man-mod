@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tower Stack</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "tower-stack";
+const { canvas, ctx, W, H } = Kit.stage(480, 720);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+const BH = 30;            // block height
+const DEPTH = 16;         // fake 3D depth of the top face
+const BASE_W = 200;
+const GROUND = 120;       // world y of the top of the ground (world y grows upward)
+const PERFECT = 6;        // pixels of forgiveness for a perfect drop
+const SWING = 220;        // how far from center a sliding block travels
+
+let stack, current, debris, particles, popups, rings;
+let score, combo, perfects, camY, camTarget, zoom, state, hue0, flash;
+
+function reset() {
+  hue0 = Kit.randInt(0, 359);
+  stack = [{ x: W / 2, w: BASE_W, y: GROUND, hue: hue0, land: 0 }];
+  debris = [];
+  particles = [];
+  popups = [];
+  rings = [];
+  score = 0;
+  combo = 0;
+  perfects = 0;
+  camY = camTarget = 0;
+  zoom = 1;
+  flash = 0;
+  state = "play";
+  nextBlock();
+  updateHud();
+}
+
+const topBlock = () => stack[stack.length - 1];
+const speed = () => Math.min(560, 230 + stack.length * 9);
+
+function nextBlock() {
+  const t = topBlock();
+  const fromLeft = stack.length % 2 === 0;
+  current = {
+    x: W / 2 + (fromLeft ? -SWING : SWING),
+    w: t.w,
+    y: t.y + BH,
+    dir: fromLeft ? 1 : -1,
+    hue: (hue0 + stack.length * 9) % 360,
+  };
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- input ----------
+function drop() {
+  if (state !== "play") return;
+  const t = topBlock(), c = current;
+  const diff = c.x - t.x;
+  if (Math.abs(diff) <= PERFECT) {
+    // perfect: snap into place, and grow back a little after a streak
+    c.x = t.x;
+    combo++;
+    perfects++;
+    let w = c.w;
+    if (combo >= 3) w = Math.min(BASE_W, w + 10);
+    stack.push({ x: c.x, w, y: c.y, hue: c.hue, land: 1 });
+    score += 2;
+    rings.push({ x: c.x, y: c.y, w, t: 0 });
+    popups = [{ text: combo > 1 ? `Perfect x${combo}` : "Perfect!", t: 0, y: c.y }];
+    flash = 0.25;
+    Kit.sfx(combo >= 3 ? "coin" : "score");
+  } else {
+    const overlap = c.w - Math.abs(diff);
+    if (overlap <= 0) return miss();
+    combo = 0;
+    const newX = t.x + diff / 2;
+    // the overhanging part breaks off and tumbles away
+    const cutW = c.w - overlap;
+    const cutX = diff > 0 ? newX + overlap / 2 + cutW / 2 : newX - overlap / 2 - cutW / 2;
+    debris.push({ x: cutX, y: c.y, w: cutW, hue: c.hue, vx: Math.sign(diff) * Kit.rand(40, 90), vy: 60, rot: 0, vr: Math.sign(diff) * Kit.rand(1.5, 3.5) });
+    stack.push({ x: newX, w: overlap, y: c.y, hue: c.hue, land: 1 });
+    score += 1;
+    Kit.sfx("click");
+  }
+  dust(topBlock());
+  updateHud();
+  nextBlock();
+}
+
+function miss() {
+  const c = current;
+  debris.push({ x: c.x, y: c.y, w: c.w, hue: c.hue, vx: c.dir * 60, vy: 0, rot: 0, vr: c.dir * 2 });
+  current = null;
+  state = "fall";
+  Kit.sfx("hit");
+  setTimeout(gameOver, 1300);
+}
+
+async function gameOver() {
+  state = "over";
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, score);
+  updateHud();
+  await Kit.overlay("Tower toppled!", `Blocks stacked: ${stack.length - 1}\nPerfect drops: ${perfects}\nScore: ${score}\nBest: ${best}`, "Play again");
+  reset();
+}
+
+Kit.onKey((code) => {
+  if (code === "Space" || code === "ArrowDown" || code === "KeyS" || code === "Enter") drop();
+});
+canvas.addEventListener("pointerdown", (e) => { if (e.button === 0) drop(); });
+
+// ---------- update ----------
+function dust(b) {
+  for (let i = 0; i < 12; i++) {
+    const side = i % 2 ? 1 : -1;
+    particles.push({ x: b.x + side * b.w / 2, y: b.y - BH + 4, vx: side * Kit.rand(30, 110), vy: Kit.rand(10, 70), life: Kit.rand(0.3, 0.6), size: Kit.rand(3, 6), color: "rgba(255,255,255,.7)" });
+  }
+}
+
+function update(dt) {
+  if (current && state === "play") {
+    current.x += current.dir * speed() * dt;
+    if (current.x > W / 2 + SWING) { current.x = W / 2 + SWING; current.dir = -1; }
+    if (current.x < W / 2 - SWING) { current.x = W / 2 - SWING; current.dir = 1; }
+  }
+  for (const d of debris) {
+    d.vy -= 1400 * dt;
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.rot += d.vr * dt;
+  }
+  debris = debris.filter((d) => d.y > camY - 400);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 200 * dt; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const p of popups) p.t += dt;
+  popups = popups.filter((p) => p.t < 1);
+  for (const r of rings) r.t += dt;
+  rings = rings.filter((r) => r.t < 0.5);
+  for (const b of stack) b.land = Math.max(0, b.land - dt * 6);
+  flash = Math.max(0, flash - dt);
+
+  // camera keeps the top of the tower around 60% down the screen
+  camTarget = Math.max(0, topBlock().y - 380);
+  if (state === "over" || state === "fall") {
+    // zoom out to show off the whole tower
+    const h = topBlock().y + 140;
+    const z = Math.min(1, (H - 120) / h);
+    zoom += (z - zoom) * Math.min(1, dt * 2.5);
+    camTarget = 0;
+  }
+  camY += (camTarget - camY) * Math.min(1, dt * 6);
+}
+
+// ---------- drawing ----------
+// World y grows upward; screen y = H - (worldY - camY) * zoom (anchored at the bottom).
+const sy = (y) => H - 40 - (y - camY) * zoom;
+const sx = (x) => W / 2 + (x - W / 2) * zoom;
+
+function col(h, l, s = 72) { return `hsl(${h},${s}%,${l}%)`; }
+
+function drawBlock(x, y, w, hue, squash) {
+  // x = center, y = world top of the block
+  const z = zoom;
+  const left = sx(x - w / 2), right = sx(x + w / 2), topY = sy(y), h = BH * z, d = DEPTH * z;
+  const sq = squash ? squash * 3 * z : 0;
+  // top face (a slanted parallelogram going "back")
+  ctx.fillStyle = col(hue, 70);
+  ctx.beginPath();
+  ctx.moveTo(left, topY + sq);
+  ctx.lineTo(left + d, topY - d + sq);
+  ctx.lineTo(right + d, topY - d + sq);
+  ctx.lineTo(right, topY + sq);
+  ctx.closePath();
+  ctx.fill();
+  // side face
+  ctx.fillStyle = col(hue, 38);
+  ctx.beginPath();
+  ctx.moveTo(right, topY + sq);
+  ctx.lineTo(right + d, topY - d + sq);
+  ctx.lineTo(right + d, topY - d + h);
+  ctx.lineTo(right, topY + h);
+  ctx.closePath();
+  ctx.fill();
+  // front face
+  Kit.brick(ctx, left, topY + sq, right - left, h - sq, col(hue, 54), Math.min(4, (right - left) / 4));
+  // studs on top
+  if (z > 0.45) {
+    const n = Math.max(1, Math.floor(w / 34));
+    const gap = (right - left) / n;
+    for (let i = 0; i < n; i++) {
+      const cx = left + gap * (i + 0.5) + d * 0.5, cy = topY - d * 0.5 + sq;
+      ctx.fillStyle = col(hue, 46);
+      ctx.beginPath(); ctx.ellipse(cx, cy + 2 * z, 7 * z, 3.5 * z, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = col(hue, 78);
+      ctx.beginPath(); ctx.ellipse(cx, cy - 1 * z, 7 * z, 3.5 * z, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+function drawSky() {
+  // the sky darkens into space as the tower grows
+  const height = topBlock().y - GROUND;
+  const k = Kit.clamp(height / 2600, 0, 1);
+  const lerp = (a, b) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+  const topC = k < 0.5 ? lerp([94, 186, 240], [60, 40, 110]) : lerp([60, 40, 110], [8, 8, 24]);
+  const botC = k < 0.5 ? lerp([200, 236, 255], [255, 160, 120]) : lerp([255, 160, 120], [30, 20, 60]);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, `rgb(${topC})`);
+  g.addColorStop(1, `rgb(${botC})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  // stars fade in high up
+  if (k > 0.3) {
+    ctx.fillStyle = `rgba(255,255,255,${Math.min(1, (k - 0.3) * 2)})`;
+    for (let i = 0; i < 60; i++) {
+      const x = (i * 97.3) % W, y = ((i * 211.7 + camY * 0.2) % (H + 20)) - 10;
+      ctx.fillRect(x, y, i % 5 ? 2 : 3, i % 5 ? 2 : 3);
+    }
+  }
+  // blocky clouds drifting past
+  ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - k)})`;
+  for (let i = 0; i < 6; i++) {
+    const y = ((i * 260 + camY * 0.6) % (H + 200)) - 100;
+    const x = ((i * 173) % (W + 100)) - 50;
+    ctx.fillRect(x, H - y, 90, 20);
+    ctx.fillRect(x + 20, H - y - 14, 46, 16);
+  }
+}
+
+function text(str, x, y, size, color) {
+  ctx.font = `900 ${size}px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "rgba(0,0,0,.55)";
+  ctx.strokeText(str, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  drawSky();
+  // ground baseplate
+  const gy = sy(GROUND - BH);
+  if (gy < H + 40) {
+    ctx.fillStyle = "#2f8f3a";
+    ctx.fillRect(0, gy, W, H - gy + 10);
+    ctx.fillStyle = "#3fae4b";
+    ctx.fillRect(0, gy, W, 8 * zoom);
+    ctx.fillStyle = "rgba(255,255,255,.12)";
+    for (let x = 12; x < W; x += 28) { ctx.beginPath(); ctx.ellipse(x, gy + 22 * zoom, 7 * zoom, 3 * zoom, 0, 0, Math.PI * 2); ctx.fill(); }
+  }
+  // base slab is dark grey, the rest are colored
+  stack.forEach((b, i) => {
+    if (sy(b.y) > H + 40 || sy(b.y) < -60) return;
+    drawBlock(b.x, b.y, b.w, i === 0 ? 220 : b.hue, b.land);
+    if (i === 0) {
+      ctx.fillStyle = "rgba(0,0,0,.25)";
+      ctx.fillRect(sx(b.x - b.w / 2), sy(b.y) + BH * zoom * 0.5, b.w * zoom, 2);
+    }
+  });
+  for (const r of rings) {
+    const k = r.t / 0.5;
+    ctx.strokeStyle = `rgba(255,255,255,${1 - k})`;
+    ctx.lineWidth = 3;
+    const pad = 6 + k * 26;
+    ctx.strokeRect(sx(r.x - r.w / 2) - pad, sy(r.y) - DEPTH * zoom - pad, r.w * zoom + pad * 2 + DEPTH * zoom, (BH + DEPTH) * zoom + pad * 2);
+  }
+  for (const d of debris) {
+    ctx.save();
+    const cx = sx(d.x), cy = sy(d.y) + BH * zoom / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(d.rot);
+    ctx.translate(-cx, -cy);
+    drawBlock(d.x, d.y, d.w, d.hue, 0);
+    ctx.restore();
+  }
+  if (current) {
+    // guide line where the block will land
+    const t = topBlock();
+    ctx.fillStyle = "rgba(255,255,255,.18)";
+    ctx.fillRect(sx(t.x - t.w / 2), sy(current.y) - DEPTH * zoom - 400, 2, 400);
+    ctx.fillRect(sx(t.x + t.w / 2) - 2, sy(current.y) - DEPTH * zoom - 400, 2, 400);
+    drawBlock(current.x, current.y, current.w, current.hue, 0);
+  }
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 3);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(sx(p.x) - p.size / 2, sy(p.y) - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${flash * 0.5})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // score in big blocky digits
+  text(String(score), W / 2, 70, 64, "#ffffff");
+  ctx.font = `800 14px ${FONT}`;
+  ctx.fillStyle = "rgba(255,255,255,.8)";
+  ctx.textAlign = "center";
+  ctx.fillText(`${stack.length - 1} blocks`, W / 2, 112);
+  for (const p of popups) {
+    ctx.globalAlpha = 1 - p.t;
+    text(p.text, W / 2, sy(p.y) - 70 - p.t * 40, 26, "#facc15");
+  }
+  ctx.globalAlpha = 1;
+}
+
+const game = Kit.loop(update, draw);
+reset();
+state = "menu";
+game.start();
+Kit.overlay(
+  "Tower Stack",
+  "Drop each sliding block onto the tower. Anything hanging over the edge gets sliced off, so your blocks get smaller.\n" +
+  "Line one up perfectly for bonus points; three perfects in a row grow the block back.\n\nSpace, Down or click to drop",
+  "Play"
+).then(() => { reset(); });
+</script>
+</body>
+</html>

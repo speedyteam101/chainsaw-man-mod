@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide Puzzle</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .kit-stage canvas:focus { outline: none; }
+  .choices { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 12px 20px; box-shadow: 0 4px 0 var(--sh); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh); }
+  .choices .kit-btn small { font-size: 13px; font-weight: 700; opacity: .9; }
+  .choices .kit-btn:focus-visible, .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "slide-puzzle";
+const { canvas, ctx, W, H } = Kit.stage(600, 690);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const BOARD = 540, BX = 30, BY = 100;
+const SIZES = [
+  { n: 3, label: "Easy", color: "#12b76a", sh: "#0b7a47" },
+  { n: 4, label: "Medium", color: "#f59e0b", sh: "#b45309" },
+  { n: 5, label: "Hard", color: "#ef4444", sh: "#b91c1c" },
+];
+
+let n = 4, tiles, gap, moves, time, phase, picture, showNumbers = true, peek = false, anim, winGlow = 0;
+
+// ---------- generated blocky pictures ----------
+function makePicture() {
+  const pc = document.createElement("canvas");
+  pc.width = pc.height = BOARD;
+  const g = pc.getContext("2d");
+  const scene = Kit.pick([landscape, space, ocean, city]);
+  scene(g, BOARD);
+  return pc;
+}
+function block(g, x, y, w, h, color) {
+  g.fillStyle = color; g.fillRect(x, y, w, h);
+  g.fillStyle = "rgba(255,255,255,.18)"; g.fillRect(x + 2, y + 2, w - 4, Math.max(2, h * 0.14));
+  g.fillStyle = "rgba(0,0,0,.2)"; g.fillRect(x + 2, y + h - Math.max(2, h * 0.14) - 1, w - 4, Math.max(2, h * 0.14));
+  g.strokeStyle = "rgba(0,0,0,.25)"; g.lineWidth = 2; g.strokeRect(x + 1, y + 1, w - 2, h - 2);
+}
+function bands(g, S, colors) {
+  const h = S / colors.length;
+  colors.forEach((c, i) => { g.fillStyle = c; g.fillRect(0, i * h, S, h + 1); });
+}
+function landscape(g, S) {
+  const warm = Math.random() < 0.5;
+  bands(g, S, warm ? ["#fb7185", "#fb923c", "#fdba74", "#fde68a", "#fef3c7"] : ["#38bdf8", "#60a5fa", "#7dd3fc", "#bae6fd", "#e0f2fe"]);
+  block(g, 370, 50, 100, 100, warm ? "#fde047" : "#facc15");
+  // clouds
+  for (const [cx, cy] of [[60, 70], [220, 120]]) { block(g, cx, cy, 90, 34, "#fff"); block(g, cx + 22, cy - 26, 50, 30, "#fff"); }
+  // stepped mountains
+  const mtn = warm ? "#9f1239" : "#475569";
+  for (let i = 0; i < 6; i++) block(g, 20 + i * 18, 300 - i * 30, 300 - i * 36, 30, i % 2 ? mtn : shade(mtn, 18));
+  for (let i = 0; i < 5; i++) block(g, 280 + i * 20, 330 - i * 30, 260 - i * 40, 30, i % 2 ? shade(mtn, -10) : shade(mtn, 10));
+  // ground
+  for (let y = 360; y < S; y += 30)
+    for (let x = (y / 30) % 2 ? -30 : 0; x < S; x += 60)
+      block(g, x, y, 60, 30, y === 360 ? "#22c55e" : y < 420 ? "#16a34a" : Kit.pick(["#92400e", "#a16207", "#854d0e", "#78350f"]));
+  // path, pond, rocks and flowers make the bottom tiles easy to tell apart
+  for (let i = 0; i < 5; i++) block(g, 150 + i * 14, 390 + i * 30, 50, 30, "#d6d3d1");
+  block(g, 340, 440, 150, 50, "#38bdf8"); block(g, 360, 430, 110, 20, "#7dd3fc");
+  block(g, 40, 470, 50, 36, "#6b7280"); block(g, 260, 500, 40, 30, "#9ca3af"); block(g, 470, 380, 34, 26, "#6b7280");
+  for (const [fx, fc] of [[30, "#f472b6"], [300, "#facc15"], [490, "#a855f7"], [260, "#ef4444"]]) {
+    block(g, fx + 6, 352, 6, 20, "#15803d"); block(g, fx, 336, 18, 18, fc);
+  }
+  // house
+  block(g, 90, 270, 150, 120, "#f8fafc");
+  for (let i = 0; i < 4; i++) block(g, 70 + i * 22, 240 - i * 26, 190 - i * 44, 28, "#dc2626");
+  block(g, 145, 320, 40, 70, "#7c2d12");
+  block(g, 105, 290, 32, 32, "#38bdf8");
+  block(g, 195, 290, 32, 32, "#38bdf8");
+  // tree
+  block(g, 410, 300, 30, 90, "#78350f");
+  block(g, 370, 230, 110, 50, "#15803d"); block(g, 385, 190, 80, 44, "#16a34a"); block(g, 400, 160, 50, 34, "#22c55e");
+}
+function space(g, S) {
+  bands(g, S, ["#0f0a2e", "#1e1b4b", "#2e1065", "#3b0764"]);
+  for (let i = 0; i < 90; i++) { g.fillStyle = Kit.pick(["#fff", "#fde68a", "#a5f3fc"]); const s = Kit.randInt(2, 5); g.fillRect(Kit.randInt(0, S), Kit.randInt(0, S), s, s); }
+  const pc = Kit.pick(["#f97316", "#22c55e", "#ec4899", "#14b8a6"]);
+  for (let y = -3; y <= 3; y++) { const w = (7 - Math.abs(y)) * 24 + 40; block(g, 140 - w / 2 + 40, 170 + y * 30, w, 30, y % 2 ? pc : shade(pc, 20)); }
+  block(g, 0, 165, 360, 18, "#fde68a");
+  for (let i = 0; i < 4; i++) block(g, 380 + i * 6, 380 - i * 5, 26, 26, "#94a3b8");
+  // rocket
+  const rx = 360, ry = 250;
+  for (let i = 0; i < 4; i++) block(g, rx + 60 - i * 10, ry - 70 - (3 - i) * 30, 20 + i * 20, 30, i ? "#e2e8f0" : "#ef4444");
+  block(g, rx + 20, ry - 40, 100, 160, "#e2e8f0");
+  block(g, rx + 50, ry, 40, 40, "#38bdf8");
+  block(g, rx - 10, ry + 80, 40, 60, "#ef4444"); block(g, rx + 110, ry + 80, 40, 60, "#ef4444");
+  block(g, rx + 40, ry + 120, 60, 30, "#64748b");
+  block(g, rx + 45, ry + 150, 50, 40, "#f97316"); block(g, rx + 55, ry + 190, 30, 40, "#facc15");
+  // cratered moon in the corner
+  for (let y = 0; y < 5; y++) { const w = [100, 160, 180, 160, 100][y]; block(g, 110 - w / 2, 360 + y * 36, w, 36, y % 2 ? "#cbd5e1" : "#e2e8f0"); }
+  block(g, 70, 400, 30, 26, "#94a3b8"); block(g, 130, 440, 36, 30, "#94a3b8"); block(g, 90, 480, 22, 20, "#94a3b8");
+  block(g, 250, 420, 40, 40, "#a8a29e"); block(g, 300, 470, 26, 26, "#78716c");
+}
+function ocean(g, S) {
+  bands(g, S, ["#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#075985"]);
+  for (let x = 0; x < S; x += 60) block(g, x, 470, 60, 70, x % 120 ? "#fde68a" : "#fcd34d");
+  for (const sx of [40, 150, 470]) for (let i = 0; i < 6; i++) block(g, sx + (i % 2) * 14, 440 - i * 40, 24, 40, i % 2 ? "#16a34a" : "#22c55e");
+  const fish = (x, y, c, dir) => {
+    block(g, x, y, 90, 50, c); block(g, x + (dir > 0 ? -30 : 90), y + 5, 30, 40, shade(c, -20));
+    g.fillStyle = "#fff"; g.fillRect(x + (dir > 0 ? 62 : 14), y + 12, 14, 14);
+    g.fillStyle = "#111"; g.fillRect(x + (dir > 0 ? 68 : 16), y + 16, 7, 7);
+  };
+  fish(300, 120, "#f97316", 1); fish(110, 250, "#facc15", -1); fish(340, 330, "#ec4899", 1);
+  block(g, 420, 430, 60, 30, "#ef4444"); block(g, 404, 414, 22, 22, "#dc2626"); block(g, 474, 414, 22, 22, "#dc2626");
+  g.fillStyle = "#111"; g.fillRect(434, 420, 8, 8); g.fillRect(458, 420, 8, 8);
+  block(g, 230, 410, 120, 70, "#92400e"); block(g, 230, 395, 120, 30, "#b45309"); block(g, 280, 420, 20, 20, "#facc15");
+  for (let i = 0; i < 8; i++) { g.fillStyle = "rgba(255,255,255,.6)"; const s = Kit.randInt(8, 18); g.fillRect(Kit.randInt(60, 480), Kit.randInt(30, 400), s, s); }
+}
+function city(g, S) {
+  const night = Math.random() < 0.5;
+  bands(g, S, night ? ["#020617", "#0f172a", "#1e1b4b", "#312e81"] : ["#fda4af", "#fdba74", "#fde68a", "#fef9c3"]);
+  block(g, 400, 50, 80, 80, night ? "#e2e8f0" : "#fef08a");
+  const colors = ["#3b82f6", "#a855f7", "#14b8a6", "#ef4444", "#f59e0b", "#64748b"];
+  let x = 0;
+  while (x < S) {
+    const w = Kit.randInt(70, 110), h = Kit.randInt(170, 380), c = Kit.pick(colors);
+    block(g, x, S - 60 - h, w, h, c);
+    for (let wy = S - 40 - h; wy < S - 90; wy += 34)
+      for (let wx = x + 12; wx < x + w - 24; wx += 28) {
+        g.fillStyle = Math.random() < (night ? 0.55 : 0.2) ? "#fde047" : shade(c, -30);
+        g.fillRect(wx, wy, 16, 20);
+      }
+    x += w + 4;
+  }
+  for (let x2 = 0; x2 < S; x2 += 60) block(g, x2, S - 60, 60, 60, "#374151");
+  for (let x2 = 10; x2 < S; x2 += 80) { g.fillStyle = "#facc15"; g.fillRect(x2, S - 34, 40, 8); }
+}
+function shade(hex, amt) {
+  const v = parseInt(hex.slice(1), 16);
+  const f = (s) => Kit.clamp(((v >> s) & 255) + amt, 0, 255);
+  return `rgb(${f(16)},${f(8)},${f(0)})`;
+}
+
+// ---------- puzzle ----------
+function newGame(size) {
+  n = size;
+  picture = makePicture();
+  tiles = [];
+  for (let i = 0; i < n * n - 1; i++) tiles.push(i);
+  tiles.push(-1);
+  gap = n * n - 1;
+  // shuffle by making random legal moves from the solved state (always solvable)
+  let last = -1;
+  const steps = n * n * 40;
+  for (let s = 0; s < steps || isSolved(); s++) {
+    const opts = neighborsOf(gap).filter((p) => p !== last);
+    const p = Kit.pick(opts);
+    last = gap;
+    tiles[gap] = tiles[p]; tiles[p] = -1; gap = p;
+  }
+  moves = 0;
+  time = 0;
+  anim = [];
+  winGlow = 0;
+  phase = "ready";      // timer starts on the first move
+  updateHud();
+}
+function neighborsOf(i) {
+  const r = Math.floor(i / n), c = i % n, out = [];
+  if (r > 0) out.push(i - n);
+  if (r < n - 1) out.push(i + n);
+  if (c > 0) out.push(i - 1);
+  if (c < n - 1) out.push(i + 1);
+  return out;
+}
+function isSolved() {
+  for (let i = 0; i < n * n - 1; i++) if (tiles[i] !== i) return false;
+  return true;
+}
+
+// Slides every tile between `i` and the gap (same row or column) one step toward the gap.
+function slideFrom(i) {
+  if (phase !== "ready" && phase !== "play") return false;
+  const r = Math.floor(i / n), c = i % n, gr = Math.floor(gap / n), gc = gap % n;
+  if ((r !== gr && c !== gc) || i === gap) return false;
+  const step = r === gr ? Math.sign(c - gc) : Math.sign(r - gr) * n;
+  while (gap !== i) {
+    const from = gap + step;
+    anim.push({ tile: tiles[from], from, to: gap, t: 0 });
+    tiles[gap] = tiles[from];
+    tiles[from] = -1;
+    gap = from;
+    moves++;
+  }
+  if (phase === "ready") phase = "play";
+  Kit.sfx("click");
+  updateHud();
+  if (isSolved()) solved();
+  return true;
+}
+
+async function solved() {
+  phase = "won";
+  Kit.sfx("win");
+  const secs = Math.round(time);
+  const sizeBestBefore = Kit.best(`${ID}-${n}`, undefined, true);
+  Kit.best(`${ID}-${n}`, moves, true);
+  Kit.finish(ID, moves, true);
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1400));
+  const record = sizeBestBefore === null || moves < sizeBestBefore;
+  menu("Solved!", `${n} x ${n} in ${moves} move${moves === 1 ? "" : "s"} and ${fmtTime(secs)}.${record ? "\nNew best for this size!" : `\nBest for ${n} x ${n}: ${sizeBestBefore} moves`}`);
+}
+
+function fmtTime(s) {
+  s = Math.floor(s);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+function updateHud() {
+  const b = Kit.best(`${ID}-${n}`, undefined, true);
+  Kit.hud(`Moves ${moves}<small>${n} x ${n} best: ${b === null ? "--" : b}</small>`);
+}
+
+// ---------- size menu ----------
+function menu(title, text) {
+  phase = "menu";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  const panel = document.createElement("div");
+  panel.className = "kit-panel";
+  const h = document.createElement("h1");
+  h.textContent = title;
+  const p = document.createElement("p");
+  p.textContent = text;
+  const box = document.createElement("div");
+  box.className = "choices";
+  let focus = SIZES.findIndex((s) => s.n === n);
+  const buttons = SIZES.map((s, i) => {
+    const b = document.createElement("button");
+    b.className = "kit-btn" + (i === focus ? " sel" : "");
+    b.style.background = s.color;
+    b.style.setProperty("--sh", s.sh);
+    const best = Kit.best(`${ID}-${s.n}`, undefined, true);
+    b.innerHTML = `<span>${i + 1}. ${s.n} x ${s.n} ${s.label}</span><small>best ${best === null ? "--" : best + " moves"}</small>`;
+    b.addEventListener("click", () => choose(i));
+    box.appendChild(b);
+    return b;
+  });
+  panel.append(h, p, box);
+  o.appendChild(panel);
+  document.body.appendChild(o);
+  buttons[focus].focus();
+  const shownAt = performance.now();
+  function setFocus(i) {
+    buttons[focus].classList.remove("sel");
+    focus = (i + SIZES.length) % SIZES.length;
+    buttons[focus].classList.add("sel");
+    buttons[focus].focus();
+  }
+  function choose(i) {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    newGame(SIZES[i].n);
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function onKey(e) {
+    if (performance.now() - shownAt < 350) return;
+    const d = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
+    let handled = true;
+    if (d >= 0) choose(d);
+    else if (e.code === "Enter" || e.code === "Space") choose(focus);
+    else if (["ArrowUp", "ArrowLeft", "KeyW", "KeyA"].includes(e.code)) setFocus(focus - 1);
+    else if (["ArrowDown", "ArrowRight", "KeyS", "KeyD", "Tab"].includes(e.code)) setFocus(focus + 1);
+    else handled = false;
+    if (handled) { e.preventDefault(); e.stopPropagation(); }
+  }
+  addEventListener("keydown", onKey, true);
+}
+
+// ---------- input ----------
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (phase !== "ready" && phase !== "play") return;
+  // header buttons
+  if (p.y > 26 && p.y < 72) {
+    if (p.x > W - 150 && p.x < W - 30) { menu("Slide Puzzle", "Pick a board size."); return; }
+    if (p.x > W - 280 && p.x < W - 160) { showNumbers = !showNumbers; Kit.sfx("click"); return; }
+  }
+  const s = BOARD / n;
+  const c = Math.floor((p.x - BX) / s), r = Math.floor((p.y - BY) / s);
+  if (r < 0 || c < 0 || r >= n || c >= n) return;
+  if (!slideFrom(r * n + c)) Kit.sfx("hit");
+});
+Kit.onKey((code) => {
+  if (phase !== "ready" && phase !== "play") return;
+  // Arrow = direction the tile moves (so the tile on the opposite side of the gap slides in)
+  const gr = Math.floor(gap / n), gc = gap % n;
+  const map = { ArrowUp: [1, 0], KeyW: [1, 0], ArrowDown: [-1, 0], KeyS: [-1, 0], ArrowLeft: [0, 1], KeyA: [0, 1], ArrowRight: [0, -1], KeyD: [0, -1] };
+  if (map[code]) {
+    const r = gr + map[code][0], c = gc + map[code][1];
+    if (r >= 0 && c >= 0 && r < n && c < n) slideFrom(r * n + c);
+    else Kit.sfx("hit");
+  }
+  if (code === "KeyN") showNumbers = !showNumbers;
+  if (code === "KeyR") menu("Slide Puzzle", "Pick a board size.");
+});
+
+// ---------- loop ----------
+function update(dt) {
+  if (phase === "play") time += dt;
+  peek = (Kit.key("Space") || Kit.key("KeyH")) && (phase === "play" || phase === "ready");
+  for (const a of anim) a.t = Math.min(1, a.t + dt / 0.1);
+  anim = anim.filter((a) => a.t < 1);
+  if (phase === "won" || phase === "menu") winGlow = Math.min(1, winGlow + dt * 1.2);
+}
+
+function draw() {
+  ctx.fillStyle = "#1a1d2e";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  // header
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff"; ctx.font = `800 24px ${FONT}`;
+  ctx.fillText(`${n} x ${n}`, BX, 46);
+  ctx.fillStyle = "#a5b4fc"; ctx.font = `700 15px ${FONT}`;
+  ctx.fillText(`Moves ${moves}   Time ${fmtTime(time)}`, BX, 70);
+  Kit.brick(ctx, W - 280, 26, 120, 44, showNumbers ? "#6366f1" : "#475569", 8);
+  Kit.brick(ctx, W - 150, 26, 120, 44, "#475569", 8);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = `800 15px ${FONT}`;
+  ctx.fillText(showNumbers ? "Numbers on" : "Numbers off", W - 220, 53);
+  ctx.fillText("New (R)", W - 90, 53);
+
+  // board
+  ctx.fillStyle = "#0b0d16";
+  ctx.beginPath(); ctx.roundRect(BX - 10, BY - 10, BOARD + 20, BOARD + 20, 12); ctx.fill();
+  const s = BOARD / n;
+  if (peek || phase === "won" || (phase === "menu" && winGlow > 0)) {
+    ctx.globalAlpha = peek ? 1 : winGlow;
+    ctx.drawImage(picture, BX, BY);
+    ctx.globalAlpha = 1;
+    if (peek) return;
+    if (winGlow >= 1) return;
+  }
+  const moving = new Map(anim.map((a) => [a.tile, a]));
+  for (let i = 0; i < n * n; i++) {
+    const t = tiles[i];
+    if (t < 0) continue;
+    let r = Math.floor(i / n), c = i % n;
+    const a = moving.get(t);
+    if (a) {
+      const e = 1 - Math.pow(1 - a.t, 3);
+      const fr = Math.floor(a.from / n), fc = a.from % n;
+      r = fr + (r - fr) * e; c = fc + (c - fc) * e;
+    }
+    const x = BX + c * s, y = BY + r * s;
+    const sr = Math.floor(t / n), sc = t % n;
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(x + 2, y + 2, s - 4, s - 4, 6); ctx.clip();
+    ctx.drawImage(picture, sc * s, sr * s, s, s, x, y, s, s);
+    ctx.restore();
+    ctx.fillStyle = "rgba(255,255,255,.25)"; ctx.fillRect(x + 4, y + 3, s - 8, 3);
+    ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(x + 4, y + s - 6, s - 8, 3);
+    if (i === t && phase === "play") { ctx.strokeStyle = "rgba(34,197,94,.55)"; ctx.lineWidth = 2; ctx.strokeRect(x + 3, y + 3, s - 6, s - 6); }
+    if (showNumbers) {
+      const fs = Math.round(s * 0.2);
+      ctx.font = `800 ${fs}px ${FONT}`;
+      ctx.fillStyle = "rgba(0,0,0,.55)";
+      ctx.beginPath(); ctx.roundRect(x + 6, y + 6, fs * 1.6, fs * 1.25, 5); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.textAlign = "center";
+      ctx.fillText(t + 1, x + 6 + fs * 0.8, y + 6 + fs * 1.0);
+    }
+  }
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8a90b0"; ctx.font = `600 13px ${FONT}`;
+  ctx.fillText("Click a tile in line with the gap  -  Arrows slide  -  Hold Space: peek", W / 2, H - 22);
+}
+
+const game = Kit.loop(update, draw);
+newGame(4);
+game.start();
+menu("Slide Puzzle", "Slide the tiles back into place to rebuild the picture.\nFewest moves wins.\n\nClick a tile (or a whole row of tiles) next to the gap,\nor use the arrow keys. Hold Space to peek at the picture.");
+</script>
+</body>
+</html>

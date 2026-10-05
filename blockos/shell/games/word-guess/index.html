@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word Bricks</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "word-guess";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(560, 770);
+canvas.style.outline = "none";
+
+// Secret words: common, friendly 5-letter words.
+const ANSWERS = (
+  "about above actor adult after again agree ahead alarm album alert alien alike alive allow alone along amaze angel anger " +
+  "angle angry ankle apple apron arena argue arrow aside award awake badge bagel baker basic beach beard beast begin bench " +
+  "berry bingo birch birth black blade blame blank blast blaze blend blink block bloom blown board bonus boost booth bound " +
+  "brain brake brand brave bread break brick bride brief bring broad brook broom brown brush buddy build bunch bunny burst " +
+  "cabin cable camel candy canoe cargo carry catch cause chain chair chalk charm chart chase cheap check cheek cheer chess " +
+  "chest chick chief child chill chirp choir chord chunk claim clamp clash class clean clear click cliff climb clock close " +
+  "cloth cloud clown coach coast cocoa color comet comic coral couch cough count court cover crack craft crane crash crawl " +
+  "crazy cream creek crisp crowd crown crumb crust curve cycle daily dairy daisy dance delay depth diary dizzy dodge dough " +
+  "draft drain drama drank drawn dream dress dried drift drill drink drive drove eager eagle early earth easel eight elbow " +
+  "empty enjoy enter entry equal error event every exact exist extra fable fairy faith false fancy feast fence ferry fetch " +
+  "fever field fifty final first flame flash flock flood floor flour fluff fluid flute focus foggy force forge forty found " +
+  "frame fresh frost fruit fudge funny fuzzy gecko ghost giant given glass globe glory glove goose grace grade grain grand " +
+  "grape graph grasp grass gravy great green greet grill group grove growl grown guard guess guest guide habit happy harsh " +
+  "hatch heart heavy hedge hello hippo hobby honey horse hotel house human humor hurry igloo image inner input jelly jewel " +
+  "joint jolly judge juice juicy jumbo kayak knife knock koala label large laser laugh layer learn leash least leave lemon " +
+  "level light lilac limit linen llama lodge logic loose lucky lunar lunch magic major mango maple march marsh match mayor " +
+  "medal melon merry metal meter minor mixer model moist money month moose motor motto mound mount mouse mouth movie muddy " +
+  "music nacho nerve never night ninja noble noise north notch novel nurse nutty ocean offer often olive onion opera orbit " +
+  "order organ other otter ounce outer owner paint panda panel paper party pasta patch pause peace peach pearl pedal penny " +
+  "perch piano piece pilot pinch pixel pizza place plain plane plant plate plaza plump point polar porch pouch pound power " +
+  "press price pride prize proof proud prune puppy purse quack queen quest quick quiet quilt quite radar radio rainy raise " +
+  "rally ranch range rapid raven reach react ready relax reply rhyme rider ridge right rinse river roast robin robot rocky " +
+  "rodeo round route royal rugby ruler rumor rural salad salty sandy sauce scale scarf scene scent scoop score scout scrap " +
+  "sense serve seven shade shake shape share shark sharp sheep sheet shelf shell shift shine shiny shirt shock shore short " +
+  "shout shrub sight silly sixty skate skill skirt slate sleep slice slide slope smart smell smile smoke snack snail snake " +
+  "sneak snowy solar solid solve sound south space spare spark speak speed spell spend spice spicy spike spill spoon sport " +
+  "spray squad squid stack staff stage stair stamp stand start state steam steel steep stick still sting stone stool storm " +
+  "story stove straw strip stuck study stuff style sugar sunny super swamp swarm sweep sweet swift swing table taste teach " +
+  "teeth tempo thank theme thick thing think third thorn three throw thumb tiger tight timer tired title toast today token " +
+  "tooth topic torch total touch tough towel tower trace track trade trail train treat trend trial tribe trick truck truly " +
+  "trunk trust truth tulip tummy twice twirl uncle under unite until upper upset usual vapor vault video visit vital vivid " +
+  "vocal voice wagon waist watch water whale wheat wheel where while whisk white whole width world worry worth would wrist " +
+  "write wrong yacht young youth zebra zesty"
+).split(" ");
+
+// Extra words that are accepted as guesses (but never chosen as the secret word).
+const EXTRA = (
+  "abbey abide abode abort acorn adapt adept admit adobe adopt adore aisle algae alley alloy aloft alpha altar amber amble " +
+  "amend ample amuse anvil apart aphid apply arbor arise armor aroma array atlas attic audio audit avoid await awful azure " +
+  "bacon badly baggy banjo barge baron basil batch bathe baton bayou beady beefy beige belly below beret biome bison bland " +
+  "bleak bleed blimp blind bliss blond blood bloat blues bluff blunt blurb blurt blush boast bossy botch bough boxer brace " +
+  "braid brass brawl briar brine brink brisk broil broke broth brunt brute budge buggy bugle built bulge bulky bully bumpy " +
+  "burly cache cadet camps canal caper carol carve catty cedar chant chaos chili chimp china chips choke chomp chose civic " +
+  "clank clasp claws clerk cling cloak clove clung coals cobra coins cooks corny crabs cramp crate crave creak crepe crest " +
+  "cried crook cross crude cruel cubic cumin cupid curly curry daddy dated decal decay decor decoy delta dense dents dicey " +
+  "diner dingy dirty disco ditch ditto diver dolly donor doubt dozen drape drawl dread dryer duchy dunce dusty duvet dwarf " +
+  "dwell dying eaten ebony edged elder elect elite elves email ember enemy epoch equip erase erupt essay ether ethic evade " +
+  "evoke exile expel facet faded faint fatal feign feral ferns fiber fiery fifth fight filly filth finch fishy fixed fizzy " +
+  "flair flake flaky flank flare flask fleet flesh flick flier fling flint flirt float flora floss flown flung flush foamy " +
+  "folly foray forgo forth forum foyer frail freak fried frill frisk front froze fully fungi fussy gaily gamer gauge gauze " +
+  "gavel gears geese genie genre germs ghoul giddy gizmo glade gland glare gleam glide glint gloom gloss glued gnome goals " +
+  "going golly gooey goofy gorge gourd grant grate graze greed grief grime grimy grind gripe groan groom gross gruff grunt " +
+  "guava guild gulch gully gummy gusto gusty hairy halls handy hardy harps haste hasty haunt haven hazel heads heady heard " +
+  "heist helix hence herbs heron hilly hinge hoist holly homer honor hoped horns hound hover howdy huffy humid hunch husky " +
+  "hyena icing ideal idiom idler idols imply inbox inept infer ingot inlet irate irony issue itchy ivory jaunt jazzy jeans " +
+  "jerky jiffy joker joust jumpy junky karma kebab khaki kiosk kites kitty knack knead kneel knelt knoll known lapel lapse " +
+  "latch later latte lathe leafy leaky leapt ledge legal lemur libel liner lingo lions lived liver loads lobby local locus " +
+  "lofty lofts loopy lorry lover lower loyal lumpy lunge lying macaw macho madam mains mamba mania manor marry mason mates " +
+  "mauve maxim maybe meant meaty medic mercy merge merit messy midst might mimic mince minds miner mines minty minus mirth " +
+  "miser misty mocha modem mogul molar moldy moody moral mossy motel moths mucky mulch mummy munch mural murky mushy musty " +
+  "myths naive nanny nasal nasty naval navel needy neigh nerdy newer newly nicer niche niece nifty ninth nippy nobly nomad " +
+  "noted nudge nylon oaken oasis occur odder offal oiled oiler okapi olden omega optic orate ought ovals ovary overt owing " +
+  "owlet oxide ozone paddy pagan pages pains pairs palms pansy papal parka parry parse pasty patio patsy pecan penal pence " +
+  "peony peppy perky pesky petal petty phase phone photo picky piety piggy pinky pious piper pique pitch pithy pivot plaid " +
+  "plank plead pleat pluck plumb plume plunk poach poems poesy poise poker polka polyp pooch poppy porky poser posse potty " +
+  "pouty prank prawn preen prick prime primp print prior prism privy probe prone prong prose prowl proxy prude psalm pudgy " +
+  "puffy pulse punch pupil puree purge pushy putty quail qualm quark quart quash query queue quirk quota quote rabid racer " +
+  "radii rafts rains ramen ramps rangy ratio ratty raved rayon razor realm rebel rebus recap recur refer regal reign relay " +
+  "relic remit renew repay repel resin retro retry reuse revel rigid risky rival roach robes rogue roomy roost roots roses " +
+  "rotor rouge rough rowdy rower ruddy rummy runny rusty sable saint salon salsa salve sappy sassy satin sauna saved savor " +
+  "savvy scald scalp scaly scamp scant scare scary scold scone scorn scour scrub scuba sedan seedy seize sepia setup sever " +
+  "shack shaft shaky shall shame shawl shear sheen sheer shied shire shoal shone shook shorn showy shrug shuck shunt shush " +
+  "shyly siege sieve sigma silky silty since sinew singe siren sixth sized skier skimp skulk skull skunk slack slain slang " +
+  "slant slash sleek sleet slept slick slime slimy sling slink slosh sloth slump slung slunk slurp slush smack smash smear " +
+  "smelt smirk smith smock snare snarl sneer sniff snipe snoop snore snort snout snuck soapy sober soggy sonic sorry soupy " +
+  "spade spasm spawn speck spent spied spiel spiky spilt spine spire spite splat split spoil spoke spoof spook spool spout " +
+  "spree sprig spunk spurt squat stain stake stale stalk stall stank stare stark stash stead steak stern stiff stilt stink " +
+  "stint stock stoic stoke stole stomp stony stood stoop stout strap stray strum strut stump stung stunk stunt suave suite " +
+  "sulky sumac sunup surge surly sushi swear sweat swept swill swine swipe swirl swoop sword swore sworn swung synth syrup " +
+  "tabby taboo tacky taffy taken talon tamer tango tangy taper tapir tardy tarot taunt tawny teary tease teddy teens tense " +
+  "tenth tepee tepid terms terse thief thigh those thong threw thrum thyme tiara tibia tidal tilde timid titan toady toddy " +
+  "tonal tongs tonic topaz torso totem toxic tract trait tramp trash trawl tread trite troll troop trope trout trove truce " +
+  "tuber tubby tuner tunic turbo tusks tutor twang tweak tweed tweet twerp twine twins tying udder ulcer ultra umbra unbox " +
+  "uncut undid undue unfed unfit unify union unlit unmet untie unwed unzip urban usage usher utter vague valet valid valor " +
+  "value valve vegan venom venue verge verse vigil vigor villa vinyl viola viper viral virus visor vista vixen vogue volts " +
+  "vomit voter vouch vowel wacky wafer waged wager waive waltz warty waste waver waxen weary weave wedge weedy weird whack " +
+  "wharf wheal whiff whine whiny whirl wider widow wield wimpy wince winch windy wiped wired wiser witch witty woken woman " +
+  "women woody woozy wordy works worse worst wound woven wrack wrath wreak wreck wrest wring yearn yeast yield yodel yummy " +
+  "zippy zonal cards bikes birds boats books boxes bears bells cakes calls carts cases coats dates deals desks doors drops " +
+  "ducks faces facts farms fears feels files fills finds fires flags foods frogs games gifts girls goats goods hands helps " +
+  "hills holes homes hooks hours ideas items jokes kicks kings lakes lamps lands lines lists locks looks lungs marks meals " +
+  "moons names nests notes parks parts pools rings rocks roofs rooms rules seats seeds ships shoes shops signs songs spots " +
+  "stars steps tails tales tanks tapes teams tells tests tools trees trips tubes turns waves weeks wings words walls"
+).split(" ");
+
+const VALID = new Set(ANSWERS.concat(EXTRA).filter((w) => /^[a-z]{5}$/.test(w)).map((w) => w.toUpperCase()));
+const SECRETS = ANSWERS.filter((w) => /^[a-z]{5}$/.test(w)).map((w) => w.toUpperCase());
+
+const ROWS = 6, LEN = 5;
+const TILE = 62, GAP = 8;
+const BX = (W - (LEN * TILE + (LEN - 1) * GAP)) / 2, BY = 78;
+const COLORS = {
+  hit: "#22c55e", near: "#eab308", miss: "#3a3f46",
+  empty: "#22252a", typed: "#2b2f35", keyIdle: "#8b939e",
+};
+const KEY_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "<ZXCVBNM>"];
+const KEY_W = 46, KEY_H = 58, KEY_GAP = 6, KY = 530;
+
+let answer, guesses, current, results, keyState, phase = "menu";
+let streak = 0, wins = 0, played = 0;
+let reveal = null; // { row, t }
+let shakeT = 0, toast = null, bounce = null;
+let bag = [];
+let pressedKey = null;
+
+function nextSecret() {
+  if (!bag.length) {
+    bag = SECRETS.slice();
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+  }
+  return bag.pop();
+}
+
+function newRound() {
+  answer = nextSecret();
+  guesses = [];
+  results = [];
+  current = "";
+  keyState = {};
+  reveal = null;
+  bounce = null;
+  toast = null;
+  phase = "play";
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Streak ${streak}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// Scores a guess: "hit" right spot, "near" in the word elsewhere, "miss" not (counting duplicates properly).
+function score(guess, target) {
+  const res = new Array(LEN).fill("miss");
+  const left = {};
+  for (let i = 0; i < LEN; i++) {
+    if (guess[i] === target[i]) res[i] = "hit";
+    else left[target[i]] = (left[target[i]] || 0) + 1;
+  }
+  for (let i = 0; i < LEN; i++) {
+    if (res[i] !== "hit" && left[guess[i]] > 0) { res[i] = "near"; left[guess[i]]--; }
+  }
+  return res;
+}
+
+const RANK = { miss: 1, near: 2, hit: 3 };
+
+function typeLetter(ch) {
+  if (phase !== "play" || reveal) return;
+  if (current.length < LEN) { current += ch; Kit.sfx("click"); }
+}
+function backspace() {
+  if (phase !== "play" || reveal) return;
+  current = current.slice(0, -1);
+}
+function submit() {
+  if (phase !== "play" || reveal) return;
+  if (current.length < LEN) { showToast("Not enough letters"); shakeT = 0.4; Kit.sfx("hit"); return; }
+  if (!VALID.has(current)) { showToast("Not in the word list"); shakeT = 0.4; Kit.sfx("hit"); return; }
+  const res = score(current, answer);
+  guesses.push(current);
+  results.push(res);
+  reveal = { row: guesses.length - 1, t: 0 };
+  current = "";
+}
+
+function finishReveal() {
+  const row = reveal.row;
+  reveal = null;
+  const g = guesses[row], res = results[row];
+  for (let i = 0; i < LEN; i++) {
+    const prev = keyState[g[i]];
+    if (!prev || RANK[res[i]] > RANK[prev]) keyState[g[i]] = res[i];
+  }
+  if (g === answer) return roundOver(true);
+  if (guesses.length === ROWS) return roundOver(false);
+  Kit.sfx(res.some((r) => r !== "miss") ? "coin" : "click");
+}
+
+async function roundOver(won) {
+  phase = "over";
+  played++;
+  if (won) {
+    wins++;
+    streak++;
+    bounce = { row: guesses.length - 1, t: 0 };
+    Kit.sfx("win");
+    showToast(["Genius!", "Magnificent!", "Brilliant!", "Great job!", "Nice!", "Phew!"][guesses.length - 1]);
+  } else {
+    Kit.sfx("lose");
+    showToast(answer, 99);
+  }
+  const ended = streak;
+  if (!won) streak = 0;
+  const best = Kit.finish(ID, ended);
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1500));
+  const stats = `Won ${wins} of ${played} this session`;
+  if (won) await Kit.overlay("You got it!", `The word was ${answer}.\nSolved in ${guesses.length} ${guesses.length === 1 ? "try" : "tries"}.\n\nStreak: ${streak}   Best: ${best}\n${stats}`, "Next word");
+  else await Kit.overlay("Out of tries", `The word was ${answer}.\nYour streak ended at ${ended}.\n\nBest streak: ${best}\n${stats}`, "Start a new streak");
+  newRound();
+}
+
+function showToast(text, dur) { toast = { text, t: 0, dur: dur || 1.6 }; }
+
+/* ---------- input ---------- */
+Kit.onKey((code, e) => {
+  if (phase !== "play" || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/^Key[A-Z]$/.test(code)) { typeLetter(code.slice(3)); flashKey(code.slice(3)); }
+  else if (code === "Backspace" || code === "Delete") { e.preventDefault(); backspace(); flashKey("<"); }
+  else if (code === "Enter" || code === "NumpadEnter") { submit(); flashKey(">"); }
+});
+function flashKey(k) { pressedKey = { k, t: 0.12 }; }
+
+function keyRects() {
+  const rects = [];
+  KEY_ROWS.forEach((row, r) => {
+    const widths = [...row].map((k) => (k === "<" || k === ">" ? KEY_W * 1.5 + KEY_GAP / 2 : KEY_W));
+    const total = widths.reduce((a, b) => a + b, 0) + KEY_GAP * (row.length - 1);
+    let x = (W - total) / 2;
+    [...row].forEach((k, i) => {
+      rects.push({ k, x, y: KY + r * (KEY_H + KEY_GAP), w: widths[i], h: KEY_H });
+      x += widths[i] + KEY_GAP;
+    });
+  });
+  return rects;
+}
+const KEYS = keyRects();
+canvas.addEventListener("mousedown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  const k = KEYS.find((r) => p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h);
+  if (!k) return;
+  flashKey(k.k);
+  if (k.k === "<") backspace();
+  else if (k.k === ">") submit();
+  else typeLetter(k.k);
+});
+canvas.addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  canvas.style.cursor = KEYS.some((r) => p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h) ? "pointer" : "default";
+});
+
+/* ---------- loop ---------- */
+const FLIP = 0.32; // seconds per tile flip
+function update(dt) {
+  if (reveal) {
+    const before = Math.floor(reveal.t / FLIP);
+    reveal.t += dt;
+    const after = Math.floor(reveal.t / FLIP);
+    if (after !== before && after <= LEN) Kit.sfx("click");
+    if (reveal.t >= FLIP * (LEN + 0.6)) finishReveal();
+  }
+  if (bounce) bounce.t += dt;
+  if (shakeT > 0) shakeT = Math.max(0, shakeT - dt);
+  if (toast) { toast.t += dt; if (toast.t > toast.dur) toast = null; }
+  if (pressedKey) { pressedKey.t -= dt; if (pressedKey.t <= 0) pressedKey = null; }
+}
+
+function text(str, x, y, size, color, weight) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawTile(x, y, letter, state, scaleY, lift) {
+  const h = TILE * scaleY;
+  const ty = y + (TILE - h) / 2 - lift;
+  if (state) {
+    Kit.brick(ctx, x, ty, TILE, Math.max(1, h), COLORS[state], 8);
+  } else if (letter) {
+    Kit.brick(ctx, x, ty, TILE, h, COLORS.typed, 8);
+    ctx.strokeStyle = "#a7adb4";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(x + 1, ty + 1, TILE - 2, h - 2, 8);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = COLORS.empty;
+    ctx.strokeStyle = "#3a3f46";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x + 1, ty + 1, TILE - 2, h - 2, 8);
+    ctx.fill();
+    ctx.stroke();
+  }
+  if (letter && scaleY > 0.15) {
+    ctx.save();
+    ctx.translate(x + TILE / 2, ty + h / 2);
+    ctx.scale(1, scaleY);
+    text(letter, 0, 2, 34, "#fff", 800);
+    ctx.restore();
+  }
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 15; y < H; y += 30) for (let x = 15; x < W; x += 30) { ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); }
+  // title made of little bricks
+  const title = "WORD BRICKS";
+  const tw = 28;
+  const tx = W / 2 - (title.length * tw) / 2;
+  [...title].forEach((ch, i) => {
+    if (ch === " ") return;
+    const col = [COLORS.hit, COLORS.near, COLORS.miss][(i * 7) % 3];
+    Kit.brick(ctx, tx + i * tw, 18, tw - 3, 34, col, 5);
+    text(ch, tx + i * tw + (tw - 3) / 2, 36, 19, "#fff", 800);
+  });
+  if (!guesses) return;
+  for (let r = 0; r < ROWS; r++) {
+    let sx = 0;
+    if (r === guesses.length && shakeT > 0 && !reveal) sx = Math.sin(shakeT * 50) * 8 * (shakeT / 0.4);
+    for (let c = 0; c < LEN; c++) {
+      const x = BX + c * (TILE + GAP) + sx, y = BY + r * (TILE + GAP);
+      let letter = "", state = null, scaleY = 1, lift = 0;
+      if (r < guesses.length) {
+        letter = guesses[r][c];
+        state = results[r][c];
+        if (reveal && reveal.row === r) {
+          const local = reveal.t / FLIP - c;
+          if (local < 0) state = null;
+          else if (local < 1) {
+            scaleY = Math.abs(Math.cos(local * Math.PI));
+            if (local < 0.5) state = null;
+          }
+        }
+        if (bounce && bounce.row === r) {
+          const local = bounce.t * 6 - c * 0.6;
+          if (local > 0 && local < Math.PI) lift = Math.sin(local) * 18;
+        }
+      } else if (r === guesses.length && phase === "play") {
+        letter = current[c] || "";
+        if (letter && c === current.length - 1) scaleY = 1;
+      }
+      drawTile(x, y, letter, state, scaleY, lift);
+    }
+  }
+  // keyboard
+  for (const k of KEYS) {
+    const st = keyState[k.k];
+    const color = st ? COLORS[st] : COLORS.keyIdle;
+    const down = pressedKey && pressedKey.k === k.k;
+    Kit.brick(ctx, k.x, k.y + (down ? 3 : 0), k.w, k.h, color, 7);
+    if (k.k === "<") drawBackIcon(k.x + k.w / 2, k.y + k.h / 2 + (down ? 3 : 0));
+    else if (k.k === ">") text("ENTER", k.x + k.w / 2, k.y + k.h / 2 + 1 + (down ? 3 : 0), 14, "#fff", 800);
+    else text(k.k, k.x + k.w / 2, k.y + k.h / 2 + 1 + (down ? 3 : 0), 21, "#fff", 800);
+  }
+  text("Green: right spot   Yellow: wrong spot   Gray: not in word", W / 2, H - 22, 13, "#6b7280", 600);
+  if (toast) {
+    const a = Math.min(1, (toast.dur - toast.t) * 4, toast.t * 8);
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.font = `800 20px ${FONT}`;
+    const w = ctx.measureText(toast.text).width + 40;
+    Kit.brick(ctx, W / 2 - w / 2, BY + 2 * (TILE + GAP) + 4, w, 50, "#f2f4f5", 10);
+    text(toast.text, W / 2, BY + 2 * (TILE + GAP) + 30, 20, "#1f2328", 800);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawBackIcon(cx, cy) {
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  ctx.moveTo(cx - 18, cy);
+  ctx.lineTo(cx - 8, cy - 11);
+  ctx.lineTo(cx + 16, cy - 11);
+  ctx.lineTo(cx + 16, cy + 11);
+  ctx.lineTo(cx - 8, cy + 11);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = COLORS.keyIdle;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx - 3, cy - 5); ctx.lineTo(cx + 8, cy + 5);
+  ctx.moveTo(cx + 8, cy - 5); ctx.lineTo(cx - 3, cy + 5);
+  ctx.stroke();
+}
+
+newRound();
+phase = "menu";
+updateHud();
+Kit.loop(update, draw).start();
+Kit.overlay("Word Bricks",
+  "Guess the hidden 5-letter word in 6 tries.\n\n" +
+  "After each guess the bricks change colour:\nGreen = right letter, right spot\nYellow = in the word, wrong spot\nGray = not in the word\n\n" +
+  "Type or click the keys, Enter to guess, Backspace to erase.\nKeep winning to build your streak!",
+  "Play").then(() => { phase = "play"; });
+</script>
+</body>
+</html>

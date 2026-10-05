@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battle Tanks</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "battle-tanks";
+const T = 30, COLS = 32, ROWS = 18;
+const { canvas, ctx, W, H } = Kit.stage(COLS * T, ROWS * T);
+
+const EMPTY = 0, BRICK = 1, STEEL = 2, BUSH = 3, WATER = 4;
+const TANK_R = 12;
+const MAX_HP = 5;
+const ENEMY_TYPES = {
+  scout:  { speed: 115, hp: 1, reload: 2.3, color: "#22c55e", dark: "#15803d", points: 100, shellSpeed: 300 },
+  gunner: { speed: 85,  hp: 2, reload: 1.5, color: "#fb923c", dark: "#c2410c", points: 150, shellSpeed: 330 },
+  heavy:  { speed: 58,  hp: 4, reload: 2.2, color: "#a855f7", dark: "#6b21a8", points: 300, shellSpeed: 270 },
+};
+const POWERS = {
+  rapid:  { color: "#facc15", time: 10 },
+  triple: { color: "#ec4899", time: 10 },
+  shield: { color: "#60a5fa", time: 8 },
+  bounce: { color: "#14b8a6", time: 12 },
+  repair: { color: "#ef4444", time: 0 },
+};
+
+let map, brickHp, player, enemies, shells, pickups, particles, flashes, score, wave, toSpawn, spawnTimer, state, msg, msgT, shake, time;
+let mouse = { x: W / 2, y: 0, lastMove: -10, down: false };
+
+const tileAt = (cx, cy) => (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS ? STEEL : map[cy][cx]);
+const solidForTank = (t) => t === BRICK || t === STEEL || t === WATER;
+const solidForShell = (t) => t === BRICK || t === STEEL;
+
+// ---------- map generation ----------
+const PLAYER_SPAWN = { cx: 16, cy: 15 };
+const ENEMY_SPAWNS = [{ cx: 2, cy: 2 }, { cx: 16, cy: 2 }, { cx: 29, cy: 2 }];
+
+function genMap() {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    map = Array.from({ length: ROWS }, () => new Array(COLS).fill(EMPTY));
+    for (let x = 0; x < COLS; x++) { map[0][x] = STEEL; map[ROWS - 1][x] = STEEL; }
+    for (let y = 0; y < ROWS; y++) { map[y][0] = STEEL; map[y][COLS - 1] = STEEL; }
+    // stamp mirrored shapes on the left half
+    const shapes = 9 + Kit.randInt(0, 4);
+    for (let s = 0; s < shapes; s++) {
+      const r = Math.random();
+      const type = r < 0.6 ? BRICK : r < 0.78 ? STEEL : r < 0.9 ? BUSH : WATER;
+      const w = Kit.randInt(1, type === BRICK ? 4 : 3), h = Kit.randInt(1, type === BRICK ? 4 : 2);
+      const x = Kit.randInt(2, 15 - w), y = Kit.randInt(2, ROWS - 3 - h);
+      for (let yy = y; yy < y + h; yy++)
+        for (let xx = x; xx < x + w; xx++) {
+          map[yy][xx] = type;
+          map[yy][COLS - 1 - xx] = type;
+        }
+    }
+    // a brick bunker around the player spawn and clear spawn areas
+    const clear = (cx, cy, r) => {
+      for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++)
+        if (x > 0 && y > 0 && x < COLS - 1 && y < ROWS - 1) map[y][x] = EMPTY;
+    };
+    for (const sp of ENEMY_SPAWNS) clear(sp.cx, sp.cy, 1);
+    clear(PLAYER_SPAWN.cx, PLAYER_SPAWN.cy, 2);
+    for (let x = 13; x <= 18; x++) if (x < 15 || x > 16) map[12][x] = BRICK;
+    if (connected()) break;
+  }
+  brickHp = map.map((row) => row.map((t) => (t === BRICK ? 2 : 0)));
+}
+
+// every non-steel, non-water tile must be reachable (bricks count as passable: they can be shot)
+function connected() {
+  const seen = map.map((r) => r.map(() => false));
+  const q = [[PLAYER_SPAWN.cx, PLAYER_SPAWN.cy]];
+  seen[PLAYER_SPAWN.cy][PLAYER_SPAWN.cx] = true;
+  while (q.length) {
+    const [x, y] = q.pop();
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy, t = tileAt(nx, ny);
+      if (t === STEEL || t === WATER || seen[ny][nx]) continue;
+      seen[ny][nx] = true;
+      q.push([nx, ny]);
+    }
+  }
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (map[y][x] !== STEEL && map[y][x] !== WATER && !seen[y][x]) return false;
+  return true;
+}
+
+// ---------- setup ----------
+function newGame() {
+  score = 0;
+  wave = 0;
+  player = makeTank(PLAYER_SPAWN.cx, PLAYER_SPAWN.cy, null);
+  player.hp = MAX_HP;
+  nextWave();
+  state = "play";
+  updateHud();
+}
+
+function makeTank(cx, cy, type) {
+  const def = type ? ENEMY_TYPES[type] : null;
+  return {
+    x: cx * T + T / 2, y: cy * T + T / 2, angle: -Math.PI / 2, turret: -Math.PI / 2,
+    type, def, hp: def ? def.hp : MAX_HP, reload: def ? Kit.rand(0.8, 1.6) : 0, inv: 0,
+    tread: 0, path: [], pathT: 0, spawnT: def ? 0.9 : 0, powers: {}, hitFlash: 0,
+  };
+}
+
+function nextWave() {
+  wave++;
+  genMap();
+  player.x = PLAYER_SPAWN.cx * T + T / 2;
+  player.y = PLAYER_SPAWN.cy * T + T / 2;
+  player.inv = 1.5;
+  enemies = [];
+  shells = [];
+  pickups = [];
+  particles = [];
+  flashes = [];
+  toSpawn = [];
+  const count = Math.min(14, 3 + wave * 2);
+  for (let i = 0; i < count; i++) {
+    const r = Math.random();
+    const heavyChance = Math.min(0.35, (wave - 2) * 0.08);
+    const gunnerChance = Math.min(0.5, (wave - 1) * 0.15);
+    toSpawn.push(r < heavyChance ? "heavy" : r < heavyChance + gunnerChance ? "gunner" : "scout");
+  }
+  spawnTimer = 1;
+  msg = `Wave ${wave}`;
+  msgT = 2;
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Wave ${wave} · Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- input ----------
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  mouse.x = p.x; mouse.y = p.y; mouse.lastMove = time;
+});
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  mouse.x = p.x; mouse.y = p.y; mouse.lastMove = time; mouse.down = true;
+});
+addEventListener("pointerup", () => (mouse.down = false));
+
+// ---------- movement & collision ----------
+function moveTank(t, dx, dy) {
+  t.x += dx;
+  resolveTiles(t);
+  t.y += dy;
+  resolveTiles(t);
+}
+
+function resolveTiles(t) {
+  const cx0 = Math.floor((t.x - TANK_R) / T), cx1 = Math.floor((t.x + TANK_R) / T);
+  const cy0 = Math.floor((t.y - TANK_R) / T), cy1 = Math.floor((t.y + TANK_R) / T);
+  for (let cy = cy0; cy <= cy1; cy++)
+    for (let cx = cx0; cx <= cx1; cx++) {
+      if (!solidForTank(tileAt(cx, cy))) continue;
+      const nx = Kit.clamp(t.x, cx * T, cx * T + T), ny = Kit.clamp(t.y, cy * T, cy * T + T);
+      const dx = t.x - nx, dy = t.y - ny, d = Math.hypot(dx, dy);
+      if (d < TANK_R) {
+        if (d === 0) continue;
+        t.x += (dx / d) * (TANK_R - d);
+        t.y += (dy / d) * (TANK_R - d);
+      }
+    }
+}
+
+function separateTanks() {
+  const all = [player, ...enemies];
+  for (let i = 0; i < all.length; i++)
+    for (let j = i + 1; j < all.length; j++) {
+      const a = all[i], b = all[j];
+      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (d > 0 && d < TANK_R * 2) {
+        const p = (TANK_R * 2 - d) / 2;
+        a.x -= (dx / d) * p; a.y -= (dy / d) * p;
+        b.x += (dx / d) * p; b.y += (dy / d) * p;
+        resolveTiles(a); resolveTiles(b);
+      }
+    }
+}
+
+function turnToward(cur, target, maxStep) {
+  let d = target - cur;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return cur + Kit.clamp(d, -maxStep, maxStep);
+}
+
+// ---------- shooting ----------
+function fire(t, owner) {
+  const isPlayer = owner === "player";
+  const angles = isPlayer && t.powers.triple > 0 ? [-0.22, 0, 0.22] : [0];
+  for (const off of angles) {
+    const a = t.turret + off;
+    const speed = isPlayer ? 380 : t.def.shellSpeed;
+    shells.push({
+      x: t.x + Math.cos(a) * 20, y: t.y + Math.sin(a) * 20, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+      owner, src: t, bounces: isPlayer ? (t.powers.bounce > 0 ? 3 : 1) : 1, bounced: false, age: 0,
+      big: !isPlayer && t.type === "heavy",
+    });
+  }
+  flashes.push({ x: t.x + Math.cos(t.turret) * 24, y: t.y + Math.sin(t.turret) * 24, life: 0.08 });
+  if (isPlayer) Kit.sfx("click");
+}
+
+function damageBrick(cx, cy) {
+  brickHp[cy][cx]--;
+  debris(cx * T + T / 2, cy * T + T / 2, "#b45309", 6);
+  if (brickHp[cy][cx] <= 0) {
+    map[cy][cx] = EMPTY;
+    debris(cx * T + T / 2, cy * T + T / 2, "#d97706", 10);
+  }
+}
+
+function debris(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 6.28, s = Kit.rand(40, 200);
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.25, 0.6), color, size: Kit.rand(3, 6) });
+  }
+}
+
+function explode(x, y, big) {
+  debris(x, y, "#fb923c", big ? 26 : 14);
+  debris(x, y, "#facc15", big ? 16 : 8);
+  debris(x, y, "#4b5563", big ? 12 : 6);
+  flashes.push({ x, y, life: big ? 0.3 : 0.15, big: true });
+  shake = Math.max(shake, big ? 0.35 : 0.12);
+}
+
+function updateShells(dt) {
+  for (const s of shells) {
+    s.age += dt;
+    const steps = 3;
+    for (let k = 0; k < steps && !s.dead; k++) {
+      const nx = s.x + (s.vx * dt) / steps, ny = s.y + (s.vy * dt) / steps;
+      const cx = Math.floor(nx / T), cy = Math.floor(ny / T);
+      const t = tileAt(cx, cy);
+      if (t === BRICK) { damageBrick(cx, cy); s.dead = true; Kit.sfx("hit"); break; }
+      if (t === STEEL) {
+        if (s.bounces <= 0) { s.dead = true; debris(s.x, s.y, "#9ca3af", 5); break; }
+        s.bounces--;
+        s.bounced = true;
+        const tx = tileAt(Math.floor(nx / T), Math.floor(s.y / T)), ty = tileAt(Math.floor(s.x / T), Math.floor(ny / T));
+        if (solidForShell(tx)) s.vx = -s.vx;
+        if (solidForShell(ty)) s.vy = -s.vy;
+        if (!solidForShell(tx) && !solidForShell(ty)) { s.vx = -s.vx; s.vy = -s.vy; }
+        if (s.owner === "player") Kit.sfx("click");
+        break;
+      }
+      s.x = nx; s.y = ny;
+    }
+    if (s.dead) continue;
+    // tanks
+    const targets = s.owner === "player" ? enemies : [player];
+    for (const t of targets) {
+      if (t.spawnT > 0) continue;
+      if (Math.hypot(t.x - s.x, t.y - s.y) < TANK_R + 4) { s.dead = true; hitTank(t, s); break; }
+    }
+    // a ricocheting enemy shell can hit other enemy tanks
+    if (!s.dead && s.owner === "enemy" && s.bounced) {
+      for (const t of enemies) {
+        if (t.spawnT <= 0 && !t.dead && Math.hypot(t.x - s.x, t.y - s.y) < TANK_R + 3) { s.dead = true; hitTank(t, s); break; }
+      }
+    }
+  }
+  // shells cancel each other
+  for (let i = 0; i < shells.length; i++)
+    for (let j = i + 1; j < shells.length; j++) {
+      const a = shells[i], b = shells[j];
+      if (a.dead || b.dead || a.owner === b.owner) continue;
+      if (Math.hypot(a.x - b.x, a.y - b.y) < 9) {
+        a.dead = b.dead = true;
+        debris(a.x, a.y, "#fde68a", 8);
+        score += 10;
+      }
+    }
+  shells = shells.filter((s) => !s.dead && s.age < 6);
+}
+
+function hitTank(t, s) {
+  if (t === player) {
+    if (player.inv > 0 || state !== "play") return;
+    if (player.powers.shield > 0) { debris(t.x, t.y, "#93c5fd", 10); Kit.sfx("click"); return; }
+    player.hp--;
+    player.inv = 1.2;
+    player.hitFlash = 0.2;
+    explode(t.x, t.y, false);
+    Kit.sfx("hit");
+    shake = 0.3;
+    if (player.hp <= 0) gameOver();
+    return;
+  }
+  t.hp--;
+  t.hitFlash = 0.12;
+  Kit.sfx("hit");
+  if (t.hp <= 0) {
+    t.dead = true;
+    explode(t.x, t.y, true);
+    if (s.owner === "player") score += t.def.points;
+    Kit.sfx("coin");
+    if (Math.random() < 0.35) {
+      const kind = Kit.pick(player.hp < MAX_HP ? ["rapid", "triple", "shield", "bounce", "repair", "repair"] : ["rapid", "triple", "shield", "bounce"]);
+      pickups.push({ x: t.x, y: t.y, kind, life: 12 });
+    }
+    updateHud();
+  } else debris(t.x, t.y, "#e5e7eb", 6);
+}
+
+// ---------- enemy AI ----------
+function bfsPath(from, to) {
+  const key = (x, y) => y * COLS + x;
+  const prev = new Map([[key(from.cx, from.cy), -1]]);
+  const q = [[from.cx, from.cy]];
+  let head = 0;
+  while (head < q.length) {
+    const [x, y] = q[head++];
+    if (x === to.cx && y === to.cy) break;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy, t = tileAt(nx, ny);
+      if (t === STEEL || t === WATER || prev.has(key(nx, ny))) continue;
+      prev.set(key(nx, ny), key(x, y));
+      q.push([nx, ny]);
+    }
+  }
+  const path = [];
+  let k = key(to.cx, to.cy);
+  if (!prev.has(k)) return [];
+  while (k !== -1) { path.push({ cx: k % COLS, cy: Math.floor(k / COLS) }); k = prev.get(k); }
+  return path.reverse().slice(1);
+}
+
+function lineOfSight(ax, ay, bx, by) {
+  const d = Math.hypot(bx - ax, by - ay), steps = Math.ceil(d / 8);
+  for (let i = 1; i < steps; i++) {
+    const x = ax + ((bx - ax) * i) / steps, y = ay + ((by - ay) * i) / steps;
+    if (solidForShell(tileAt(Math.floor(x / T), Math.floor(y / T)))) return false;
+  }
+  return true;
+}
+
+function updateEnemy(e, dt) {
+  if (e.spawnT > 0) { e.spawnT -= dt; return; }
+  e.hitFlash = Math.max(0, e.hitFlash - dt);
+  e.reload -= dt;
+  e.pathT -= dt;
+  const dist = Math.hypot(player.x - e.x, player.y - e.y);
+  const los = lineOfSight(e.x, e.y, player.x, player.y);
+  if (e.pathT <= 0) {
+    e.pathT = Kit.rand(0.5, 0.9);
+    e.path = bfsPath({ cx: Math.floor(e.x / T), cy: Math.floor(e.y / T) }, { cx: Math.floor(player.x / T), cy: Math.floor(player.y / T) });
+  }
+  let aim = Math.atan2(player.y - e.y, player.x - e.x);
+  let wantFire = los && dist < 520;
+  let moving = !(los && dist < 170);
+  if (moving && e.path.length) {
+    const nxt = e.path[0];
+    const tx = nxt.cx * T + T / 2, ty = nxt.cy * T + T / 2;
+    if (map[nxt.cy][nxt.cx] === BRICK) {
+      // dig through bricks in the way
+      aim = Math.atan2(ty - e.y, tx - e.x);
+      wantFire = true;
+      moving = false;
+    } else {
+      const a = Math.atan2(ty - e.y, tx - e.x);
+      e.angle = turnToward(e.angle, a, 8 * dt);
+      moveTank(e, Math.cos(a) * e.def.speed * dt, Math.sin(a) * e.def.speed * dt);
+      e.tread += e.def.speed * dt;
+      if (Math.hypot(tx - e.x, ty - e.y) < 4) e.path.shift();
+    }
+  }
+  e.turret = turnToward(e.turret, aim, 2.6 * dt);
+  let diff = Math.abs(((aim - e.turret + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+  if (wantFire && e.reload <= 0 && diff < 0.18) {
+    e.turret += Kit.rand(-0.06, 0.06);
+    fire(e, "enemy");
+    e.reload = e.def.reload * Kit.rand(0.85, 1.25) * Math.max(0.6, 1 - wave * 0.03);
+  }
+}
+
+// ---------- main update ----------
+function update(dt) {
+  time += dt;
+  shake = Math.max(0, shake - dt);
+  msgT = Math.max(0, msgT - dt);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.92; p.vy *= 0.92; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const f of flashes) f.life -= dt;
+  flashes = flashes.filter((f) => f.life > 0);
+  if (state !== "play") return;
+
+  // player
+  const mx = (Kit.key("KeyD") || Kit.key("ArrowRight") ? 1 : 0) - (Kit.key("KeyA") || Kit.key("ArrowLeft") ? 1 : 0);
+  const my = (Kit.key("KeyS") || Kit.key("ArrowDown") ? 1 : 0) - (Kit.key("KeyW") || Kit.key("ArrowUp") ? 1 : 0);
+  if (mx || my) {
+    const a = Math.atan2(my, mx);
+    player.angle = turnToward(player.angle, a, 10 * dt);
+    const sp = 135 * dt;
+    moveTank(player, Math.cos(a) * sp, Math.sin(a) * sp);
+    player.tread += sp;
+  }
+  if (time - mouse.lastMove < 3) player.turret = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+  else player.turret = turnToward(player.turret, player.angle, 9 * dt);
+  player.reload -= dt;
+  player.inv = Math.max(0, player.inv - dt);
+  player.hitFlash = Math.max(0, player.hitFlash - dt);
+  for (const k in player.powers) player.powers[k] = Math.max(0, player.powers[k] - dt);
+  const wantsFire = Kit.key("Space") || Kit.key("KeyJ") || mouse.down;
+  if (wantsFire && player.reload <= 0) {
+    const mine = shells.filter((s) => s.owner === "player").length;
+    if (mine < (player.powers.rapid > 0 ? 12 : 4)) {
+      fire(player, "player");
+      player.reload = player.powers.rapid > 0 ? 0.16 : 0.42;
+    }
+  }
+
+  // spawns
+  spawnTimer -= dt;
+  const maxAlive = Math.min(7, 3 + Math.floor(wave / 2));
+  if (toSpawn.length && spawnTimer <= 0 && enemies.length < maxAlive) {
+    const sp = ENEMY_SPAWNS.slice().sort(() => Math.random() - 0.5)
+      .find((s) => Math.hypot(s.cx * T - player.x, s.cy * T - player.y) > 150 && !enemies.some((e) => Math.hypot(e.x - s.cx * T - 15, e.y - s.cy * T - 15) < 30));
+    if (sp) {
+      const e = makeTank(sp.cx, sp.cy, toSpawn.shift());
+      e.angle = e.turret = Math.PI / 2;
+      enemies.push(e);
+      spawnTimer = Math.max(0.8, 2.4 - wave * 0.15);
+    }
+  }
+  for (const e of enemies) updateEnemy(e, dt);
+  separateTanks();
+  updateShells(dt);
+  enemies = enemies.filter((e) => !e.dead);
+
+  for (const p of pickups) {
+    p.life -= dt;
+    if (Math.hypot(p.x - player.x, p.y - player.y) < 22) {
+      p.life = 0;
+      if (p.kind === "repair") player.hp = Math.min(MAX_HP, player.hp + 1);
+      else player.powers[p.kind] = POWERS[p.kind].time;
+      msg = { rapid: "Rapid fire!", triple: "Triple shot!", shield: "Shield!", bounce: "Ricochet shells!", repair: "Repaired!" }[p.kind];
+      msgT = 1.2;
+      Kit.sfx("score");
+    }
+  }
+  pickups = pickups.filter((p) => p.life > 0);
+
+  if (!toSpawn.length && !enemies.length && state === "play") waveCleared();
+}
+
+async function waveCleared() {
+  state = "between";
+  const bonus = 250 * wave;
+  score += bonus;
+  player.hp = Math.min(MAX_HP, player.hp + 1);
+  updateHud();
+  Kit.sfx("win");
+  msg = `Wave ${wave} cleared! +${bonus}`;
+  msgT = 2.2;
+  await new Promise((r) => setTimeout(r, 2200));
+  if (state !== "between") return;
+  nextWave();
+  state = "play";
+}
+
+async function gameOver() {
+  state = "over";
+  explode(player.x, player.y, true);
+  Kit.sfx("lose");
+  await new Promise((r) => setTimeout(r, 1200));
+  const best = Kit.finish(ID, score);
+  await Kit.overlay("Tank destroyed", `You reached wave ${wave}.\nScore: ${score}\nBest: ${best}`, "Play again");
+  newGame();
+}
+
+// ---------- drawing ----------
+function drawTile(x, y, t) {
+  const px = x * T, py = y * T;
+  if (t === BRICK) {
+    const cracked = brickHp[y][x] === 1;
+    ctx.fillStyle = "#5c2d0e";
+    ctx.fillRect(px, py, T, T);
+    const c1 = cracked ? "#9a5a24" : "#c2621a", c2 = cracked ? "#874d1e" : "#a8531a";
+    for (let r = 0; r < 3; r++) {
+      const off = r % 2 ? -T / 4 : 0;
+      for (let k = 0; k < 3; k++) {
+        const bx = px + off + k * (T / 2) + 1, w = T / 2 - 2;
+        const cx0 = Math.max(px + 1, bx), cx1 = Math.min(px + T - 1, bx + w);
+        if (cx1 <= cx0) continue;
+        ctx.fillStyle = (k + r) % 2 ? c1 : c2;
+        ctx.fillRect(cx0, py + r * 10 + 1, cx1 - cx0, 8);
+      }
+    }
+    if (cracked) {
+      ctx.strokeStyle = "rgba(0,0,0,.5)";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(px + 6, py + 4); ctx.lineTo(px + 14, py + 14); ctx.lineTo(px + 10, py + 24); ctx.moveTo(px + 14, py + 14); ctx.lineTo(px + 24, py + 18); ctx.stroke();
+    }
+  } else if (t === STEEL) {
+    Kit.brick(ctx, px + 1, py + 1, T - 2, T - 2, "#6b7280", 3);
+    ctx.fillStyle = "#9ca3af";
+    ctx.fillRect(px + 7, py + 7, T - 14, T - 14);
+    ctx.fillStyle = "#374151";
+    for (const [a, b] of [[4, 4], [T - 7, 4], [4, T - 7], [T - 7, T - 7]]) ctx.fillRect(px + a, py + b, 3, 3);
+  } else if (t === WATER) {
+    ctx.fillStyle = "#1d4ed8";
+    ctx.fillRect(px, py, T, T);
+    ctx.fillStyle = "rgba(147,197,253,.5)";
+    const o = Math.sin(time * 2 + x + y) * 3;
+    ctx.fillRect(px + 4 + o, py + 8, 10, 3);
+    ctx.fillRect(px + 14 - o, py + 19, 10, 3);
+  }
+}
+
+function drawTank(t, colors) {
+  if (t.spawnT > 0) {
+    const s = (1 - t.spawnT / 0.9) * 26;
+    ctx.strokeStyle = `rgba(255,255,255,${0.4 + Math.sin(time * 30) * 0.3})`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(t.x - s / 2, t.y - s / 2, s, s);
+    return;
+  }
+  if (t === player && t.inv > 0 && Math.floor(time * 16) % 2) return;
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  ctx.fillStyle = "rgba(0,0,0,.3)";
+  ctx.fillRect(-12, -10, 28, 26);
+  ctx.save();
+  ctx.rotate(t.angle);
+  // treads
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(-14, -14, 28, 7);
+  ctx.fillRect(-14, 7, 28, 7);
+  ctx.fillStyle = "#4b5563";
+  const tr = t.tread % 6;
+  for (let k = -14 + tr; k < 14; k += 6) { ctx.fillRect(k, -14, 2, 7); ctx.fillRect(k, 7, 2, 7); }
+  Kit.brick(ctx, -12, -9, 24, 18, t.hitFlash > 0 ? "#fff" : colors.body, 3);
+  ctx.restore();
+  ctx.rotate(t.turret);
+  ctx.fillStyle = colors.dark;
+  ctx.fillRect(4, -3, 18, 6);
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(19, -4, 5, 8);
+  Kit.brick(ctx, -7, -7, 14, 14, colors.dark, 3);
+  ctx.restore();
+  if (t === player && t.powers.shield > 0) {
+    ctx.strokeStyle = `rgba(96,165,250,${0.55 + Math.sin(time * 12) * 0.25})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(t.x, t.y, 21, 0, 7); ctx.stroke();
+  }
+  if (t !== player && t.def.hp > 1) {
+    for (let i = 0; i < t.hp; i++) {
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(t.x - t.def.hp * 3.5 + i * 7, t.y - 22, 5, 3);
+    }
+  }
+}
+
+function drawPowerIcon(kind, x, y, s) {
+  const c = POWERS[kind].color;
+  Kit.brick(ctx, x - s / 2, y - s / 2, s, s, c, 5);
+  ctx.fillStyle = "#1f2328";
+  const u = s / 10;
+  if (kind === "rapid") { ctx.fillRect(x - 3 * u, y - 3 * u, 2 * u, 6 * u); ctx.fillRect(x + u, y - 3 * u, 2 * u, 6 * u); }
+  else if (kind === "triple") { for (const k of [-1, 0, 1]) ctx.fillRect(x + k * 3 * u - u, y - 3 * u + Math.abs(k) * 2 * u, 2 * u, 2 * u); }
+  else if (kind === "shield") { ctx.fillRect(x - 3 * u, y - 3 * u, 6 * u, 4 * u); ctx.fillRect(x - 2 * u, y + u, 4 * u, 2 * u); }
+  else if (kind === "bounce") { ctx.fillRect(x - 3 * u, y + u, 2 * u, 2 * u); ctx.fillRect(x - u, y - u, 2 * u, 2 * u); ctx.fillRect(x + u, y + u, 2 * u, 2 * u); }
+  else if (kind === "repair") { ctx.fillRect(x - u, y - 3 * u, 2 * u, 6 * u); ctx.fillRect(x - 3 * u, y - u, 6 * u, 2 * u); }
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-5, 5) * shake * 3, Kit.rand(-5, 5) * shake * 3);
+  ctx.fillStyle = "#3f3a2e";
+  ctx.fillRect(-10, -10, W + 20, H + 20);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if ((x + y) % 2) ctx.fillRect(x * T, y * T, T, T);
+  // spawn pads
+  for (const s of ENEMY_SPAWNS) {
+    ctx.strokeStyle = "rgba(239,68,68,.35)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(s.cx * T - 10, s.cy * T - 10, T + 20, T + 20);
+  }
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (map[y][x] !== EMPTY && map[y][x] !== BUSH) drawTile(x, y, map[y][x]);
+
+  for (const p of pickups) {
+    if (p.life < 3 && Math.floor(time * 8) % 2) continue;
+    drawPowerIcon(p.kind, p.x, p.y + Math.sin(time * 5) * 2, 22);
+  }
+  for (const e of enemies) drawTank(e, { body: e.def.color, dark: e.def.dark });
+  if (state !== "over") drawTank(player, { body: "#3b82f6", dark: "#1e40af" });
+
+  for (const s of shells) {
+    ctx.fillStyle = s.owner === "player" ? "#fde047" : "#f87171";
+    const r = s.big ? 5 : 4;
+    ctx.fillRect(s.x - r, s.y - r, r * 2, r * 2);
+    ctx.fillStyle = "rgba(255,255,255,.7)";
+    ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
+  }
+  // bushes on top of tanks
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++)
+      if (map[y][x] === BUSH) {
+        ctx.fillStyle = "rgba(21,128,61,.92)";
+        ctx.fillRect(x * T, y * T, T, T);
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(x * T + 3, y * T + 3, 11, 11);
+        ctx.fillRect(x * T + 16, y * T + 14, 11, 11);
+        ctx.fillStyle = "#16a34a";
+        ctx.fillRect(x * T + 16, y * T + 3, 10, 9);
+        ctx.fillRect(x * T + 3, y * T + 16, 10, 10);
+      }
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 3);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const f of flashes) {
+    ctx.fillStyle = f.big ? `rgba(253,224,71,${f.life * 2.5})` : "rgba(255,255,255,.9)";
+    const s = f.big ? 40 * (1 - f.life) + 20 : 10;
+    ctx.fillRect(f.x - s / 2, f.y - s / 2, s, s);
+  }
+  // crosshair
+  if (time - mouse.lastMove < 3) {
+    ctx.strokeStyle = "rgba(255,255,255,.7)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(mouse.x - 7, mouse.y - 7, 14, 14);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(mouse.x - 1, mouse.y - 1, 2, 2);
+  }
+  ctx.restore();
+
+  // HP and powers
+  ctx.fillStyle = "rgba(0,0,0,.55)";
+  ctx.fillRect(8, H - 34, 34 + MAX_HP * 20, 26);
+  ctx.font = "bold 13px system-ui, sans-serif";
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "left";
+  ctx.fillText("HP", 14, H - 16);
+  for (let i = 0; i < MAX_HP; i++) Kit.brick(ctx, 38 + i * 20, H - 29, 16, 16, i < player.hp ? "#ef4444" : "#3f3f46", 3);
+  let px = 60 + MAX_HP * 20;
+  for (const k in player.powers) {
+    if (player.powers[k] <= 0) continue;
+    drawPowerIcon(k, px, H - 21, 22);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(Math.ceil(player.powers[k]), px + 15, H - 16);
+    px += 52;
+  }
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(255,255,255,.8)";
+  ctx.fillText(`Enemies left: ${toSpawn.length + enemies.length}`, W - 14, H - 14);
+
+  if (msgT > 0) {
+    ctx.globalAlpha = Math.min(1, msgT * 2);
+    ctx.textAlign = "center";
+    ctx.font = "900 44px system-ui, sans-serif";
+    ctx.fillStyle = "rgba(0,0,0,.6)";
+    ctx.fillText(msg, W / 2 + 3, H / 2 - 57);
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(msg, W / 2, H / 2 - 60);
+    ctx.globalAlpha = 1;
+  }
+}
+
+time = 0;
+newGame();
+const game = Kit.loop(update, draw);
+draw();
+Kit.overlay("Battle Tanks",
+  "Survive wave after wave of enemy tanks.\nShells bounce off steel, bricks crumble, water blocks tanks, bushes hide you.\nDestroyed tanks may drop power-ups.\n\nWASD / Arrows: drive\nMouse: aim turret\nClick / Space: fire",
+  "Roll out").then(() => game.start());
+</script>
+</body>
+</html>

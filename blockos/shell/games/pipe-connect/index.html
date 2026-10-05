@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipe Connect</title>
+<link rel="stylesheet" href="../kit.css">
+<style>.kit-stage canvas:focus { outline: none; }</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "pipe-connect";
+const { canvas, ctx, W, H } = Kit.stage(760, 640);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const AREA = 504, TOP = 92;
+// direction bits
+const NB = 1, EB = 2, SB = 4, WB = 8;
+const DIRS = [
+  { bit: NB, dr: -1, dc: 0 }, { bit: EB, dr: 0, dc: 1 }, { bit: SB, dr: 1, dc: 0 }, { bit: WB, dr: 0, dc: -1 },
+];
+const opposite = (bit) => ({ 1: 4, 2: 8, 4: 1, 8: 2 }[bit]);
+const rotCW = (m) => ((m << 1) | (m >> 3)) & 15;
+const rotCCW = (m) => ((m >> 1) | ((m & 1) << 3)) & 15;
+
+let N, cell, ox, oy, tiles, srcRow, drainRow, level, score, phase, prepLeft, prepTotal, tileTime, fast;
+let flow, earlyBonus = 0, filledCount, cursor, particles, connected, popups, leak;
+
+// ---------- level generation ----------
+function makePath() {
+  // randomized depth-first search from the source cell to the drain cell
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const seen = new Set();
+    const path = [];
+    const goal = [drainRow, N - 1];
+    let steps = 0;
+    const dfs = (r, c) => {
+      if (++steps > 5000) return false;
+      seen.add(r * N + c);
+      path.push([r, c]);
+      if (r === goal[0] && c === goal[1]) return true;
+      const order = DIRS.slice().sort(() => Math.random() - 0.5);
+      for (const d of order) {
+        const nr = r + d.dr, nc = c + d.dc;
+        if (nr < 0 || nc < 0 || nr >= N || nc >= N || seen.has(nr * N + nc)) continue;
+        if (dfs(nr, nc)) return true;
+      }
+      path.pop();
+      return false;
+    };
+    if (!dfs(srcRow, 0)) continue;
+    const minLen = Math.floor(N * 1.7), maxLen = Math.floor(N * N * 0.55);
+    if (path.length >= minLen && path.length <= maxLen) return path;
+  }
+  // fallback: a simple zig-zag that always works
+  const path = [];
+  let r = srcRow;
+  for (let c = 0; c < N; c++) {
+    path.push([r, c]);
+    if (c === N - 1) break;
+    if (c % 2 === 1) {
+      while (r !== drainRow) { r += Math.sign(drainRow - r); path.push([r, c]); }
+    }
+  }
+  while (r !== drainRow) { r += Math.sign(drainRow - r); path.push([r, N - 1]); }
+  return path;
+}
+
+function dirBetween(a, b) {
+  return DIRS.find((d) => a[0] + d.dr === b[0] && a[1] + d.dc === b[1]).bit;
+}
+
+function buildLevel() {
+  N = Math.min(9, 4 + Math.ceil(level / 2));
+  cell = Math.floor(AREA / N);
+  ox = Math.floor((W - cell * N) / 2);
+  oy = TOP + Math.floor((AREA - cell * N) / 2);
+  srcRow = Kit.randInt(0, N - 1);
+  drainRow = Kit.randInt(0, N - 1);
+  const path = makePath();
+  tiles = [];
+  for (let r = 0; r < N; r++) {
+    tiles.push([]);
+    for (let c = 0; c < N; c++) {
+      const roll = Math.random();
+      const mask = roll < 0.42 ? (NB | SB) : roll < 0.9 ? (NB | EB) : 15;
+      tiles[r].push({ mask, filled: 0, fillDirs: [], spin: 0 });
+    }
+  }
+  path.forEach((p, i) => {
+    const entry = i === 0 ? WB : dirBetween(p, path[i - 1]);
+    const exit = i === path.length - 1 ? EB : dirBetween(p, path[i + 1]);
+    tiles[p[0]][p[1]].mask = tiles[p[0]][p[1]].sol = entry | exit;
+  });
+  // scramble rotations
+  for (const row of tiles)
+    for (const t of row) {
+      const turns = Kit.randInt(0, 3);
+      for (let i = 0; i < turns; i++) t.mask = rotCW(t.mask);
+    }
+  // make sure the board doesn't start solved
+  if (traceConnection().reached) return buildLevel();
+  prepTotal = prepLeft = 12 + N * 3;
+  tileTime = Math.max(0.55, 1.5 - level * 0.08);
+  fast = false;
+  flow = null;
+  leak = null;
+  filledCount = 0;
+  cursor = { r: srcRow, c: 0 };
+  phase = "prep";
+  connected = traceConnection().cells;
+  updateHud();
+}
+
+function reset() {
+  level = 1;
+  score = 0;
+  particles = [];
+  popups = [];
+  buildLevel();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// Follows the pipes from the source without water, to highlight the connected route.
+function traceConnection() {
+  const cells = new Set();
+  let r = srcRow, c = 0, from = WB;
+  for (let guard = 0; guard < N * N * 2; guard++) {
+    if (r < 0 || c < 0 || r >= N || c >= N) return { cells, reached: false };
+    const t = tiles[r][c];
+    if (!(t.mask & from)) return { cells, reached: false };
+    cells.add(r * N + c);
+    const out = exitFor(t.mask, from);
+    if (r === drainRow && c === N - 1 && out === EB) return { cells, reached: true };
+    const d = DIRS.find((x) => x.bit === out);
+    r += d.dr; c += d.dc;
+    from = opposite(out);
+  }
+  return { cells, reached: false };
+}
+
+function exitFor(mask, from) {
+  if (mask === 15) return opposite(from); // a cross passes straight through
+  return mask & ~from;
+}
+
+// ---------- flow ----------
+function startFlow() {
+  if (phase !== "prep") return;
+  phase = "flow";
+  earlyBonus = Math.ceil(prepLeft) * 5;
+  prepLeft = 0;
+  flow = { r: srcRow, c: 0, from: WB, p: 0 };
+  Kit.sfx("jump");
+  updateHud();
+}
+
+function advanceFlow(dt) {
+  const t = tiles[flow.r][flow.c];
+  if (flow.p === 0) {
+    if (!(t.mask & flow.from)) return fail(flow.r, flow.c, flow.from);
+    t.fillDirs.push({ from: flow.from, to: exitFor(t.mask, flow.from) });
+  }
+  flow.p += dt / (fast ? 0.1 : tileTime);
+  if (flow.p < 1) return;
+  flow.p = 0;
+  filledCount++;
+  t.filled = 1;
+  score += 10;
+  updateHud();
+  Kit.sfx("click");
+  const out = exitFor(t.mask, flow.from);
+  if (flow.r === drainRow && flow.c === N - 1 && out === EB) return win();
+  const d = DIRS.find((x) => x.bit === out);
+  const nr = flow.r + d.dr, nc = flow.c + d.dc;
+  if (nr < 0 || nc < 0 || nr >= N || nc >= N) return fail(flow.r, flow.c, out);
+  flow = { r: nr, c: nc, from: opposite(out), p: 0 };
+}
+
+async function win() {
+  phase = "between";
+  const bonus = level * 100 + earlyBonus;
+  score += bonus;
+  updateHud();
+  Kit.sfx("win");
+  for (let i = 0; i < 30; i++) splash(ox + N * cell + 30, oy + drainRow * cell + cell / 2);
+  await new Promise((r) => setTimeout(r, 700));
+  await Kit.overlay("Connected!", `The water reached the drain.\nLevel bonus +${level * 100}${earlyBonus ? `\nEarly start bonus +${earlyBonus}` : ""}\nScore: ${score}`, "Next level");
+  level++;
+  buildLevel();
+}
+
+async function fail(r, c, dirBit) {
+  phase = "over";
+  const d = DIRS.find((x) => x.bit === dirBit);
+  const base = { x: ox + c * cell + cell / 2, y: oy + r * cell + cell / 2 };
+  leak = { x: base.x + d.dc * cell / 2, y: base.y + d.dr * cell / 2 };
+  for (let i = 0; i < 40; i++) splash(leak.x, leak.y);
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, score);
+  await new Promise((res) => setTimeout(res, 1100));
+  await Kit.overlay("Leak!", `The water spilled out on level ${level}.\nScore: ${score}\nBest: ${best}`, "Play again");
+  reset();
+}
+
+function splash(x, y) {
+  const a = Kit.rand(0, Math.PI * 2), s = Kit.rand(60, 240);
+  particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100, t: Kit.rand(0.4, 0.9) });
+}
+
+// ---------- input ----------
+function rotate(r, c, ccw) {
+  if (phase !== "prep" && phase !== "flow") return;
+  const t = tiles[r][c];
+  if (t.fillDirs.length || (flow && flow.r === r && flow.c === c)) { Kit.sfx("hit"); return; }
+  t.mask = ccw ? rotCCW(t.mask) : rotCW(t.mask);
+  t.spin = ccw ? 1 : -1;
+  Kit.sfx("click");
+  const tr = traceConnection();
+  connected = tr.cells;
+  if (tr.reached) Kit.sfx("coin");
+}
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (phase === "prep" && p.x > W - 190 && p.x < W - 20 && p.y > 24 && p.y < 68) { startFlow(); return; }
+  if (phase === "flow" && p.x > W - 190 && p.x < W - 20 && p.y > 24 && p.y < 68) { fast = true; return; }
+  const c = Math.floor((p.x - ox) / cell), r = Math.floor((p.y - oy) / cell);
+  if (r < 0 || c < 0 || r >= N || c >= N) return;
+  cursor = { r, c };
+  rotate(r, c, e.button === 2);
+});
+Kit.onKey((code) => {
+  if (phase !== "prep" && phase !== "flow") return;
+  const moves = { ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0], ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1] };
+  if (moves[code]) {
+    cursor = { r: Kit.clamp(cursor.r + moves[code][0], 0, N - 1), c: Kit.clamp(cursor.c + moves[code][1], 0, N - 1) };
+  } else if (code === "Space" || code === "KeyE") rotate(cursor.r, cursor.c, false);
+  else if (code === "KeyQ") rotate(cursor.r, cursor.c, true);
+  else if (code === "KeyF" || code === "Enter") {
+    if (phase === "prep") startFlow();
+    else fast = true;
+  }
+});
+
+// ---------- update ----------
+let clock = 0;
+function update(dt) {
+  clock += dt;
+  if (phase === "prep") {
+    prepLeft -= dt;
+    if (prepLeft <= 0) { prepLeft = 0; startFlow(); }
+  } else if (phase === "flow") advanceFlow(dt);
+  for (const row of tiles) for (const t of row) if (t.spin) t.spin = Math.abs(t.spin) < 0.05 ? 0 : t.spin * Math.pow(0.0005, dt);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 600 * dt; p.t -= dt; }
+  particles = particles.filter((p) => p.t > 0);
+  for (const p of popups) { p.t -= dt; p.y -= 20 * dt; }
+  popups = popups.filter((p) => p.t > 0);
+}
+
+// ---------- drawing ----------
+const WATER = "#38bdf8";
+function pipeArms(mask, x, y, s, width, color) {
+  const h = s / 2;
+  ctx.fillStyle = color;
+  for (const d of DIRS) {
+    if (!(mask & d.bit)) continue;
+    if (d.bit === NB) ctx.fillRect(x - width / 2, y - h, width, h + width / 2);
+    if (d.bit === SB) ctx.fillRect(x - width / 2, y - width / 2, width, h + width / 2);
+    if (d.bit === EB) ctx.fillRect(x - width / 2, y - width / 2, h + width / 2, width);
+    if (d.bit === WB) ctx.fillRect(x - h, y - width / 2, h + width / 2, width);
+  }
+}
+
+function drawWater(t, x, y, s, active) {
+  const h = s / 2, w = s * 0.2;
+  ctx.fillStyle = WATER;
+  t.fillDirs.forEach((fd, i) => {
+    const isActive = active && i === t.fillDirs.length - 1;
+    const prog = isActive ? flow.p : 1;
+    // first half: from the entry edge to the center; second half: center to exit edge
+    const seg = (bit, amount, inward) => {
+      const d = DIRS.find((q) => q.bit === bit);
+      const len = h * amount;
+      if (inward) {
+        const sx = x + d.dc * h, sy = y + d.dr * h;
+        const ex = sx - d.dc * len, ey = sy - d.dr * len;
+        ctx.fillRect(Math.min(sx, ex) - (d.dc ? 0 : w / 2), Math.min(sy, ey) - (d.dr ? 0 : w / 2), d.dc ? Math.abs(ex - sx) : w, d.dr ? Math.abs(ey - sy) : w);
+      } else {
+        const ex = x + d.dc * len, ey = y + d.dr * len;
+        ctx.fillRect(Math.min(x, ex) - (d.dc ? 0 : w / 2), Math.min(y, ey) - (d.dr ? 0 : w / 2), d.dc ? Math.abs(ex - x) : w, d.dr ? Math.abs(ey - y) : w);
+      }
+    };
+    seg(fd.from, Math.min(1, prog * 2), true);
+    if (prog > 0.5) {
+      ctx.fillRect(x - w / 2, y - w / 2, w, w);
+      seg(fd.to, (prog - 0.5) * 2, false);
+    }
+  });
+}
+
+function draw() {
+  ctx.fillStyle = "#132226";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  // header: level + timer
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff"; ctx.font = `800 26px ${FONT}`;
+  ctx.fillText(`Level ${level}`, 24, 50);
+  ctx.fillStyle = "#8fb3b9"; ctx.font = `600 14px ${FONT}`;
+  ctx.fillText(`${N} x ${N}`, 24, 72);
+  const barX = 170, barW = W - 190 - barX - 24;
+  ctx.fillStyle = "#0b1517";
+  ctx.beginPath(); ctx.roundRect(barX, 30, barW, 30, 8); ctx.fill();
+  const frac = phase === "prep" ? prepLeft / prepTotal : 0;
+  if (frac > 0) Kit.brick(ctx, barX + 3, 33, Math.max(8, (barW - 6) * frac), 24, frac < 0.25 ? "#ef4444" : "#facc15", 6);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff"; ctx.font = `800 15px ${FONT}`;
+  ctx.fillText(phase === "prep" ? `Water flows in ${Math.ceil(prepLeft)}s` : phase === "flow" ? "Water is flowing!" : "", barX + barW / 2, 51);
+  // flow button
+  const btnColor = phase === "prep" ? "#0ea5e9" : phase === "flow" && !fast ? "#6366f1" : "#334155";
+  Kit.brick(ctx, W - 190, 24, 170, 44, btnColor, 8);
+  ctx.fillStyle = "#fff"; ctx.font = `800 16px ${FONT}`;
+  ctx.fillText(phase === "prep" ? "Flow now (F)" : "Fast flow (F)", W - 105, 52);
+
+  // source and drain
+  const sy = oy + srcRow * cell + cell / 2, dy = oy + drainRow * cell + cell / 2;
+  const pw = cell * 0.34;
+  Kit.brick(ctx, ox - 52, sy - 34, 40, 68, "#0284c7", 8);
+  ctx.fillStyle = "#94a3b8"; ctx.fillRect(ox - 14, sy - pw / 2, 14, pw);
+  ctx.fillStyle = WATER; ctx.fillRect(ox - 14, sy - pw * 0.24, 14, pw * 0.48);
+  ctx.fillStyle = "#e0f2fe"; ctx.beginPath(); ctx.arc(ox - 32, sy, 8, 0, Math.PI * 2); ctx.fill();
+  Kit.brick(ctx, ox + N * cell + 12, dy - 34, 40, 68, "#475569", 8);
+  ctx.fillStyle = "#94a3b8"; ctx.fillRect(ox + N * cell, dy - pw / 2, 14, pw);
+  ctx.fillStyle = "#0f172a";
+  for (let i = -2; i <= 2; i++) ctx.fillRect(ox + N * cell + 22, dy + i * 10 - 2, 20, 4);
+
+  // tiles
+  ctx.fillStyle = "#0b1517";
+  ctx.beginPath(); ctx.roundRect(ox - 8, oy - 4, N * cell + 16, N * cell + 16, 12); ctx.fill();
+  ctx.fillStyle = "#22383d";
+  ctx.beginPath(); ctx.roundRect(ox - 8, oy - 8, N * cell + 16, N * cell + 16, 12); ctx.fill();
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const t = tiles[r][c];
+      const x = ox + c * cell, y = oy + r * cell;
+      const lit = connected.has(r * N + c);
+      Kit.brick(ctx, x + 2, y + 2, cell - 4, cell - 4, t.fillDirs.length ? "#29444a" : lit ? "#2f5a52" : "#2b3d42", 6);
+      ctx.save();
+      ctx.translate(x + cell / 2, y + cell / 2);
+      if (t.spin) ctx.rotate(t.spin * Math.PI / 2);
+      const pipeW = cell * 0.34;
+      pipeArms(t.mask, 0, 0, cell - 4, pipeW + 4, "#1e293b");
+      pipeArms(t.mask, 0, 0, cell - 4, pipeW, lit ? "#a7f3d0" : "#94a3b8");
+      ctx.fillStyle = "rgba(0,0,0,.25)";
+      pipeArms(t.mask, 0, pipeW * 0.18, cell - 4, pipeW * 0.4, "rgba(0,0,0,.18)");
+      // rivets at pipe ends
+      ctx.fillStyle = "#475569";
+      for (const d of DIRS) if (t.mask & d.bit) {
+        const ex = d.dc * (cell / 2 - 7), ey = d.dr * (cell / 2 - 7);
+        ctx.fillRect(ex - (d.dc ? 3 : pipeW / 2 + 2), ey - (d.dr ? 3 : pipeW / 2 + 2), d.dc ? 6 : pipeW + 4, d.dr ? 6 : pipeW + 4);
+      }
+      ctx.restore();
+      if (t.fillDirs.length) drawWater(t, x + cell / 2, y + cell / 2, cell - 4, flow && flow.r === r && flow.c === c && phase === "flow");
+    }
+  // cursor
+  ctx.strokeStyle = "#facc15"; ctx.lineWidth = 3;
+  ctx.setLineDash([7, 5]);
+  ctx.beginPath(); ctx.roundRect(ox + cursor.c * cell + 1, oy + cursor.r * cell + 1, cell - 2, cell - 2, 7); ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.fillStyle = WATER;
+    ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+  }
+  ctx.globalAlpha = 1;
+  if (leak && phase === "over") {
+    ctx.fillStyle = `rgba(239,68,68,${0.5 + Math.sin(clock * 10) * 0.4})`;
+    ctx.beginPath(); ctx.arc(leak.x, leak.y, 14, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.textAlign = "center";
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.font = `800 18px ${FONT}`;
+    ctx.fillStyle = "#facc15"; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#8fb3b9"; ctx.font = `600 13px ${FONT}`;
+  ctx.fillText("Click: rotate  -  Right-click: rotate back  -  Arrows + Space / Q  -  F: flow", W / 2, H - 10);
+}
+
+const game = Kit.loop(update, draw);
+reset();
+phase = "menu";
+draw();
+Kit.overlay("Pipe Connect",
+  "Rotate the pipe bricks to build a route from the blue source\non the left to the drain on the right.\nWhen the timer runs out the water starts flowing -\nyou can still turn pipes it hasn't reached.\nStart the flow early for bonus points!\n\nMouse: click to rotate, right-click to rotate back\nKeys: arrows to move, Space / Q to rotate, F to flow",
+  "Play").then(() => { phase = "prep"; game.start(); });
+</script>
+</body>
+</html>

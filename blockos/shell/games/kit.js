@@ -41,8 +41,10 @@
     canvas.height = h;
     wrap.appendChild(canvas);
     document.body.appendChild(wrap);
+    // Leave a band at the top for the HUD (top right) and the shell's menu button (top left).
+    const TOP = 58;
     function fit() {
-      const s = Math.min((innerWidth - 24) / w, (innerHeight - 24) / h);
+      const s = Math.min((innerWidth - 24) / w, (innerHeight - TOP - 12) / h);
       canvas.style.width = Math.max(50, w * s) + "px";
       canvas.style.height = Math.max(50, h * s) + "px";
     }

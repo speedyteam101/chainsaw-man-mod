@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <pattern id="studs" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="13" cy="13" r="5" fill="#fff" fill-opacity=".05"/></pattern>
+    <g id="c"><rect width="24" height="24" rx="4"/><rect x="3" y="2" width="18" height="3" fill="#fff" fill-opacity=".25"/><rect x="3" y="19" width="18" height="3" fill="#000" fill-opacity=".22"/><circle cx="12" cy="12" r="5" fill="#fff" fill-opacity=".18"/></g>
+  </defs>
+  <rect width="480" height="270" fill="#111317"/>
+  <rect x="110" y="0" width="260" height="270" fill="#14171c"/>
+  <rect x="110" y="0" width="260" height="270" fill="url(#studs)"/>
+  <rect x="104" y="0" width="6" height="270" fill="#0b0d10"/><rect x="370" y="0" width="6" height="270" fill="#0b0d10"/>
+  <!-- stack -->
+  <g fill="#3b82f6"><use href="#c" x="111" y="245"/><use href="#c" x="137" y="245"/><use href="#c" x="111" y="219"/></g>
+  <g fill="#ef4444"><use href="#c" x="163" y="245"/><use href="#c" x="189" y="245"/><use href="#c" x="189" y="219"/><use href="#c" x="215" y="219"/></g>
+  <g fill="#facc15"><use href="#c" x="215" y="245"/><use href="#c" x="241" y="245"/><use href="#c" x="241" y="219"/></g>
+  <g fill="#22c55e"><use href="#c" x="267" y="245"/><use href="#c" x="293" y="245"/><use href="#c" x="267" y="219"/><use href="#c" x="137" y="219"/></g>
+  <g fill="#a855f7"><use href="#c" x="319" y="245"/><use href="#c" x="345" y="245"/><use href="#c" x="345" y="219"/><use href="#c" x="345" y="193"/><use href="#c" x="319" y="219"/></g>
+  <g fill="#fb923c"><use href="#c" x="111" y="193"/><use href="#c" x="137" y="193"/><use href="#c" x="163" y="193"/><use href="#c" x="163" y="219"/></g>
+  <!-- ghost -->
+  <g fill="none" stroke="#22d3ee" stroke-width="2" opacity=".6"><rect x="296" y="144" width="20" height="20" rx="4"/><rect x="296" y="170" width="20" height="20" rx="4"/><rect x="296" y="196" width="20" height="20" rx="4"/><rect x="296" y="222" width="20" height="20" rx="4"/></g>
+  <!-- falling piece -->
+  <g fill="#22d3ee"><use href="#c" x="293" y="11"/><use href="#c" x="293" y="37"/><use href="#c" x="293" y="63"/><use href="#c" x="293" y="89"/></g>
+  <!-- clearing row flash -->
+  <rect x="110" y="166" width="260" height="2" fill="#fff" opacity=".0"/>
+  <!-- hold / next panels -->
+  <rect x="14" y="20" width="76" height="70" rx="10" fill="#1b1e23" stroke="#2f343b" stroke-width="2"/>
+  <g fill="#a855f7" transform="translate(22 42) scale(.7)"><use href="#c" x="26" y="0"/><use href="#c" x="0" y="26"/><use href="#c" x="26" y="26"/><use href="#c" x="52" y="26"/></g>
+  <rect x="390" y="20" width="76" height="200" rx="10" fill="#1b1e23" stroke="#2f343b" stroke-width="2"/>
+  <g fill="#facc15" transform="translate(410 36) scale(.7)"><use href="#c" x="0" y="0"/><use href="#c" x="26" y="0"/><use href="#c" x="0" y="26"/><use href="#c" x="26" y="26"/></g>
+  <g fill="#22c55e" transform="translate(401 100) scale(.7)"><use href="#c" x="26" y="0"/><use href="#c" x="52" y="0"/><use href="#c" x="0" y="26"/><use href="#c" x="26" y="26"/></g>
+  <g fill="#3b82f6" transform="translate(401 160) scale(.7)"><use href="#c" x="0" y="0"/><use href="#c" x="0" y="26"/><use href="#c" x="26" y="26"/><use href="#c" x="52" y="26"/></g>
+  <!-- sparkles -->
+  <g fill="#fff"><rect x="60" y="150" width="6" height="6" opacity=".6"/><rect x="430" y="240" width="5" height="5" opacity=".5"/><rect x="40" y="220" width="4" height="4" opacity=".4"/></g>
+</svg>

@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Brick Defense</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .maps { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+  .maps .kit-btn { padding: 10px 16px; font-size: 16px; margin-top: 8px; }
+  .maps .kit-btn small { display: block; font-size: 12px; font-weight: 600; opacity: .85; }
+  .maps .kit-btn.mid { background: #d97706; box-shadow: 0 4px 0 #92400e; }
+  .maps .kit-btn.hard { background: #dc2626; box-shadow: 0 4px 0 #7f1d1d; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "brick-defense";
+const T = 40, COLS = 20, ROWS = 15, PANEL = 180;
+const { canvas, ctx, W, H } = Kit.stage(COLS * T + PANEL, ROWS * T);
+const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const MX = COLS * T;   // panel x
+
+const MAPS = [
+  { name: "Meadow", note: "long winding road", cls: "", pts: [[-1, 2], [3, 2], [3, 11], [8, 11], [8, 3], [13, 3], [13, 12], [17, 12], [17, 6], [20, 6]], grass: ["#4ade80", "#45d178"] },
+  { name: "Canyon", note: "shorter, tighter", cls: "mid", pts: [[-1, 7], [5, 7], [5, 2], [10, 2], [10, 12], [15, 12], [15, 4], [20, 4]], grass: ["#d6a461", "#cf9c58"] },
+  { name: "Glacier", note: "a quick dash", cls: "hard", pts: [[-1, 12], [6, 12], [6, 3], [14, 3], [14, 10], [20, 10]], grass: ["#bae6fd", "#a5dcf7"] },
+];
+
+const TOWERS = {
+  blaster: { name: "Blaster", key: "1", cost: 50, color: "#3b82f6", range: 2.6, rate: 0.45, dmg: 9, desc: "Fast single shots" },
+  cannon: { name: "Cannon", key: "2", cost: 90, color: "#f97316", range: 2.4, rate: 1.4, dmg: 28, splash: 1.1, desc: "Splash damage" },
+  frost: { name: "Frost", key: "3", cost: 70, color: "#22d3ee", range: 2.0, rate: 1.0, dmg: 4, slow: 0.5, desc: "Slows everything near" },
+  sniper: { name: "Sniper", key: "4", cost: 130, color: "#a855f7", range: 5.5, rate: 1.8, dmg: 70, pierce: true, desc: "Long range, ignores armor" },
+};
+const TOWER_IDS = Object.keys(TOWERS);
+const UPGRADE_MULT = [1, 1.6, 2.5];
+
+const CREEPS = {
+  basic: { hp: 34, speed: 1.6, armor: 0, bounty: 6, color: "#ef4444", size: 0.5, leak: 1 },
+  fast: { hp: 20, speed: 3.0, armor: 0, bounty: 6, color: "#facc15", size: 0.4, leak: 1 },
+  armored: { hp: 70, speed: 1.2, armor: 6, bounty: 11, color: "#64748b", size: 0.58, leak: 1 },
+  boss: { hp: 520, speed: 0.85, armor: 4, bounty: 60, color: "#7c3aed", size: 0.8, leak: 5 },
+};
+
+let map, pathTiles, pathPts, pathLen, towers, creeps, shots, effects, money, lives, wave, score;
+let spawnQueue, spawnTimer, waveActive, countdown, placing, selected, hover, speedMul, over, started = false;
+
+// ---------- map ----------
+function setupMap(m) {
+  map = m;
+  pathPts = m.pts.map(([x, y]) => ({ x: x * T + T / 2, y: y * T + T / 2 }));
+  pathTiles = new Set();
+  pathLen = 0;
+  for (let i = 0; i < m.pts.length - 1; i++) {
+    const [ax, ay] = m.pts[i], [bx, by] = m.pts[i + 1];
+    const steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay));
+    for (let s = 0; s <= steps; s++) {
+      const x = ax + Math.sign(bx - ax) * s, y = ay + Math.sign(by - ay) * s;
+      pathTiles.add(x + "," + y);
+    }
+    pathLen += Math.hypot(pathPts[i + 1].x - pathPts[i].x, pathPts[i + 1].y - pathPts[i].y);
+  }
+}
+
+// position along the path at distance d (pixels)
+function pathAt(d) {
+  for (let i = 0; i < pathPts.length - 1; i++) {
+    const a = pathPts[i], b = pathPts[i + 1];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    if (d <= len) return { x: a.x + (b.x - a.x) * (d / len), y: a.y + (b.y - a.y) * (d / len) };
+    d -= len;
+  }
+  return pathPts[pathPts.length - 1];
+}
+
+function reset(m) {
+  setupMap(m);
+  towers = [];
+  creeps = [];
+  shots = [];
+  effects = [];
+  money = 160;
+  lives = 20;
+  wave = 0;
+  score = 0;
+  spawnQueue = [];
+  spawnTimer = 0;
+  waveActive = false;
+  countdown = 15;
+  placing = null;
+  selected = null;
+  hover = null;
+  speedMul = 1;
+  over = false;
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Wave ${wave} · Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- waves ----------
+function buildWave(n) {
+  const list = [];
+  const count = 6 + Math.floor(n * 1.6);
+  for (let i = 0; i < count; i++) {
+    let type = "basic";
+    const r = Math.random();
+    if (n >= 3 && r < 0.3) type = "fast";
+    else if (n >= 5 && r < 0.5) type = "armored";
+    list.push(type);
+  }
+  if (n % 5 === 0) {
+    list.push("boss");
+    if (n >= 10) list.push("boss");
+  }
+  if (n % 4 === 0 && n >= 4) for (let i = 0; i < 6; i++) list.splice(Math.floor(list.length / 2), 0, "fast");   // rush
+  return list;
+}
+
+function startWave() {
+  if (waveActive || over) return;
+  if (countdown > 0 && wave > 0) {
+    const bonus = Math.floor(countdown) * 2;
+    if (bonus > 0) { money += bonus; floatText(MX - 80, 30, `Early +$${bonus}`, "#facc15"); }
+  }
+  wave++;
+  waveActive = true;
+  spawnQueue = buildWave(wave);
+  spawnTimer = 0;
+  Kit.sfx("score");
+  updateHud();
+}
+
+function spawnCreep(type) {
+  const base = CREEPS[type];
+  const scale = Math.pow(1.17, wave - 1) * (1 + wave * 0.04);
+  creeps.push({
+    type, d: 0, hp: base.hp * scale, max: base.hp * scale, speed: base.speed, armor: base.armor + Math.floor(wave / 8),
+    bounty: Math.round(base.bounty * (1 + wave * 0.05)), slow: 0, flash: 0, wob: Math.random() * 6,
+  });
+}
+
+// ---------- towers ----------
+const tileFree = (x, y) => x >= 0 && y >= 0 && x < COLS && y < ROWS && !pathTiles.has(x + "," + y) && !towers.some((t) => t.x === x && t.y === y);
+const towerStat = (t, k) => TOWERS[t.type][k] * (k === "dmg" ? UPGRADE_MULT[t.level] : k === "range" ? 1 + t.level * 0.15 : 1);
+const upgradeCost = (t) => (t.level >= 2 ? null : Math.round(TOWERS[t.type].cost * (t.level === 0 ? 0.9 : 1.5)));
+const sellValue = (t) => Math.round(t.spent * 0.7);
+
+function place(type, x, y) {
+  const def = TOWERS[type];
+  if (!tileFree(x, y) || money < def.cost) { Kit.sfx("hit"); return false; }
+  money -= def.cost;
+  const t = { type, x, y, level: 0, cool: 0, angle: -Math.PI / 2, spent: def.cost, kills: 0 };
+  towers.push(t);
+  Kit.sfx("click");
+  burst(x * T + T / 2, y * T + T / 2, 10, [def.color, "#fff"], 120);
+  return t;
+}
+
+function upgrade(t) {
+  const c = upgradeCost(t);
+  if (c === null || money < c) { Kit.sfx("hit"); return; }
+  money -= c;
+  t.spent += c;
+  t.level++;
+  Kit.sfx("coin");
+  burst(t.x * T + T / 2, t.y * T + T / 2, 14, ["#facc15", "#fff"], 140);
+}
+
+function sell(t) {
+  money += sellValue(t);
+  towers = towers.filter((o) => o !== t);
+  selected = null;
+  Kit.sfx("coin");
+}
+
+// ---------- input ----------
+let buttons = [];   // panel hit areas rebuilt every draw
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  hover = p;
+});
+canvas.addEventListener("pointerleave", () => { hover = null; });
+canvas.addEventListener("pointerdown", (e) => {
+  if (!started || over) return;
+  const p = Kit.pointer(canvas, e);
+  if (e.button === 2) { placing = null; selected = null; return; }
+  for (const b of buttons) {
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { b.fn(); return; }
+  }
+  if (p.x >= MX) return;
+  const x = Math.floor(p.x / T), y = Math.floor(p.y / T);
+  const hit = towers.find((t) => t.x === x && t.y === y);
+  if (placing) {
+    if (hit) { selected = hit; placing = null; return; }
+    if (place(placing, x, y) && !e.shiftKey && money < TOWERS[placing].cost) placing = null;
+    return;
+  }
+  selected = hit || null;
+});
+
+Kit.onKey((code) => {
+  if (!started || over) return;
+  const idx = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(code);
+  if (idx >= 0) { placing = TOWER_IDS[idx]; selected = null; return; }
+  if (code === "Space" || code === "KeyN") startWave();
+  if (code === "KeyF") speedMul = speedMul === 1 ? 2 : 1;
+  if (code === "KeyU" && selected) upgrade(selected);
+  if ((code === "KeyS" || code === "Delete" || code === "Backspace") && selected) sell(selected);
+  if (code === "KeyX") { placing = null; selected = null; }
+});
+
+// ---------- update ----------
+function burst(x, y, n, colors, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Math.random() * spd;
+    effects.push({ kind: "p", x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: Kit.rand(0.3, 0.7), size: Kit.randInt(3, 6), color: Kit.pick(colors) });
+  }
+}
+function floatText(x, y, text, color) { effects.push({ kind: "text", x, y, text, color, life: 1.2 }); }
+
+function damage(c, amount, pierce) {
+  const dealt = pierce ? amount : Math.max(amount * 0.2, amount - c.armor);
+  c.hp -= dealt;
+  c.flash = 0.08;
+}
+
+function creepPos(c) {
+  const p = pathAt(c.d);
+  return { x: p.x, y: p.y + Math.sin(c.wob) * 1.5 };
+}
+
+function update(rawDt) {
+  if (over || !started) return;
+  const dt = rawDt * speedMul;
+  // effects
+  for (const e of effects) {
+    e.life -= dt;
+    if (e.kind === "p") { e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= 0.92; e.vy *= 0.92; }
+    if (e.kind === "text") e.y -= 24 * dt;
+    if (e.kind === "ring") e.r += e.grow * dt;
+  }
+  effects = effects.filter((e) => e.life > 0);
+
+  // wave flow
+  if (waveActive) {
+    spawnTimer -= dt;
+    if (spawnQueue.length && spawnTimer <= 0) {
+      const type = spawnQueue.shift();
+      spawnCreep(type);
+      spawnTimer = type === "boss" ? 1.6 : Math.max(0.35, 0.9 - wave * 0.02);
+    }
+    if (!spawnQueue.length && !creeps.length) {
+      waveActive = false;
+      countdown = 12;
+      const bonus = 20 + wave * 5;
+      money += bonus;
+      score += wave * 10;
+      floatText(MX / 2, H / 2, `Wave ${wave} cleared! +$${bonus}`, "#facc15");
+      Kit.sfx("win");
+      updateHud();
+    }
+  } else {
+    countdown -= dt;
+    if (countdown <= 0) startWave();
+  }
+
+  // creeps
+  for (const c of creeps) {
+    c.slow = Math.max(0, c.slow - dt);
+    c.flash = Math.max(0, c.flash - dt);
+    c.wob += dt * 10;
+    c.d += CREEPS[c.type].speed * T * (c.slow > 0 ? 0.5 : 1) * dt;
+    if (c.d >= pathLen) {
+      c.leaked = true;
+      lives -= CREEPS[c.type].leak;
+      Kit.sfx("hit");
+      effects.push({ kind: "flash", life: 0.3 });
+    }
+  }
+  creeps = creeps.filter((c) => {
+    if (c.leaked) return false;
+    if (c.hp <= 0) {
+      money += c.bounty;
+      score += c.bounty;
+      const p = creepPos(c);
+      burst(p.x, p.y, c.type === "boss" ? 30 : 10, [CREEPS[c.type].color, "#fff", "#1f2937"], c.type === "boss" ? 220 : 140);
+      floatText(p.x, p.y - 14, `+$${c.bounty}`, "#86efac");
+      Kit.sfx(c.type === "boss" ? "score" : "coin");
+      return false;
+    }
+    return true;
+  });
+  if (lives <= 0) { lives = 0; return gameOver(); }
+
+  // towers
+  for (const t of towers) {
+    t.cool -= dt;
+    const def = TOWERS[t.type];
+    const cx = t.x * T + T / 2, cy = t.y * T + T / 2;
+    const range = towerStat(t, "range") * T;
+    // target the creep furthest along the path within range
+    let target = null;
+    for (const c of creeps) {
+      const p = creepPos(c);
+      if (Math.hypot(p.x - cx, p.y - cy) <= range && (!target || c.d > target.d)) target = c;
+    }
+    if (target) {
+      const p = creepPos(target);
+      t.angle = Math.atan2(p.y - cy, p.x - cx);
+    }
+    if (t.cool > 0 || !target) continue;
+    t.cool = def.rate * (t.level === 2 ? 0.8 : 1);
+    const dmg = towerStat(t, "dmg");
+    if (t.type === "blaster") {
+      shots.push({ kind: "bolt", x: cx, y: cy, target, dmg, speed: 520, color: "#93c5fd" });
+    } else if (t.type === "cannon") {
+      const p = creepPos(target);
+      // lead the shot a little
+      const lead = pathAt(target.d + CREEPS[target.type].speed * T * 0.35);
+      shots.push({ kind: "shell", x: cx, y: cy, tx: lead.x, ty: lead.y, sx: cx, sy: cy, t: 0, dur: 0.35, dmg, splash: def.splash * T * (1 + t.level * 0.15) });
+      void p;
+    } else if (t.type === "frost") {
+      effects.push({ kind: "ring", x: cx, y: cy, r: 6, grow: range * 3, life: 0.33, color: "#a5f3fc" });
+      for (const c of creeps) {
+        const q = creepPos(c);
+        if (Math.hypot(q.x - cx, q.y - cy) <= range) { c.slow = 1.3 + t.level * 0.3; damage(c, dmg, false); }
+      }
+    } else if (t.type === "sniper") {
+      const p = creepPos(target);
+      damage(target, dmg, true);
+      effects.push({ kind: "beam", x1: cx, y1: cy, x2: p.x, y2: p.y, life: 0.12 });
+      Kit.sfx("click");
+    }
+  }
+
+  // projectiles
+  for (const s of shots) {
+    if (s.kind === "bolt") {
+      if (!creeps.includes(s.target)) { s.done = true; continue; }
+      const p = creepPos(s.target);
+      const dx = p.x - s.x, dy = p.y - s.y, dist = Math.hypot(dx, dy);
+      const step = s.speed * dt;
+      if (dist <= step + 6) { damage(s.target, s.dmg, false); s.done = true; }
+      else { s.x += (dx / dist) * step; s.y += (dy / dist) * step; }
+    } else if (s.kind === "shell") {
+      s.t += dt;
+      const k = Math.min(1, s.t / s.dur);
+      s.x = s.sx + (s.tx - s.sx) * k;
+      s.y = s.sy + (s.ty - s.sy) * k - Math.sin(k * Math.PI) * 30;
+      if (k >= 1) {
+        s.done = true;
+        effects.push({ kind: "ring", x: s.tx, y: s.ty, r: 6, grow: s.splash * 4, life: 0.25, color: "#fdba74" });
+        burst(s.tx, s.ty, 8, ["#fb923c", "#fde68a", "#78350f"], 120);
+        for (const c of creeps) {
+          const q = creepPos(c);
+          if (Math.hypot(q.x - s.tx, q.y - s.ty) <= s.splash) damage(c, s.dmg, false);
+        }
+      }
+    }
+  }
+  shots = shots.filter((s) => !s.done);
+}
+
+async function gameOver() {
+  over = true;
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, score);
+  updateHud();
+  draw();
+  await Kit.overlay("Base overrun!", `You held out until wave ${wave} on ${map.name}.\nScore: ${score}\nBest: ${best}`, "Play again");
+  pickMap();
+}
+
+// ---------- drawing ----------
+function drawMap() {
+  for (let y = 0; y < ROWS; y++)
+    for (let x = 0; x < COLS; x++) {
+      ctx.fillStyle = (x + y) % 2 ? map.grass[0] : map.grass[1];
+      ctx.fillRect(x * T, y * T, T, T);
+      ctx.fillStyle = "rgba(255,255,255,.12)";
+      ctx.fillRect(x * T + 15, y * T + 15, 10, 10);
+    }
+  for (const key of pathTiles) {
+    const [x, y] = key.split(",").map(Number);
+    if (x < 0 || x >= COLS) continue;
+    Kit.brick(ctx, x * T + 1, y * T + 1, T - 2, T - 2, (x + y) % 2 ? "#a8763e" : "#b7834a", 4);
+  }
+  // spawn and base markers
+  const s = pathPts[1], e = pathPts[pathPts.length - 2];
+  ctx.fillStyle = "rgba(239,68,68,.6)";
+  ctx.fillRect(0, s.y - T / 2, 8, T);
+  const ex = MX - T, ey = e.y - T / 2;
+  Kit.brick(ctx, ex + 4, ey - 10, T - 8, T + 20, "#1d4ed8", 6);
+  ctx.fillStyle = "#facc15";
+  ctx.fillRect(ex + 14, ey - 22, 4, 14);
+  ctx.fillRect(ex + 18, ey - 22, 10, 7);
+}
+
+function drawTower(t, ghost) {
+  const def = TOWERS[t.type];
+  const x = t.x * T, y = t.y * T;
+  ctx.save();
+  if (ghost) ctx.globalAlpha = 0.6;
+  Kit.brick(ctx, x + 4, y + 4, T - 8, T - 8, "#334155", 6);
+  ctx.translate(x + T / 2, y + T / 2);
+  ctx.rotate(t.angle);
+  const c = def.color;
+  if (t.type === "blaster") {
+    ctx.fillStyle = "#1e3a8a";
+    ctx.fillRect(4, -7, 16, 4);
+    ctx.fillRect(4, 3, 16, 4);
+    Kit.brick(ctx, -10, -10, 20, 20, c, 5);
+  } else if (t.type === "cannon") {
+    ctx.fillStyle = "#431407";
+    ctx.fillRect(4, -5, 18, 10);
+    Kit.brick(ctx, -12, -12, 24, 24, c, 7);
+  } else if (t.type === "frost") {
+    ctx.rotate(-t.angle + performance.now() / 600);
+    Kit.brick(ctx, -11, -11, 22, 22, c, 4);
+    ctx.fillStyle = "#ecfeff";
+    ctx.fillRect(-2, -14, 4, 28);
+    ctx.fillRect(-14, -2, 28, 4);
+  } else {
+    ctx.fillStyle = "#3b0764";
+    ctx.fillRect(2, -3, 24, 6);
+    Kit.brick(ctx, -10, -9, 20, 18, c, 4);
+  }
+  ctx.restore();
+  // level pips
+  for (let i = 0; i < t.level; i++) {
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(x + 6 + i * 8, y + T - 9, 6, 5);
+  }
+}
+
+function drawCreep(c) {
+  const def = CREEPS[c.type];
+  const p = creepPos(c);
+  const s = def.size * T;
+  const x = p.x - s / 2, y = p.y - s / 2;
+  ctx.fillStyle = "rgba(0,0,0,.2)";
+  ctx.fillRect(x + 3, y + s - 2, s, 5);
+  Kit.brick(ctx, x, y, s, s, c.flash > 0 ? "#fff" : def.color, Math.max(3, s / 6));
+  if (c.type === "armored" || c.type === "boss") {
+    ctx.fillStyle = "rgba(255,255,255,.35)";
+    ctx.fillRect(x + 3, y + s * 0.55, s - 6, 3);
+    ctx.fillRect(x + s / 2 - 1, y + 3, 3, s - 6);
+  }
+  // eyes
+  ctx.fillStyle = "#fff";
+  const e = Math.max(3, s * 0.18);
+  ctx.fillRect(x + s * 0.2, y + s * 0.25, e, e);
+  ctx.fillRect(x + s * 0.6, y + s * 0.25, e, e);
+  ctx.fillStyle = "#111";
+  ctx.fillRect(x + s * 0.2 + e / 3, y + s * 0.25 + e / 3, e / 2, e / 2);
+  ctx.fillRect(x + s * 0.6 + e / 3, y + s * 0.25 + e / 3, e / 2, e / 2);
+  if (c.slow > 0) {
+    ctx.fillStyle = "rgba(165,243,252,.45)";
+    ctx.fillRect(x - 2, y - 2, s + 4, s + 4);
+  }
+  // hp bar
+  if (c.hp < c.max) {
+    ctx.fillStyle = "#111";
+    ctx.fillRect(x, y - 8, s, 4);
+    ctx.fillStyle = c.hp / c.max > 0.4 ? "#22c55e" : "#ef4444";
+    ctx.fillRect(x, y - 8, s * Math.max(0, c.hp / c.max), 4);
+  }
+}
+
+function button(x, y, w, h, label, color, fn, enabled = true, sub) {
+  ctx.globalAlpha = enabled ? 1 : 0.4;
+  Kit.brick(ctx, x, y, w, h, color, 6);
+  ctx.fillStyle = "#fff";
+  ctx.font = `800 14px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.fillText(label, x + w / 2, y + (sub ? h / 2 - 1 : h / 2 + 5));
+  if (sub) {
+    ctx.font = `600 11px ${FONT}`;
+    ctx.fillText(sub, x + w / 2, y + h / 2 + 13);
+  }
+  ctx.globalAlpha = 1;
+  if (enabled) buttons.push({ x, y, w, h, fn });
+}
+
+function drawPanel() {
+  buttons = [];
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(MX, 0, PANEL, H);
+  ctx.fillStyle = "#3a3f46";
+  ctx.fillRect(MX, 0, 3, H);
+  const x = MX + 14, w = PANEL - 26;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#2b2f35";
+  ctx.fillRect(MX + 3, 0, PANEL - 3, 46);
+  ctx.font = `800 20px ${FONT}`;
+  ctx.fillStyle = "#facc15";
+  ctx.fillText(`$${money}`, x, 78);
+  ctx.fillStyle = "#f87171";
+  ctx.fillText(`${lives}`, x + 108, 78);
+  ctx.fillRect(x + 90, 64, 12, 12);
+  ctx.font = `700 13px ${FONT}`;
+  ctx.fillStyle = "#a7adb4";
+  ctx.fillText(`Wave ${wave}  ·  ${map.name}`, x, 100);
+
+  let y = 114;
+  for (const id of TOWER_IDS) {
+    const def = TOWERS[id];
+    const active = placing === id;
+    const can = money >= def.cost;
+    ctx.globalAlpha = can ? 1 : 0.45;
+    Kit.brick(ctx, x, y, w, 50, active ? "#14532d" : "#2b2f35", 8);
+    if (active) { ctx.strokeStyle = "#22c55e"; ctx.lineWidth = 2; ctx.strokeRect(x + 1, y + 1, w - 2, 48); }
+    Kit.brick(ctx, x + 8, y + 10, 30, 30, def.color, 6);
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 14px ${FONT}`;
+    ctx.fillText(`${def.key} ${def.name}`, x + 46, y + 22);
+    ctx.fillStyle = "#facc15";
+    ctx.font = `700 12px ${FONT}`;
+    ctx.fillText(`$${def.cost}`, x + 46, y + 39);
+    ctx.globalAlpha = 1;
+    buttons.push({ x, y, w, h: 50, fn: () => { placing = placing === id ? null : id; selected = null; } });
+    y += 56;
+  }
+
+  y += 4;
+  if (selected) {
+    const t = selected, def = TOWERS[t.type];
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 15px ${FONT}`;
+    ctx.fillText(`${def.name}  Lv ${t.level + 1}`, x, y + 14);
+    ctx.font = `600 12px ${FONT}`;
+    ctx.fillStyle = "#a7adb4";
+    ctx.fillText(def.desc, x, y + 31);
+    ctx.fillText(`Damage ${Math.round(towerStat(t, "dmg"))}  Range ${towerStat(t, "range").toFixed(1)}`, x, y + 47);
+    const uc = upgradeCost(t);
+    button(x, y + 58, w, 40, uc === null ? "Max level" : `Upgrade (U)`, "#16a34a", () => upgrade(t), uc !== null && money >= uc, uc === null ? null : `$${uc}`);
+    button(x, y + 104, w, 34, `Sell (S) +$${sellValue(t)}`, "#b91c1c", () => sell(t));
+  } else {
+    ctx.fillStyle = "#a7adb4";
+    ctx.font = `600 12px ${FONT}`;
+    const tips = placing ? ["Click grass to build.", "Right click / X to cancel."] : ["Pick a tower, then click", "the grass to build it.", "Click a tower to upgrade", "or sell it."];
+    tips.forEach((s, i) => ctx.fillText(s, x, y + 14 + i * 16));
+  }
+
+  const by = H - 104;
+  if (waveActive) button(x, by, w, 44, `Wave ${wave} running`, "#475569", () => {}, false);
+  else button(x, by, w, 44, wave === 0 ? "Start (Space)" : "Next wave (Space)", "#2563eb", startWave, true, `auto in ${Math.ceil(countdown)}s`);
+  button(x, by + 52, w, 36, speedMul === 2 ? "Speed x2 (F)" : "Speed x1 (F)", speedMul === 2 ? "#d97706" : "#3f3f46", () => { speedMul = speedMul === 1 ? 2 : 1; });
+}
+
+function draw() {
+  drawMap();
+  // range of selected tower
+  if (selected) {
+    ctx.fillStyle = "rgba(255,255,255,.15)";
+    ctx.strokeStyle = "rgba(255,255,255,.6)";
+    ctx.beginPath();
+    ctx.arc(selected.x * T + T / 2, selected.y * T + T / 2, towerStat(selected, "range") * T, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  for (const t of towers) drawTower(t);
+  for (const c of creeps) drawCreep(c);
+  // placement preview
+  if (placing && hover && hover.x < MX) {
+    const x = Math.floor(hover.x / T), y = Math.floor(hover.y / T);
+    const ok = tileFree(x, y) && money >= TOWERS[placing].cost;
+    ctx.fillStyle = ok ? "rgba(34,197,94,.18)" : "rgba(239,68,68,.18)";
+    ctx.beginPath();
+    ctx.arc(x * T + T / 2, y * T + T / 2, TOWERS[placing].range * T, 0, Math.PI * 2);
+    ctx.fill();
+    if (ok) drawTower({ type: placing, x, y, level: 0, angle: -Math.PI / 2 }, true);
+    else { ctx.fillStyle = "rgba(239,68,68,.5)"; ctx.fillRect(x * T, y * T, T, T); }
+  }
+  for (const s of shots) {
+    if (s.kind === "bolt") { ctx.fillStyle = s.color; ctx.fillRect(s.x - 3, s.y - 3, 6, 6); }
+    else { Kit.brick(ctx, s.x - 6, s.y - 6, 12, 12, "#1f2937", 3); }
+  }
+  for (const e of effects) {
+    if (e.kind === "p") {
+      ctx.globalAlpha = Kit.clamp(e.life * 2.5, 0, 1);
+      ctx.fillStyle = e.color;
+      ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
+    } else if (e.kind === "ring") {
+      ctx.globalAlpha = Kit.clamp(e.life * 3, 0, 1);
+      ctx.strokeStyle = e.color;
+      ctx.lineWidth = 4;
+      ctx.strokeRect(e.x - e.r, e.y - e.r, e.r * 2, e.r * 2);
+    } else if (e.kind === "beam") {
+      ctx.globalAlpha = e.life * 8;
+      ctx.strokeStyle = "#e9d5ff";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(e.x1, e.y1);
+      ctx.lineTo(e.x2, e.y2);
+      ctx.stroke();
+    } else if (e.kind === "flash") {
+      ctx.globalAlpha = e.life;
+      ctx.fillStyle = "rgba(239,68,68,.5)";
+      ctx.fillRect(0, 0, MX, H);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.textAlign = "center";
+  ctx.font = `800 16px ${FONT}`;
+  for (const e of effects) {
+    if (e.kind !== "text") continue;
+    ctx.globalAlpha = Kit.clamp(e.life * 2, 0, 1);
+    ctx.fillStyle = "#000";
+    ctx.fillText(e.text, e.x + 1, e.y + 1);
+    ctx.fillStyle = e.color;
+    ctx.fillText(e.text, e.x, e.y);
+  }
+  ctx.globalAlpha = 1;
+  drawPanel();
+}
+
+// ---------- map picker ----------
+function pickMap() {
+  started = false;
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  o.innerHTML = `<div class="kit-panel"><h1>Brick Defense</h1>
+    <p>Build towers beside the road to stop the creeps before they reach your base.
+    Earn money from every creep and each cleared wave. Fast creeps are yellow,
+    armored ones shrug off weak hits, and a boss arrives every 5th wave.</p>
+    <p>Click a tower (or press 1-4), then click the grass to build.
+    Click a tower to upgrade (U) or sell (S). Space starts the next wave early for bonus cash. F toggles speed.</p>
+    <div class="maps"></div></div>`;
+  const row = o.querySelector(".maps");
+  MAPS.forEach((m, i) => {
+    const b = document.createElement("button");
+    b.className = "kit-btn " + m.cls;
+    b.innerHTML = `${i + 1}. ${m.name}<small>${m.note}</small>`;
+    b.addEventListener("click", () => choose(i));
+    row.appendChild(b);
+  });
+  document.body.appendChild(o);
+  row.firstChild.focus();
+  function onKey(e) {
+    const i = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
+    if (i >= 0) { e.preventDefault(); e.stopPropagation(); choose(i); }
+  }
+  addEventListener("keydown", onKey, true);
+  function choose(i) {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    reset(MAPS[i]);
+    started = true;
+  }
+}
+
+const game = Kit.loop(update, draw);
+reset(MAPS[0]);
+game.start();
+pickMap();
+</script>
+</body>
+</html>

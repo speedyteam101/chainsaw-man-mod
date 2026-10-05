@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ninja Run</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "ninja-run";
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+
+const GROUND = 440;
+const PX = 180;                         // player's screen x
+const STAND = { w: 30, h: 48 }, SLIDE = { w: 46, h: 24 };
+const GRAV = 2500, JUMP = 840, DJUMP = 740;
+const COIN_PTS = 10;
+
+let obstacles, pits, coins, particles, scroll, speed, coinCount, alive, nextX, t;
+let p, jumpHeld = false, slideHeld = false, mouseSlide = false;
+
+function reset() {
+  obstacles = [];
+  pits = [];
+  coins = [];
+  particles = [];
+  scroll = 0;
+  speed = 360;
+  coinCount = 0;
+  alive = true;
+  t = 0;
+  nextX = 900;
+  p = { y: GROUND - STAND.h, vy: 0, onGround: true, jumps: 0, sliding: false, slideT: 0, spin: 0, dead: false, buffer: 0 };
+  updateHud();
+}
+
+const meters = () => Math.floor(scroll / 20);
+const score = () => meters() + coinCount * COIN_PTS;
+function updateHud() {
+  Kit.hud(`Score ${score()}<small>${meters()} m · ${coinCount} coins · Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- level generation ----------
+function coinArc(x, w, baseY, height) {
+  const n = Math.max(3, Math.round(w / 34));
+  for (let i = 0; i < n; i++) {
+    const f = n === 1 ? 0.5 : i / (n - 1);
+    coins.push({ x: x + f * w, y: baseY - Math.sin(f * Math.PI) * height, got: false });
+  }
+}
+function coinLine(x, n, y) {
+  for (let i = 0; i < n; i++) coins.push({ x: x + i * 34, y, got: false });
+}
+
+function spawnPattern() {
+  const x = nextX;
+  const difficulty = Math.min(1, scroll / 40000);
+  const roll = Math.random();
+  let width;
+  if (roll < 0.22) {
+    const tall = Math.random() < 0.35 + difficulty * 0.3;
+    obstacles.push({ type: "crate", x, y: GROUND - (tall ? 80 : 40), w: 40, h: tall ? 80 : 40 });
+    coinArc(x - 50, 140, GROUND - (tall ? 110 : 70), 60);
+    width = 40;
+  } else if (roll < 0.38) {
+    obstacles.push({ type: "beam", x, y: -20, w: 56, h: GROUND - 36 + 20 });
+    coinLine(x - 40, 5, GROUND - 14);
+    width = 56;
+  } else if (roll < 0.54) {
+    const w = 40 * Kit.randInt(3, 4 + Math.round(difficulty));
+    pits.push({ x: Math.ceil(x / 40) * 40, w });
+    coinArc(x - 10, w + 20, GROUND - 60, 90);
+    width = w;
+  } else if (roll < 0.68) {
+    obstacles.push({ type: "saw", x, y: GROUND - 44, w: 44, h: 44, a: 0 });
+    coinArc(x - 50, 144, GROUND - 74, 70);
+    width = 44;
+  } else if (roll < 0.8 && scroll > 3000) {
+    obstacles.push({ type: "wall", x, y: GROUND - 140, w: 44, h: 140 });
+    coinArc(x - 70, 184, GROUND - 170, 70);
+    width = 44;
+  } else if (roll < 0.9 && scroll > 6000) {
+    // crate then a beam right after: jump, then slide
+    obstacles.push({ type: "crate", x, y: GROUND - 40, w: 40, h: 40 });
+    const bx = x + 40 + speed * 0.95;
+    obstacles.push({ type: "beam", x: bx, y: -20, w: 56, h: GROUND - 36 + 20 });
+    width = bx - x + 56;
+  } else {
+    coinLine(x, 6, GROUND - 24 - (Math.random() < 0.5 ? 0 : 90));
+    width = 200;
+  }
+  const gap = speed * Kit.rand(0.85, 1.5) * (1 - difficulty * 0.2) + 140;
+  nextX = x + width + gap;
+}
+
+// ---------- input ----------
+function pressJump() {
+  if (!alive) return;
+  p.buffer = 0.12;
+  jumpHeld = true;
+}
+Kit.onKey((code) => {
+  if (code === "Space" || code === "ArrowUp" || code === "KeyW") pressJump();
+});
+addEventListener("keyup", (e) => {
+  if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") jumpHeld = false;
+});
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  if (e.button === 2) mouseSlide = true;
+  else pressJump();
+});
+addEventListener("pointerup", (e) => {
+  if (e.button === 2) mouseSlide = false;
+  else jumpHeld = false;
+});
+
+function groundAt(wx) {
+  // true if there is floor under world x
+  for (const pit of pits) if (wx > pit.x + 6 && wx < pit.x + pit.w - 6) return false;
+  return true;
+}
+
+function burst(x, y, n, colors, spd) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Math.random() * spd;
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 100, life: Kit.rand(0.3, 0.8), size: Kit.randInt(3, 7), color: Kit.pick(colors) });
+  }
+}
+
+function update(dt) {
+  t += dt;
+  for (const q of particles) { q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 900 * dt; q.life -= dt; }
+  particles = particles.filter((q) => q.life > 0);
+  if (!alive) {
+    // tumble off screen after a hit
+    p.vy += GRAV * dt;
+    p.y += p.vy * dt;
+    p.spin += dt * 10;
+    return;
+  }
+
+  speed = Math.min(820, 360 + scroll * 0.012);
+  scroll += speed * dt;
+  while (nextX - scroll < W + 300) spawnPattern();
+
+  // sliding
+  slideHeld = Kit.key("ArrowDown") || Kit.key("KeyS") || mouseSlide;
+  const wasSliding = p.sliding;
+  p.sliding = slideHeld && p.onGround;
+  if (p.sliding && !wasSliding) { Kit.sfx("click"); p.slideT = 0; }
+  if (slideHeld && !p.onGround && p.vy < 900) p.vy += 3500 * dt; // fast-fall
+  p.slideT += dt;
+
+  // jumping with buffer + double jump
+  p.buffer -= dt;
+  if (p.buffer > 0) {
+    if (p.onGround && !blockedAbove()) {
+      p.vy = -JUMP; p.onGround = false; p.jumps = 1; p.buffer = 0; p.sliding = false;
+      Kit.sfx("jump");
+    } else if (!p.onGround && p.jumps < 2) {
+      p.vy = -DJUMP; p.jumps = 2; p.buffer = 0;
+      Kit.sfx("jump");
+      burst(PX, p.y + STAND.h, 8, ["#e2e8f0", "#94a3b8"], 120);
+    }
+  }
+  if (!jumpHeld && p.vy < -300) p.vy += GRAV * 1.4 * dt; // short hop when released early
+
+  p.vy += GRAV * dt;
+  const box = size();
+  const prevBottom = p.y + box.h;
+  p.y += p.vy * dt;
+  const feetX = scroll + PX;
+  if (p.vy >= 0 && prevBottom <= GROUND + 2 && p.y + box.h >= GROUND && (groundAt(feetX - box.w / 2 + 4) || groundAt(feetX + box.w / 2 - 4))) {
+    p.y = GROUND - box.h;
+    if (!p.onGround) burst(PX, GROUND, 5, ["#64748b"], 80);
+    p.vy = 0; p.onGround = true; p.jumps = 0;
+  } else if (p.onGround && !groundAt(feetX - box.w / 2 + 4) && !groundAt(feetX + box.w / 2 - 4)) {
+    p.onGround = false;
+    p.jumps = 1;
+  }
+  if (p.sliding) p.y = GROUND - SLIDE.h; else if (p.onGround) p.y = GROUND - STAND.h;
+  if (p.y > H) return die("You fell!");
+
+  // collisions
+  const b = hitbox();
+  for (const o of obstacles) {
+    if (o.type === "saw") o.a += dt * 12;
+    const ox = o.x - scroll;
+    if (ox > b.x + b.w || ox + o.w < b.x) continue;
+    let hit;
+    if (o.type === "saw") {
+      const cx = ox + o.w / 2, cy = o.y + o.h / 2;
+      const nx = Kit.clamp(cx, b.x, b.x + b.w), ny = Kit.clamp(cy, b.y, b.y + b.h);
+      hit = (cx - nx) ** 2 + (cy - ny) ** 2 < 19 * 19;
+    } else hit = b.y < o.y + o.h && b.y + b.h > o.y;
+    if (hit) return die(o.type === "beam" ? "Bonk! Slide under beams." : "Ouch!");
+  }
+  for (const c of coins) {
+    if (c.got) continue;
+    const cx = c.x - scroll;
+    if (cx > b.x - 10 && cx < b.x + b.w + 10 && c.y > b.y - 10 && c.y < b.y + b.h + 10) {
+      c.got = true;
+      coinCount++;
+      Kit.sfx("coin");
+      burst(cx, c.y, 6, ["#facc15", "#fde68a"], 120);
+    }
+  }
+  obstacles = obstacles.filter((o) => o.x + o.w > scroll - 100);
+  pits = pits.filter((q) => q.x + q.w > scroll - 100);
+  coins = coins.filter((c) => !c.got && c.x > scroll - 50);
+  updateHud();
+}
+
+function size() { return p.sliding ? SLIDE : STAND; }
+function hitbox() {
+  const s = size();
+  return { x: PX - s.w / 2 + 3, y: p.y + 3, w: s.w - 6, h: s.h - 5 };
+}
+function blockedAbove() { return false; }
+
+async function die(msg) {
+  alive = false;
+  p.vy = -500;
+  p.sliding = false;
+  Kit.sfx("hit");
+  burst(PX, p.y + 20, 20, ["#ef4444", "#1e293b", "#f2f4f5"], 260);
+  const final = score();
+  const best = Kit.finish(ID, final);
+  updateHud();
+  setTimeout(async () => {
+    Kit.sfx("lose");
+    await Kit.overlay("Wiped out!", `${msg}\n\nDistance: ${meters()} m\nCoins: ${coinCount} (+${coinCount * COIN_PTS})\nScore: ${final}\nBest: ${best}`, "Run again");
+    reset();
+  }, 900);
+}
+
+// ---------- drawing ----------
+const skyline = [];
+for (let i = 0; i < 40; i++) skyline.push({ w: Kit.randInt(60, 130), h: Kit.randInt(80, 260), lit: Math.random() });
+
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#0b1030");
+  g.addColorStop(1, "#3b1d4f");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  // moon
+  ctx.fillStyle = "#fde68a";
+  ctx.fillRect(760, 60, 70, 70);
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(775, 78, 14, 14);
+  ctx.fillRect(800, 100, 10, 10);
+  // stars
+  ctx.fillStyle = "rgba(255,255,255,.6)";
+  for (let i = 0; i < 40; i++) {
+    const sx = ((i * 137 - scroll * 0.02) % W + W) % W;
+    ctx.fillRect(sx, (i * 53) % 260, 2, 2);
+  }
+  drawSkyline(0.15, "#1a1840", 0.6, 120);
+  drawSkyline(0.4, "#25204f", 1, 40);
+}
+function drawSkyline(par, color, hs, lift) {
+  let total = 0;
+  for (const s of skyline) total += s.w + 20;
+  let x = -((scroll * par) % total);
+  let i = 0;
+  while (x < W) {
+    const s = skyline[i % skyline.length];
+    const h = s.h * hs;
+    const y = GROUND - lift - h + 40;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, s.w, GROUND - y + 200);
+    // windows
+    ctx.fillStyle = par > 0.3 ? "rgba(253,230,138,.35)" : "rgba(253,230,138,.18)";
+    for (let wy = y + 12; wy < GROUND - 20; wy += 22)
+      for (let wx = x + 10; wx < x + s.w - 12; wx += 20)
+        if (((wx * 7 + wy * 13 + i * 31) | 0) % 5 < s.lit * 3) ctx.fillRect(wx, wy, 8, 10);
+    x += s.w + 20;
+    i++;
+  }
+}
+
+function drawGround() {
+  const off = scroll % 40;
+  for (let x = -off; x < W; x += 40) {
+    const wx = x + scroll + 20;
+    if (!groundAt(wx)) continue;
+    Kit.brick(ctx, x, GROUND, 40, 20, "#7c3a2d", 3);
+    ctx.fillStyle = "#3f1d17";
+    ctx.fillRect(x, GROUND + 20, 40, H - GROUND - 20);
+    ctx.fillStyle = "#4c241c";
+    ctx.fillRect(x + ((Math.floor(wx / 40)) % 2 ? 4 : 20), GROUND + 34, 16, 10);
+    ctx.fillRect(x + ((Math.floor(wx / 40)) % 2 ? 22 : 2), GROUND + 64, 16, 10);
+  }
+  // pit edges
+  for (const pit of pits) {
+    const x = pit.x - scroll;
+    ctx.fillStyle = "#1f0f0c";
+    ctx.fillRect(x - 4, GROUND, 4, H - GROUND);
+    ctx.fillRect(x + pit.w, GROUND, 4, H - GROUND);
+  }
+}
+
+function drawObstacles() {
+  for (const o of obstacles) {
+    const x = o.x - scroll;
+    if (o.type === "crate") {
+      for (let y = o.y; y < o.y + o.h; y += 40) {
+        Kit.brick(ctx, x, y, 40, 40, "#b45309", 4);
+        ctx.strokeStyle = "#78350f";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x + 6, y + 6); ctx.lineTo(x + 34, y + 34);
+        ctx.moveTo(x + 34, y + 6); ctx.lineTo(x + 6, y + 34);
+        ctx.stroke();
+      }
+    } else if (o.type === "wall") {
+      for (let y = o.y; y < GROUND; y += 20)
+        Kit.brick(ctx, x, y, o.w, 20, (y / 20) % 2 ? "#64748b" : "#475569", 3);
+    } else if (o.type === "beam") {
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(x + o.w / 2 - 3, 0, 6, o.y + o.h - 40);
+      Kit.brick(ctx, x, o.y + o.h - 44, o.w, 44, "#dc2626", 4);
+      ctx.fillStyle = "#fde047";
+      for (let i = 0; i < 3; i++) ctx.fillRect(x + 6 + i * 17, o.y + o.h - 30, 9, 16);
+    } else if (o.type === "saw") {
+      const cx = x + o.w / 2, cy = o.y + o.h / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(o.a);
+      ctx.fillStyle = "#cbd5e1";
+      for (let i = 0; i < 8; i++) {
+        ctx.rotate(Math.PI / 4);
+        ctx.fillRect(-5, -24, 10, 12);
+      }
+      ctx.fillStyle = "#94a3b8";
+      ctx.fillRect(-16, -16, 32, 32);
+      ctx.fillStyle = "#475569";
+      ctx.fillRect(-6, -6, 12, 12);
+      ctx.restore();
+    }
+  }
+}
+
+function drawCoins() {
+  for (const c of coins) {
+    const x = c.x - scroll;
+    const w = Math.abs(Math.cos(t * 5 + c.x * 0.01)) * 14 + 4;
+    ctx.fillStyle = "#a16207";
+    ctx.fillRect(x - w / 2, c.y - 9, w, 18);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(x - w / 2 + 2, c.y - 7, Math.max(1, w - 4), 14);
+  }
+}
+
+function drawNinja() {
+  const s = size();
+  const x = PX - s.w / 2, y = p.y;
+  ctx.save();
+  if (!alive) {
+    ctx.translate(PX, y + s.h / 2);
+    ctx.rotate(p.spin);
+    ctx.translate(-PX, -(y + s.h / 2));
+  }
+  if (p.sliding) {
+    Kit.brick(ctx, x, y + 4, s.w - 12, s.h - 4, "#1e293b", 4);           // body
+    Kit.brick(ctx, x + s.w - 20, y, 20, 18, "#1e293b", 4);               // head
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(x + s.w - 22, y + 4, 22, 5);
+    ctx.fillRect(x + s.w - 34 - Math.sin(t * 30) * 3, y + 2, 12, 4);
+    ctx.fillStyle = "#fde68a";
+    ctx.fillRect(x + s.w - 9, y + 10, 6, 4);
+    // dust
+    if (Math.random() < 0.5) particles.push({ x: x + 4, y: GROUND - 4, vx: -120, vy: -40, life: 0.3, size: 4, color: "#94a3b8" });
+  } else {
+    const run = p.onGround ? Math.sin(t * 22) : 0;
+    // legs
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(x + 4 + run * 5, y + s.h - 12, 9, 12);
+    ctx.fillRect(x + s.w - 13 - run * 5, y + s.h - 12, 9, 12);
+    Kit.brick(ctx, x, y + 18, s.w, s.h - 28, "#1e293b", 4);               // torso
+    ctx.fillStyle = "#334155";
+    ctx.fillRect(x + 2, y + 30, s.w - 4, 4);                              // belt
+    Kit.brick(ctx, x + 1, y, s.w - 2, 20, "#1e293b", 5);                 // head
+    ctx.fillStyle = "#fde68a";
+    ctx.fillRect(x + 6, y + 8, s.w - 10, 6);                              // eye slit
+    ctx.fillStyle = "#0f172a";
+    ctx.fillRect(x + s.w - 10, y + 9, 4, 4);
+    ctx.fillStyle = "#ef4444";
+    ctx.fillRect(x, y + 3, s.w - 1, 4);                                   // headband
+    const flap = Math.sin(t * 25) * 4;
+    ctx.fillRect(x - 14, y + 3 + flap * 0.5, 14, 4);
+    ctx.fillRect(x - 22, y + 6 + flap, 10, 4);
+    // arms
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(x + s.w - 4, y + 22 - run * 3, 8, 6);
+    ctx.fillRect(x - 4, y + 22 + run * 3, 8, 6);
+    if (p.jumps === 2 && p.vy < 0) {
+      ctx.strokeStyle = "rgba(226,232,240,.5)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 4, y - 4, s.w + 8, s.h + 8);
+    }
+  }
+  ctx.restore();
+}
+
+function draw() {
+  drawBackground();
+  drawGround();
+  drawCoins();
+  drawObstacles();
+  drawNinja();
+  for (const q of particles) {
+    ctx.globalAlpha = Kit.clamp(q.life * 2, 0, 1);
+    ctx.fillStyle = q.color;
+    ctx.fillRect(q.x - q.size / 2, q.y - q.size / 2, q.size, q.size);
+  }
+  ctx.globalAlpha = 1;
+  // speed meter
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.fillRect(16, 16, 160, 12);
+  ctx.fillStyle = "#ef4444";
+  ctx.fillRect(18, 18, 156 * (speed - 360) / 460, 8);
+  ctx.fillStyle = "#f2f4f5";
+  ctx.font = `700 12px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillText("SPEED", 18, 44);
+}
+
+const game = Kit.loop(update, draw);
+reset();
+draw();
+Kit.overlay("Ninja Run", "Dash across the rooftops as far as you can.\nJump crates, saws and gaps. Slide under red beams.\nGrab coins for bonus points. It keeps getting faster!\n\nSpace / Up / W or left click: jump (press again to double jump)\nDown / S or right click (hold): slide", "Run").then(() => game.start());
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+{"id":"brick-2048","title":"Brick 2048","genre":"Puzzle","color":"#facc15","description":"Slide numbered bricks around a 4x4 baseplate and snap matching pairs together. Keep merging until you build a 2048 brick.","controls":"Arrows / WASD or swipe with the mouse, R new game","scoreLabel":"High score","lowerIsBetter":false}

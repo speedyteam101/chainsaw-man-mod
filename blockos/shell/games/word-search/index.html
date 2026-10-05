@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Word Search</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+  .choices.grid { display: grid; grid-template-columns: 1fr 1fr; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 10px 14px; font-size: 17px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 13px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.blue { background: var(--blue); --sh: #1d4ed8; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+  .kit-btn.purple { background: var(--purple); --sh: #7e22ce; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "word-search";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(960, 620);
+canvas.style.outline = "none";
+const GX = 28, GY = 30, GSIZE = 560;
+const PANEL_X = 620;
+
+const THEMES = {
+  Animals: { color: "#22c55e", words: ["TIGER", "LION", "ZEBRA", "HORSE", "MONKEY", "GIRAFFE", "PANDA", "RABBIT", "TURTLE", "PARROT", "EAGLE", "MOUSE", "CAMEL", "KOALA", "OTTER", "WOLF", "BEAR", "SNAKE", "FROG", "HIPPO", "LLAMA", "PENGUIN"] },
+  Food: { color: "#fb923c", words: ["PIZZA", "PASTA", "BREAD", "APPLE", "BANANA", "CHEESE", "BURGER", "TACO", "SALAD", "COOKIE", "MUFFIN", "CARROT", "HONEY", "RICE", "SOUP", "MANGO", "GRAPE", "PANCAKE", "WAFFLE", "NOODLE", "LEMON", "PRETZEL"] },
+  Space: { color: "#a855f7", words: ["PLANET", "COMET", "ROCKET", "ORBIT", "GALAXY", "STAR", "MOON", "SATURN", "MARS", "VENUS", "JUPITER", "NEBULA", "METEOR", "ASTEROID", "ALIEN", "SUN", "COSMOS", "ECLIPSE", "CRATER", "LAUNCH", "GRAVITY", "SHUTTLE"] },
+  Sports: { color: "#3b82f6", words: ["SOCCER", "TENNIS", "HOCKEY", "GOLF", "RUGBY", "BOXING", "SKATING", "BASEBALL", "CRICKET", "KARATE", "SURFING", "ARCHERY", "BOWLING", "CYCLING", "GOAL", "TEAM", "RACE", "SWIM", "JUDO", "DIVING", "ROWING", "SKIING"] },
+  Ocean: { color: "#14b8a6", words: ["WHALE", "SHARK", "DOLPHIN", "CORAL", "CRAB", "SQUID", "OCTOPUS", "WAVE", "TIDE", "REEF", "SEAL", "SHELL", "ANCHOR", "ISLAND", "KELP", "LOBSTER", "STARFISH", "JELLYFISH", "PEARL", "SAND", "SEAHORSE", "CURRENT"] },
+  Weather: { color: "#38bdf8", words: ["RAIN", "SNOW", "CLOUD", "STORM", "THUNDER", "WIND", "SUNNY", "RAINBOW", "FOG", "HAIL", "BREEZE", "FROST", "TORNADO", "DRIZZLE", "SLEET", "HUMID", "CHILLY", "FLOOD", "LIGHTNING", "MIST", "SHOWER", "WARM"] },
+  Music: { color: "#ec4899", words: ["PIANO", "GUITAR", "DRUM", "VIOLIN", "FLUTE", "TRUMPET", "SONG", "RHYTHM", "BAND", "CHOIR", "MELODY", "TEMPO", "HARP", "BANJO", "CELLO", "TUBA", "NOTE", "CHORD", "BEAT", "TUNE", "LYRICS", "CONCERT"] },
+  School: { color: "#facc15", words: ["PENCIL", "ERASER", "RULER", "BOOK", "DESK", "TEACHER", "LESSON", "RECESS", "CRAYON", "PAPER", "SCISSORS", "GLUE", "MATH", "SCIENCE", "HISTORY", "LIBRARY", "BACKPACK", "CHALK", "LUNCH", "QUIZ", "SPELLING", "GLOBE"] },
+  Building: { color: "#ef4444", words: ["BRICK", "TOWER", "CASTLE", "BRIDGE", "WALL", "ROOF", "DOOR", "WINDOW", "CRANE", "HAMMER", "LADDER", "STAIRS", "BLOCK", "PLANK", "STONE", "TILE", "GATE", "FENCE", "TUNNEL", "DOME", "CEMENT", "BUILDER"] },
+};
+const LEVELS = {
+  easy: { name: "Easy", size: 10, words: 8, dirs: [[0, 1], [1, 0], [1, 1]] },
+  normal: { name: "Normal", size: 12, words: 10, dirs: [[0, 1], [1, 0], [1, 1], [-1, 1], [0, -1], [-1, 0]] },
+  hard: { name: "Hard", size: 14, words: 13, dirs: [[0, 1], [1, 0], [1, 1], [-1, 1], [0, -1], [-1, 0], [-1, -1], [1, -1]] },
+};
+const FOUND_COLORS = ["#ef4444", "#fb923c", "#facc15", "#22c55e", "#14b8a6", "#3b82f6", "#a855f7", "#ec4899", "#84cc16", "#06b6d4", "#f97316", "#8b5cf6", "#f43f5e"];
+// Filler letters roughly follow English letter frequencies so the grid looks natural.
+const FILL = "EEEEEEAAAAARRRRIIIIOOOOTTTTNNNNSSSSLLLCCCUUUDDDPPMMHHGGBBFFYYWKVXZJQ";
+const HINT_PENALTY = 15;
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options, twoCols) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices" + (twoCols ? " grid" : "");
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      if (opt.bg) { b.style.background = opt.bg; b.style.setProperty("--sh", "rgba(0,0,0,.35)"); }
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i < 9 ? i + 1 : "0";
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      const step = twoCols ? 2 : 1;
+      let handled = true;
+      if (c === "ArrowUp" || c === "KeyW") select(sel - step);
+      else if (c === "ArrowDown" || c === "KeyS") select(sel + step);
+      else if (c === "ArrowLeft" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowRight" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[0-9]$/.test(c)) {
+        const n = Number(c.slice(-1));
+        const idx = n === 0 ? 9 : n - 1;
+        if (idx < buttons.length) done(idx);
+      } else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- puzzle building ---------- */
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function build(themeName, level) {
+  const N = level.size;
+  const grid = Array.from({ length: N }, () => new Array(N).fill(""));
+  const pool = shuffle(THEMES[themeName].words.filter((w) => w.length <= N));
+  const placed = [];
+  for (const word of pool) {
+    if (placed.length >= level.words) break;
+    let ok = false;
+    for (let attempt = 0; attempt < 300 && !ok; attempt++) {
+      const [dr, dc] = Kit.pick(level.dirs);
+      const r0 = Kit.randInt(0, N - 1), c0 = Kit.randInt(0, N - 1);
+      const r1 = r0 + dr * (word.length - 1), c1 = c0 + dc * (word.length - 1);
+      if (r1 < 0 || r1 >= N || c1 < 0 || c1 >= N) continue;
+      let fits = true;
+      for (let k = 0; k < word.length; k++) {
+        const ch = grid[r0 + dr * k][c0 + dc * k];
+        if (ch && ch !== word[k]) { fits = false; break; }
+      }
+      if (!fits) continue;
+      for (let k = 0; k < word.length; k++) grid[r0 + dr * k][c0 + dc * k] = word[k];
+      placed.push({ word, r0, c0, r1, c1, found: false, color: null });
+      ok = true;
+    }
+  }
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!grid[r][c]) grid[r][c] = FILL[Math.floor(Math.random() * FILL.length)];
+  placed.sort((a, b) => a.word.localeCompare(b.word));
+  return { grid, words: placed };
+}
+
+/* ---------- state ---------- */
+let themeName = "Animals", levelKey = "normal", pickedTheme = "random";
+let grid, words, N, CELL, time, phase = "menu", drag = null, cursor = { r: 0, c: 0 }, keyAnchor = null;
+let flash = null, wrongFlash = null, winT = 0, hintCell = null, foundCount = 0;
+let particles = [];
+
+function fmtTime(s) {
+  s = Math.floor(s);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+function updateHud() {
+  const b = Kit.best(ID, undefined, true);
+  Kit.hud(`${fmtTime(time || 0)}<small>Best ${b === null ? "--" : fmtTime(b)}</small>`);
+}
+
+function newGame() {
+  themeName = pickedTheme === "random" ? Kit.pick(Object.keys(THEMES)) : pickedTheme;
+  const level = LEVELS[levelKey];
+  const p = build(themeName, level);
+  grid = p.grid;
+  words = p.words;
+  N = level.size;
+  CELL = Math.floor(GSIZE / N);
+  time = 0;
+  drag = null;
+  keyAnchor = null;
+  flash = wrongFlash = hintCell = null;
+  foundCount = 0;
+  particles = [];
+  cursor = { r: Math.floor(N / 2), c: Math.floor(N / 2) };
+  phase = "play";
+  updateHud();
+}
+
+async function menu() {
+  phase = "menu";
+  const themeOpts = [{ label: "Surprise me", value: "random", color: "purple", selected: pickedTheme === "random" }]
+    .concat(Object.keys(THEMES).map((t) => ({ label: t, value: t, bg: THEMES[t].color, selected: pickedTheme === t })));
+  pickedTheme = await choose("Word Search",
+    "Find every hidden word in the grid. Words can run across, down, diagonally and even backwards.\n\n" +
+    "Mouse: drag from the first letter to the last.\nKeys: Arrows move, Space marks start and end.  H = hint (+15s)",
+    themeOpts, true);
+  levelKey = await choose("Grid size", "Bigger grids hide more words in more directions.", [
+    { label: "Easy", value: "easy", hint: "10x10, 3 directions", selected: levelKey === "easy" },
+    { label: "Normal", value: "normal", color: "orange", hint: "12x12, 6 directions", selected: levelKey === "normal" },
+    { label: "Hard", value: "hard", color: "red", hint: "14x14, all 8", selected: levelKey === "hard" },
+  ]);
+  newGame();
+}
+
+/* ---------- selecting ---------- */
+function cellAt(x, y) {
+  const c = Math.floor((x - GX) / CELL), r = Math.floor((y - GY) / CELL);
+  return { r, c, inside: r >= 0 && r < N && c >= 0 && c < N };
+}
+function cellCenter(r, c) { return { x: GX + c * CELL + CELL / 2, y: GY + r * CELL + CELL / 2 }; }
+
+// Snap the end of a selection onto one of the 8 straight lines out of the start cell.
+function snapEnd(start, r, c) {
+  const dr = r - start.r, dc = c - start.c;
+  if (!dr && !dc) return { r: start.r, c: start.c };
+  const ang = Math.atan2(dr, dc);
+  const oct = Math.round(ang / (Math.PI / 4));
+  const sr = Math.round(Math.sin(oct * Math.PI / 4)), sc = Math.round(Math.cos(oct * Math.PI / 4));
+  let len = Math.max(Math.abs(dr), Math.abs(dc));
+  // keep the end inside the grid
+  while (len > 0) {
+    const er = start.r + sr * len, ec = start.c + sc * len;
+    if (er >= 0 && er < N && ec >= 0 && ec < N) break;
+    len--;
+  }
+  return { r: start.r + sr * len, c: start.c + sc * len };
+}
+
+function trySelection(a, b) {
+  if (a.r === b.r && a.c === b.c) return;
+  for (const w of words) {
+    if (w.found) continue;
+    const fwd = w.r0 === a.r && w.c0 === a.c && w.r1 === b.r && w.c1 === b.c;
+    const back = w.r1 === a.r && w.c1 === a.c && w.r0 === b.r && w.c0 === b.c;
+    if (fwd || back) return found(w);
+  }
+  // also accept a selection that spells an unfound word even if it lies elsewhere
+  const sr = Math.sign(b.r - a.r), sc = Math.sign(b.c - a.c);
+  const len = Math.max(Math.abs(b.r - a.r), Math.abs(b.c - a.c)) + 1;
+  let s = "";
+  for (let k = 0; k < len; k++) s += grid[a.r + sr * k][a.c + sc * k];
+  const rev = s.split("").reverse().join("");
+  const match = words.find((w) => !w.found && (w.word === s || w.word === rev));
+  if (match) {
+    Object.assign(match, s === match.word ? { r0: a.r, c0: a.c, r1: b.r, c1: b.c } : { r0: b.r, c0: b.c, r1: a.r, c1: a.c });
+    return found(match);
+  }
+  wrongFlash = { a, b, t: 0 };
+  Kit.sfx("hit");
+}
+
+function found(w) {
+  w.found = true;
+  w.color = FOUND_COLORS[foundCount % FOUND_COLORS.length];
+  foundCount++;
+  hintCell = null;
+  flash = { w, t: 0 };
+  const len = Math.max(Math.abs(w.r1 - w.r0), Math.abs(w.c1 - w.c0)) + 1;
+  const sr = Math.sign(w.r1 - w.r0), sc = Math.sign(w.c1 - w.c0);
+  for (let k = 0; k < len; k++) {
+    const p = cellCenter(w.r0 + sr * k, w.c0 + sc * k);
+    for (let j = 0; j < 4; j++) particles.push({ x: p.x, y: p.y, vx: Kit.rand(-120, 120), vy: Kit.rand(-200, -40), t: 0, color: w.color });
+  }
+  if (words.every((x) => x.found)) win();
+  else Kit.sfx("coin");
+}
+
+function hint() {
+  if (phase !== "play") return;
+  const left = words.filter((w) => !w.found);
+  if (!left.length) return;
+  const w = Kit.pick(left);
+  hintCell = { r: w.r0, c: w.c0, t: 0 };
+  time += HINT_PENALTY;
+  updateHud();
+  Kit.sfx("jump");
+}
+
+async function win() {
+  phase = "won";
+  winT = 0;
+  Kit.sfx("win");
+  const secs = Math.floor(time);
+  const best = Kit.finish(ID, secs, true);
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1600));
+  await Kit.overlay("All words found!", `${themeName} - ${LEVELS[levelKey].name}\nTime: ${fmtTime(secs)}\nBest: ${fmtTime(best)}`, "Play again");
+  menu();
+}
+
+canvas.addEventListener("mousedown", (e) => {
+  if (phase !== "play" || e.button !== 0) return;
+  const p = Kit.pointer(canvas, e);
+  const cell = cellAt(p.x, p.y);
+  if (cell.inside) {
+    drag = { start: { r: cell.r, c: cell.c }, end: { r: cell.r, c: cell.c } };
+    keyAnchor = null;
+    cursor = { r: cell.r, c: cell.c };
+    Kit.sfx("click");
+  } else if (hintBtnHit(p.x, p.y)) hint();
+});
+addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (drag) {
+    const cell = cellAt(p.x, p.y);
+    drag.end = snapEnd(drag.start, cell.r, cell.c);
+  }
+  canvas.style.cursor = cellAt(p.x, p.y).inside || hintBtnHit(p.x, p.y) ? "pointer" : "default";
+});
+addEventListener("mouseup", () => {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (phase === "play") trySelection(d.start, d.end);
+});
+
+const MOVES = {
+  ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0],
+  ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1],
+};
+Kit.onKey((code, e) => {
+  if (phase !== "play") return;
+  if (MOVES[code]) {
+    const [dr, dc] = MOVES[code];
+    cursor = { r: Kit.clamp(cursor.r + dr, 0, N - 1), c: Kit.clamp(cursor.c + dc, 0, N - 1) };
+    e.preventDefault();
+  } else if (code === "Space" || code === "Enter" || code === "NumpadEnter") {
+    if (!keyAnchor) { keyAnchor = { r: cursor.r, c: cursor.c }; Kit.sfx("click"); }
+    else {
+      const end = snapEnd(keyAnchor, cursor.r, cursor.c);
+      const a = keyAnchor;
+      keyAnchor = null;
+      trySelection(a, end);
+    }
+  } else if (code === "KeyH") hint();
+  else if (code === "Backspace") keyAnchor = null;
+});
+
+/* ---------- loop ---------- */
+function update(dt) {
+  if (phase === "play") {
+    const before = Math.floor(time);
+    time += dt;
+    if (Math.floor(time) !== before) updateHud();
+  }
+  if (phase === "won") winT += dt;
+  if (flash) { flash.t += dt; if (flash.t > 0.8) flash = null; }
+  if (wrongFlash) { wrongFlash.t += dt; if (wrongFlash.t > 0.45) wrongFlash = null; }
+  if (hintCell) hintCell.t += dt;
+  for (const p of particles) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 500 * dt; }
+  particles = particles.filter((p) => p.t < 0.9);
+}
+
+function text(str, x, y, size, color, weight, align) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function capsule(a, b, color, width, alpha) {
+  const p = cellCenter(a.r, a.c), q = cellCenter(b.r, b.c);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(q.x + 0.01, q.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+const HINT_BTN = { x: PANEL_X + 10, y: GY + GSIZE - 50, w: 140, h: 44 };
+function hintBtnHit(x, y) { return phase === "play" && x >= HINT_BTN.x && x < HINT_BTN.x + HINT_BTN.w && y >= HINT_BTN.y && y < HINT_BTN.y + HINT_BTN.h; }
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 15; y < H; y += 30) for (let x = 15; x < W; x += 30) { ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); }
+  if (!grid) return;
+  const theme = THEMES[themeName];
+  const size = N * CELL;
+  ctx.fillStyle = "#2b2f35";
+  ctx.beginPath();
+  ctx.roundRect(GX - 10, GY - 10, size + 20, size + 20, 12);
+  ctx.fill();
+  // cell tiles
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      let lift = 0;
+      if (phase === "won") {
+        const d = r + c;
+        lift = Math.max(0, Math.sin(winT * 8 - d * 0.5)) * 4;
+      }
+      Kit.brick(ctx, GX + c * CELL + 2, GY + r * CELL + 2 - lift, CELL - 4, CELL - 4, "#e9edf2", 5);
+    }
+  }
+  // found words
+  for (const w of words) if (w.found) capsule({ r: w.r0, c: w.c0 }, { r: w.r1, c: w.c1 }, w.color, CELL * 0.74, 0.55);
+  if (flash) capsule({ r: flash.w.r0, c: flash.w.c0 }, { r: flash.w.r1, c: flash.w.c1 }, "#ffffff", CELL * (0.74 + 0.25 * (1 - flash.t / 0.8)), 0.5 * (1 - flash.t / 0.8));
+  if (wrongFlash) capsule(wrongFlash.a, wrongFlash.b, "#ef4444", CELL * 0.7, 0.5 * (1 - wrongFlash.t / 0.45));
+  // current selection
+  if (drag) capsule(drag.start, drag.end, theme.color, CELL * 0.74, 0.6);
+  if (keyAnchor) capsule(keyAnchor, snapEnd(keyAnchor, cursor.r, cursor.c), theme.color, CELL * 0.74, 0.6);
+  if (hintCell) {
+    const p = cellCenter(hintCell.r, hintCell.c);
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, CELL * (0.42 + Math.sin(hintCell.t * 8) * 0.06), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // letters
+  const fs = Math.floor(CELL * 0.56);
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      let lift = 0;
+      if (phase === "won") lift = Math.max(0, Math.sin(winT * 8 - (r + c) * 0.5)) * 4;
+      const p = cellCenter(r, c);
+      text(grid[r][c], p.x, p.y + 1 - lift, fs, "#1f2328", 800);
+    }
+  }
+  // keyboard cursor
+  if (phase === "play") {
+    ctx.strokeStyle = keyAnchor ? theme.color : "rgba(31,35,40,.55)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(GX + cursor.c * CELL + 1, GY + cursor.r * CELL + 1, CELL - 2, CELL - 2, 7);
+    ctx.stroke();
+  }
+  for (const p of particles) {
+    ctx.globalAlpha = 1 - p.t / 0.9;
+    Kit.brick(ctx, p.x - 4, p.y - 4, 8, 8, p.color, 2);
+  }
+  ctx.globalAlpha = 1;
+  drawPanel(theme);
+}
+
+function isLight(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return r * 0.299 + g * 0.587 + b * 0.114 > 150;
+}
+
+function drawPanel(theme) {
+  const x = PANEL_X;
+  Kit.brick(ctx, x, GY - 10, W - x - 24, 56, theme.color, 10);
+  text(themeName, x + (W - x - 24) / 2, GY + 18, 26, "#fff", 800);
+  text(`${LEVELS[levelKey].name}  -  ${words.filter((w) => w.found).length} / ${words.length} found`, x + (W - x - 24) / 2, GY + 70, 15, "#a7adb4", 700);
+  const colW = (W - x - 24) / 2;
+  const rows = Math.ceil(words.length / 2);
+  words.forEach((w, i) => {
+    const col = Math.floor(i / rows), row = i % rows;
+    const wx = x + col * colW, wy = GY + 100 + row * 40;
+    if (w.found) {
+      Kit.brick(ctx, wx + 4, wy, colW - 12, 32, w.color, 7);
+      const ink = isLight(w.color) ? "#1f2328" : "#fff";
+      text(w.word, wx + 4 + (colW - 12) / 2, wy + 16, 16, ink, 800);
+      ctx.fillStyle = ink;
+      ctx.fillRect(wx + 16, wy + 15, colW - 36, 2);
+    } else {
+      Kit.brick(ctx, wx + 4, wy, colW - 12, 32, "#2b2f35", 7);
+      text(w.word, wx + 4 + (colW - 12) / 2, wy + 16, 16, "#f2f4f5", 700);
+    }
+  });
+  if (phase === "play") {
+    Kit.brick(ctx, HINT_BTN.x, HINT_BTN.y, HINT_BTN.w, HINT_BTN.h, "#ca8a04", 8);
+    text("Hint (H)", HINT_BTN.x + HINT_BTN.w / 2, HINT_BTN.y + HINT_BTN.h / 2, 16, "#fff", 800);
+    text("+" + HINT_PENALTY + "s", HINT_BTN.x + HINT_BTN.w + 30, HINT_BTN.y + HINT_BTN.h / 2, 14, "#a7adb4", 700);
+  }
+}
+
+// show a sample grid behind the first menu
+time = 0;
+updateHud();
+(function demo() {
+  themeName = "Animals";
+  const p = build(themeName, LEVELS.normal);
+  grid = p.grid; words = p.words; N = 12; CELL = Math.floor(GSIZE / N);
+  cursor = { r: 6, c: 6 };
+})();
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

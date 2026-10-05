@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Floor Is Lava</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "lava-floor";
+const COLS = 15, ROWS = 11, TS = 44;
+const { canvas, ctx, W, H } = Kit.stage(720, 560);
+const GX = (W - COLS * TS) / 2, GY = 62;            // top-left corner of the arena
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+// Tile states
+const FLOOR = 0, WARN = 1, LAVA = 2, COOL = 3;
+const COOL_TIME = 0.45;
+
+// Player tuning
+const SPEED = 225, ACCEL = 16, HOP_TIME = 0.5, HOP_COOLDOWN = 2.2, R = 13;
+
+let tiles, player, coins, particles, popups;
+let time, wave, waveTimer, coinTimer, coinCount, score, banner, alive, shake;
+let mouse = { down: false, x: 0, y: 0 };
+
+function reset() {
+  tiles = [];
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++) tiles.push({ c, r, s: FLOOR, t: 0, dur: 1 });
+  player = { x: GX + COLS * TS / 2, y: GY + ROWS * TS / 2, vx: 0, vy: 0, hop: 0, cool: 0, face: { x: 0, y: 1 }, walk: 0 };
+  coins = [];
+  particles = [];
+  popups = [];
+  time = 0;
+  wave = 0;
+  waveTimer = 2.2;
+  coinTimer = 0.8;
+  coinCount = 0;
+  score = 0;
+  banner = null;
+  alive = true;
+  shake = 0;
+  updateHud();
+}
+
+const tileAt = (c, r) => (c >= 0 && r >= 0 && c < COLS && r < ROWS ? tiles[r * COLS + c] : null);
+const tileUnder = (x, y) => tileAt(Math.floor((x - GX) / TS), Math.floor((y - GY) / TS));
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- waves ----------
+// Each pattern returns a list of { c, r, delay } describing which tiles heat up.
+const PATTERNS = {
+  scatter: { name: "Hot Spots", from: 1, make: () => all().filter(() => Math.random() < 0.22 + Math.min(0.18, wave * 0.01)) },
+  rows: { name: "Stripes", from: 1, make: () => { const o = Kit.randInt(0, 1); return all().filter((t) => (t.r + o) % 2 === 0); } },
+  cols: { name: "Columns", from: 2, make: () => { const o = Kit.randInt(0, 1); return all().filter((t) => (t.c + o) % 2 === 0); } },
+  chase: {
+    name: "Right Under You", from: 3,
+    make: () => {
+      const p = playerTile();
+      return all().filter((t) => (Math.abs(t.c - p.c) <= 1 && Math.abs(t.r - p.r) <= 1) || t.c === p.c || t.r === p.r);
+    },
+  },
+  rings: {
+    name: "Rings", from: 4,
+    make: () => {
+      const o = Kit.randInt(0, 1);
+      return all().filter((t) => Math.max(Math.abs(t.c - 7), Math.abs(t.r - 5)) % 2 === o)
+        .map((t) => ({ ...t, delay: Math.max(Math.abs(t.c - 7), Math.abs(t.r - 5)) * 0.08 }));
+    },
+  },
+  halves: {
+    name: "Pick a Side", from: 5,
+    make: () => {
+      const k = Kit.randInt(0, 3);
+      return all().filter((t) => [t.c < 7, t.c > 7, t.r < 5, t.r > 5][k]);
+    },
+  },
+  checker: { name: "Checkers", from: 6, make: () => { const o = Kit.randInt(0, 1); return all().filter((t) => (t.c + t.r + o) % 2 === 0); } },
+  sweep: {
+    name: "Lava Sweep", from: 7,
+    make: () => {
+      // everything but one safe lane, rolling across the arena
+      const lane = Kit.randInt(1, ROWS - 3), fromLeft = Math.random() < 0.5;
+      return all().filter((t) => t.r !== lane && t.r !== lane + 1)
+        .map((t) => ({ ...t, delay: (fromLeft ? t.c : COLS - 1 - t.c) * 0.11 }));
+    },
+  },
+  diagonal: {
+    name: "Diagonals", from: 8,
+    make: () => { const o = Kit.randInt(0, 2), d = Math.random() < 0.5 ? 1 : -1; return all().filter((t) => (((t.c + d * t.r) % 3) + 3) % 3 !== o); },
+  },
+  rain: {
+    name: "Lava Rain", from: 9,
+    make: () => all().filter(() => Math.random() < 0.45).map((t) => ({ ...t, delay: Kit.rand(0, 2.2) })),
+  },
+  border: {
+    name: "Closing In", from: 10,
+    make: () => all().filter((t) => {
+      const d = Math.min(t.c, t.r, COLS - 1 - t.c, ROWS - 1 - t.r);
+      return d <= 1 + (wave > 16 ? 1 : 0);
+    }).map((t) => ({ ...t, delay: Math.min(t.c, t.r, COLS - 1 - t.c, ROWS - 1 - t.r) * 0.25 })),
+  },
+};
+
+function all() { return tiles.map((t) => ({ c: t.c, r: t.r, delay: 0 })); }
+function playerTile() {
+  return { c: Kit.clamp(Math.floor((player.x - GX) / TS), 0, COLS - 1), r: Kit.clamp(Math.floor((player.y - GY) / TS), 0, ROWS - 1) };
+}
+
+let lastPattern = "";
+function startWave() {
+  wave++;
+  const pool = Object.keys(PATTERNS).filter((k) => PATTERNS[k].from <= wave && k !== lastPattern);
+  const key = Kit.pick(pool);
+  lastPattern = key;
+  let cells = PATTERNS[key].make();
+  // Later waves add a light sprinkle of extra hot spots on top.
+  if (wave >= 12 && key !== "sweep") cells = cells.concat(all().filter(() => Math.random() < 0.08));
+  const warn = Math.max(0.8, 1.5 - wave * 0.035);
+  const lava = 2.0 + Math.min(1.6, wave * 0.06);
+  for (const cell of cells) {
+    const t = tileAt(cell.c, cell.r);
+    if (t.s === WARN || t.s === LAVA) continue;
+    t.s = WARN;
+    t.t = warn + (cell.delay || 0);
+    t.dur = t.t;
+    t.lava = lava;
+  }
+  banner = { text: `Wave ${wave}`, sub: PATTERNS[key].name, t: 1.6 };
+  Kit.sfx("click");
+  waveTimer = warn + lava * 0.55 + Math.max(0.6, 2.0 - wave * 0.06) + (key === "sweep" || key === "rain" ? 1.2 : 0);
+}
+
+// ---------- coins ----------
+function spawnCoin() {
+  const free = tiles.filter((t) => t.s === FLOOR && !coins.some((k) => k.c === t.c && k.r === t.r));
+  if (!free.length) return;
+  const t = Kit.pick(free);
+  const gem = Math.random() < 0.14;
+  coins.push({ c: t.c, r: t.r, x: GX + t.c * TS + TS / 2, y: GY + t.r * TS + TS / 2, life: gem ? 5 : 7, gem, spin: Math.random() * 6 });
+}
+
+// ---------- input ----------
+const hopKeys = new Set(["Space", "ShiftLeft", "ShiftRight", "KeyJ"]);
+Kit.onKey((code) => { if (alive && hopKeys.has(code)) hop(); });
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  mouse.x = p.x; mouse.y = p.y;
+  if (e.button === 2) { hop(); return; }
+  if (e.button === 0) { mouse.down = true; canvas.setPointerCapture(e.pointerId); }
+});
+canvas.addEventListener("pointermove", (e) => { const p = Kit.pointer(canvas, e); mouse.x = p.x; mouse.y = p.y; });
+canvas.addEventListener("pointerup", (e) => { if (e.button === 0) mouse.down = false; });
+canvas.addEventListener("pointercancel", () => { mouse.down = false; });
+addEventListener("blur", () => { mouse.down = false; });
+
+function hop() {
+  if (!alive || player.hop > 0 || player.cool > 0) return;
+  player.hop = HOP_TIME;
+  player.cool = HOP_COOLDOWN;
+  Kit.sfx("jump");
+  puff(player.x, player.y + 8, "rgba(255,255,255,.6)", 6);
+}
+
+// ---------- update ----------
+function update(dt) {
+  shake = Math.max(0, shake - dt);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.g || 0) * dt; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const p of popups) p.t += dt;
+  popups = popups.filter((p) => p.t < 0.9);
+  if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
+  if (!alive) return;
+
+  time += dt;
+  // tiles
+  for (const t of tiles) {
+    if (t.s === WARN) { t.t -= dt; if (t.t <= 0) { t.s = LAVA; t.t = t.lava; } }
+    else if (t.s === LAVA) {
+      t.t -= dt;
+      if (Math.random() < dt * 0.9) particles.push({ x: GX + t.c * TS + Kit.rand(6, TS - 6), y: GY + t.r * TS + Kit.rand(6, TS - 6), vx: Kit.rand(-10, 10), vy: Kit.rand(-50, -25), life: Kit.rand(0.5, 1), size: Kit.rand(2, 4), color: Kit.pick(["#ffd23f", "#ff9a3c"]) });
+      if (t.t <= 0) { t.s = COOL; t.t = COOL_TIME; }
+    } else if (t.s === COOL) { t.t -= dt; if (t.t <= 0) t.s = FLOOR; }
+  }
+  waveTimer -= dt;
+  if (waveTimer <= 0) startWave();
+
+  // movement
+  let dx = (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0) - (Kit.key("ArrowLeft") || Kit.key("KeyA") ? 1 : 0);
+  let dy = (Kit.key("ArrowDown") || Kit.key("KeyS") ? 1 : 0) - (Kit.key("ArrowUp") || Kit.key("KeyW") ? 1 : 0);
+  if (!dx && !dy && mouse.down) {
+    const mx = mouse.x - player.x, my = mouse.y - player.y, d = Math.hypot(mx, my);
+    if (d > 6) { dx = mx / d; dy = my / d; if (d < 30) { dx *= d / 30; dy *= d / 30; } }
+  }
+  const len = Math.hypot(dx, dy);
+  if (len > 1) { dx /= len; dy /= len; }
+  const k = Math.min(1, dt * ACCEL);
+  player.vx += (dx * SPEED - player.vx) * k;
+  player.vy += (dy * SPEED - player.vy) * k;
+  player.x = Kit.clamp(player.x + player.vx * dt, GX + R, GX + COLS * TS - R);
+  player.y = Kit.clamp(player.y + player.vy * dt, GY + R, GY + ROWS * TS - R);
+  if (len > 0.1) player.face = { x: dx, y: dy };
+  player.walk += Math.hypot(player.vx, player.vy) * dt * 0.06;
+  if (player.hop > 0) {
+    player.hop -= dt;
+    if (player.hop <= 0) { player.hop = 0; puff(player.x, player.y + 8, "rgba(255,255,255,.5)", 5); }
+  }
+  player.cool = Math.max(0, player.cool - dt);
+
+  // coins
+  coinTimer -= dt;
+  if (coinTimer <= 0) { coinTimer = Kit.rand(1.1, 1.9); if (coins.length < 5) spawnCoin(); }
+  for (const c of coins) {
+    c.life -= dt;
+    c.spin += dt * 5;
+    if (Math.hypot(c.x - player.x, c.y - player.y) < 24) {
+      c.got = true;
+      const v = c.gem ? 250 : 50;
+      score += v;
+      coinCount += c.gem ? 5 : 1;
+      Kit.sfx("coin");
+      popups.push({ x: c.x, y: c.y, text: "+" + v, t: 0, color: c.gem ? "#67e8f9" : "#facc15" });
+      puff(c.x, c.y, c.gem ? "#67e8f9" : "#facc15", 10);
+    }
+  }
+  coins = coins.filter((c) => !c.got && c.life > 0);
+
+  // score ticks up with time survived
+  const timeScore = Math.floor(time * 10);
+  score += timeScore - (player.timeScore || 0);
+  player.timeScore = timeScore;
+  updateHud();
+
+  // burn?
+  if (player.hop <= 0) {
+    const t = tileUnder(player.x, player.y);
+    if (t && t.s === LAVA) die();
+  }
+}
+
+function puff(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = Kit.rand(40, 140);
+    particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: Kit.rand(0.3, 0.6), size: Kit.rand(3, 6), color });
+  }
+}
+
+async function die() {
+  alive = false;
+  shake = 0.4;
+  mouse.down = false;
+  Kit.sfx("hit");
+  for (let i = 0; i < 26; i++) {
+    const a = Math.random() * Math.PI * 2, v = Kit.rand(80, 260);
+    particles.push({ x: player.x, y: player.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 80, g: 500, life: Kit.rand(0.5, 1.1), size: Kit.rand(4, 8), color: Kit.pick(["#3b82f6", "#facc15", "#ff7a1a", "#1e3a8a"]) });
+  }
+  setTimeout(() => Kit.sfx("lose"), 250);
+  const best = Kit.finish(ID, score);
+  updateHud();
+  await wait(1100);
+  await Kit.overlay("Burned!", `You survived ${time.toFixed(1)} seconds and ${wave} waves.\nCoins: ${coinCount}\nScore: ${score}\nBest: ${best}`, "Play again");
+  reset();
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---------- drawing ----------
+function drawFloor(x, y, c, r) {
+  Kit.brick(ctx, x + 1, y + 1, TS - 2, TS - 2, (c + r) % 2 ? "#5d6677" : "#677184", 5);
+  ctx.fillStyle = "rgba(255,255,255,.10)";
+  ctx.beginPath(); ctx.arc(x + TS / 2, y + TS / 2, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(0,0,0,.12)";
+  ctx.beginPath(); ctx.arc(x + TS / 2, y + TS / 2 + 2, 8, 0, Math.PI); ctx.fill();
+}
+
+function drawLava(x, y, c, r, alpha) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "#e2401c";
+  ctx.fillRect(x, y, TS, TS);
+  // slow moving bright blobs
+  for (let i = 0; i < 3; i++) {
+    const ph = time * (0.6 + i * 0.25) + c * 1.7 + r * 2.3 + i * 2;
+    const bx = x + TS / 2 + Math.sin(ph) * 12, by = y + TS / 2 + Math.cos(ph * 0.8) * 12;
+    ctx.fillStyle = i === 0 ? "#ff8a2a" : i === 1 ? "#ffb13b" : "#ff6a22";
+    ctx.fillRect(bx - 9 + i * 2, by - 6, 16 - i * 3, 10 - i * 2);
+  }
+  ctx.fillStyle = "rgba(255,230,120,.55)";
+  const bp = (time * 0.9 + c * 0.37 + r * 0.61) % 1;
+  ctx.beginPath(); ctx.arc(x + 12 + ((c * 7 + r * 3) % 20), y + TS - 8 - bp * 22, 2 + 3 * (1 - bp), 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawTile(t) {
+  const x = GX + t.c * TS, y = GY + t.r * TS;
+  if (t.s === FLOOR) return drawFloor(x, y, t.c, t.r);
+  if (t.s === LAVA) return drawLava(x, y, t.c, t.r, 1);
+  if (t.s === COOL) {
+    drawFloor(x, y, t.c, t.r);
+    const k = t.t / COOL_TIME;
+    ctx.fillStyle = `rgba(40,26,22,${0.9 * k})`;
+    ctx.fillRect(x, y, TS, TS);
+    return;
+  }
+  // WARN: heats up, shakes and flashes faster as it gets close
+  const k = 1 - Math.max(0, t.t) / t.dur;            // 0..1 progress
+  const flash = Math.sin(time * (8 + k * 26)) > 0;
+  const jx = k > 0.6 ? Kit.rand(-1, 1) * k * 1.6 : 0;
+  ctx.save();
+  ctx.translate(jx, 0);
+  drawFloor(x, y, t.c, t.r);
+  ctx.fillStyle = `rgba(255,${flash ? 150 : 90},30,${0.25 + 0.5 * k})`;
+  ctx.fillRect(x + 1, y + 1, TS - 2, TS - 2);
+  ctx.strokeStyle = `rgba(255,220,120,${0.4 + 0.6 * k})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 8, y + 10); ctx.lineTo(x + 18, y + 20); ctx.lineTo(x + 14, y + 32);
+  if (k > 0.35) { ctx.moveTo(x + 18, y + 20); ctx.lineTo(x + 32, y + 16); ctx.lineTo(x + 36, y + 30); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCoin(c) {
+  if (c.life < 1.8 && Math.floor(c.life * 8) % 2) return;
+  const bob = Math.sin(c.spin) * 3;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(c.x, c.y + 12, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+  if (c.gem) {
+    ctx.save();
+    ctx.translate(c.x, c.y - 4 + bob);
+    ctx.fillStyle = "#22d3ee";
+    ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(11, -2); ctx.lineTo(0, 12); ctx.lineTo(-11, -2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#a5f3fc";
+    ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(5, -2); ctx.lineTo(0, 2); ctx.lineTo(-5, -2); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  const w = Math.abs(Math.cos(c.spin * 0.7)) * 11 + 2;
+  ctx.fillStyle = "#b45309";
+  ctx.beginPath(); ctx.ellipse(c.x, c.y - 3 + bob, w, 11, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#facc15";
+  ctx.beginPath(); ctx.ellipse(c.x, c.y - 4 + bob, Math.max(1, w - 2), 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#fde68a";
+  ctx.fillRect(c.x - Math.max(1, w - 6) / 2, c.y - 9 + bob, Math.max(1, w - 6), 3);
+}
+
+function drawPlayer() {
+  const p = player;
+  const air = p.hop > 0 ? Math.sin((1 - p.hop / HOP_TIME) * Math.PI) : 0;
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.ellipse(p.x, p.y + 10, 14 - air * 5, 6 - air * 2, 0, 0, Math.PI * 2); ctx.fill();
+  const y = p.y - air * 26;
+  const s = 1 + air * 0.25;
+  ctx.save();
+  ctx.translate(p.x, y);
+  ctx.scale(s, s);
+  const step = Math.sin(p.walk * 2) * (Math.hypot(p.vx, p.vy) > 30 ? 3 : 0);
+  // legs
+  ctx.fillStyle = "#1e3a8a";
+  ctx.fillRect(-9, 4 + step, 7, 9);
+  ctx.fillRect(2, 4 - step, 7, 9);
+  // arms
+  ctx.fillStyle = "#facc15";
+  ctx.fillRect(-15, -6 - step, 5, 11);
+  ctx.fillRect(10, -6 + step, 5, 11);
+  // torso + head
+  Kit.brick(ctx, -11, -8, 22, 15, "#3b82f6", 3);
+  Kit.brick(ctx, -8, -22, 16, 14, "#facc15", 3);
+  // face looks where you're heading
+  const fx = p.face.x * 3, fy = Math.max(-1, p.face.y) * 2;
+  ctx.fillStyle = "#111827";
+  if (p.face.y > -0.7) {
+    ctx.fillRect(-5 + fx, -18 + fy, 3, 3);
+    ctx.fillRect(2 + fx, -18 + fy, 3, 3);
+    ctx.fillRect(-2 + fx, -13 + fy, 4, 1.5);
+  }
+  ctx.restore();
+}
+
+function text(str, x, y, size, color, align) {
+  ctx.font = `800 ${size}px ${FONT}`;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(0,0,0,.75)";
+  ctx.strokeText(str, x, y);
+  ctx.fillStyle = color || "#f2f4f5";
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  ctx.fillStyle = "#1a100c";
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-1, 1) * shake * 16, Kit.rand(-1, 1) * shake * 16);
+
+  // a lava moat glows around the arena
+  ctx.fillStyle = "#7a1f0f";
+  ctx.fillRect(GX - 10, GY - 10, COLS * TS + 20, ROWS * TS + 20);
+  ctx.fillStyle = "#c2361a";
+  ctx.fillRect(GX - 6, GY - 6, COLS * TS + 12, ROWS * TS + 12);
+  for (const t of tiles) drawTile(t);
+  // soft glow on lava tiles
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "rgba(255,120,40,.07)";
+  for (const t of tiles) if (t.s === LAVA) ctx.fillRect(GX + t.c * TS - 6, GY + t.r * TS - 6, TS + 12, TS + 12);
+  ctx.globalCompositeOperation = "source-over";
+
+  for (const c of coins) drawCoin(c);
+  if (alive) drawPlayer();
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const p of popups) {
+    ctx.globalAlpha = 1 - p.t / 0.9;
+    text(p.text, p.x, p.y - 16 - p.t * 30, 16, p.color);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // top bar
+  ctx.fillStyle = "#24140e";
+  ctx.fillRect(0, 0, W, GY - 14);
+  const items = [["TIME", time.toFixed(1)], ["WAVE", String(wave)], ["COINS", String(coinCount)]];
+  items.forEach(([k, v], i) => {
+    const x = 30 + i * 120;
+    ctx.font = `800 11px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#c4937a";
+    ctx.fillText(k, x, 15);
+    ctx.font = `900 20px ${FONT}`;
+    ctx.fillStyle = "#fff4e6";
+    ctx.fillText(v, x, 33);
+  });
+  // hop meter
+  const mx = W - 210, ready = player.cool <= 0;
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#c4937a";
+  ctx.fillText("HOP  (Space / right click)", mx, 15);
+  ctx.fillStyle = "#3a2018";
+  ctx.beginPath(); ctx.roundRect(mx, 26, 180, 14, 7); ctx.fill();
+  ctx.fillStyle = ready ? "#22c55e" : "#fb923c";
+  ctx.beginPath(); ctx.roundRect(mx, 26, 180 * (1 - player.cool / HOP_COOLDOWN), 14, 7); ctx.fill();
+  if (ready) { ctx.font = `900 11px ${FONT}`; ctx.fillStyle = "#06290f"; ctx.textAlign = "center"; ctx.fillText("READY", mx + 90, 33.5); }
+
+  if (banner && alive) {
+    ctx.globalAlpha = Math.min(1, banner.t * 2.5);
+    text(banner.text, W / 2, GY + 40, 30, "#ffd23f");
+    text(banner.sub, W / 2, GY + 72, 17);
+    ctx.globalAlpha = 1;
+  }
+}
+
+const game = Kit.loop(update, draw);
+reset();
+alive = false;
+draw();
+Kit.overlay(
+  "The Floor Is Lava",
+  "Tiles glow and crack, then turn to lava. Keep moving, stay on cool bricks and grab coins for bonus points.\nThe waves get faster and nastier the longer you last.\n\n" +
+  "Arrows / WASD to run (or hold the mouse button)\nSpace or right click to hop over lava",
+  "Play"
+).then(() => { reset(); game.start(); });
+</script>
+</body>
+</html>

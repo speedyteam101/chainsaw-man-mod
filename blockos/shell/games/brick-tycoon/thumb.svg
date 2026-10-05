@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs><pattern id="studs" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="13" cy="13" r="6" fill="#ffffff" fill-opacity=".04"/></pattern></defs>
+  <rect width="480" height="270" fill="#1a1e23"/><rect width="480" height="270" fill="url(#studs)"/>
+  <!-- droppers -->
+  <g stroke="#111" stroke-width="2">
+    <rect x="40" y="30" width="64" height="58" rx="8" fill="#c2410c"/>
+    <rect x="130" y="30" width="64" height="58" rx="8" fill="#9ca3af"/>
+    <rect x="220" y="30" width="64" height="58" rx="8" fill="#3b82f6"/>
+    <rect x="310" y="30" width="64" height="58" rx="8" fill="#facc15"/>
+  </g>
+  <g fill="#ffffff" fill-opacity=".25"><rect x="46" y="34" width="52" height="6" rx="3"/><rect x="136" y="34" width="52" height="6" rx="3"/><rect x="226" y="34" width="52" height="6" rx="3"/><rect x="316" y="34" width="52" height="6" rx="3"/></g>
+  <g fill="#4b5563"><path d="M40 88h64l-20 22h-24z"/><path d="M130 88h64l-20 22h-24z"/><path d="M220 88h64l-20 22h-24z"/><path d="M310 88h64l-20 22h-24z"/></g>
+  <g fill="#3f4650"><rect x="64" y="110" width="16" height="18"/><rect x="154" y="110" width="16" height="18"/><rect x="244" y="110" width="16" height="18"/><rect x="334" y="110" width="16" height="18"/></g>
+  <!-- falling bricks -->
+  <rect x="152" y="140" width="22" height="13" rx="3" fill="#9ca3af" stroke="#111" stroke-width="2"/>
+  <rect x="332" y="134" width="22" height="13" rx="3" fill="#facc15" stroke="#111" stroke-width="2"/>
+  <!-- belt -->
+  <rect x="14" y="170" width="390" height="26" rx="13" fill="#30363e"/>
+  <rect x="20" y="174" width="378" height="18" rx="9" fill="#1f2328"/>
+  <g stroke="#facc15" stroke-opacity=".45" stroke-width="3" fill="none">
+    <path d="M40 177l8 6-8 6"/><path d="M70 177l8 6-8 6"/><path d="M100 177l8 6-8 6"/><path d="M130 177l8 6-8 6"/><path d="M160 177l8 6-8 6"/>
+    <path d="M190 177l8 6-8 6"/><path d="M220 177l8 6-8 6"/><path d="M250 177l8 6-8 6"/><path d="M280 177l8 6-8 6"/><path d="M310 177l8 6-8 6"/><path d="M340 177l8 6-8 6"/><path d="M370 177l8 6-8 6"/>
+  </g>
+  <circle cx="27" cy="183" r="10" fill="#6b7280"/><circle cx="391" cy="183" r="10" fill="#6b7280"/>
+  <g fill="#2d333b"><rect x="60" y="196" width="10" height="40"/><rect x="200" y="196" width="10" height="40"/><rect x="340" y="196" width="10" height="40"/></g>
+  <!-- bricks riding -->
+  <g stroke="#111" stroke-width="2">
+    <rect x="80" y="154" width="26" height="16" rx="3" fill="#c2410c"/>
+    <rect x="180" y="154" width="26" height="16" rx="3" fill="#3b82f6"/>
+    <rect x="250" y="154" width="26" height="16" rx="3" fill="#c2410c"/>
+    <rect x="345" y="154" width="26" height="16" rx="3" fill="#facc15"/>
+  </g>
+  <!-- collector -->
+  <rect x="404" y="148" width="68" height="14" rx="4" fill="#22c55e" stroke="#0d3b20" stroke-width="2"/>
+  <rect x="408" y="160" width="60" height="70" rx="8" fill="#15803d" stroke="#0d3b20" stroke-width="2"/>
+  <rect x="414" y="164" width="48" height="8" fill="#0d3b20"/>
+  <g transform="translate(438 205)"><rect x="-14" y="-14" width="28" height="28" rx="6" fill="#bbf7d0"/><path d="M5 -8h-8a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8h-9 M0 -12v24" stroke="#15803d" stroke-width="3.5" fill="none"/></g>
+  <!-- coins flying -->
+  <g stroke="#a16207" stroke-width="2" fill="#facc15">
+    <circle cx="430" cy="118" r="10"/><circle cx="452" cy="90" r="8"/><circle cx="414" cy="80" r="7"/>
+  </g>
+  <!-- cash stack -->
+  <g stroke="#14532d" stroke-width="2">
+    <rect x="30" y="240" width="60" height="14" rx="3" fill="#22c55e"/><rect x="36" y="226" width="60" height="14" rx="3" fill="#4ade80"/><rect x="26" y="212" width="60" height="14" rx="3" fill="#22c55e"/>
+  </g>
+</svg>

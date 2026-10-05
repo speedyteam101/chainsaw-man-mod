@@ -1,0 +1,1 @@
+{"id":"sudoku","title":"Sudoku Blocks","genre":"Puzzle","color":"#3b82f6","description":"Fill every row, column and block with 1 to 9 in freshly generated puzzles with exactly one answer. Pencil marks, hints and three difficulties.","controls":"Click or Arrows to pick a cell, 1-9 to place, N pencil marks, U undo","scoreLabel":"Best time (s)","lowerIsBetter":true}

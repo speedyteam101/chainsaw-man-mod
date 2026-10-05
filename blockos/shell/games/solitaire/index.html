@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solitaire</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.gray { background: #4b5563; --sh: #374151; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "solitaire";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(980, 760);
+canvas.style.outline = "none";
+
+const CW = 104, CH = 146, GAPX = 30, LEFT = 36, TOP = 22, TAB_Y = 196;
+const BAR_Y = H - 46;
+const DOWN_OFF = 12, UP_OFF = 32;
+const RANKS = ["", "A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+const SUIT_COLORS = ["#1f2328", "#dc2626", "#dc2626", "#1f2328"]; // spades, hearts, diamonds, clubs
+const isRed = (c) => c.s === 1 || c.s === 2;
+const colX = (i) => LEFT + i * (CW + GAPX);
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft" || c === "KeyW" || c === "KeyA") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight" || c === "KeyS" || c === "KeyD") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- card art (pre-rendered) ---------- */
+function suitShape(g, s, cx, cy, r) {
+  g.beginPath();
+  if (s === 1) { // heart
+    g.moveTo(cx, cy + r * 0.9);
+    g.bezierCurveTo(cx - r * 1.7, cy - r * 0.2, cx - r * 0.8, cy - r * 1.45, cx, cy - r * 0.45);
+    g.bezierCurveTo(cx + r * 0.8, cy - r * 1.45, cx + r * 1.7, cy - r * 0.2, cx, cy + r * 0.9);
+    g.fill();
+  } else if (s === 2) { // diamond
+    g.moveTo(cx, cy - r);
+    g.lineTo(cx + r * 0.72, cy);
+    g.lineTo(cx, cy + r);
+    g.lineTo(cx - r * 0.72, cy);
+    g.closePath();
+    g.fill();
+  } else if (s === 0) { // spade
+    g.moveTo(cx, cy - r);
+    g.bezierCurveTo(cx - r * 1.7, cy + r * 0.05, cx - r * 0.8, cy + r * 1.05, cx, cy + r * 0.3);
+    g.bezierCurveTo(cx + r * 0.8, cy + r * 1.05, cx + r * 1.7, cy + r * 0.05, cx, cy - r);
+    g.fill();
+    g.beginPath();
+    g.moveTo(cx, cy + r * 0.2);
+    g.lineTo(cx - r * 0.4, cy + r);
+    g.lineTo(cx + r * 0.4, cy + r);
+    g.closePath();
+    g.fill();
+  } else { // club
+    for (const [dx, dy] of [[0, -0.48], [-0.5, 0.1], [0.5, 0.1]]) {
+      g.beginPath();
+      g.arc(cx + dx * r, cy + dy * r, r * 0.44, 0, Math.PI * 2);
+      g.fill();
+    }
+    g.beginPath();
+    g.moveTo(cx, cy);
+    g.lineTo(cx - r * 0.38, cy + r);
+    g.lineTo(cx + r * 0.38, cy + r);
+    g.closePath();
+    g.fill();
+  }
+}
+
+const PIPS = {
+  2: [[.5, .22], [.5, .78]],
+  3: [[.5, .22], [.5, .5], [.5, .78]],
+  4: [[.34, .22], [.66, .22], [.34, .78], [.66, .78]],
+  5: [[.34, .22], [.66, .22], [.5, .5], [.34, .78], [.66, .78]],
+  6: [[.34, .22], [.66, .22], [.34, .5], [.66, .5], [.34, .78], [.66, .78]],
+  7: [[.34, .22], [.66, .22], [.5, .36], [.34, .5], [.66, .5], [.34, .78], [.66, .78]],
+  8: [[.34, .22], [.66, .22], [.5, .36], [.34, .5], [.66, .5], [.5, .64], [.34, .78], [.66, .78]],
+  9: [[.34, .2], [.66, .2], [.34, .4], [.66, .4], [.5, .5], [.34, .6], [.66, .6], [.34, .8], [.66, .8]],
+  10: [[.34, .2], [.66, .2], [.5, .3], [.34, .4], [.66, .4], [.34, .6], [.66, .6], [.5, .7], [.34, .8], [.66, .8]],
+};
+
+function roundRectPath(g, x, y, w, h, r) {
+  g.beginPath();
+  g.roundRect(x, y, w, h, r);
+}
+
+function renderFace(s, r) {
+  const c = document.createElement("canvas");
+  c.width = CW; c.height = CH;
+  const g = c.getContext("2d");
+  roundRectPath(g, 0.5, 0.5, CW - 1, CH - 1, 9);
+  g.fillStyle = "#fbfbf8";
+  g.fill();
+  g.strokeStyle = "#9ca3af";
+  g.lineWidth = 1;
+  g.stroke();
+  const col = SUIT_COLORS[s];
+  g.fillStyle = col;
+  g.font = `800 22px ${FONT}`;
+  g.textAlign = "left";
+  g.textBaseline = "middle";
+  g.fillText(RANKS[r], 7, 16);
+  suitShape(g, s, CW - 16, 16, 9);
+  // bottom-right corner, upside down
+  g.save();
+  g.translate(CW, CH);
+  g.rotate(Math.PI);
+  g.fillText(RANKS[r], 7, 16);
+  suitShape(g, s, CW - 16, 16, 9);
+  g.restore();
+  if (r === 1) {
+    suitShape(g, s, CW / 2, CH / 2 + 2, 26);
+  } else if (r <= 10) {
+    const top = 24, hgt = CH - 48, pr = r >= 9 ? 8 : 9;
+    for (const [px, py] of PIPS[r]) {
+      const y = top + py * hgt;
+      if (py > 0.5) {
+        g.save();
+        g.translate(px * CW, y);
+        g.rotate(Math.PI);
+        suitShape(g, s, 0, 0, pr);
+        g.restore();
+      } else suitShape(g, s, px * CW, y, pr);
+    }
+  } else {
+    drawFigure(g, s, r);
+  }
+  return c;
+}
+
+// Jack, Queen and King are little block people.
+function drawFigure(g, s, r) {
+  const col = SUIT_COLORS[s] === "#dc2626" ? ["#ef4444", "#b91c1c"] : ["#3b82f6", "#1d4ed8"];
+  const x = 22, y = 32, w = CW - 44, h = CH - 64;
+  g.fillStyle = s === 1 || s === 2 ? "#fff1f2" : "#eff6ff";
+  roundRectPath(g, x, y, w, h, 6);
+  g.fill();
+  g.strokeStyle = col[1];
+  g.lineWidth = 2;
+  g.stroke();
+  const cx = CW / 2;
+  // body
+  g.fillStyle = col[0];
+  g.fillRect(cx - 18, y + 44, 36, 30);
+  g.fillStyle = col[1];
+  g.fillRect(cx - 18, y + 58, 36, 4);
+  // arms
+  g.fillStyle = col[0];
+  g.fillRect(cx - 26, y + 46, 8, 22);
+  g.fillRect(cx + 18, y + 46, 8, 22);
+  // head
+  g.fillStyle = "#facc15";
+  g.fillRect(cx - 12, y + 20, 24, 24);
+  g.fillStyle = "#1f2328";
+  g.fillRect(cx - 7, y + 28, 4, 4);
+  g.fillRect(cx + 3, y + 28, 4, 4);
+  g.fillRect(cx - 5, y + 37, 10, 2);
+  // headwear
+  if (r === 13) { // crown
+    g.fillStyle = "#f59e0b";
+    g.beginPath();
+    g.moveTo(cx - 14, y + 20); g.lineTo(cx - 14, y + 6); g.lineTo(cx - 7, y + 13); g.lineTo(cx, y + 4);
+    g.lineTo(cx + 7, y + 13); g.lineTo(cx + 14, y + 6); g.lineTo(cx + 14, y + 20);
+    g.closePath();
+    g.fill();
+  } else if (r === 12) { // tiara and hair
+    g.fillStyle = "#92400e";
+    g.fillRect(cx - 14, y + 18, 4, 22);
+    g.fillRect(cx + 10, y + 18, 4, 22);
+    g.fillStyle = "#e5e7eb";
+    g.beginPath();
+    g.moveTo(cx - 10, y + 20); g.lineTo(cx, y + 10); g.lineTo(cx + 10, y + 20);
+    g.closePath();
+    g.fill();
+  } else { // cap
+    g.fillStyle = col[1];
+    g.fillRect(cx - 13, y + 13, 26, 9);
+    g.fillRect(cx + 4, y + 18, 14, 4);
+  }
+  suitShape(g, s, cx, y + 58, 7);
+  g.fillStyle = "#fff";
+  // legs
+  g.fillStyle = "#374151";
+  g.fillRect(cx - 14, y + 74, 11, 6);
+  g.fillRect(cx + 3, y + 74, 11, 6);
+}
+
+function renderBack() {
+  const c = document.createElement("canvas");
+  c.width = CW; c.height = CH;
+  const g = c.getContext("2d");
+  roundRectPath(g, 0.5, 0.5, CW - 1, CH - 1, 9);
+  g.fillStyle = "#f2f4f5";
+  g.fill();
+  roundRectPath(g, 6, 6, CW - 12, CH - 12, 6);
+  g.fillStyle = "#1d4ed8";
+  g.fill();
+  g.save();
+  g.clip();
+  // brick wall pattern
+  const bw = 22, bh = 12;
+  for (let row = 0; row * bh < CH; row++) {
+    const off = row % 2 ? bw / 2 : 0;
+    for (let x = -bw; x < CW + bw; x += bw) {
+      g.fillStyle = (row + Math.floor((x + off) / bw)) % 3 === 0 ? "#2563eb" : "#3b82f6";
+      g.fillRect(x + off + 1, 6 + row * bh + 1, bw - 2, bh - 2);
+      g.fillStyle = "rgba(255,255,255,.18)";
+      g.fillRect(x + off + 2, 6 + row * bh + 2, bw - 4, 2);
+    }
+  }
+  g.restore();
+  // center stud
+  g.fillStyle = "#facc15";
+  g.beginPath();
+  g.arc(CW / 2, CH / 2, 14, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "rgba(255,255,255,.4)";
+  g.beginPath();
+  g.arc(CW / 2 - 3, CH / 2 - 3, 6, 0, Math.PI * 2);
+  g.fill();
+  return c;
+}
+
+const FACES = [];
+for (let s = 0; s < 4; s++) { FACES[s] = []; for (let r = 1; r <= 13; r++) FACES[s][r] = renderFace(s, r); }
+const BACK = renderBack();
+
+/* ---------- state ---------- */
+let drawCount = 1;
+let cards = [];         // all 52 card objects
+let stock, waste, found, tab;
+let score, moves, time, started, history;
+let phase = "menu";     // menu | play | auto | won | bounce
+let drag = null, hint = null, autoT = 0, toastMsg = null, toastT = 0;
+let bounce = null;      // win animation state
+let hoverBtn = null;
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function deal() {
+  cards = [];
+  let id = 0;
+  for (let s = 0; s < 4; s++) for (let r = 1; r <= 13; r++) cards.push({ id: id++, s, r, up: false, x: colX(0), y: TOP, delay: 0, flipT: 0 });
+  const deck = shuffle(cards.slice());
+  tab = [[], [], [], [], [], [], []];
+  let k = 0, order = 0;
+  for (let row = 0; row < 7; row++) {
+    for (let col = row; col < 7; col++) {
+      const c = deck[k++];
+      c.up = col === row;
+      c.delay = order++ * 0.035;
+      tab[col].push(c);
+    }
+  }
+  stock = deck.slice(k);
+  waste = [];
+  found = [[], [], [], []];
+  score = 0; moves = 0; time = 0; started = false;
+  history = [];
+  drag = null; hint = null; bounce = null;
+  phase = "play";
+  layout();
+  updateHud();
+  Kit.sfx("jump");
+}
+
+function fmtTime(s) {
+  s = Math.floor(s);
+  return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+}
+function updateHud() {
+  Kit.hud(`Score ${score}<small>${fmtTime(time)} - ${moves} moves - Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+/* ---------- layout ---------- */
+function tabOffsets(col) {
+  const pile = tab[col];
+  let total = 0;
+  for (let i = 0; i < pile.length - 1; i++) total += pile[i].up ? UP_OFF : DOWN_OFF;
+  const room = BAR_Y - 12 - CH - TAB_Y;
+  const k = total > room ? room / total : 1;
+  const ys = [];
+  let y = TAB_Y;
+  for (let i = 0; i < pile.length; i++) {
+    ys.push(y);
+    y += (pile[i].up ? UP_OFF : DOWN_OFF) * k;
+  }
+  return ys;
+}
+
+// Sets every card's target position (tx, ty) and draw order (z).
+function layout() {
+  let z = 0;
+  stock.forEach((c) => { c.tx = colX(0); c.ty = TOP; c.z = z++; });
+  const fanStart = drawCount === 3 ? Math.max(0, waste.length - 3) : waste.length;
+  waste.forEach((c, i) => {
+    const k = i >= fanStart ? i - fanStart : 0;
+    c.tx = colX(1) + k * 24; c.ty = TOP; c.z = z++;
+  });
+  found.forEach((pile, s) => pile.forEach((c) => { c.tx = colX(3 + s); c.ty = TOP; c.z = z++; }));
+  tab.forEach((pile, col) => {
+    const ys = tabOffsets(col);
+    pile.forEach((c, i) => { c.tx = colX(col); c.ty = ys[i]; c.z = z++; });
+  });
+}
+
+/* ---------- rules ---------- */
+const canFound = (c) => found[c.s].length === c.r - 1;
+function canTab(c, col) {
+  const pile = tab[col];
+  if (!pile.length) return c.r === 13;
+  const top = pile[pile.length - 1];
+  return top.up && isRed(top) !== isRed(c) && top.r === c.r + 1;
+}
+
+function snapshot() {
+  return {
+    stock: stock.map((c) => c.id), waste: waste.map((c) => c.id),
+    found: found.map((p) => p.map((c) => c.id)), tab: tab.map((p) => p.map((c) => c.id)),
+    up: cards.map((c) => c.up), score, moves,
+  };
+}
+function pushHistory() { history.push(snapshot()); if (history.length > 400) history.shift(); }
+
+function undo() {
+  if (phase !== "play" || !history.length) return;
+  const h = history.pop();
+  const byId = (id) => cards[id];
+  stock = h.stock.map(byId); waste = h.waste.map(byId);
+  found = h.found.map((p) => p.map(byId)); tab = h.tab.map((p) => p.map(byId));
+  cards.forEach((c, i) => { if (c.up !== h.up[i]) c.flipT = 0.2; c.up = h.up[i]; });
+  score = h.score; moves = h.moves + 1;
+  hint = null;
+  layout();
+  updateHud();
+  Kit.sfx("jump");
+}
+
+function startClock() { started = true; }
+
+function drawFromStock() {
+  if (phase !== "play") return;
+  startClock();
+  hint = null;
+  if (!stock.length) {
+    if (!waste.length) return;
+    pushHistory();
+    stock = waste.reverse();
+    stock.forEach((c) => { c.up = false; });
+    waste = [];
+    moves++;
+    Kit.sfx("hit");
+  } else {
+    pushHistory();
+    const n = Math.min(drawCount, stock.length);
+    for (let i = 0; i < n; i++) {
+      const c = stock.pop();
+      c.up = true;
+      c.flipT = 0.2;
+      c.delay = i * 0.06;
+      waste.push(c);
+    }
+    moves++;
+    Kit.sfx("click");
+  }
+  layout();
+  updateHud();
+}
+
+// Locates a card: { type: "waste" | "found" | "tab" | "stock", pile, index, col }
+function where(c) {
+  let i = waste.indexOf(c);
+  if (i >= 0) return { type: "waste", pile: waste, index: i };
+  for (let s = 0; s < 4; s++) { i = found[s].indexOf(c); if (i >= 0) return { type: "found", pile: found[s], index: i, col: s }; }
+  for (let col = 0; col < 7; col++) { i = tab[col].indexOf(c); if (i >= 0) return { type: "tab", pile: tab[col], index: i, col }; }
+  return { type: "stock", pile: stock, index: stock.indexOf(c) };
+}
+
+// Moves `stackCards` (top card first) from their pile to a destination. Returns true if done.
+function moveTo(stackCards, dest) {
+  const from = where(stackCards[0]);
+  pushHistory();
+  from.pile.splice(from.index, stackCards.length);
+  let gained = 0;
+  if (dest.type === "found") {
+    found[dest.col].push(stackCards[0]);
+    gained += from.type === "found" ? 0 : 10;
+    Kit.sfx("coin");
+  } else {
+    tab[dest.col].push(...stackCards);
+    if (from.type === "waste") gained += 5;
+    if (from.type === "found") gained -= 15;
+    Kit.sfx("click");
+  }
+  if (from.type === "tab" && from.pile.length) {
+    const top = from.pile[from.pile.length - 1];
+    if (!top.up) { top.up = true; top.flipT = 0.2; gained += 5; }
+  }
+  score = Math.max(0, score + gained);
+  moves++;
+  startClock();
+  hint = null;
+  layout();
+  updateHud();
+  checkEnd();
+  return true;
+}
+
+// Click-to-move: foundation first, then a tableau column.
+function autoMove(stackCards) {
+  const c = stackCards[0];
+  const from = where(c);
+  if (stackCards.length === 1 && from.type !== "found" && canFound(c)) return moveTo(stackCards, { type: "found", col: c.s });
+  const candidates = [];
+  for (let col = 0; col < 7; col++) {
+    if (from.type === "tab" && from.col === col) continue;
+    if (!canTab(c, col)) continue;
+    // moving a king that already sits at the bottom of a column to an empty one is pointless
+    if (!tab[col].length && from.type === "tab" && from.index === 0) continue;
+    candidates.push(col);
+  }
+  candidates.sort((a, b) => (tab[b].length ? 1 : 0) - (tab[a].length ? 1 : 0));
+  if (candidates.length) return moveTo(stackCards, { type: "tab", col: candidates[0] });
+  return false;
+}
+
+function allClear() {
+  return !stock.length && !waste.length && tab.every((p) => p.every((c) => c.up));
+}
+
+function checkEnd() {
+  if (found.every((p) => p.length === 13)) return win();
+  if (phase === "play" && allClear() && tab.some((p) => p.length)) {
+    phase = "auto";
+    autoT = 0.3;
+    toast("Auto finishing...");
+  }
+}
+
+function autoStep() {
+  let best = null;
+  for (let col = 0; col < 7; col++) {
+    const p = tab[col];
+    if (!p.length) continue;
+    const c = p[p.length - 1];
+    if (canFound(c) && (!best || c.r < best.r)) best = c;
+  }
+  if (!best) { phase = "play"; return; }
+  const from = where(best);
+  from.pile.splice(from.index, 1);
+  found[best.s].push(best);
+  score += 10;
+  moves++;
+  Kit.sfx("coin");
+  layout();
+  updateHud();
+  if (found.every((p) => p.length === 13)) win();
+}
+
+function win() {
+  phase = "won";
+  const secs = Math.max(1, Math.floor(time));
+  const bonus = Math.round(36000 / Math.max(30, secs));
+  score += bonus;
+  const best = Kit.finish(ID, score);
+  updateHud();
+  Kit.sfx("win");
+  setTimeout(() => startBounce(bonus, best, secs), 700);
+}
+
+function toast(msg) { toastMsg = msg; toastT = 1.6; }
+
+/* ---------- win animation: bouncing cards that leave trails ---------- */
+function startBounce(bonus, best, secs) {
+  phase = "bounce";
+  const queue = [];
+  for (let r = 13; r >= 1; r--) for (let s = 0; s < 4; s++) queue.push(cards.find((c) => c.s === s && c.r === r));
+  bounce = { queue, live: [], t: 0, info: { bonus, best, secs }, done: false };
+  drawScene(); // paint once; the animation draws on top without clearing
+}
+
+function updateBounce(dt) {
+  const b = bounce;
+  b.t += dt;
+  if (b.queue.length && b.t > 0.16) {
+    b.t = 0;
+    const c = b.queue.shift();
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    b.live.push({ c, x: c.tx, y: c.ty, vx: dir * Kit.rand(140, 380), vy: Kit.rand(-420, -60) });
+  }
+  for (const p of b.live) {
+    p.vy += 1500 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.y > H - CH) { p.y = H - CH; p.vy = -p.vy * 0.78; }
+  }
+  b.live = b.live.filter((p) => p.x > -CW && p.x < W);
+  if (!b.queue.length && !b.live.length) endBounce();
+}
+
+async function endBounce() {
+  if (!bounce || bounce.done) return;
+  bounce.done = true;
+  const { bonus, best, secs } = bounce.info;
+  await Kit.overlay("You win!", `Score: ${score} (time bonus +${bonus})\nTime: ${fmtTime(secs)}   Moves: ${moves}\n\nBest score: ${best}`, "New game");
+  bounce = null;
+  menu();
+}
+
+/* ---------- hints ---------- */
+function findHint() {
+  // 1. anything to a foundation
+  const tops = [];
+  if (waste.length) tops.push(waste[waste.length - 1]);
+  tab.forEach((p) => { if (p.length) tops.push(p[p.length - 1]); });
+  for (const c of tops) if (canFound(c)) return { cards: [c], dest: { type: "found", col: c.s } };
+  // 2. tableau stacks that uncover a face-down card or empty a column for a king
+  for (let col = 0; col < 7; col++) {
+    const p = tab[col];
+    const first = p.findIndex((c) => c.up);
+    if (first < 0) continue;
+    const c = p[first];
+    for (let to = 0; to < 7; to++) {
+      if (to === col || !canTab(c, to)) continue;
+      if (!tab[to].length && first === 0) continue;
+      return { cards: p.slice(first), dest: { type: "tab", col: to } };
+    }
+  }
+  // 3. waste to tableau
+  if (waste.length) {
+    const c = waste[waste.length - 1];
+    for (let to = 0; to < 7; to++) if (canTab(c, to)) return { cards: [c], dest: { type: "tab", col: to } };
+  }
+  if (stock.length || waste.length) return { stock: true };
+  return null;
+}
+
+function showHint() {
+  if (phase !== "play") return;
+  const h = findHint();
+  if (!h) { toast("No moves left - try Undo or New"); Kit.sfx("hit"); return; }
+  hint = { ...h, t: 1.4 };
+  Kit.sfx("jump");
+}
+
+/* ---------- pointer ---------- */
+function hitCard(x, y) {
+  // search from the top of the draw order down
+  const sorted = cards.filter((c) => where(c).type !== "stock").sort((a, b) => b.z - a.z);
+  for (const c of sorted) {
+    const w = where(c);
+    // only the top waste card is playable
+    if (w.type === "waste" && w.index !== waste.length - 1) continue;
+    if (w.type === "found" && w.index !== w.pile.length - 1) continue;
+    if (x >= c.tx && x < c.tx + CW && y >= c.ty && y < c.ty + CH) return c;
+  }
+  return null;
+}
+
+const BUTTONS = [
+  { id: "new", label: "New (N)", x: LEFT, w: 120, color: "#12b76a" },
+  { id: "undo", label: "Undo (U)", x: LEFT + 132, w: 120, color: "#4b5563" },
+  { id: "hint", label: "Hint (H)", x: LEFT + 264, w: 120, color: "#ca8a04" },
+];
+function btnAt(x, y) {
+  if (y < BAR_Y + 4 || y > BAR_Y + 40) return null;
+  return BUTTONS.find((b) => x >= b.x && x < b.x + b.w) || null;
+}
+function pressBtn(id) {
+  if (id === "new") { Kit.sfx("click"); menu(); }
+  else if (id === "undo") undo();
+  else if (id === "hint") showHint();
+}
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("mousedown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (phase === "bounce") { bounce.queue = []; bounce.live = []; endBounce(); return; }
+  const b = btnAt(p.x, p.y);
+  if (b && phase === "play") return pressBtn(b.id);
+  if (phase !== "play") return;
+  if (p.x >= colX(0) && p.x < colX(0) + CW && p.y >= TOP && p.y < TOP + CH) return drawFromStock();
+  const c = hitCard(p.x, p.y);
+  if (!c || !c.up) return;
+  const w = where(c);
+  const stack = w.type === "tab" ? w.pile.slice(w.index) : [c];
+  if (e.button === 2) { // right click: send to foundation if possible
+    if (stack.length === 1 && canFound(c)) moveTo(stack, { type: "found", col: c.s });
+    return;
+  }
+  drag = { cards: stack, ox: p.x - c.tx, oy: p.y - c.ty, sx: p.x, sy: p.y, moved: false, x: p.x, y: p.y };
+});
+addEventListener("mousemove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  hoverBtn = phase === "play" ? btnAt(p.x, p.y) : null;
+  if (!drag) {
+    canvas.style.cursor = hoverBtn || (phase === "play" && hitCard(p.x, p.y)?.up) ? "pointer" : "default";
+    return;
+  }
+  drag.x = p.x; drag.y = p.y;
+  if (!drag.moved && Math.hypot(p.x - drag.sx, p.y - drag.sy) > 5) drag.moved = true;
+  canvas.style.cursor = "grabbing";
+});
+addEventListener("mouseup", () => {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (phase !== "play") return;
+  if (!d.moved) {
+    if (!autoMove(d.cards)) { d.cards[0].shake = 0.3; Kit.sfx("hit"); }
+    return;
+  }
+  // drop: choose the legal target that overlaps the dragged card the most
+  const rx = d.x - d.ox, ry = d.y - d.oy;
+  const c = d.cards[0];
+  const from = where(c);
+  let best = null, bestArea = 0;
+  const consider = (dest, x, y, w, h) => {
+    const ox = Math.max(0, Math.min(rx + CW, x + w) - Math.max(rx, x));
+    const oy = Math.max(0, Math.min(ry + CH, y + h) - Math.max(ry, y));
+    const area = ox * oy;
+    if (area > bestArea) { bestArea = area; best = dest; }
+  };
+  if (d.cards.length === 1 && canFound(c) && from.type !== "found") consider({ type: "found", col: c.s }, colX(3 + c.s), TOP, CW, CH);
+  for (let col = 0; col < 7; col++) {
+    if (from.type === "tab" && from.col === col) continue;
+    if (!canTab(c, col)) continue;
+    const ys = tabOffsets(col);
+    const bottom = (ys.length ? ys[ys.length - 1] : TAB_Y) + CH;
+    consider({ type: "tab", col }, colX(col), TAB_Y, CW, bottom - TAB_Y);
+  }
+  if (best) moveTo(d.cards, best);
+  else { layout(); Kit.sfx("hit"); }
+});
+
+Kit.onKey((code, e) => {
+  if (phase === "bounce" && (code === "Enter" || code === "Space")) { bounce.queue = []; bounce.live = []; endBounce(); return; }
+  if (phase !== "play") return;
+  if (code === "Space" || code === "Enter" || code === "KeyD") drawFromStock();
+  else if (code === "KeyU" || code === "KeyZ" || code === "Backspace") { e.preventDefault(); undo(); }
+  else if (code === "KeyH") showHint();
+  else if (code === "KeyN") menu();
+});
+
+/* ---------- loop ---------- */
+function update(dt) {
+  if (phase === "bounce") { updateBounce(dt); return; }
+  if (phase === "play" && started) {
+    const before = Math.floor(time);
+    time += dt;
+    if (Math.floor(time) !== before) updateHud();
+  }
+  if (phase === "auto") {
+    autoT -= dt;
+    if (autoT <= 0) { autoT = 0.09; autoStep(); }
+  }
+  const dragging = new Set(drag && drag.moved ? drag.cards : []);
+  for (const c of cards) {
+    if (c.flipT > 0) c.flipT = Math.max(0, c.flipT - dt);
+    if (c.shake > 0) c.shake = Math.max(0, c.shake - dt);
+    if (dragging.has(c)) continue;
+    if (c.delay > 0) { c.delay -= dt; continue; }
+    const k = Math.min(1, dt * 16);
+    c.x += (c.tx - c.x) * k;
+    c.y += (c.ty - c.y) * k;
+    if (Math.abs(c.tx - c.x) < 0.5) c.x = c.tx;
+    if (Math.abs(c.ty - c.y) < 0.5) c.y = c.ty;
+  }
+  if (drag && drag.moved) {
+    drag.cards.forEach((c, i) => { c.x = drag.x - drag.ox; c.y = drag.y - drag.oy + i * UP_OFF; });
+  }
+  if (hint) { hint.t -= dt; if (hint.t <= 0) hint = null; }
+  if (toastT > 0) toastT -= dt;
+}
+
+function drawCard(c) {
+  let x = c.x, y = c.y;
+  if (c.shake > 0) x += Math.sin(c.shake * 60) * 5;
+  // flip: squash horizontally, swap face half way
+  let sx = 1, showUp = c.up;
+  if (c.flipT > 0) {
+    const t = c.flipT / 0.2; // 1 -> 0
+    sx = Math.abs(1 - 2 * t);
+    if (t > 0.5) showUp = !c.up;
+  }
+  ctx.save();
+  ctx.translate(x + CW / 2, y);
+  ctx.scale(Math.max(0.02, sx), 1);
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath();
+  ctx.roundRect(-CW / 2 + 1, 2, CW, CH, 9);
+  ctx.fill();
+  ctx.drawImage(showUp ? FACES[c.s][c.r] : BACK, -CW / 2, 0);
+  ctx.restore();
+}
+
+function slot(x, y, label, suit) {
+  ctx.strokeStyle = "rgba(255,255,255,.22)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.beginPath();
+  ctx.roundRect(x + 1, y + 1, CW - 2, CH - 2, 9);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  if (suit !== undefined) {
+    ctx.fillStyle = "rgba(255,255,255,.14)";
+    suitShape(ctx, suit, x + CW / 2, y + CH / 2, 22);
+  }
+  if (label) {
+    ctx.fillStyle = "rgba(255,255,255,.3)";
+    ctx.font = `800 15px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, x + CW / 2, y + CH / 2);
+  }
+}
+
+function drawFelt() {
+  ctx.fillStyle = "#14532d";
+  ctx.fillRect(0, 0, W, H);
+  // baseplate studs
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 15; y < H; y += 30) for (let x = 15; x < W; x += 30) { ctx.beginPath(); ctx.arc(x, y, 6, 0, 7); ctx.fill(); }
+}
+
+function drawScene() {
+  drawFelt();
+  // empty slots
+  slot(colX(0), TOP, stock.length ? "" : (waste.length ? "Recycle" : ""));
+  if (!stock.length && waste.length) {
+    ctx.strokeStyle = "rgba(255,255,255,.35)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(colX(0) + CW / 2, TOP + CH / 2 + 28, 14, 0.3, Math.PI * 1.7);
+    ctx.stroke();
+  }
+  slot(colX(1), TOP);
+  for (let s = 0; s < 4; s++) slot(colX(3 + s), TOP, "", s);
+  for (let col = 0; col < 7; col++) slot(colX(col), TAB_Y, "K");
+  // stock count
+  // cards: settled ones in order, moving ones on top
+  const dragging = new Set(drag && drag.moved ? drag.cards : []);
+  const moving = [];
+  const sorted = cards.slice().sort((a, b) => a.z - b.z);
+  for (const c of sorted) {
+    if (dragging.has(c)) continue;
+    const settled = Math.abs(c.x - c.tx) < 1 && Math.abs(c.y - c.ty) < 1;
+    if (settled) drawCard(c); else moving.push(c);
+  }
+  moving.forEach(drawCard);
+  if (drag && drag.moved) drag.cards.forEach(drawCard);
+  if (stock.length) {
+    Kit.brick(ctx, colX(0) + CW - 34, TOP + CH - 26, 30, 22, "#1f2328", 6);
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 13px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(stock.length), colX(0) + CW - 19, TOP + CH - 15);
+  }
+  // hint highlight
+  if (hint) {
+    const a = 0.5 + 0.5 * Math.sin(hint.t * 12);
+    ctx.strokeStyle = `rgba(250,204,21,${0.4 + a * 0.6})`;
+    ctx.lineWidth = 4;
+    const boxes = [];
+    if (hint.stock) boxes.push([colX(0), TOP, CH]);
+    else {
+      const c0 = hint.cards[0], cl = hint.cards[hint.cards.length - 1];
+      boxes.push([c0.tx, c0.ty, cl.ty + CH - c0.ty]);
+      if (hint.dest.type === "found") boxes.push([colX(3 + hint.dest.col), TOP, CH]);
+      else {
+        const ys = tabOffsets(hint.dest.col);
+        boxes.push([colX(hint.dest.col), ys.length ? ys[ys.length - 1] : TAB_Y, CH]);
+      }
+    }
+    for (const [x, y, h] of boxes) { ctx.beginPath(); ctx.roundRect(x - 3, y - 3, CW + 6, h + 6, 11); ctx.stroke(); }
+  }
+  // bottom bar
+  for (const b of BUTTONS) {
+    const hot = hoverBtn && hoverBtn.id === b.id;
+    Kit.brick(ctx, b.x, BAR_Y + 4 - (hot ? 2 : 0), b.w, 36, b.color, 8);
+    ctx.fillStyle = "#fff";
+    ctx.font = `800 15px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(b.label, b.x + b.w / 2, BAR_Y + 22 - (hot ? 2 : 0));
+  }
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  ctx.font = `700 14px ${FONT}`;
+  ctx.textAlign = "right";
+  ctx.fillText(`Draw ${drawCount}   -   Space draws, click a card to auto-move, drag to place`, W - LEFT, BAR_Y + 22);
+  if (toastT > 0 && toastMsg) {
+    ctx.globalAlpha = Math.min(1, toastT * 3);
+    ctx.font = `800 20px ${FONT}`;
+    const w = ctx.measureText(toastMsg).width + 40;
+    Kit.brick(ctx, W / 2 - w / 2, TAB_Y - 40, w, 34, "#f2f4f5", 8);
+    ctx.fillStyle = "#1f2328";
+    ctx.textAlign = "center";
+    ctx.fillText(toastMsg, W / 2, TAB_Y - 22);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function draw() {
+  if (phase === "bounce" && bounce) {
+    for (const p of bounce.live) ctx.drawImage(FACES[p.c.s][p.c.r], p.x, p.y);
+    return;
+  }
+  drawScene();
+}
+
+async function menu() {
+  phase = "menu";
+  drag = null;
+  drawCount = await choose("Solitaire",
+    "Build four piles from Ace to King, one per suit.\nIn the columns, stack cards down in alternating colours. Only Kings go in empty columns.\n\n" +
+    "Drag cards, or click one to auto-move it.\nSpace: draw   U: undo   H: hint   N: new game",
+    [
+      { label: "Draw 1", value: 1, hint: "relaxed", selected: drawCount === 1 },
+      { label: "Draw 3", value: 3, color: "orange", hint: "classic challenge", selected: drawCount === 3 },
+    ]);
+  deal();
+}
+
+// show a dealt table behind the first menu
+deal();
+phase = "menu";
+cards.forEach((c) => { c.x = c.tx; c.y = c.ty; c.delay = 0; });
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

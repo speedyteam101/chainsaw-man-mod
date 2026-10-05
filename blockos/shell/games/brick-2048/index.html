@@ -140,7 +140,6 @@ function canMove() {
 async function celebrate() {
   busy = true;
   Kit.sfx("win");
-  Kit.finish(ID, score);
   await Kit.overlay("2048!", `You stacked a 2048 brick!\nScore so far: ${score}\n\nKeep going for an even bigger brick.`, "Keep going");
   busy = false;
 }

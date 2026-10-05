@@ -1,0 +1,1 @@
+{"id":"mine-sweep","title":"Mine Sweep","genre":"Puzzle","color":"#617390","description":"Open every brick that is not hiding a mine, using the numbers as clues. Three board sizes, a safe first click and flags to mark danger.","controls":"Left click open, right click flag, click a number to chord; arrows + Space / F also work","scoreLabel":"Best time (s)","lowerIsBetter":true}

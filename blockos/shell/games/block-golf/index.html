@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Block Golf</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "block-golf";
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+
+const BALL_R = 7;
+const CUP_R = 11;
+const MAX_SPEED = 900;     // px/s at full power
+const MAX_PULL = 160;      // drag distance for full power
+const MAX_STROKES = 10;    // pick up after this many
+
+// Each hole: field rect, tee, cup, and optional walls / sand / water / slopes / movers.
+// Slopes are [x, y, w, h, ax, ay] (constant push). Movers oscillate around (cx, cy) by (ax, ay).
+const HOLES = [
+  { par: 2, field: [60, 120, 840, 300], tee: [140, 270], cup: [820, 270],
+    walls: [[430, 120, 24, 85], [430, 335, 24, 85]] },
+  { par: 4, field: [60, 70, 840, 430], tee: [130, 440], cup: [830, 140],
+    walls: [[300, 180, 24, 320], [560, 70, 24, 300]],
+    sand: [[690, 300, 130, 110], [120, 90, 120, 60]] },
+  { par: 3, field: [60, 70, 840, 430], tee: [130, 285], cup: [835, 285],
+    water: [[330, 70, 300, 150], [330, 350, 300, 150]],
+    slopes: [[330, 220, 300, 130, 0, 150]],
+    sand: [[735, 200, 34, 170]] },
+  { par: 3, field: [60, 150, 840, 240], tee: [120, 270], cup: [845, 270],
+    movers: [
+      { cx: 330, cy: 270, w: 26, h: 100, ax: 0, ay: 70, speed: 1.6, phase: 0 },
+      { cx: 520, cy: 270, w: 26, h: 100, ax: 0, ay: 70, speed: 1.6, phase: Math.PI },
+      { cx: 710, cy: 270, w: 26, h: 100, ax: 0, ay: 70, speed: 2.2, phase: 1 },
+    ] },
+  { par: 3, field: [60, 70, 840, 430], tee: [130, 420], cup: [800, 125],
+    walls: [[60, 70, 560, 250], [760, 400, 40, 40]],
+    sand: [[640, 70, 90, 90]],
+    slopes: [[640, 170, 260, 120, 0, 130]] },
+  { par: 3, field: [60, 70, 840, 430], tee: [130, 285], cup: [745, 285],
+    water: [[380, 70, 520, 130], [380, 370, 520, 130], [380, 200, 240, 50], [380, 320, 240, 50], [830, 200, 70, 170]],
+    walls: [[250, 170, 24, 60], [250, 340, 24, 60]] },
+  { par: 5, field: [60, 70, 840, 430], tee: [150, 130], cup: [820, 130],
+    walls: [[260, 70, 24, 330], [480, 170, 24, 330], [700, 70, 24, 330]],
+    slopes: [[284, 250, 196, 150, 0, 140]],
+    sand: [[530, 420, 130, 80]] },
+  { par: 3, field: [60, 70, 840, 430], tee: [130, 285], cup: [815, 285],
+    walls: [[720, 190, 180, 20], [720, 360, 180, 20], [880, 210, 20, 150]],
+    movers: [
+      { cx: 690, cy: 285, w: 20, h: 70, ax: 0, ay: 95, speed: 2.1, phase: 0 },
+      { cx: 420, cy: 165, w: 120, h: 22, ax: 130, ay: 0, speed: 1.3, phase: 0 },
+      { cx: 420, cy: 405, w: 120, h: 22, ax: 130, ay: 0, speed: 1.3, phase: Math.PI },
+    ] },
+  { par: 4, field: [60, 70, 840, 430], tee: [120, 450], cup: [835, 115],
+    walls: [[600, 70, 24, 170], [740, 180, 160, 24]],
+    water: [[290, 70, 170, 190]],
+    sand: [[520, 390, 150, 110]],
+    slopes: [[260, 300, 300, 110, 150, 0]],
+    movers: [{ cx: 690, cy: 300, w: 22, h: 110, ax: 0, ay: 95, speed: 1.7, phase: 0.5 }] },
+];
+
+let holeIdx, hole, ball, strokes, card, state, time, aim, dragging, lastShot, msg, msgT, sinkT, particles, ripples;
+
+function startRound() {
+  holeIdx = 0;
+  card = [];
+  loadHole();
+}
+
+function loadHole() {
+  hole = HOLES[holeIdx];
+  ball = { x: hole.tee[0], y: hole.tee[1], vx: 0, vy: 0, rest: 0, moving: false, scale: 1, trail: [] };
+  strokes = 0;
+  state = "aim";
+  aim = { angle: Math.atan2(hole.cup[1] - hole.tee[1], hole.cup[0] - hole.tee[0]), power: 0.5 };
+  dragging = null;
+  lastShot = { x: ball.x, y: ball.y };
+  particles = [];
+  ripples = [];
+  msg = `Hole ${holeIdx + 1}  -  Par ${hole.par}`;
+  msgT = 2;
+  updateHud();
+}
+
+function total() { return card.reduce((a, c) => a + c, 0); }
+function parSoFar(n) { return HOLES.slice(0, n).reduce((a, h) => a + h.par, 0); }
+function fmtPar(d) { return d === 0 ? "E" : d > 0 ? "+" + d : String(d); }
+
+function updateHud() {
+  const best = Kit.best(ID, undefined, true);
+  Kit.hud(`Strokes ${strokes}<small>Total ${total() + strokes} · Best ${best ?? "-"}</small>`);
+}
+
+function moverRect(m) {
+  const s = Math.sin(time * m.speed + m.phase);
+  return { x: m.cx + m.ax * s - m.w / 2, y: m.cy + m.ay * s - m.h / 2, w: m.w, h: m.h,
+    vx: m.ax * m.speed * Math.cos(time * m.speed + m.phase), vy: m.ay * m.speed * Math.cos(time * m.speed + m.phase) };
+}
+
+const inRect = (x, y, r) => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
+
+// Circle vs rect collision; bounces the ball off the rect (which may be moving at vx/vy).
+function collideRect(rx, ry, rw, rh, mvx, mvy) {
+  const cx = Kit.clamp(ball.x, rx, rx + rw), cy = Kit.clamp(ball.y, ry, ry + rh);
+  let dx = ball.x - cx, dy = ball.y - cy;
+  let d = Math.hypot(dx, dy);
+  if (d >= BALL_R) return false;
+  let nx, ny;
+  if (d === 0) {
+    // centre inside the rect: push out along the shallowest side
+    const pens = [[ball.x - rx, -1, 0], [rx + rw - ball.x, 1, 0], [ball.y - ry, 0, -1], [ry + rh - ball.y, 0, 1]];
+    pens.sort((a, b) => a[0] - b[0]);
+    nx = pens[0][1]; ny = pens[0][2];
+    ball.x += nx * (pens[0][0] + BALL_R);
+    ball.y += ny * (pens[0][0] + BALL_R);
+  } else {
+    nx = dx / d; ny = dy / d;
+    ball.x += nx * (BALL_R - d);
+    ball.y += ny * (BALL_R - d);
+  }
+  const rvx = ball.vx - (mvx || 0), rvy = ball.vy - (mvy || 0);
+  const vn = rvx * nx + rvy * ny;
+  if (vn < 0) {
+    ball.vx = (mvx || 0) + rvx - 1.75 * vn * nx;
+    ball.vy = (mvy || 0) + rvy - 1.75 * vn * ny;
+    if (Math.abs(vn) > 60) { Kit.sfx("click"); }
+  }
+  return true;
+}
+
+function physicsStep(dt) {
+  const f = hole.field;
+  let decel = 95, drag = 0.85;
+  const inSand = (hole.sand || []).some((r) => inRect(ball.x, ball.y, r));
+  if (inSand) { decel = 520; drag = 3.2; }
+  let pushX = 0, pushY = 0;
+  for (const s of hole.slopes || []) if (inRect(ball.x, ball.y, s)) { pushX += s[4]; pushY += s[5]; }
+
+  // cup: gentle pull near the lip, sink when slow enough
+  const cdx = hole.cup[0] - ball.x, cdy = hole.cup[1] - ball.y;
+  const cd = Math.hypot(cdx, cdy);
+  const sp0 = Math.hypot(ball.vx, ball.vy);
+  if (cd < CUP_R) {
+    if (sp0 < 430) return sink();
+    // too fast: lip out with a little deflection
+    ball.vx += (cdx / cd) * 900 * dt;
+    ball.vy += (cdy / cd) * 900 * dt;
+  } else if (cd < CUP_R + 8 && sp0 < 200) {
+    ball.vx += (cdx / cd) * 500 * dt;
+    ball.vy += (cdy / cd) * 500 * dt;
+  }
+
+  ball.slope = Math.hypot(pushX, pushY) > decel;
+  ball.vx += pushX * dt;
+  ball.vy += pushY * dt;
+  let sp = Math.hypot(ball.vx, ball.vy);
+  if (sp > 0) {
+    const ns = Math.max(0, sp - (decel + drag * sp) * dt);
+    ball.vx *= ns / sp;
+    ball.vy *= ns / sp;
+    sp = ns;
+  }
+  ball.x += ball.vx * dt;
+  ball.y += ball.vy * dt;
+
+  // field boundary
+  if (ball.x < f[0] + BALL_R) { ball.x = f[0] + BALL_R; ball.vx = Math.abs(ball.vx) * 0.75; }
+  if (ball.x > f[0] + f[2] - BALL_R) { ball.x = f[0] + f[2] - BALL_R; ball.vx = -Math.abs(ball.vx) * 0.75; }
+  if (ball.y < f[1] + BALL_R) { ball.y = f[1] + BALL_R; ball.vy = Math.abs(ball.vy) * 0.75; }
+  if (ball.y > f[1] + f[3] - BALL_R) { ball.y = f[1] + f[3] - BALL_R; ball.vy = -Math.abs(ball.vy) * 0.75; }
+  for (const w of hole.walls || []) collideRect(w[0], w[1], w[2], w[3]);
+  for (const m of hole.movers || []) {
+    const r = moverRect(m);
+    collideRect(r.x, r.y, r.w, r.h, r.vx, r.vy);
+  }
+
+  // water hazard: penalty stroke, back to where the shot was played
+  if ((hole.water || []).some((r) => inRect(ball.x, ball.y, r))) {
+    splash(ball.x, ball.y);
+    strokes++;
+    ball.x = lastShot.x; ball.y = lastShot.y;
+    ball.vx = ball.vy = 0;
+    msg = "Splash! +1 stroke";
+    msgT = 1.6;
+    Kit.sfx("lose");
+    updateHud();
+    if (strokes >= MAX_STROKES) return holeDone();
+  }
+  return sp;
+}
+
+function splash(x, y) {
+  ripples.push({ x, y, t: 0 });
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(40, 160);
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.6, color: "#93c5fd" });
+  }
+}
+
+function sink() {
+  state = "sinking";
+  sinkT = 0;
+  ball.vx = ball.vy = 0;
+  ball.x = hole.cup[0]; ball.y = hole.cup[1];
+  ball.trail = [];
+  Kit.sfx("score");
+  for (let i = 0; i < 24; i++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(60, 220);
+    particles.push({ x: ball.x, y: ball.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.8,
+      color: Kit.pick(["#facc15", "#22c55e", "#3b82f6", "#ef4444", "#fff"]) });
+  }
+  return 0;
+}
+
+function scoreName(s, par) {
+  if (s === 1) return "Hole in one!";
+  const d = s - par;
+  return { "-3": "Albatross!", "-2": "Eagle!", "-1": "Birdie!", 0: "Par", 1: "Bogey", 2: "Double bogey" }[d] || (d < 0 ? "Amazing!" : "+" + d);
+}
+
+async function holeDone() {
+  state = "done";
+  card.push(strokes);
+  const name = strokes >= MAX_STROKES ? "Picked up" : scoreName(strokes, hole.par);
+  const t = total(), d = t - parSoFar(card.length);
+  updateHud();
+  if (holeIdx < HOLES.length - 1) {
+    await wait(700);
+    await Kit.overlay(name, `Hole ${holeIdx + 1}: ${strokes} stroke${strokes === 1 ? "" : "s"} (par ${hole.par})\nTotal: ${t} (${fmtPar(d)})\n\n${cardLine()}`, "Next hole");
+    holeIdx++;
+    loadHole();
+  } else {
+    await wait(700);
+    const best = Kit.finish(ID, t, true);
+    Kit.sfx(d <= 0 ? "win" : "coin");
+    await Kit.overlay("Round complete!", `${name} on the last hole.\nTotal strokes: ${t} (${fmtPar(d)})\nBest round: ${best}\n\n${cardLine()}`, "Play again");
+    startRound();
+  }
+}
+
+function cardLine() {
+  return card.map((s, i) => `${i + 1}:${s}`).join("  ");
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function shoot(power) {
+  if (state !== "aim" || power < 0.04) return;
+  strokes++;
+  lastShot = { x: ball.x, y: ball.y };
+  const sp = MAX_SPEED * Math.pow(power, 1.15);
+  ball.vx = Math.cos(aim.angle) * sp;
+  ball.vy = Math.sin(aim.angle) * sp;
+  ball.rest = 0;
+  state = "rolling";
+  Kit.sfx("hit");
+  updateHud();
+}
+
+function update(dt) {
+  time += dt;
+  msgT = Math.max(0, msgT - dt);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const r of ripples) r.t += dt;
+  ripples = ripples.filter((r) => r.t < 1);
+
+  if (state === "sinking") {
+    sinkT += dt;
+    ball.scale = Math.max(0, 1 - sinkT * 3);
+    if (sinkT > 0.4) holeDone();
+    return;
+  }
+  if (state === "done") return;
+
+  // keyboard aiming
+  if (state === "aim" && !dragging) {
+    const turn = (Kit.key("ArrowLeft") || Kit.key("KeyA") ? -1 : 0) + (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0);
+    const fine = Kit.key("ShiftLeft") || Kit.key("ShiftRight") ? 0.3 : 1;
+    aim.angle += turn * 2.2 * fine * dt;
+    const pw = (Kit.key("ArrowUp") || Kit.key("KeyW") ? 1 : 0) - (Kit.key("ArrowDown") || Kit.key("KeyS") ? 1 : 0);
+    aim.power = Kit.clamp(aim.power + pw * 0.8 * fine * dt, 0.05, 1);
+  }
+
+  const SUB = 6;
+  let sp = 0;
+  for (let i = 0; i < SUB; i++) {
+    sp = physicsStep(dt / SUB);
+    if (state !== "rolling" && state !== "aim") return;
+  }
+  if (state === "rolling" || sp > 0) {
+    if (sp > 1) {
+      ball.trail.push({ x: ball.x, y: ball.y });
+      if (ball.trail.length > 14) ball.trail.shift();
+    } else if (ball.trail.length) ball.trail.shift();
+    ball.rest = sp < 12 ? ball.rest + dt : 0;
+    if ((sp < 2 && !ball.slope) || ball.rest > 0.5) {
+      ball.vx = ball.vy = 0;
+      if (state === "rolling") {
+        ball.trail = [];
+        if (strokes >= MAX_STROKES) { msg = "Picked up"; msgT = 1.5; holeDone(); return; }
+        state = "aim";
+      }
+    } else if (state === "aim") {
+      state = "rolling"; // knocked by a mover
+    }
+  }
+}
+
+// ---------- input ----------
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  if (state !== "aim") return;
+  const p = Kit.pointer(canvas, e);
+  dragging = { x: p.x, y: p.y };
+  canvas.setPointerCapture(e.pointerId);
+  updateDrag(p);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  updateDrag(Kit.pointer(canvas, e));
+});
+function updateDrag(p) {
+  dragging.x = p.x; dragging.y = p.y;
+  const dx = ball.x - p.x, dy = ball.y - p.y;
+  const d = Math.hypot(dx, dy);
+  if (d > 4) {
+    aim.angle = Math.atan2(dy, dx);
+    aim.power = Kit.clamp(d / MAX_PULL, 0, 1);
+  } else aim.power = 0;
+}
+canvas.addEventListener("pointerup", () => {
+  if (!dragging) return;
+  dragging = null;
+  shoot(aim.power);
+});
+canvas.addEventListener("pointercancel", () => (dragging = null));
+Kit.onKey((code) => {
+  if ((code === "Space" || code === "Enter") && state === "aim" && !dragging) shoot(Math.max(0.05, aim.power));
+});
+
+// ---------- drawing ----------
+function draw() {
+  const f = hole.field;
+  // surrounding rough + bricks
+  ctx.fillStyle = "#1c2a1f";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.035)";
+  for (let y = 0; y < H; y += 30) for (let x = (y / 30) % 2 ? 15 : 0; x < W; x += 30) ctx.fillRect(x + 2, y + 2, 26, 26);
+
+  // field frame
+  Kit.brick(ctx, f[0] - 14, f[1] - 14, f[2] + 28, f[3] + 28, "#7c4a24", 10);
+  // grass stripes
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(f[0], f[1], f[2], f[3]);
+  ctx.clip();
+  for (let x = f[0]; x < f[0] + f[2]; x += 40) {
+    ctx.fillStyle = ((x - f[0]) / 40) % 2 ? "#2f9e44" : "#37b24d";
+    ctx.fillRect(x, f[1], 40, f[3]);
+  }
+  ctx.fillStyle = "rgba(255,255,255,.05)";
+  for (let y = f[1] + 10; y < f[1] + f[3]; y += 20)
+    for (let x = f[0] + 10; x < f[0] + f[2]; x += 20) { ctx.beginPath(); ctx.arc(x, y, 3.5, 0, 7); ctx.fill(); }
+
+  // slopes: tinted with drifting arrows
+  for (const s of hole.slopes || []) {
+    ctx.fillStyle = "rgba(190,242,100,.18)";
+    ctx.fillRect(s[0], s[1], s[2], s[3]);
+    const a = Math.atan2(s[5], s[4]);
+    const off = (time * 30) % 40;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(s[0], s[1], s[2], s[3]); ctx.clip();
+    ctx.strokeStyle = "rgba(255,255,255,.35)";
+    ctx.lineWidth = 3;
+    for (let y = s[1] + 20; y < s[1] + s[3]; y += 40)
+      for (let x = s[0] + 20; x < s[0] + s[2]; x += 40) {
+        const px = x + Math.cos(a) * (off - 20), py = y + Math.sin(a) * (off - 20);
+        ctx.save(); ctx.translate(px, py); ctx.rotate(a);
+        ctx.beginPath(); ctx.moveTo(-6, -7); ctx.lineTo(4, 0); ctx.lineTo(-6, 7); ctx.stroke();
+        ctx.restore();
+      }
+    ctx.restore();
+  }
+  // sand
+  for (const s of hole.sand || []) {
+    Kit.brick(ctx, s[0], s[1], s[2], s[3], "#e9c46a", 12);
+    ctx.fillStyle = "rgba(146,104,30,.35)";
+    for (let i = 0; i < (s[2] * s[3]) / 260; i++) {
+      const x = s[0] + 6 + ((i * 37) % (s[2] - 12)), y = s[1] + 6 + ((i * 53) % (s[3] - 12));
+      ctx.fillRect(x, y, 2, 2);
+    }
+  }
+  // water
+  for (const r of hole.water || []) {
+    ctx.fillStyle = "#1d6fd6";
+    ctx.fillRect(r[0], r[1], r[2], r[3]);
+    ctx.strokeStyle = "rgba(191,219,254,.45)";
+    ctx.lineWidth = 2;
+    ctx.save(); ctx.beginPath(); ctx.rect(r[0], r[1], r[2], r[3]); ctx.clip();
+    for (let y = r[1] + 12; y < r[1] + r[3]; y += 22) {
+      ctx.beginPath();
+      for (let x = r[0]; x <= r[0] + r[2]; x += 8) ctx.lineTo(x, y + Math.sin(x / 18 + time * 2 + y) * 3);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  for (const rp of ripples) {
+    ctx.strokeStyle = `rgba(255,255,255,${1 - rp.t})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(rp.x, rp.y, 6 + rp.t * 30, 0, 7); ctx.stroke();
+  }
+
+  // tee box
+  ctx.fillStyle = "rgba(255,255,255,.18)";
+  ctx.fillRect(hole.tee[0] - 16, hole.tee[1] - 16, 32, 32);
+
+  // cup and flag
+  const [cx, cy] = hole.cup;
+  ctx.fillStyle = "#1b4d2a";
+  ctx.beginPath(); ctx.arc(cx, cy, CUP_R + 3, 0, 7); ctx.fill();
+  ctx.fillStyle = "#0b0d0c";
+  ctx.beginPath(); ctx.arc(cx, cy, CUP_R, 0, 7); ctx.fill();
+  ctx.restore();
+
+  // walls
+  for (const w of hole.walls || []) Kit.brick(ctx, w[0], w[1], w[2], w[3], "#8d5a2b", 4);
+  for (const m of hole.movers || []) {
+    const r = moverRect(m);
+    Kit.brick(ctx, r.x, r.y, r.w, r.h, "#e03131", 5);
+    ctx.fillStyle = "rgba(255,255,255,.5)";
+    for (let k = 0; k < 3; k++) {
+      const px = r.x + r.w / 2 + (r.w > r.h ? (k - 1) * r.w * 0.28 : 0);
+      const py = r.y + r.h / 2 + (r.h >= r.w ? (k - 1) * r.h * 0.28 : 0);
+      ctx.beginPath(); ctx.arc(px, py, 3, 0, 7); ctx.fill();
+    }
+  }
+
+  // aim guide
+  if (state === "aim") {
+    const len = 30 + aim.power * 170;
+    ctx.save();
+    ctx.translate(ball.x, ball.y);
+    ctx.rotate(aim.angle);
+    for (let d = 14; d < len; d += 12) {
+      ctx.fillStyle = `rgba(255,255,255,${0.9 - (d / len) * 0.7})`;
+      ctx.fillRect(d, -2, 6, 4);
+    }
+    ctx.fillStyle = powerColor(aim.power);
+    ctx.beginPath(); ctx.moveTo(len + 10, 0); ctx.lineTo(len - 4, -8); ctx.lineTo(len - 4, 8); ctx.fill();
+    ctx.restore();
+    if (dragging) {
+      ctx.strokeStyle = "rgba(255,255,255,.35)";
+      ctx.setLineDash([4, 6]);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(ball.x, ball.y); ctx.lineTo(dragging.x, dragging.y); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  // ball trail and ball
+  ball.trail.forEach((t, i) => {
+    ctx.fillStyle = `rgba(255,255,255,${(i / ball.trail.length) * 0.25})`;
+    ctx.beginPath(); ctx.arc(t.x, t.y, BALL_R * 0.7, 0, 7); ctx.fill();
+  });
+  if (ball.scale > 0) {
+    const r = BALL_R * ball.scale;
+    ctx.fillStyle = "rgba(0,0,0,.3)";
+    ctx.beginPath(); ctx.ellipse(ball.x + 3, ball.y + 4, r, r * 0.8, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#fafafa";
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, r, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    ctx.beginPath(); ctx.arc(ball.x + r * 0.25, ball.y + r * 0.25, r * 0.65, 0, 7); ctx.fill();
+  }
+
+  // flag (drawn above the ball so it reads as standing up)
+  const wave = Math.sin(time * 4) * 3;
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillRect(cx - 1.5, cy - 46, 3, 46);
+  ctx.fillStyle = "#facc15";
+  ctx.beginPath(); ctx.moveTo(cx + 1.5, cy - 46); ctx.lineTo(cx + 28, cy - 38 + wave); ctx.lineTo(cx + 1.5, cy - 30); ctx.fill();
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / 0.8);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - 2.5, p.y - 2.5, 5, 5);
+  }
+  ctx.globalAlpha = 1;
+
+  drawTopBar();
+  if (msgT > 0) {
+    ctx.globalAlpha = Math.min(1, msgT * 2);
+    ctx.font = "bold 30px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(0,0,0,.55)";
+    const tw = ctx.measureText(msg).width;
+    ctx.fillRect(W / 2 - tw / 2 - 18, H / 2 - 30, tw + 36, 52);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(msg, W / 2, H / 2 + 6);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function powerColor(p) {
+  return p < 0.45 ? "#22c55e" : p < 0.8 ? "#facc15" : "#ef4444";
+}
+
+function drawTopBar() {
+  ctx.textAlign = "left";
+  ctx.font = "bold 18px system-ui, sans-serif";
+  ctx.fillStyle = "rgba(0,0,0,.45)";
+  ctx.fillRect(12, 10, 300, 34);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(`Hole ${holeIdx + 1}/9   Par ${hole.par}   Strokes ${strokes}`, 24, 33);
+  // power meter
+  if (state === "aim") {
+    ctx.fillStyle = "rgba(0,0,0,.45)";
+    ctx.fillRect(W - 230, H - 34, 210, 22);
+    ctx.fillStyle = powerColor(aim.power);
+    ctx.fillRect(W - 226, H - 30, 202 * aim.power, 14);
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.fillStyle = "#fff";
+    ctx.fillText("POWER", W - 290, H - 18);
+  }
+}
+
+time = 0;
+const game = Kit.loop(update, draw);
+startRound();
+draw();
+Kit.overlay("Block Golf", "Nine holes of blocky mini golf.\nAvoid water, sand slows you down, slopes push the ball.\n\nMouse: drag back from the ball, release to putt\nKeys: Left/Right aim, Up/Down power, Space putt\n(hold Shift for fine aim)", "Tee off")
+  .then(() => game.start());
+</script>
+</body>
+</html>

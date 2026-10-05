@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <pattern id="fl" width="60" height="60" patternUnits="userSpaceOnUse"><rect width="60" height="60" fill="#3f3a2e"/><rect width="30" height="30" fill="#464134"/><rect x="30" y="30" width="30" height="30" fill="#464134"/></pattern>
+    <pattern id="br" width="30" height="30" patternUnits="userSpaceOnUse"><rect width="30" height="30" fill="#5c2d0e"/><rect x="1" y="1" width="13" height="8" fill="#c2621a"/><rect x="16" y="1" width="13" height="8" fill="#a8531a"/><rect x="1" y="11" width="6" height="8" fill="#a8531a"/><rect x="9" y="11" width="13" height="8" fill="#c2621a"/><rect x="24" y="11" width="5" height="8" fill="#a8531a"/><rect x="1" y="21" width="13" height="8" fill="#a8531a"/><rect x="16" y="21" width="13" height="8" fill="#c2621a"/></pattern>
+    <pattern id="st" width="30" height="30" patternUnits="userSpaceOnUse"><rect x="1" y="1" width="28" height="28" rx="3" fill="#6b7280"/><rect x="7" y="7" width="16" height="16" fill="#9ca3af"/></pattern>
+  </defs>
+  <rect width="480" height="270" fill="url(#fl)"/>
+  <rect width="480" height="30" fill="url(#st)"/><rect y="240" width="480" height="30" fill="url(#st)"/>
+  <rect x="90" y="60" width="90" height="60" fill="url(#br)"/><rect x="300" y="150" width="60" height="90" fill="url(#br)"/>
+  <rect x="240" y="60" width="30" height="60" fill="url(#st)"/>
+  <rect x="380" y="60" width="60" height="30" fill="#1d4ed8"/><rect x="386" y="68" width="14" height="4" fill="#93c5fd"/><rect x="414" y="78" width="14" height="4" fill="#93c5fd"/>
+  <g transform="translate(130 190) scale(1.8)">
+    <rect x="-14" y="-14" width="28" height="7" fill="#1f2328"/><rect x="-14" y="7" width="28" height="7" fill="#1f2328"/>
+    <rect x="-12" y="-9" width="24" height="18" rx="3" fill="#3b82f6"/>
+    <g transform="rotate(-20)"><rect x="4" y="-3" width="20" height="6" fill="#1e40af"/><rect x="-7" y="-7" width="14" height="14" rx="3" fill="#1e40af"/></g>
+  </g>
+  <g transform="translate(380 150) scale(1.8) rotate(180)">
+    <rect x="-14" y="-14" width="28" height="7" fill="#1f2328"/><rect x="-14" y="7" width="28" height="7" fill="#1f2328"/>
+    <rect x="-12" y="-9" width="24" height="18" rx="3" fill="#22c55e"/>
+    <g transform="rotate(-25)"><rect x="4" y="-3" width="20" height="6" fill="#15803d"/><rect x="-7" y="-7" width="14" height="14" rx="3" fill="#15803d"/></g>
+  </g>
+  <g transform="translate(220 200) scale(1.5) rotate(-90)">
+    <rect x="-14" y="-14" width="28" height="7" fill="#1f2328"/><rect x="-14" y="7" width="28" height="7" fill="#1f2328"/>
+    <rect x="-12" y="-9" width="24" height="18" rx="3" fill="#a855f7"/>
+    <rect x="4" y="-3" width="20" height="6" fill="#6b21a8"/><rect x="-7" y="-7" width="14" height="14" rx="3" fill="#6b21a8"/>
+  </g>
+  <rect x="200" y="150" width="9" height="9" fill="#fde047"/><rect x="250" y="134" width="9" height="9" fill="#fde047"/><rect x="300" y="120" width="9" height="9" fill="#f87171"/>
+  <g fill="#fb923c"><rect x="285" y="136" width="10" height="10"/><rect x="296" y="144" width="7" height="7"/><rect x="290" y="126" width="6" height="6"/></g>
+  <rect x="60" y="130" width="20" height="20" rx="4" fill="#facc15"/><rect x="64" y="134" width="4" height="12" fill="#1f2328"/><rect x="72" y="134" width="4" height="12" fill="#1f2328"/>
+  <g><rect x="420" y="190" width="30" height="30" fill="#15803d"/><rect x="423" y="193" width="11" height="11" fill="#22c55e"/><rect x="436" y="206" width="11" height="11" fill="#22c55e"/></g>
+</svg>

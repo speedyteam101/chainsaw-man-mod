@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rhythm Tap</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .kit-stage canvas:focus { outline: none; }
+  .songs { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .songs .kit-btn, .diffs .kit-btn { margin: 0; box-shadow: 0 4px 0 var(--sh); }
+  .songs .kit-btn { width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 12px 20px; }
+  .songs .kit-btn small { font-size: 13px; font-weight: 700; opacity: .9; }
+  .diffs { display: flex; gap: 8px; margin-top: 14px; }
+  .diffs .kit-btn { flex: 1; padding: 10px 6px; font-size: 15px; background: #4b5563; --sh: #2b313a; }
+  .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .diffs .kit-btn.sel { background: var(--on); --sh: var(--onsh); }
+  .hint { margin-top: 12px; font-size: 13px; color: var(--muted); white-space: pre-line; }
+  .bests { margin-top: 8px; font-size: 13px; color: var(--muted); min-height: 18px; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "rhythm-tap";
+const { canvas, ctx, W, H } = Kit.stage(640, 720);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const LANES = 4, LANE_W = 92, LX = (W - LANES * LANE_W) / 2, HIT_Y = 612;
+const LANE_COLORS = ["#ef4444", "#facc15", "#22c55e", "#3b82f6"];
+const LANE_KEYS = [["KeyD", "ArrowLeft"], ["KeyF", "ArrowDown"], ["KeyJ", "ArrowUp"], ["KeyK", "ArrowRight"]];
+const KEY_LABELS = ["D", "F", "J", "K"];
+const PERFECT = 0.05, GOOD = 0.11;
+
+const SONGS = [
+  { name: "Brick Beat", bpm: 100, seed: 11, root: 60, minor: false, bars: 26, prog: [0, 5, 3, 4], color: "#12b76a", sh: "#0b7a47" },
+  { name: "Neon Stack", bpm: 124, seed: 42, root: 57, minor: true, bars: 30, prog: [0, 5, 2, 6], color: "#a855f7", sh: "#6b21a8" },
+  { name: "Turbo Tower", bpm: 148, seed: 7, root: 62, minor: true, bars: 34, prog: [0, 3, 4, 4], color: "#ef4444", sh: "#b91c1c" },
+];
+const DIFFS = [
+  { name: "Easy", speed: 1.5, drain: 5, color: "#12b76a", sh: "#0b7a47" },
+  { name: "Normal", speed: 1.15, drain: 8, color: "#f59e0b", sh: "#b45309" },
+  { name: "Hard", speed: 0.9, drain: 10, color: "#ef4444", sh: "#b91c1c" },
+];
+
+let songIdx = 0, diffIdx = 1;
+let song, chart, events, evIdx, startAt, phase, score, combo, maxCombo, counts, life, judge, laneFlash, beatPulse, songLen;
+let particles = [];
+
+// ---------- clock: audio time when sound is on, performance time otherwise ----------
+let audio = null, master = null, noiseBuf = null;
+let fakeBase = performance.now() / 1000, fakePausedAt = null;
+function muted() {
+  try { return localStorage.getItem("blockos.muted") === "1"; } catch (_) { return false; }
+}
+function ensureAudio() {
+  if (muted()) { audio = null; return; }
+  try {
+    if (!audio) {
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+      master = audio.createGain();
+      master.gain.value = 0.55;
+      master.connect(audio.destination);
+      noiseBuf = audio.createBuffer(1, audio.sampleRate * 0.5, audio.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (audio.state === "suspended") audio.resume();
+  } catch (_) { audio = null; }
+}
+function now() {
+  if (audio) return audio.currentTime;
+  return (fakePausedAt ?? performance.now() / 1000) - fakeBase;
+}
+document.addEventListener("visibilitychange", () => {
+  // pausing the clock keeps notes and music in sync when the tab is hidden
+  if (document.hidden) {
+    if (audio) audio.suspend();
+    else fakePausedAt = performance.now() / 1000;
+  } else {
+    if (audio) audio.resume();
+    else if (fakePausedAt !== null) { fakeBase += performance.now() / 1000 - fakePausedAt; fakePausedAt = null; }
+  }
+});
+
+// ---------- instruments ----------
+function kick(t) {
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.frequency.setValueAtTime(150, t);
+  o.frequency.exponentialRampToValueAtTime(42, t + 0.14);
+  g.gain.setValueAtTime(0.9, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + 0.3);
+}
+function noise(t, len, freq, vol) {
+  const s = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
+  s.buffer = noiseBuf;
+  f.type = "highpass"; f.frequency.value = freq;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + len);
+  s.connect(f).connect(g).connect(master);
+  s.start(t); s.stop(t + len + 0.02);
+}
+function tone(t, freq, len, type, vol, cutoff) {
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, t + len);
+  let node = o.connect(g);
+  if (cutoff) { const f = audio.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = cutoff; node = g.connect(f); }
+  node.connect(master);
+  o.start(t); o.stop(t + len + 0.02);
+}
+function playEvent(ev, t) {
+  if (ev.type === "kick") kick(t);
+  else if (ev.type === "snare") { noise(t, 0.16, 1200, 0.32); tone(t, 190, 0.08, "triangle", 0.2); }
+  else if (ev.type === "hat") noise(t, 0.04, 7000, 0.1);
+  else if (ev.type === "bass") tone(t, ev.freq, ev.len, "sawtooth", 0.16, 700);
+  else if (ev.type === "lead") tone(t, ev.freq, ev.len, "square", 0.075, 3200);
+  else if (ev.type === "pad") tone(t, ev.freq, ev.len, "triangle", 0.05);
+}
+
+// ---------- song + chart generation ----------
+function rng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const midiHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+const MAJOR = [0, 2, 4, 5, 7, 9, 11], MINOR = [0, 2, 3, 5, 7, 8, 10];
+const RHYTHMS = [
+  // 16-step rhythms per bar (1 = melody note)
+  "1000100010001000", "1000101010001000", "1010100010101000", "1000100010101010",
+  "1010101010101010", "1001001010010010", "1000001010000010", "1011101010111010",
+];
+
+function buildSong(spec, diff) {
+  const r = rng(spec.seed);
+  const scale = spec.minor ? MINOR : MAJOR;
+  const step = 60 / spec.bpm / 4;         // one 16th
+  const barLen = step * 16;
+  const lead = 2;                           // intro bars without notes
+  const ev = [], notes = [];
+  const degreeMidi = (deg) => spec.root + 12 * Math.floor(deg / 7) + scale[((deg % 7) + 7) % 7];
+  // phrases: 2-bar melodies reused to give the song a shape (A A B A ...)
+  const makePhrase = (intensity) => {
+    const bars = [];
+    let deg = 7 + Math.floor(r() * 3);
+    for (let b = 0; b < 2; b++) {
+      const pool = RHYTHMS.slice(0, 3 + intensity * 2);
+      const rh = pool[Math.floor(r() * pool.length)];
+      const bar = [];
+      for (let s = 0; s < 16; s++) {
+        if (rh[s] !== "1") continue;
+        deg += Math.floor(r() * 5) - 2;
+        deg = Math.max(4, Math.min(13, deg));
+        bar.push({ s, deg, len: 1 });
+      }
+      bars.push(bar);
+    }
+    return bars;
+  };
+  const A = makePhrase(1), B = makePhrase(2), C = makePhrase(3);
+  const order = [A, A, B, A, C, B, A, C, C, B, A, A, B, C, C, A, B, A];
+  for (let bar = 0; bar < spec.bars; bar++) {
+    const t0 = bar * barLen;
+    const chord = spec.prog[bar % spec.prog.length];
+    const section = bar < lead ? 0 : bar >= spec.bars - 1 ? 3 : 1 + Math.floor(((bar - lead) / (spec.bars - lead)) * 2.2);
+    // drums
+    for (let s = 0; s < 16; s++) {
+      const t = t0 + s * step;
+      if (s % 4 === 0 && (section > 0 || s % 8 === 0)) ev.push({ t, type: "kick" });
+      if (section >= 2 && s === 10 && bar % 2) ev.push({ t, type: "kick" });
+      if (s % 8 === 4 && section > 0) ev.push({ t, type: "snare" });
+      if (s % 2 === 0 || section >= 2) ev.push({ t, type: "hat" });
+    }
+    // bass on chord root
+    const rootMidi = degreeMidi(chord) - 24;
+    for (let s = 0; s < 16; s += 4) ev.push({ t: t0 + s * step, type: "bass", freq: midiHz(rootMidi + (s === 8 && section >= 2 ? 12 : 0)), len: step * 3.2 });
+    // pad chord (three notes) once per bar
+    if (section > 0) for (const k of [0, 2, 4]) ev.push({ t: t0, type: "pad", freq: midiHz(degreeMidi(chord + k)), len: barLen * 0.95 });
+    if (bar < lead || bar >= spec.bars - 1) continue;
+    // melody + chart
+    const phrase = order[Math.floor((bar - lead) / 2) % order.length];
+    const mel = phrase[(bar - lead) % 2];
+    for (const m of mel) {
+      const t = t0 + m.s * step;
+      const deg = m.deg;
+      ev.push({ t, type: "lead", freq: midiHz(degreeMidi(deg) + 12), len: step * 1.8 });
+      const keep = diff === 0 ? m.s % 4 === 0 : diff === 1 ? m.s % 2 === 0 : true;
+      if (!keep) continue;
+      const lane = Math.max(0, Math.min(3, Math.floor((deg - 4) / 2.5)));
+      notes.push({ t, lane, hit: false, missed: false });
+      // hard mode: two-lane chords on downbeats
+      if (diff === 2 && m.s === 0 && bar % 2 === 0) notes.push({ t, lane: (lane + 2) % 4, hit: false, missed: false });
+    }
+    // hard: the snare backbeat becomes extra notes too
+    if (diff === 2) for (const s of [4, 12]) notes.push({ t: t0 + s * step, lane: (chord + s / 4) % 4, hit: false, missed: false });
+    // easy/normal fill: make sure every bar has at least a kick-driven note
+    if (!mel.some((m) => (diff === 0 ? m.s % 4 === 0 : m.s % 2 === 0))) notes.push({ t: t0, lane: chord % 4, hit: false, missed: false });
+  }
+  // remove notes that are too close in the same lane
+  notes.sort((a, b) => a.t - b.t || a.lane - b.lane);
+  const minGap = step * 1.9;
+  const lastInLane = [-9, -9, -9, -9];
+  const clean = [];
+  for (const nt of notes) {
+    if (nt.t - lastInLane[nt.lane] < minGap) continue;
+    if (clean.some((o) => o.t === nt.t && o.lane === nt.lane)) continue;
+    lastInLane[nt.lane] = nt.t;
+    clean.push(nt);
+  }
+  ev.sort((a, b) => a.t - b.t);
+  return { events: ev, notes: clean, length: spec.bars * barLen, beat: step * 4 };
+}
+
+// ---------- game flow ----------
+function startSong() {
+  ensureAudio();
+  song = SONGS[songIdx];
+  const built = buildSong(song, diffIdx);
+  events = built.events;
+  chart = built.notes;
+  songLen = built.length;
+  song.beat = built.beat;
+  evIdx = 0;
+  startAt = now() + 0.6;
+  score = 0; combo = 0; maxCombo = 0;
+  counts = { perfect: 0, good: 0, miss: 0 };
+  life = 100;
+  judge = null;
+  laneFlash = [0, 0, 0, 0];
+  beatPulse = 0;
+  particles = [];
+  phase = "play";
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// What the player hears lags the audio clock by the output latency, so judge against that.
+function latency() { return audio ? (audio.outputLatency || 0) + (audio.baseLatency || 0) : 0; }
+function songTime() { return now() - startAt - latency(); }
+
+function press(lane) {
+  if (phase !== "play") return;
+  laneFlash[lane] = 1;
+  const t = songTime();
+  let best = null, bestD = Infinity;
+  for (const nt of chart) {
+    if (nt.hit || nt.missed || nt.lane !== lane) continue;
+    const d = Math.abs(nt.t - t);
+    if (d < bestD) { bestD = d; best = nt; }
+    if (nt.t > t + GOOD) break;
+  }
+  if (!best || bestD > GOOD) return; // empty taps are free
+  best.hit = true;
+  const perfect = bestD <= PERFECT;
+  combo++;
+  maxCombo = Math.max(maxCombo, combo);
+  const mult = 1 + Math.min(3, Math.floor(combo / 10));
+  score += (perfect ? 300 : 100) * mult;
+  counts[perfect ? "perfect" : "good"]++;
+  life = Math.min(100, life + (perfect ? 2 : 1));
+  judge = { text: perfect ? "PERFECT" : "GOOD", color: perfect ? "#facc15" : "#22c55e", t: 0.5, early: best.t > t };
+  for (let i = 0; i < (perfect ? 10 : 5); i++) {
+    const a = Kit.rand(-Math.PI, 0), s = Kit.rand(120, 320);
+    particles.push({ x: LX + lane * LANE_W + LANE_W / 2, y: HIT_Y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: Kit.rand(0.25, 0.5), color: LANE_COLORS[lane] });
+  }
+  updateHud();
+}
+
+function miss() {
+  combo = 0;
+  counts.miss++;
+  life -= DIFFS[diffIdx].drain;
+  judge = { text: "MISS", color: "#ef4444", t: 0.5 };
+  if (life <= 0) { life = 0; endSong(false); }
+}
+
+async function endSong(cleared) {
+  if (phase !== "play") return;
+  phase = "results";
+  if (audio) master.gain.setTargetAtTime(0.0001, audio.currentTime, 0.15);
+  const total = chart.length;
+  const acc = total ? (counts.perfect + counts.good * 0.5) / total : 0;
+  const grade = !cleared ? "F" : acc >= 0.95 ? "S" : acc >= 0.85 ? "A" : acc >= 0.7 ? "B" : acc >= 0.5 ? "C" : "D";
+  const best = Kit.finish(ID, score);
+  const key = `${ID}-${songIdx}-${diffIdx}`;
+  Kit.best(key, score);
+  Kit.sfx(cleared ? "win" : "lose");
+  updateHud();
+  await new Promise((r) => setTimeout(r, 900));
+  if (audio) { master.gain.cancelScheduledValues(audio.currentTime); master.gain.setValueAtTime(0.55, audio.currentTime + 0.05); }
+  menu(cleared ? `Grade ${grade}!` : "Song failed",
+    `${song.name} (${DIFFS[diffIdx].name})\nScore ${score}   Best ${best}\nPerfect ${counts.perfect}   Good ${counts.good}   Miss ${counts.miss}\nMax combo ${maxCombo}   Accuracy ${Math.round(acc * 100)}%`);
+}
+
+// ---------- menu ----------
+function menu(title, text) {
+  phase = phase === "results" ? "results" : "menu";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  const panel = document.createElement("div");
+  panel.className = "kit-panel";
+  const h = document.createElement("h1");
+  h.textContent = title;
+  const p = document.createElement("p");
+  p.textContent = text;
+  const songsBox = document.createElement("div");
+  songsBox.className = "songs";
+  const songBtns = SONGS.map((s, i) => {
+    const b = document.createElement("button");
+    b.className = "kit-btn";
+    b.style.background = s.color;
+    b.style.setProperty("--sh", s.sh);
+    b.innerHTML = `<span>${i + 1}. ${s.name}</span><small>${s.bpm} BPM</small>`;
+    b.addEventListener("click", () => { setSong(i); go(); });
+    songsBox.appendChild(b);
+    return b;
+  });
+  const diffBox = document.createElement("div");
+  diffBox.className = "diffs";
+  const diffBtns = DIFFS.map((d, i) => {
+    const b = document.createElement("button");
+    b.className = "kit-btn";
+    b.style.setProperty("--on", d.color);
+    b.style.setProperty("--onsh", d.sh);
+    b.textContent = d.name;
+    b.addEventListener("click", () => setDiff(i));
+    diffBox.appendChild(b);
+    return b;
+  });
+  const bests = document.createElement("div");
+  bests.className = "bests";
+  const hint = document.createElement("div");
+  hint.className = "hint";
+  hint.textContent = "Up/Down: song   Left/Right: difficulty   Enter: play" + (muted() ? "\n(Sound is muted)" : "");
+  panel.append(h, p, songsBox, diffBox, bests, hint);
+  o.appendChild(panel);
+  document.body.appendChild(o);
+  function refresh() {
+    songBtns.forEach((b, i) => b.classList.toggle("sel", i === songIdx));
+    diffBtns.forEach((b, i) => b.classList.toggle("sel", i === diffIdx));
+    const b = Kit.best(`${ID}-${songIdx}-${diffIdx}`);
+    bests.textContent = `Best on ${SONGS[songIdx].name} (${DIFFS[diffIdx].name}): ${b ?? "--"}`;
+  }
+  function setSong(i) { songIdx = (i + SONGS.length) % SONGS.length; refresh(); }
+  function setDiff(i) { diffIdx = (i + DIFFS.length) % DIFFS.length; refresh(); Kit.sfx("click"); }
+  refresh();
+  const shownAt = performance.now();
+  function go() {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    if (document.activeElement) document.activeElement.blur();
+    startSong();
+  }
+  function onKey(e) {
+    if (performance.now() - shownAt < 400) return;
+    const d = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
+    let handled = true;
+    if (d >= 0) setSong(d);
+    else if (e.code === "Enter" || e.code === "Space") go();
+    else if (e.code === "ArrowUp" || e.code === "KeyW") setSong(songIdx - 1);
+    else if (e.code === "ArrowDown" || e.code === "KeyS") setSong(songIdx + 1);
+    else if (e.code === "ArrowLeft" || e.code === "KeyA") setDiff(diffIdx - 1);
+    else if (e.code === "ArrowRight" || e.code === "KeyD") setDiff(diffIdx + 1);
+    else handled = false;
+    if (handled) { e.preventDefault(); e.stopPropagation(); }
+  }
+  addEventListener("keydown", onKey, true);
+}
+
+// ---------- input ----------
+Kit.onKey((code) => {
+  const lane = LANE_KEYS.findIndex((ks) => ks.includes(code));
+  if (lane >= 0) press(lane);
+});
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.style.touchAction = "none";
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);
+  const lane = Math.floor((p.x - LX) / LANE_W);
+  if (lane >= 0 && lane < LANES && p.y > 200) press(lane);
+});
+
+// ---------- update ----------
+function update(dt) {
+  for (let i = 0; i < 4; i++) laneFlash[i] = Math.max(0, laneFlash[i] - dt * 5);
+  if (judge) { judge.t -= dt; if (judge.t <= 0) judge = null; }
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 700 * dt; p.t -= dt; }
+  particles = particles.filter((p) => p.t > 0);
+  if (phase !== "play") return;
+  const t = songTime();
+  // schedule audio a little ahead of time
+  if (audio) {
+    while (evIdx < events.length && events[evIdx].t + startAt < audio.currentTime + 0.25) {
+      const ev = events[evIdx++];
+      const at = ev.t + startAt;
+      if (at >= audio.currentTime - 0.01) playEvent(ev, Math.max(at, audio.currentTime));
+    }
+  }
+  for (const nt of chart) {
+    if (nt.t > t) break;
+    if (!nt.hit && !nt.missed && t - nt.t > GOOD) { nt.missed = true; miss(); if (phase !== "play") return; }
+  }
+  const beatPhase = ((t % song.beat) + song.beat) % song.beat;
+  beatPulse = t > 0 ? Math.max(0, 1 - beatPhase / (song.beat * 0.5)) : 0;
+  if (t > songLen + 0.4) endSong(true);
+}
+
+// ---------- draw ----------
+function draw() {
+  ctx.fillStyle = "#120f1f";
+  ctx.fillRect(0, 0, W, H);
+  // pulsing stud background
+  ctx.fillStyle = `rgba(168,85,247,${0.04 + (beatPulse || 0) * 0.06})`;
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  // lanes
+  for (let i = 0; i < LANES; i++) {
+    const x = LX + i * LANE_W;
+    ctx.fillStyle = i % 2 ? "#1c1830" : "#211c38";
+    ctx.fillRect(x, 0, LANE_W, H);
+    if (laneFlash && laneFlash[i] > 0) {
+      const g = ctx.createLinearGradient(0, HIT_Y - 260, 0, HIT_Y);
+      g.addColorStop(0, "rgba(255,255,255,0)");
+      g.addColorStop(1, hexA(LANE_COLORS[i], 0.35 * laneFlash[i]));
+      ctx.fillStyle = g;
+      ctx.fillRect(x, HIT_Y - 260, LANE_W, 260);
+    }
+  }
+  ctx.fillStyle = "#2e2750";
+  for (let i = 0; i <= LANES; i++) ctx.fillRect(LX + i * LANE_W - 1, 0, 2, H);
+
+  // beat lines
+  if (phase === "play" || phase === "results") {
+    const t = songTime(), spd = DIFFS[diffIdx].speed;
+    const firstBeat = Math.ceil(t / song.beat) * song.beat;
+    ctx.fillStyle = "rgba(255,255,255,.06)";
+    for (let bt = firstBeat; bt < t + spd; bt += song.beat) {
+      const y = HIT_Y - ((bt - t) / spd) * HIT_Y;
+      ctx.fillRect(LX, y - 1, LANES * LANE_W, 2);
+    }
+  }
+
+  // receptors
+  for (let i = 0; i < LANES; i++) {
+    const x = LX + i * LANE_W;
+    const pressed = LANE_KEYS[i].some((k) => Kit.key(k)) || (laneFlash && laneFlash[i] > 0.7);
+    Kit.brick(ctx, x + 8, HIT_Y - 18 + (pressed ? 3 : 0), LANE_W - 16, 36, pressed ? LANE_COLORS[i] : "#3a3358", 8);
+    ctx.strokeStyle = LANE_COLORS[i]; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(x + 8, HIT_Y - 18 + (pressed ? 3 : 0), LANE_W - 16, 36, 8); ctx.stroke();
+    ctx.fillStyle = pressed ? "#111" : "#d4d0e8";
+    ctx.font = `800 18px ${FONT}`; ctx.textAlign = "center";
+    ctx.fillText(KEY_LABELS[i], x + LANE_W / 2, HIT_Y + 7 + (pressed ? 3 : 0));
+  }
+
+  ctx.textAlign = "center";
+  if (combo >= 4) {
+    ctx.font = `900 54px ${FONT}`;
+    ctx.fillStyle = "rgba(255,255,255,.22)";
+    ctx.fillText(combo, W / 2, 320);
+    ctx.font = `800 14px ${FONT}`;
+    ctx.fillStyle = "rgba(196,181,253,.5)";
+    ctx.fillText(`COMBO  x${1 + Math.min(3, Math.floor(combo / 10))}`, W / 2, 342);
+  }
+
+  // notes
+  if (chart && (phase === "play" || phase === "results")) {
+    const t = songTime(), spd = DIFFS[diffIdx].speed;
+    for (const nt of chart) {
+      if (nt.hit) continue;
+      const dtn = nt.t - t;
+      if (dtn > spd) break;
+      if (dtn < -0.4) continue;
+      const y = HIT_Y - (dtn / spd) * HIT_Y;
+      const x = LX + nt.lane * LANE_W;
+      ctx.globalAlpha = nt.missed ? 0.3 : 1;
+      Kit.brick(ctx, x + 10, y - 14, LANE_W - 20, 28, LANE_COLORS[nt.lane], 7);
+      ctx.fillStyle = "rgba(0,0,0,.18)";
+      ctx.beginPath(); ctx.arc(x + LANE_W / 2 - 16, y + 1, 6, 0, Math.PI * 2); ctx.arc(x + LANE_W / 2 + 16, y + 1, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.35)";
+      ctx.beginPath(); ctx.arc(x + LANE_W / 2 - 16, y - 1, 6, 0, Math.PI * 2); ctx.arc(x + LANE_W / 2 + 16, y - 1, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.t * 3);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+  }
+  ctx.globalAlpha = 1;
+
+  // judgment + combo
+  ctx.textAlign = "center";
+  if (judge) {
+    const s = 1 + Math.max(0, judge.t - 0.4) * 3;
+    ctx.font = `900 ${Math.round(36 * s)}px ${FONT}`;
+    ctx.fillStyle = "#000"; ctx.fillText(judge.text, W / 2 + 2, 392);
+    ctx.fillStyle = judge.color; ctx.fillText(judge.text, W / 2, 390);
+  }
+
+  // side info
+  if (song) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#fff"; ctx.font = `800 16px ${FONT}`;
+    ctx.fillText(song.name, 14, 34);
+    ctx.fillStyle = "#a78bfa"; ctx.font = `700 13px ${FONT}`;
+    ctx.fillText(DIFFS[diffIdx].name, 14, 54);
+    // life meter as a column of bricks
+    ctx.fillStyle = "#c4b5fd"; ctx.font = `700 12px ${FONT}`;
+    ctx.fillText("LIFE", 14, 134);
+    for (let i = 0; i < 10; i++) {
+      const on = life > i * 10;
+      Kit.brick(ctx, 16, 380 - i * 26, 36, 22, on ? (life < 30 ? "#ef4444" : "#22c55e") : "#2e2750", 4);
+    }
+    // progress
+    if (phase === "play" || phase === "results") {
+      const prog = Kit.clamp(songTime() / songLen, 0, 1);
+      ctx.fillStyle = "#2e2750"; ctx.fillRect(LX, 6, LANES * LANE_W, 6);
+      ctx.fillStyle = "#a855f7"; ctx.fillRect(LX, 6, LANES * LANE_W * prog, 6);
+      if (songTime() < 0.5 && phase === "play") {
+        ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = `900 30px ${FONT}`;
+        ctx.fillText("Get ready!", W / 2, 260);
+      }
+    }
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c4b5fd"; ctx.font = `700 12px ${FONT}`;
+    ctx.fillText("PERFECT", W - 14, 120);
+    ctx.fillText("GOOD", W - 14, 170);
+    ctx.fillText("MISS", W - 14, 220);
+    ctx.fillStyle = "#fff"; ctx.font = `800 22px ${FONT}`;
+    ctx.fillText(counts ? counts.perfect : 0, W - 14, 145);
+    ctx.fillText(counts ? counts.good : 0, W - 14, 195);
+    ctx.fillText(counts ? counts.miss : 0, W - 14, 245);
+  }
+}
+
+function hexA(hex, a) {
+  const v = parseInt(hex.slice(1), 16);
+  return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+}
+
+const game = Kit.loop(update, draw);
+laneFlash = [0, 0, 0, 0];
+phase = "menu";
+game.start();
+menu("Rhythm Tap", "Tap each brick as it lands on its pad, in time with the music.\nHit streaks build a combo multiplier - misses drain your life.\n\nKeys: D F J K (or the arrow keys)   Mouse: click the lanes");
+</script>
+</body>
+</html>

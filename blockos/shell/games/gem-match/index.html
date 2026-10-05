@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gem Bricks</title>
+<link rel="stylesheet" href="../kit.css">
+<style>.kit-stage canvas:focus { outline: none; }</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "gem-match";
+const N = 8, CELL = 64;
+const BX = 24, BY = 34;
+const { canvas, ctx, W, H } = Kit.stage(780, 580);
+const PX = BX + N * CELL + 26;          // side panel x
+const PW = W - PX - 20;
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+const GEMS = [
+  { fill: "#ef4444", dark: "#991b1b", shape: "diamond" },
+  { fill: "#3b82f6", dark: "#1e3a8a", shape: "circle" },
+  { fill: "#22c55e", dark: "#166534", shape: "square" },
+  { fill: "#facc15", dark: "#a16207", shape: "triangle" },
+  { fill: "#a855f7", dark: "#6b21a8", shape: "plus" },
+  { fill: "#fb923c", dark: "#c2410c", shape: "hex" },
+];
+// special kinds: "row" clears its row, "col" clears its column, "bomb" clears 3x3, "rainbow" clears a color
+let board, phase, selected, cursor, held, level, levelScore, totalScore, moves, target, colorCount;
+let cascade, lastSwap, clearTimer, particles, popups, idleTime, hint, flash, uid = 0;
+
+// ---------- board ----------
+function newPiece(color, special = null, r = 0, c = 0, py = r) {
+  return { id: uid++, color, special, x: c, y: py, vy: 0, clearing: false, born: 0 };
+}
+function randomColor() { return Kit.randInt(0, colorCount - 1); }
+
+function fillBoard() {
+  board = [];
+  for (let r = 0; r < N; r++) {
+    board.push([]);
+    for (let c = 0; c < N; c++) {
+      let col;
+      do col = randomColor();
+      while ((c >= 2 && board[r][c - 1].color === col && board[r][c - 2].color === col) ||
+             (r >= 2 && board[r - 1][c].color === col && board[r - 2][c].color === col));
+      board[r].push(newPiece(col, null, r, c, r - N - 1 - Math.random()));
+    }
+  }
+  if (!findMove()) fillBoard();
+}
+
+function startLevel() {
+  colorCount = level < 3 ? 5 : 6;
+  moves = Math.max(16, 22 - Math.floor(level / 2));
+  target = 2000 + (level - 1) * 1200;
+  levelScore = 0;
+  selected = null;
+  held = false;
+  cascade = 0;
+  hint = null;
+  idleTime = 0;
+  fillBoard();
+  phase = "fall";
+  updateHud();
+}
+
+function reset() {
+  level = 1;
+  totalScore = 0;
+  particles = [];
+  popups = [];
+  cursor = { r: 3, c: 3 };
+  startLevel();
+}
+
+function updateHud() {
+  Kit.hud(`Score ${totalScore}<small>Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+const inside = (r, c) => r >= 0 && c >= 0 && r < N && c < N;
+const sameColor = (a, b) => a && b && a.color >= 0 && a.color === b.color;
+
+// Finds all runs of 3+ in rows and columns.
+function findRuns() {
+  const runs = [];
+  for (let r = 0; r < N; r++) {
+    let start = 0;
+    for (let c = 1; c <= N; c++) {
+      if (c < N && sameColor(board[r][c], board[r][start])) continue;
+      if (c - start >= 3) runs.push({ dir: "h", cells: Array.from({ length: c - start }, (_, i) => [r, start + i]) });
+      start = c;
+    }
+  }
+  for (let c = 0; c < N; c++) {
+    let start = 0;
+    for (let r = 1; r <= N; r++) {
+      if (r < N && sameColor(board[r][c], board[start][c])) continue;
+      if (r - start >= 3) runs.push({ dir: "v", cells: Array.from({ length: r - start }, (_, i) => [start + i, c]) });
+      start = r;
+    }
+  }
+  return runs.filter((run) => board[run.cells[0][0]][run.cells[0][1]].color >= 0);
+}
+
+function wouldMatch(r1, c1, r2, c2) {
+  const a = board[r1][c1], b = board[r2][c2];
+  if (a.special === "rainbow" || b.special === "rainbow") return true;
+  if (a.special && b.special) return true;
+  board[r1][c1] = b; board[r2][c2] = a;
+  const ok = findRuns().length > 0;
+  board[r1][c1] = a; board[r2][c2] = b;
+  return ok;
+}
+
+function findMove() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      if (c + 1 < N && wouldMatch(r, c, r, c + 1)) return [[r, c], [r, c + 1]];
+      if (r + 1 < N && wouldMatch(r, c, r + 1, c)) return [[r, c], [r + 1, c]];
+    }
+  return null;
+}
+
+// ---------- swapping ----------
+function trySwap(r1, c1, r2, c2) {
+  if (phase !== "idle" || !inside(r2, c2) || Math.abs(r1 - r2) + Math.abs(c1 - c2) !== 1) return;
+  selected = null;
+  held = false;
+  hint = null;
+  idleTime = 0;
+  [board[r1][c1], board[r2][c2]] = [board[r2][c2], board[r1][c1]];
+  lastSwap = [[r1, c1], [r2, c2]];
+  phase = "swap";
+  Kit.sfx("click");
+}
+
+function afterSwap() {
+  const [[r1, c1], [r2, c2]] = lastSwap;
+  const a = board[r1][c1], b = board[r2][c2];
+  const clear = new Set();
+  // special combos fire right away
+  if (a.special === "rainbow" || b.special === "rainbow") {
+    const rb = a.special === "rainbow" ? [r1, c1] : [r2, c2];
+    const other = a.special === "rainbow" ? b : a;
+    clear.add(rb.join(","));
+    if (other.special === "rainbow") {
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) clear.add(r + "," + c);
+    } else {
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (board[r][c].color === other.color) clear.add(r + "," + c);
+    }
+    useMove();
+    beginClear(clear, []);
+    return;
+  }
+  if (a.special && b.special) {
+    clear.add(r1 + "," + c1);
+    clear.add(r2 + "," + c2);
+    useMove();
+    beginClear(clear, []);
+    return;
+  }
+  const runs = findRuns();
+  if (!runs.length) {
+    [board[r1][c1], board[r2][c2]] = [board[r2][c2], board[r1][c1]];
+    phase = "swapback";
+    Kit.sfx("hit");
+    return;
+  }
+  useMove();
+  resolveRuns(runs);
+}
+
+function useMove() {
+  moves--;
+  cascade = 0;
+}
+
+// Decide which cells clear and which specials get made from a set of runs.
+function resolveRuns(runs) {
+  const clear = new Set();
+  const create = [];
+  const count = new Map();
+  for (const run of runs) for (const [r, c] of run.cells) count.set(r + "," + c, (count.get(r + "," + c) || 0) + 1);
+  const usedForSpecial = new Set();
+  const swapKeys = lastSwap ? lastSwap.map(([r, c]) => r + "," + c) : [];
+  // intersections -> bombs
+  for (const [k, n] of count) {
+    if (n >= 2 && !usedForSpecial.has(k)) {
+      const [r, c] = k.split(",").map(Number);
+      create.push({ r, c, special: "bomb", color: board[r][c].color });
+      usedForSpecial.add(k);
+    }
+  }
+  for (const run of runs) {
+    run.cells.forEach(([r, c]) => clear.add(r + "," + c));
+    if (run.cells.some(([r, c]) => usedForSpecial.has(r + "," + c)) && run.cells.length < 5) continue;
+    if (run.cells.length >= 4) {
+      const keys = run.cells.map(([r, c]) => r + "," + c);
+      let pos = keys.find((k) => swapKeys.includes(k)) || keys[Math.floor((keys.length - 1) / 2)];
+      if (usedForSpecial.has(pos)) pos = keys.find((k) => !usedForSpecial.has(k));
+      const [r, c] = pos.split(",").map(Number);
+      const special = run.cells.length >= 5 ? "rainbow" : run.dir === "h" ? "row" : "col";
+      create.push({ r, c, special, color: special === "rainbow" ? -1 : board[r][c].color });
+      usedForSpecial.add(pos);
+    }
+  }
+  beginClear(clear, create);
+}
+
+// Expand a clear set through specials, then start the clear animation.
+function beginClear(clear, create) {
+  const createKeys = new Set(create.map((s) => s.r + "," + s.c));
+  const queue = [...clear];
+  const triggered = new Set();
+  while (queue.length) {
+    const k = queue.shift();
+    const [r, c] = k.split(",").map(Number);
+    const p = board[r][c];
+    if (!p || !p.special || triggered.has(k)) continue;
+    triggered.add(k);
+    const add = (rr, cc) => {
+      if (!inside(rr, cc)) return;
+      const kk = rr + "," + cc;
+      if (!clear.has(kk)) { clear.add(kk); queue.push(kk); }
+    };
+    if (p.special === "row") { for (let cc = 0; cc < N; cc++) add(r, cc); flashLine("row", r); }
+    if (p.special === "col") { for (let rr = 0; rr < N; rr++) add(rr, c); flashLine("col", c); }
+    if (p.special === "bomb") { for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) add(r + dr, c + dc); flashLine("bomb", r, c); }
+    if (p.special === "rainbow") {
+      const colors = new Set();
+      for (const row of board) for (const q of row) if (q.color >= 0) colors.add(q.color);
+      const col = Kit.pick([...colors]);
+      for (let rr = 0; rr < N; rr++) for (let cc = 0; cc < N; cc++) if (board[rr][cc].color === col) add(rr, cc);
+    }
+  }
+  // cells that become specials stay on the board
+  for (const k of createKeys) clear.delete(k);
+  cascade++;
+  const mult = cascade;
+  const pts = clear.size * 10 * mult + create.length * 40;
+  addScore(pts);
+  let cx = 0, cy = 0;
+  for (const k of clear) {
+    const [r, c] = k.split(",").map(Number);
+    board[r][c].clearing = true;
+    cx += c; cy += r;
+  }
+  for (const s of create) {
+    const p = board[s.r][s.c];
+    p.special = s.special;
+    p.color = s.color;
+    p.clearing = false;
+    p.born = 0.4;
+  }
+  if (clear.size) {
+    cx /= clear.size; cy /= clear.size;
+    popups.push({ x: BX + (cx + 0.5) * CELL, y: BY + (cy + 0.5) * CELL, text: `+${pts}`, t: 1 });
+  }
+  if (cascade >= 2) popups.push({ x: BX + N * CELL / 2, y: BY + N * CELL / 2 - 20, text: `Combo x${cascade}!`, t: 1.2, big: true });
+  Kit.sfx(triggered.size ? "hit" : cascade > 1 ? "coin" : "score");
+  if (create.length) setTimeout(() => Kit.sfx("jump"), 120);
+  clearTimer = 0.24;
+  phase = "clear";
+}
+
+function flashLine(kind, a, b) {
+  flash.push({ kind, a, b, t: 0.35 });
+}
+
+function addScore(pts) {
+  levelScore += pts;
+  totalScore += pts;
+  updateHud();
+}
+
+function removeCleared() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const p = board[r][c];
+      if (p && p.clearing) {
+        const g = GEMS[p.color] || GEMS[0];
+        for (let i = 0; i < 5; i++) {
+          const a = Kit.rand(0, Math.PI * 2), s = Kit.rand(80, 260);
+          particles.push({ x: BX + (c + 0.5) * CELL, y: BY + (r + 0.5) * CELL, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 80, t: Kit.rand(0.35, 0.7), color: p.color >= 0 ? g.fill : "#fff" });
+        }
+        board[r][c] = null;
+      }
+    }
+  // gravity
+  for (let c = 0; c < N; c++) {
+    let write = N - 1;
+    for (let r = N - 1; r >= 0; r--) {
+      if (board[r][c]) {
+        const p = board[r][c];
+        board[r][c] = null;
+        board[write][c] = p;
+        write--;
+      }
+    }
+    let spawn = 0;
+    for (let r = write; r >= 0; r--) {
+      spawn++;
+      board[r][c] = newPiece(randomColor(), null, r, c, -spawn - 0.2);
+    }
+  }
+  lastSwap = null;
+  phase = "fall";
+}
+
+function settled() {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const p = board[r][c];
+      if (Math.abs(p.x - c) > 0.001 || Math.abs(p.y - r) > 0.001) return false;
+    }
+  return true;
+}
+
+function afterFall() {
+  const runs = findRuns();
+  if (runs.length) { resolveRuns(runs); return; }
+  cascade = 0;
+  if (levelScore >= target) return levelWon();
+  if (moves <= 0) return levelLost();
+  if (!findMove()) {
+    popups.push({ x: BX + N * CELL / 2, y: BY + N * CELL / 2, text: "No moves - shuffle!", t: 1.5, big: true });
+    for (const row of board) for (const p of row) p.y -= N + 1;
+    fillBoardKeepSpecials();
+    phase = "fall";
+    return;
+  }
+  phase = "idle";
+}
+
+function fillBoardKeepSpecials() {
+  const specials = [];
+  for (const row of board) for (const p of row) if (p.special) specials.push(p);
+  fillBoard();
+  specials.slice(0, 4).forEach((s, i) => {
+    const r = Kit.randInt(0, N - 1), c = Kit.randInt(0, N - 1);
+    s.x = c; s.y = r - N - 1;
+    board[r][c] = s;
+  });
+}
+
+async function levelWon() {
+  phase = "between";
+  const bonus = moves * 60;
+  addScore(bonus);
+  Kit.sfx("win");
+  await Kit.overlay(`Level ${level} complete!`, `Target ${target} reached.\nMoves left bonus: +${bonus}\nTotal score: ${totalScore}`, "Next level");
+  level++;
+  startLevel();
+}
+
+async function levelLost() {
+  phase = "between";
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, totalScore);
+  await Kit.overlay("Out of moves!", `Level ${level}: ${levelScore} / ${target}\nTotal score: ${totalScore}\nBest: ${best}`, "Play again");
+  reset();
+}
+
+// ---------- input ----------
+function cellAt(e) {
+  const p = Kit.pointer(canvas, e);
+  const c = Math.floor((p.x - BX) / CELL), r = Math.floor((p.y - BY) / CELL);
+  return inside(r, c) ? { r, c, x: p.x, y: p.y } : null;
+}
+let drag = null;
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.style.touchAction = "none";
+canvas.addEventListener("pointerdown", (e) => {
+  if (phase !== "idle" || e.button !== 0) return;
+  const cell = cellAt(e);
+  if (!cell) { selected = null; return; }
+  cursor = { r: cell.r, c: cell.c };
+  if (selected && Math.abs(selected.r - cell.r) + Math.abs(selected.c - cell.c) === 1) {
+    trySwap(selected.r, selected.c, cell.r, cell.c);
+    return;
+  }
+  selected = (selected && selected.r === cell.r && selected.c === cell.c) ? null : { r: cell.r, c: cell.c };
+  if (selected) Kit.sfx("click");
+  drag = { r: cell.r, c: cell.c, x: cell.x, y: cell.y };
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag || phase !== "idle") return;
+  const p = Kit.pointer(canvas, e);
+  const dx = p.x - drag.x, dy = p.y - drag.y;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < CELL * 0.4) return;
+  const [dr, dc] = Math.abs(dx) > Math.abs(dy) ? [0, Math.sign(dx)] : [Math.sign(dy), 0];
+  const from = drag;
+  drag = null;
+  trySwap(from.r, from.c, from.r + dr, from.c + dc);
+});
+addEventListener("pointerup", () => { drag = null; });
+
+const DIRS = { ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0], ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1] };
+Kit.onKey((code) => {
+  if (phase === "between" || phase === "menu") return;
+  const d = DIRS[code];
+  if (d) {
+    if (held && selected && phase === "idle") { trySwap(selected.r, selected.c, selected.r + d[0], selected.c + d[1]); return; }
+    cursor = { r: Kit.clamp(cursor.r + d[0], 0, N - 1), c: Kit.clamp(cursor.c + d[1], 0, N - 1) };
+    return;
+  }
+  if ((code === "Space" || code === "Enter") && phase === "idle") {
+    if (held) { held = false; selected = null; return; }
+    selected = { r: cursor.r, c: cursor.c };
+    held = true;
+    Kit.sfx("click");
+  }
+});
+
+// ---------- update ----------
+function update(dt) {
+  const linear = phase === "swap" || phase === "swapback";
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const p = board[r][c];
+      if (!p) continue;
+      if (p.born > 0) p.born -= dt;
+      if (linear) {
+        const sp = 7.5 * dt;
+        p.x += Kit.clamp(c - p.x, -sp, sp);
+        p.y += Kit.clamp(r - p.y, -sp, sp);
+      } else {
+        p.x += Kit.clamp(c - p.x, -8 * dt, 8 * dt);
+        if (p.y < r) {
+          p.vy = Math.min(p.vy + 45 * dt, 16);
+          p.y = Math.min(r, p.y + p.vy * dt);
+        } else { p.y = r; p.vy = 0; }
+      }
+    }
+
+  if (phase === "swap" && settled()) afterSwap();
+  else if (phase === "swapback" && settled()) phase = "idle";
+  else if (phase === "clear") {
+    clearTimer -= dt;
+    if (clearTimer <= 0) removeCleared();
+  } else if (phase === "fall" && settled()) afterFall();
+
+  if (phase === "idle") {
+    idleTime += dt;
+    if (idleTime > 7 && !hint) hint = findMove();
+  }
+
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 600 * dt; p.t -= dt; }
+  particles = particles.filter((p) => p.t > 0);
+  for (const p of popups) { p.t -= dt; p.y -= 34 * dt; }
+  popups = popups.filter((p) => p.t > 0);
+  for (const f of flash) f.t -= dt;
+  flash = flash.filter((f) => f.t > 0);
+}
+
+// ---------- drawing ----------
+function drawShape(shape, x, y, s, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  if (shape === "diamond") { ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); }
+  else if (shape === "circle") ctx.arc(x, y, s * 0.85, 0, Math.PI * 2);
+  else if (shape === "square") ctx.rect(x - s * 0.72, y - s * 0.72, s * 1.44, s * 1.44);
+  else if (shape === "triangle") { ctx.moveTo(x, y - s); ctx.lineTo(x + s, y + s * 0.75); ctx.lineTo(x - s, y + s * 0.75); }
+  else if (shape === "plus") { const t = s * 0.38; ctx.rect(x - t, y - s, t * 2, s * 2); ctx.rect(x - s, y - t, s * 2, t * 2); }
+  else if (shape === "hex") for (let i = 0; i < 6; i++) { const a = Math.PI / 6 + (i * Math.PI) / 3; ctx[i ? "lineTo" : "moveTo"](x + Math.cos(a) * s, y + Math.sin(a) * s); }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawPiece(p, px, py, size, t) {
+  const pad = 4;
+  let scale = 1;
+  if (p.clearing) scale = Math.max(0, clearTimer / 0.24);
+  if (p.born > 0) scale = 1 + Math.sin((p.born / 0.4) * Math.PI) * 0.18;
+  const s = (size - pad * 2) * scale;
+  const x = px + (size - s) / 2, y = py + (size - s) / 2;
+  if (s <= 1) return;
+  if (p.special === "rainbow") {
+    ctx.save();
+    ctx.beginPath(); ctx.roundRect(x, y, s, s, 8); ctx.clip();
+    GEMS.forEach((g, i) => { ctx.fillStyle = g.fill; ctx.fillRect(x, y + (i * s) / 6, s, s / 6 + 1); });
+    ctx.restore();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, s - 3, s - 3, 7); ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * 0.2 + Math.sin(t * 6) * 2, 0, Math.PI * 2); ctx.fill();
+    return;
+  }
+  const g = GEMS[p.color];
+  Kit.brick(ctx, x, y, s, s, g.fill, 8);
+  const cx = x + s / 2, cy = y + s / 2;
+  drawShape(g.shape, cx, cy + 2, s * 0.26, g.dark);
+  drawShape(g.shape, cx, cy, s * 0.26, "rgba(255,255,255,.85)");
+  if (p.special === "row" || p.special === "col") {
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    for (const off of [-0.36, 0.36]) {
+      if (p.special === "row") ctx.fillRect(x + 4, cy + off * s - 2, s - 8, 4);
+      else ctx.fillRect(cx + off * s - 2, y + 4, 4, s - 8);
+    }
+    ctx.fillStyle = "#fff";
+    const a = s * 0.46;
+    ctx.beginPath();
+    if (p.special === "row") { ctx.moveTo(x + 2, cy); ctx.lineTo(x + 10, cy - 7); ctx.lineTo(x + 10, cy + 7); ctx.moveTo(x + s - 2, cy); ctx.lineTo(x + s - 10, cy - 7); ctx.lineTo(x + s - 10, cy + 7); }
+    else { ctx.moveTo(cx, y + 2); ctx.lineTo(cx - 7, y + 10); ctx.lineTo(cx + 7, y + 10); ctx.moveTo(cx, y + s - 2); ctx.lineTo(cx - 7, y + s - 10); ctx.lineTo(cx + 7, y + s - 10); }
+    ctx.fill();
+    void a;
+  }
+  if (p.special === "bomb") {
+    ctx.strokeStyle = "#111"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(x + 4, y + 4, s - 8, s - 8, 6); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${0.5 + Math.sin(t * 8) * 0.4})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(x + 4, y + 4, s - 8, s - 8, 6); ctx.stroke();
+  }
+}
+
+function panel(x, y, w, h, color) {
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath(); ctx.roundRect(x, y + 5, w, h, 12); ctx.fill();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(x + 1, y + 1, w - 2, h - 2, 11); ctx.stroke();
+}
+
+let clock = 0;
+function draw() {
+  clock += 1 / 60;
+  ctx.fillStyle = "#17122a";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+
+  // board frame
+  panel(BX - 10, BY - 10, N * CELL + 20, N * CELL + 20, "#3b2f63");
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      ctx.fillStyle = (r + c) % 2 ? "#221a3d" : "#281f47";
+      ctx.fillRect(BX + c * CELL, BY + r * CELL, CELL, CELL);
+    }
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(BX, BY, N * CELL, N * CELL); ctx.clip();
+  for (const f of flash) {
+    ctx.fillStyle = `rgba(255,255,255,${f.t * 1.4})`;
+    if (f.kind === "row") ctx.fillRect(BX, BY + f.a * CELL + 8, N * CELL, CELL - 16);
+    if (f.kind === "col") ctx.fillRect(BX + f.a * CELL + 8, BY, CELL - 16, N * CELL);
+    if (f.kind === "bomb") ctx.fillRect(BX + (f.b - 1) * CELL, BY + (f.a - 1) * CELL, CELL * 3, CELL * 3);
+  }
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++) {
+      const p = board[r][c];
+      if (!p) continue;
+      drawPiece(p, BX + p.x * CELL, BY + p.y * CELL, CELL, clock);
+    }
+  ctx.restore();
+
+  // selection / cursor / hint
+  if (hint && phase === "idle") {
+    const a = 0.4 + Math.sin(clock * 6) * 0.4;
+    ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 3;
+    for (const [r, c] of hint) { ctx.beginPath(); ctx.roundRect(BX + c * CELL + 2, BY + r * CELL + 2, CELL - 4, CELL - 4, 9); ctx.stroke(); }
+  }
+  if (selected) {
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(BX + selected.c * CELL + 2, BY + selected.r * CELL + 2, CELL - 4, CELL - 4, 9); ctx.stroke();
+  }
+  ctx.strokeStyle = held ? "#facc15" : "rgba(250,204,21,.65)"; ctx.lineWidth = 2;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath(); ctx.roundRect(BX + cursor.c * CELL + 1, BY + cursor.r * CELL + 1, CELL - 2, CELL - 2, 9); ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - 4, p.y - 4, 8, 8);
+  }
+  ctx.globalAlpha = 1;
+
+  // side panel
+  panel(PX, BY - 10, PW, N * CELL + 20, "#2a2147");
+  ctx.textAlign = "center";
+  const mid = PX + PW / 2;
+  ctx.fillStyle = "#c4b5fd"; ctx.font = `700 14px ${FONT}`;
+  ctx.fillText("LEVEL", mid, BY + 24);
+  ctx.fillStyle = "#fff"; ctx.font = `800 40px ${FONT}`;
+  ctx.fillText(level, mid, BY + 66);
+  ctx.fillStyle = "#c4b5fd"; ctx.font = `700 14px ${FONT}`;
+  ctx.fillText("MOVES", mid, BY + 112);
+  ctx.fillStyle = moves <= 3 ? "#f87171" : "#fff"; ctx.font = `800 40px ${FONT}`;
+  ctx.fillText(moves, mid, BY + 154);
+  ctx.fillStyle = "#c4b5fd"; ctx.font = `700 14px ${FONT}`;
+  ctx.fillText("TARGET", mid, BY + 200);
+  ctx.fillStyle = "#fff"; ctx.font = `800 22px ${FONT}`;
+  ctx.fillText(`${Math.min(levelScore, 99999)}`, mid, BY + 230);
+  ctx.fillStyle = "#a78bfa"; ctx.font = `700 15px ${FONT}`;
+  ctx.fillText(`of ${target}`, mid, BY + 252);
+  // progress bar made of bricks
+  const segs = 10, barX = PX + 18, barW = PW - 36, segW = barW / segs;
+  const prog = Math.min(1, levelScore / target);
+  for (let i = 0; i < segs; i++) {
+    const on = prog * segs > i;
+    Kit.brick(ctx, barX + i * segW + 1, BY + 266, segW - 2, 20, on ? (prog >= 1 ? "#22c55e" : "#facc15") : "#3b2f63", 3);
+  }
+  ctx.fillStyle = "#a7adb4"; ctx.font = `600 12px ${FONT}`;
+  const tips = ["Match 4: line brick", "L or T shape: bomb", "Match 5: rainbow", "Swap rainbow with a", "color to clear it all"];
+  tips.forEach((tLine, i) => ctx.fillText(tLine, mid, BY + 330 + i * 20));
+  // tiny legend icons
+  const ly = BY + 446;
+  drawPiece({ color: 1, special: "row", born: 0 }, mid - 72, ly, 44, clock);
+  drawPiece({ color: 3, special: "bomb", born: 0 }, mid - 22, ly, 44, clock);
+  drawPiece({ color: -1, special: "rainbow", born: 0 }, mid + 28, ly, 44, clock);
+
+  ctx.font = `800 24px ${FONT}`;
+  for (const p of popups) {
+    ctx.globalAlpha = Math.min(1, p.t * 2);
+    ctx.font = `800 ${p.big ? 32 : 22}px ${FONT}`;
+    ctx.fillStyle = "#000"; ctx.fillText(p.text, p.x + 2, p.y + 2);
+    ctx.fillStyle = p.big ? "#facc15" : "#fff"; ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+flash = [];
+const game = Kit.loop(update, draw);
+reset();
+phase = "menu";
+game.start();
+Kit.overlay("Gem Bricks",
+  "Swap neighboring bricks to line up 3 or more of a color.\nReach the target score before your moves run out.\nMatch 4 for a line brick, an L or T for a bomb,\nand 5 in a row for a rainbow brick.\n\nMouse: click two bricks or drag to swap\nKeys: arrows move, Space picks up, arrow swaps",
+  "Play").then(() => { phase = "fall"; });
+</script>
+</body>
+</html>

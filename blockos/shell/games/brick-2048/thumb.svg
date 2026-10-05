@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs>
+    <g id="t"><rect x="10" y="-5" width="16" height="8" rx="2"/><rect x="34" y="-5" width="16" height="8" rx="2"/><rect width="60" height="52" rx="8"/><rect x="4" y="3" width="52" height="5" fill="#fff" fill-opacity=".25"/><rect x="4" y="44" width="52" height="5" fill="#000" fill-opacity=".2"/></g>
+    <g id="dots" fill="#fff" fill-opacity=".05"><circle cx="18" cy="18" r="6"/><circle cx="42" cy="18" r="6"/><circle cx="18" cy="40" r="6"/><circle cx="42" cy="40" r="6"/></g>
+  </defs>
+  <rect width="480" height="270" fill="#16181b"/>
+  <rect x="100" y="8" width="280" height="256" rx="14" fill="#3a3f46"/>
+  <g fill="#2b2f35">
+    <rect x="112" y="22" width="60" height="52" rx="8"/><rect x="180" y="22" width="60" height="52" rx="8"/><rect x="248" y="22" width="60" height="52" rx="8"/><rect x="316" y="22" width="60" height="52" rx="8"/>
+    <rect x="112" y="82" width="60" height="52" rx="8"/><rect x="180" y="82" width="60" height="52" rx="8"/><rect x="248" y="82" width="60" height="52" rx="8"/><rect x="316" y="82" width="60" height="52" rx="8"/>
+    <rect x="112" y="142" width="60" height="52" rx="8"/><rect x="180" y="142" width="60" height="52" rx="8"/><rect x="248" y="142" width="60" height="52" rx="8"/><rect x="316" y="142" width="60" height="52" rx="8"/>
+    <rect x="112" y="202" width="60" height="52" rx="8"/><rect x="180" y="202" width="60" height="52" rx="8"/><rect x="248" y="202" width="60" height="52" rx="8"/><rect x="316" y="202" width="60" height="52" rx="8"/>
+  </g>
+  <use href="#t" x="112" y="22" fill="#e7e2d8"/>
+  <use href="#t" x="248" y="22" fill="#fb923c"/>
+  <use href="#t" x="316" y="22" fill="#ef4444"/>
+  <use href="#t" x="180" y="82" fill="#e8cf9a"/>
+  <use href="#t" x="316" y="82" fill="#facc15"/>
+  <use href="#t" x="112" y="142" fill="#22c55e"/>
+  <use href="#t" x="248" y="142" fill="#3b82f6"/>
+  <use href="#t" x="316" y="142" fill="#a855f7"/>
+  <use href="#t" x="180" y="202" fill="#14b8a6"/>
+  <use href="#t" x="316" y="202" fill="#ec4899"/>
+  <!-- pips: number of studs on top of each tile hint at its value -->
+  <g fill="#3b3227" fill-opacity=".55"><circle cx="142" cy="50" r="7"/><circle cx="200" cy="108" r="6"/><circle cx="220" cy="108" r="6"/></g>
+  <g fill="#fff" fill-opacity=".85">
+    <rect x="270" y="40" width="16" height="16" rx="3"/>
+    <rect x="330" y="38" width="10" height="10" rx="2"/><rect x="352" y="38" width="10" height="10" rx="2"/><rect x="341" y="52" width="10" height="10" rx="2"/>
+    <rect x="330" y="98" width="10" height="10" rx="2"/><rect x="352" y="98" width="10" height="10" rx="2"/><rect x="330" y="112" width="10" height="10" rx="2"/><rect x="352" y="112" width="10" height="10" rx="2"/>
+    <path d="M128 158h28v20h-28z" fill-opacity=".5"/><path d="M262 154l16 14-16 14z"/>
+    <circle cx="346" cy="168" r="12"/><rect x="196" y="218" width="28" height="8" rx="3"/><rect x="196" y="232" width="28" height="8" rx="3"/>
+    <path d="M346 214l12 14-12 14-12-14z"/>
+  </g>
+  <!-- slide motion lines -->
+  <g stroke="#facc15" stroke-width="5" stroke-linecap="round" opacity=".8"><path d="M40 112h40M24 132h56M48 152h32"/><path d="M400 112h40M400 132h56M400 152h32"/></g>
+</svg>

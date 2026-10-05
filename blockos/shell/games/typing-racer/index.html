@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Typing Racer</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .choices { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; align-items: center; gap: 12px; text-align: left; padding: 11px 16px; box-shadow: 0 4px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh, #0b7a47); }
+  .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .choices .num { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, .25); font-size: 14px; flex: none; }
+  .choices small { margin-left: auto; font-size: 13px; font-weight: 600; opacity: .85; }
+  .kit-btn.orange { background: var(--orange); --sh: #c2410c; }
+  .kit-btn.red { background: var(--red); --sh: #b91c1c; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "typing-racer";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const MONO = "'DejaVu Sans Mono', 'Noto Sans Mono', 'Consolas', monospace";
+const { canvas, ctx, W, H } = Kit.stage(960, 600);
+
+const SENTENCES = [
+  "The quick brown fox jumps over the lazy dog.",
+  "Blocky cars zoom around the track at top speed.",
+  "Every brick in the tower was placed with care.",
+  "The rocket left a trail of sparks across the sky.",
+  "A friendly robot waved hello from the garden.",
+  "We built a castle out of red and yellow bricks.",
+  "The penguin slid down the icy hill on its belly.",
+  "Practice a little every day and you will get faster.",
+  "Thunder rolled over the hills as the rain began.",
+  "The pirate ship sailed past the sleepy island.",
+  "My cat likes to nap in a warm patch of sunlight.",
+  "Pack a snack, grab your map, and start the quest.",
+  "The dragon guarded a giant pile of shiny coins.",
+  "Five green frogs hopped across the lily pads.",
+  "She scored the winning goal in the final minute.",
+  "The bakery smells like fresh bread and cinnamon.",
+  "Stars twinkle brightly on a clear summer night.",
+  "Our team cheered loudly when the race was over.",
+  "The tiny ant carried a crumb twice its size.",
+  "Turn left at the old oak tree and follow the river.",
+  "A rainbow appeared just after the storm passed.",
+  "The robot chef flipped pancakes high into the air.",
+  "Keep your eyes on the road and your hands on the keys.",
+  "The museum has a dinosaur skeleton as tall as a house.",
+  "We found a secret door behind the dusty bookshelf.",
+  "Bright balloons floated up over the busy fair.",
+  "The astronaut planted a flag on the dusty moon.",
+  "Cool lemonade is the best treat on a hot day.",
+  "Jump over the lava, grab the key, and reach the flag.",
+  "The owl hooted softly from the top of the pine tree.",
+  "Racing is fun, but good sportsmanship matters most.",
+  "Glowing lanterns lit up the path to the old bridge.",
+];
+const LEVELS = {
+  rookie: { name: "Rookie", wpm: [16, 24, 32] },
+  racer: { name: "Racer", wpm: [30, 40, 50] },
+  champ: { name: "Champion", wpm: [50, 62, 78] },
+};
+const CAR_COLORS = [
+  { body: "#22c55e", dark: "#15803d", name: "You" },
+  { body: "#ef4444", dark: "#b91c1c", name: "Blaze" },
+  { body: "#3b82f6", dark: "#1d4ed8", name: "Bolt" },
+  { body: "#facc15", dark: "#ca8a04", name: "Zippy" },
+];
+const CAR_X0 = 68, CAR_X1 = 838, FINISH_X = 880, LANE_H = 62, TRACK_Y = 70;
+
+/* ---------- menu helper ---------- */
+function choose(title, text, options) {
+  return new Promise((resolve) => {
+    const o = document.createElement("div");
+    o.className = "kit-overlay";
+    const panel = document.createElement("div");
+    panel.className = "kit-panel";
+    const h = document.createElement("h1");
+    h.textContent = title;
+    const p = document.createElement("p");
+    p.textContent = text || "";
+    const list = document.createElement("div");
+    list.className = "choices";
+    panel.append(h, p, list);
+    o.appendChild(panel);
+    document.body.appendChild(o);
+    let sel = 0;
+    const buttons = options.map((opt, i) => {
+      const b = document.createElement("button");
+      b.className = "kit-btn " + (opt.color || "");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = i + 1;
+      b.append(num, opt.label);
+      if (opt.hint) {
+        const s = document.createElement("small");
+        s.textContent = opt.hint;
+        b.appendChild(s);
+      }
+      b.addEventListener("click", () => done(i));
+      b.addEventListener("mouseenter", () => select(i));
+      list.appendChild(b);
+      return b;
+    });
+    function select(i) {
+      sel = (i + buttons.length) % buttons.length;
+      buttons.forEach((b, j) => b.classList.toggle("sel", j === sel));
+    }
+    select(Math.max(0, options.findIndex((opt) => opt.selected)));
+    const shownAt = performance.now();
+    function done(i) {
+      removeEventListener("keydown", onKey, true);
+      o.remove();
+      Kit.sfx("click");
+      resolve(options[i].value);
+    }
+    function onKey(e) {
+      const c = e.code;
+      let handled = true;
+      if (c === "ArrowUp" || c === "ArrowLeft") select(sel - 1);
+      else if (c === "ArrowDown" || c === "ArrowRight") select(sel + 1);
+      else if (c === "Enter" || c === "NumpadEnter" || c === "Space") {
+        if (performance.now() - shownAt > 350 && !e.repeat) done(sel);
+      } else if (/^(Digit|Numpad)[1-9]$/.test(c) && Number(c.slice(-1)) <= buttons.length) done(Number(c.slice(-1)) - 1);
+      else handled = false;
+      if (handled) { e.preventDefault(); e.stopPropagation(); }
+    }
+    addEventListener("keydown", onKey, true);
+  });
+}
+
+/* ---------- state ---------- */
+let levelKey = "racer";
+let passage = "", lines = [], typed = 0, errors = 0, keystrokes = 0, wrongNow = false, wrongT = 0;
+let phase = "menu"; // menu | count | race | done
+let countT = 0, raceT = 0, cars = [], finishOrder = [], playerTime = 0;
+let puffs = [], confetti = [], scroll = 0;
+
+function buildPassage() {
+  const pool = SENTENCES.slice();
+  const picks = [];
+  let len = 0;
+  while (len < 150) {
+    const s = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    picks.push(s);
+    len += s.length + 1;
+  }
+  return picks.join(" ");
+}
+
+function wrap(str, max) {
+  const out = [];
+  let start = 0;
+  while (start < str.length) {
+    let end = Math.min(str.length, start + max);
+    if (end < str.length) {
+      const sp = str.lastIndexOf(" ", end);
+      if (sp > start) end = sp + 1;
+    }
+    out.push({ start, end });
+    start = end;
+  }
+  return out;
+}
+
+function newRace() {
+  passage = buildPassage();
+  lines = wrap(passage, 52);
+  typed = 0; errors = 0; keystrokes = 0; wrongNow = false; wrongT = 0;
+  raceT = 0; countT = 3.6; playerTime = 0;
+  finishOrder = [];
+  puffs = []; confetti = [];
+  const lv = LEVELS[levelKey];
+  cars = CAR_COLORS.map((c, i) => ({
+    ...c,
+    lane: i,
+    progress: 0, // 0..1
+    shown: 0,
+    wpm: i === 0 ? 0 : lv.wpm[i - 1] * Kit.rand(0.9, 1.1),
+    phase: Math.random() * 10,
+    done: false,
+    time: 0,
+    bump: 0,
+  }));
+  // shuffle AI lanes so the player is not always beside the same car
+  phase = "count";
+  Kit.sfx("click");
+  updateHud();
+}
+
+const elapsed = () => (phase === "done" ? playerTime : raceT);
+const netWpm = () => (elapsed() > 0.5 ? (typed / 5) / (elapsed() / 60) : 0);
+const accuracy = () => (keystrokes ? Math.round(((keystrokes - errors) / keystrokes) * 100) : 100);
+
+function updateHud() {
+  Kit.hud(`${Math.round(phase === "race" || phase === "done" ? netWpm() : 0)} WPM<small>Best ${Kit.best(ID) ?? 0} WPM</small>`);
+}
+
+async function menu() {
+  phase = "menu";
+  levelKey = await choose("Typing Racer",
+    "Type the sentences as fast as you can. Every correct letter pushes your green car forward!\n\n" +
+    "Mistakes don't move you - fix them by typing the right key.\nRace three CPU cars to the checkered flag.",
+    [
+      { label: "Rookie", value: "rookie", hint: "CPU ~16-32 WPM", selected: levelKey === "rookie" },
+      { label: "Racer", value: "racer", color: "orange", hint: "CPU ~30-50 WPM", selected: levelKey === "racer" },
+      { label: "Champion", value: "champ", color: "red", hint: "CPU ~50-78 WPM", selected: levelKey === "champ" },
+    ]);
+  newRace();
+}
+
+/* ---------- typing ---------- */
+Kit.onKey((code, e) => {
+  if (phase !== "race") return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key;
+  if (k.length !== 1) return;
+  e.preventDefault();
+  keystrokes++;
+  const want = passage[typed];
+  if (k === want || (k.toLowerCase() === want.toLowerCase())) {
+    typed++;
+    wrongNow = false;
+    const me = cars[0];
+    me.bump = 0.15;
+    if (k === " ") Kit.sfx("click");
+    if (typed >= passage.length) playerFinish();
+  } else {
+    errors++;
+    wrongNow = true;
+    wrongT = 0.25;
+    Kit.sfx("hit");
+  }
+});
+
+function playerFinish() {
+  const me = cars[0];
+  me.done = true;
+  me.progress = 1;
+  me.time = raceT;
+  playerTime = raceT;
+  finishOrder.push(0);
+  phase = "done";
+  const place = finishOrder.indexOf(0) + 1;
+  const wpm = Math.round(netWpm());
+  const acc = accuracy();
+  Kit.sfx(place === 1 ? "win" : "score");
+  if (place === 1) for (let i = 0; i < 80; i++) confetti.push({ x: Kit.rand(0, W), y: Kit.rand(-200, 0), vy: Kit.rand(80, 200), vx: Kit.rand(-40, 40), c: Kit.pick(["#ef4444", "#facc15", "#22c55e", "#3b82f6", "#a855f7"]), r: Math.random() * 6 });
+  const best = Kit.finish(ID, wpm);
+  updateHud();
+  setTimeout(async () => {
+    const ord = ["1st", "2nd", "3rd", "4th"][place - 1];
+    await Kit.overlay(place === 1 ? "You win!" : `You finished ${ord}`,
+      `${LEVELS[levelKey].name} race\n\nSpeed: ${wpm} WPM\nAccuracy: ${acc}%\nTime: ${playerTime.toFixed(1)}s\n\nBest: ${best} WPM`, "Race again");
+    menu();
+  }, 1800);
+}
+
+/* ---------- loop ---------- */
+function update(dt) {
+  scroll += dt;
+  if (phase === "count") {
+    const before = Math.ceil(countT);
+    countT -= dt;
+    if (Math.ceil(countT) !== before && countT > 0) Kit.sfx(countT < 1 ? "score" : "click");
+    if (countT <= 0) { phase = "race"; Kit.sfx("jump"); }
+  }
+  if (phase === "race" || phase === "done") {
+    raceT += dt;
+    for (let i = 1; i < cars.length; i++) {
+      const c = cars[i];
+      if (c.done) continue;
+      // wobble the CPU speed a little so the race feels alive
+      const speed = c.wpm * (1 + 0.18 * Math.sin(raceT * 0.9 + c.phase) + 0.08 * Math.sin(raceT * 2.7 + c.phase * 2));
+      c.progress += ((speed * 5) / 60) * dt / passage.length;
+      if (c.progress >= 1) { c.progress = 1; c.done = true; c.time = raceT; finishOrder.push(i); }
+      if (Math.random() < dt * 8) puffs.push(puffAt(c));
+    }
+    if (phase === "race") {
+      cars[0].progress = typed / passage.length;
+      if (Math.floor(raceT * 4) !== Math.floor((raceT - dt) * 4)) updateHud();
+    }
+  }
+  for (const c of cars) {
+    c.shown += (c.progress - c.shown) * Math.min(1, dt * 10);
+    c.bump = Math.max(0, c.bump - dt);
+    if (c.lane === 0 && c.bump > 0 && Math.random() < 0.5) puffs.push(puffAt(c));
+  }
+  wrongT = Math.max(0, wrongT - dt);
+  for (const p of puffs) { p.t += dt; p.x -= 30 * dt; p.y -= 10 * dt; }
+  puffs = puffs.filter((p) => p.t < 0.6);
+  for (const c of confetti) { c.y += c.vy * dt; c.x += c.vx * dt; c.r += dt * 5; }
+  confetti = confetti.filter((c) => c.y < H + 20);
+}
+
+function carX(c) { return CAR_X0 + (CAR_X1 - CAR_X0) * c.shown; }
+function laneY(i) { return TRACK_Y + i * LANE_H; }
+function puffAt(c) { return { x: carX(c) - 46, y: laneY(c.lane) + LANE_H / 2 + 6 + Kit.rand(-4, 4), t: 0 }; }
+
+function text(str, x, y, size, color, weight, align, font) {
+  ctx.font = `${weight || 800} ${size}px ${font || FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function drawCar(c) {
+  const x = carX(c), y = laneY(c.lane) + LANE_H / 2;
+  const jig = (phase === "race" || phase === "done") && !c.done ? Math.sin(scroll * 30 + c.lane) * 1 : 0;
+  ctx.save();
+  ctx.translate(x, y + jig);
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,.3)";
+  ctx.fillRect(-44, 14, 84, 6);
+  // body
+  Kit.brick(ctx, -46, -8, 88, 24, c.body, 5);
+  // cabin
+  Kit.brick(ctx, -24, -24, 40, 18, c.dark, 4);
+  ctx.fillStyle = "#bfe3ff";
+  ctx.fillRect(-2, -20, 14, 10);
+  ctx.fillRect(-20, -20, 14, 10);
+  // spoiler
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(-48, -16, 8, 10);
+  // wheels
+  for (const wx of [-28, 24]) {
+    ctx.fillStyle = "#111";
+    ctx.beginPath();
+    ctx.arc(wx, 16, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#9ca3af";
+    ctx.save();
+    ctx.translate(wx, 16);
+    ctx.rotate(c.shown * 80);
+    ctx.fillRect(-4, -1.5, 8, 3);
+    ctx.restore();
+  }
+  // headlight
+  ctx.fillStyle = "#fde68a";
+  ctx.fillRect(38, -4, 4, 6);
+  ctx.restore();
+  // name painted on the side of the car
+  text(c.name.toUpperCase(), x - 2, y + 4 + jig, 11, c.lane === 3 ? "#713f12" : "#fff", 800);
+}
+
+function draw() {
+  // sky and stands
+  const sky = ctx.createLinearGradient(0, 0, 0, TRACK_Y);
+  sky.addColorStop(0, "#1e3a5f");
+  sky.addColorStop(1, "#2c5282");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, W, TRACK_Y);
+  // crowd blocks
+  for (let i = 0; i < 48; i++) {
+    const cx = i * 20 + 4;
+    const bob = phase === "done" ? Math.abs(Math.sin(scroll * 8 + i)) * 4 : Math.abs(Math.sin(scroll * 2 + i)) * 1.5;
+    ctx.fillStyle = ["#ef4444", "#facc15", "#22c55e", "#3b82f6", "#a855f7", "#fb923c"][i % 6];
+    ctx.fillRect(cx, TRACK_Y - 24 - bob, 12, 12);
+    ctx.fillStyle = "#f5d0a9";
+    ctx.fillRect(cx + 2, TRACK_Y - 34 - bob, 8, 8);
+  }
+  ctx.fillStyle = "#4b5563";
+  ctx.fillRect(0, TRACK_Y - 10, W, 10);
+  // track
+  const trackH = LANE_H * 4;
+  ctx.fillStyle = "#374151";
+  ctx.fillRect(0, TRACK_Y, W, trackH);
+  ctx.fillStyle = "#2f3742";
+  for (let i = 0; i < 4; i += 2) ctx.fillRect(0, laneY(i), W, LANE_H);
+  // lane lines
+  ctx.fillStyle = "rgba(255,255,255,.35)";
+  for (let i = 1; i < 4; i++) for (let x = 0; x < W; x += 40) ctx.fillRect(x, laneY(i) - 1, 22, 3);
+  // curbs
+  for (let x = 0; x < W; x += 24) {
+    ctx.fillStyle = (x / 24) % 2 ? "#ef4444" : "#f2f4f5";
+    ctx.fillRect(x, TRACK_Y + trackH, 24, 8);
+  }
+  // start and finish lines
+  ctx.fillStyle = "rgba(255,255,255,.6)";
+  ctx.fillRect(CAR_X0 + 40, TRACK_Y, 4, trackH);
+  const FX = FINISH_X;
+  for (let r = 0; r < trackH / 10; r++) for (let k = 0; k < 2; k++) {
+    ctx.fillStyle = (r + k) % 2 ? "#111" : "#fff";
+    ctx.fillRect(FX + k * 10, TRACK_Y + r * 10, 10, 10);
+  }
+  // lane numbers
+  for (let i = 0; i < 4; i++) text(String(i + 1), 22, laneY(i) + LANE_H / 2, 16, "rgba(255,255,255,.35)", 800);
+  for (const p of puffs) {
+    ctx.globalAlpha = 0.5 * (1 - p.t / 0.6);
+    ctx.fillStyle = "#d1d5db";
+    const s = 6 + p.t * 14;
+    ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
+  }
+  ctx.globalAlpha = 1;
+  // draw cars, translated so the nose reaches the finish line at progress 1
+  for (const c of cars) {
+    drawCar(c);
+    if (c.done) {
+      const place = finishOrder.indexOf(c.lane) + 1;
+      Kit.brick(ctx, W - 54, laneY(c.lane) + 14, 44, 34, place === 1 ? "#facc15" : "#9ca3af", 6);
+      text(["1st", "2nd", "3rd", "4th"][place - 1], W - 32, laneY(c.lane) + 32, 15, "#1f2328", 800);
+    }
+  }
+  drawTypingPanel();
+  // countdown lights
+  if (phase === "count") {
+    const n = Math.ceil(countT);
+    const label = n > 3 ? "Ready" : n >= 1 ? String(n) : "GO!";
+    Kit.brick(ctx, W / 2 - 110, TRACK_Y + 60, 220, 120, "rgba(15,17,19,.85)", 14);
+    for (let i = 0; i < 3; i++) {
+      const on = n <= 3 - i;
+      ctx.fillStyle = on ? (n <= 1 && i === 2 ? "#22c55e" : "#ef4444") : "#374151";
+      ctx.beginPath();
+      ctx.arc(W / 2 - 50 + i * 50, TRACK_Y + 95, 16, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    text(label, W / 2, TRACK_Y + 148, 30, "#fff", 800);
+  }
+  for (const c of confetti) {
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.r);
+    ctx.fillStyle = c.c;
+    ctx.fillRect(-4, -3, 8, 6);
+    ctx.restore();
+  }
+}
+
+function drawTypingPanel() {
+  const PY = TRACK_Y + LANE_H * 4 + 22;
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, PY - 14, W, H - PY + 14);
+  // stats row
+  const stats = [
+    ["Speed", `${Math.round(phase === "race" || phase === "done" ? netWpm() : 0)} WPM`, "#22c55e"],
+    ["Accuracy", `${accuracy()}%`, "#3b82f6"],
+    ["Progress", `${Math.round((typed / Math.max(1, passage.length)) * 100)}%`, "#facc15"],
+    ["Time", `${elapsed().toFixed(1)}s`, "#a855f7"],
+  ];
+  stats.forEach(([label, val, col], i) => {
+    const x = 40 + i * 225;
+    Kit.brick(ctx, x, PY, 205, 46, "#22252a", 8);
+    ctx.fillStyle = col;
+    ctx.fillRect(x + 10, PY + 12, 6, 22);
+    text(label, x + 26, PY + 23, 14, "#a7adb4", 700, "left");
+    text(val, x + 192, PY + 24, 20, "#f2f4f5", 800, "right");
+  });
+  // passage box
+  const BX0 = 40, BY0 = PY + 60, BW = W - 80;
+  ctx.fillStyle = "#f2f4f5";
+  ctx.beginPath();
+  ctx.roundRect(BX0, BY0, BW, H - BY0 - 14, 12);
+  ctx.fill();
+  ctx.fillStyle = "#d1d5db";
+  ctx.fillRect(BX0 + 12, H - 22, BW - 24, 4);
+  if (!passage) return;
+  ctx.font = `600 26px ${MONO}`;
+  const cw = ctx.measureText("M").width;
+  const lineH = 40;
+  const curLine = lines.findIndex((l) => typed >= l.start && typed < l.end);
+  const first = Math.max(0, Math.min((curLine < 0 ? lines.length - 1 : curLine) - 1, lines.length - 3));
+  for (let li = first; li < Math.min(lines.length, first + 3); li++) {
+    const l = lines[li];
+    const y = BY0 + 34 + (li - first) * lineH;
+    const startX = BX0 + 26;
+    for (let i = l.start; i < l.end; i++) {
+      const x = startX + (i - l.start) * cw;
+      const ch = passage[i];
+      if (i === typed && phase !== "done") {
+        ctx.fillStyle = wrongNow ? (wrongT > 0 ? "#ef4444" : "#fecaca") : "#fde68a";
+        ctx.fillRect(x - 1, y - 18, cw + 2, 34);
+        ctx.fillStyle = wrongNow ? "#b91c1c" : "#1f2328";
+        ctx.fillRect(x - 1, y + 14, cw + 2, 3);
+      }
+      let color = "#6b7280";
+      if (i < typed) color = "#16a34a";
+      else if (i === typed) color = wrongNow ? "#7f1d1d" : "#1f2328";
+      ctx.fillStyle = color;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.font = `${i === typed ? 800 : 600} 26px ${MONO}`;
+      ctx.fillText(ch === " " && i === typed ? "_" : ch, x, y);
+    }
+  }
+  if (phase === "count" || phase === "menu") {
+    text("Get ready to type...", BX0 + BW - 20, H - 30, 14, "#6b7280", 700, "right");
+  }
+}
+
+// a quick preview race shows behind the first menu
+passage = buildPassage();
+lines = wrap(passage, 52);
+cars = CAR_COLORS.map((c, i) => ({ ...c, lane: i, progress: 0, shown: 0, wpm: 0, done: false, bump: 0 }));
+updateHud();
+Kit.loop(update, draw).start();
+menu();
+</script>
+</body>
+</html>

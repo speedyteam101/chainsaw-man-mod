@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math Blitz</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "math-blitz";
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const { canvas, ctx, W, H } = Kit.stage(720, 560);
+canvas.style.outline = "none";
+const ROUND_TIME = 60;
+const CHOICE_KEYS = ["KeyA", "KeyS", "KeyD", "KeyF"];
+const CHOICE_LABELS = ["A", "S", "D", "F"];
+const CHOICE_COLORS = ["#ef4444", "#3b82f6", "#facc15", "#22c55e"];
+const BTN_Y = 382, BTN_W = 150, BTN_H = 96, BTN_GAP = 18;
+const BTN_X0 = (W - (4 * BTN_W + 3 * BTN_GAP)) / 2;
+const TIMES = "×", DIVIDE = "÷";
+
+let phase = "menu"; // menu | play | over
+let timeLeft, score, level, correct, wrong, streak, bestStreak, q, typed, qStart;
+let floaters = [], shake = 0, flashColor = null, flashT = 0, pressed = -1, pressedT = 0, levelUpT = 0;
+
+const ri = (a, b) => Kit.randInt(a, b);
+
+// Builds a question for the current level: { text, answer, choices }
+function makeQuestion(lv) {
+  let a, b, c, text, answer;
+  const kind = Kit.pick(kindsFor(lv));
+  switch (kind) {
+    case "add1": a = ri(1, 9); b = ri(1, 9); text = `${a} + ${b}`; answer = a + b; break;
+    case "sub1": a = ri(2, 18); b = ri(1, a - 1); text = `${a} - ${b}`; answer = a - b; break;
+    case "add2": a = ri(10, 60); b = ri(3, 39); text = `${a} + ${b}`; answer = a + b; break;
+    case "sub2": a = ri(20, 99); b = ri(3, a - 5); text = `${a} - ${b}`; answer = a - b; break;
+    case "mulEasy": a = Kit.pick([2, 5, 10]); b = ri(1, 10); [a, b] = Math.random() < 0.5 ? [a, b] : [b, a]; text = `${a} ${TIMES} ${b}`; answer = a * b; break;
+    case "mul": a = ri(2, 9); b = ri(2, 9); text = `${a} ${TIMES} ${b}`; answer = a * b; break;
+    case "mul12": a = ri(3, 12); b = ri(6, 12); text = `${a} ${TIMES} ${b}`; answer = a * b; break;
+    case "div": b = ri(2, 9); answer = ri(2, 9); a = b * answer; text = `${a} ${DIVIDE} ${b}`; break;
+    case "div12": b = ri(3, 12); answer = ri(3, 12); a = b * answer; text = `${a} ${DIVIDE} ${b}`; break;
+    case "add3": a = ri(100, 400); b = ri(20, 300); text = `${a} + ${b}`; answer = a + b; break;
+    case "mulBig": a = ri(11, 25); b = ri(3, 9); text = `${a} ${TIMES} ${b}`; answer = a * b; break;
+    case "three": a = ri(2, 20); b = ri(2, 20); c = ri(1, Math.min(15, a + b - 1)); text = `${a} + ${b} - ${c}`; answer = a + b - c; break;
+    case "mixed": a = ri(2, 9); b = ri(2, 9); c = ri(1, 20); text = `${a} ${TIMES} ${b} + ${c}`; answer = a * b + c; break;
+    case "missing": a = ri(3, 30); answer = ri(2, 30); text = `${a} + ? = ${a + answer}`; break;
+  }
+  return { text, answer, choices: makeChoices(answer), kind };
+}
+
+function kindsFor(lv) {
+  if (lv <= 1) return ["add1", "add1", "sub1"];
+  if (lv === 2) return ["add1", "sub1", "add2", "mulEasy"];
+  if (lv === 3) return ["add2", "sub2", "mulEasy", "mul"];
+  if (lv === 4) return ["add2", "sub2", "mul", "div", "missing"];
+  if (lv === 5) return ["sub2", "mul", "div", "three", "missing"];
+  if (lv === 6) return ["mul", "mul12", "div", "three", "add3"];
+  if (lv === 7) return ["mul12", "div12", "three", "add3", "mixed"];
+  return ["mul12", "div12", "mulBig", "mixed", "add3", "missing"];
+}
+
+function makeChoices(ans) {
+  const set = new Set([ans]);
+  const spread = Math.max(3, Math.round(Math.abs(ans) * 0.15));
+  let guard = 0;
+  while (set.size < 4 && guard++ < 100) {
+    let d = Kit.pick([-10, 10, -1, 1, -2, 2]);
+    if (Math.random() < 0.5) d = ri(-spread, spread);
+    const v = ans + d;
+    if (v >= 0 && v !== ans) set.add(v);
+  }
+  let k = 1;
+  while (set.size < 4) set.add(ans + k++);
+  const arr = [...set];
+  for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+  return arr;
+}
+
+const multiplier = () => Math.min(5, 1 + Math.floor(streak / 3));
+
+function reset() {
+  timeLeft = ROUND_TIME;
+  score = 0; level = 1; correct = 0; wrong = 0; streak = 0; bestStreak = 0;
+  floaters = []; shake = 0; flashT = 0; levelUpT = 0;
+  nextQuestion();
+  updateHud();
+}
+
+function nextQuestion() {
+  let nq;
+  do nq = makeQuestion(level); while (q && nq.text === q.text);
+  q = nq;
+  typed = "";
+  qStart = timeLeft;
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+function answer(value, fromIndex) {
+  if (phase !== "play") return;
+  if (fromIndex !== undefined) { pressed = fromIndex; pressedT = 0.15; }
+  if (value === q.answer) {
+    streak++;
+    bestStreak = Math.max(bestStreak, streak);
+    correct++;
+    const fast = qStart - timeLeft < 2.5;
+    const pts = (10 * level + (fast ? 5 : 0)) * multiplier();
+    score += pts;
+    floaters.push({ text: `+${pts}${fast ? " fast!" : ""}`, x: W / 2, y: 150, t: 0, color: "#4ade80" });
+    flashColor = "#22c55e"; flashT = 0.3;
+    Kit.sfx(streak % 3 === 0 && multiplier() > 1 ? "score" : "coin");
+    const newLevel = Math.min(10, 1 + Math.floor(correct / 4));
+    if (newLevel > level) { level = newLevel; levelUpT = 1.4; Kit.sfx("jump"); }
+    nextQuestion();
+  } else {
+    wrong++;
+    streak = 0;
+    shake = 0.3;
+    flashColor = "#ef4444"; flashT = 0.3;
+    floaters.push({ text: `${q.text.replace("?", q.answer)}${q.text.includes("?") ? "" : " = " + q.answer}`, x: W / 2, y: 150, t: 0, color: "#f87171" });
+    Kit.sfx("hit");
+    nextQuestion();
+  }
+  updateHud();
+}
+
+async function endRound() {
+  phase = "over";
+  Kit.sfx("win");
+  const best = Kit.finish(ID, score);
+  updateHud();
+  const acc = correct + wrong ? Math.round((correct / (correct + wrong)) * 100) : 0;
+  await new Promise((r) => setTimeout(r, 600));
+  await Kit.overlay("Time's up!", `Score: ${score}\nCorrect: ${correct}   Wrong: ${wrong}   (${acc}%)\nBest streak: ${bestStreak}   Level reached: ${level}\n\nBest score: ${best}`, "Play again");
+  reset();
+  phase = "play";
+}
+
+/* ---------- input ---------- */
+Kit.onKey((code, e) => {
+  if (phase !== "play") return;
+  const ci = CHOICE_KEYS.indexOf(code);
+  if (ci >= 0) return answer(q.choices[ci], ci);
+  const m = /^(Digit|Numpad)([0-9])$/.exec(code);
+  if (m) {
+    if (typed.length < 5) typed += m[2];
+    if (Number(typed) === q.answer) answer(q.answer);
+    else if (typed.length > String(q.answer).length) answer(Number(typed));
+    else Kit.sfx("click");
+    return;
+  }
+  if (code === "Backspace" || code === "Delete") { e.preventDefault(); typed = typed.slice(0, -1); }
+  else if ((code === "Enter" || code === "NumpadEnter") && typed) answer(Number(typed));
+});
+
+function btnRect(i) { return { x: BTN_X0 + i * (BTN_W + BTN_GAP), y: BTN_Y, w: BTN_W, h: BTN_H }; }
+function btnAt(p) {
+  for (let i = 0; i < 4; i++) {
+    const r = btnRect(i);
+    if (p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h) return i;
+  }
+  return -1;
+}
+let hover = -1;
+canvas.addEventListener("mousedown", (e) => {
+  if (phase !== "play") return;
+  const i = btnAt(Kit.pointer(canvas, e));
+  if (i >= 0) answer(q.choices[i], i);
+});
+canvas.addEventListener("mousemove", (e) => {
+  hover = btnAt(Kit.pointer(canvas, e));
+  canvas.style.cursor = hover >= 0 ? "pointer" : "default";
+});
+
+/* ---------- loop ---------- */
+function update(dt) {
+  if (phase === "play") {
+    const before = Math.ceil(timeLeft);
+    timeLeft -= dt;
+    if (timeLeft <= 10 && Math.ceil(timeLeft) !== before && timeLeft > 0) Kit.sfx("click");
+    if (timeLeft <= 0) { timeLeft = 0; endRound(); }
+  }
+  shake = Math.max(0, shake - dt);
+  flashT = Math.max(0, flashT - dt);
+  pressedT = Math.max(0, pressedT - dt);
+  levelUpT = Math.max(0, levelUpT - dt);
+  for (const f of floaters) f.t += dt;
+  floaters = floaters.filter((f) => f.t < 1.1);
+}
+
+function text(str, x, y, size, color, weight, align) {
+  ctx.font = `${weight || 800} ${size}px ${FONT}`;
+  ctx.fillStyle = color;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  ctx.fillStyle = "#1a1530";
+  ctx.fillRect(0, 0, W, H);
+  // floating background digits made of faint bricks
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 15; y < H; y += 30) for (let x = 15; x < W; x += 30) { ctx.beginPath(); ctx.arc(x, y, 5, 0, 7); ctx.fill(); }
+  if (!q) return;
+  // timer bar made of bricks
+  const segs = 20;
+  const segW = (W - 60) / segs;
+  const frac = timeLeft / ROUND_TIME;
+  for (let i = 0; i < segs; i++) {
+    const on = i / segs < frac;
+    const col = frac > 0.5 ? "#22c55e" : frac > 0.2 ? "#facc15" : "#ef4444";
+    Kit.brick(ctx, 30 + i * segW + 1, 22, segW - 2, 22, on ? col : "#2b2f35", 4);
+  }
+  text(`${Math.ceil(timeLeft)}s`, W / 2, 62, 16, timeLeft <= 10 ? "#f87171" : "#a7adb4", 800);
+  // level / combo
+  Kit.brick(ctx, 30, 78, 130, 40, "#7c3aed", 8);
+  text(`Level ${level}`, 95, 98, 18, "#fff", 800);
+  const mult = multiplier();
+  const mcol = ["#4b5563", "#3b82f6", "#22c55e", "#facc15", "#fb923c", "#ef4444"][mult];
+  Kit.brick(ctx, W - 160, 78, 130, 40, mcol, 8);
+  text(`Combo x${mult}`, W - 95, 98, 18, mult === 3 ? "#1f2328" : "#fff", 800);
+  // streak pips toward next multiplier
+  for (let i = 0; i < 3; i++) {
+    const filled = mult < 5 && i < streak % 3;
+    Kit.brick(ctx, W - 150 + i * 40, 124, 32, 8, filled || mult === 5 ? mcol : "#2b2f35", 2);
+  }
+  // question card
+  const sx = shake > 0 ? Math.sin(shake * 70) * 8 : 0;
+  let cardCol = "#f2f4f5";
+  if (flashT > 0) cardCol = flashColor === "#22c55e" ? "#bbf7d0" : "#fecaca";
+  Kit.brick(ctx, 110 + sx, 160, W - 220, 120, cardCol, 14);
+  text(q.text.includes("?") ? q.text : `${q.text} = ?`, W / 2 + sx, 222, 54, "#1f2328", 800);
+  // typed answer box
+  Kit.brick(ctx, W / 2 - 90, 296, 180, 54, "#2b2f35", 10);
+  if (typed) text(typed, W / 2, 324, 32, "#f2f4f5", 800);
+  else text("type answer", W / 2, 324, 16, "#6b7280", 700);
+  if (phase === "play" && Math.floor(performance.now() / 500) % 2 === 0) {
+    ctx.font = `800 32px ${FONT}`;
+    const tw = typed ? ctx.measureText(typed).width : 0;
+    ctx.fillStyle = "#facc15";
+    if (typed) ctx.fillRect(W / 2 + tw / 2 + 4, 308, 3, 32);
+  }
+  // choice bricks
+  for (let i = 0; i < 4; i++) {
+    const r = btnRect(i);
+    const down = pressed === i && pressedT > 0;
+    const lift = hover === i && !down ? 3 : 0;
+    Kit.brick(ctx, r.x, r.y + (down ? 4 : 0) - lift, r.w, r.h, CHOICE_COLORS[i], 12);
+    // studs
+    ctx.fillStyle = "rgba(255,255,255,.18)";
+    for (const sxp of [r.x + 26, r.x + r.w - 26]) { ctx.beginPath(); ctx.arc(sxp, r.y + 18 + (down ? 4 : 0) - lift, 7, 0, 7); ctx.fill(); }
+    text(String(q.choices[i]), r.x + r.w / 2, r.y + r.h / 2 + 6 + (down ? 4 : 0) - lift, 36, i === 2 ? "#1f2328" : "#fff", 800);
+    Kit.brick(ctx, r.x + r.w / 2 - 14, r.y + r.h + 10, 28, 26, "#2b2f35", 6);
+    text(CHOICE_LABELS[i], r.x + r.w / 2, r.y + r.h + 24, 14, "#a7adb4", 800);
+  }
+  text(`Correct ${correct}   Wrong ${wrong}`, W / 2, H - 22, 14, "#6b7280", 700);
+  for (const f of floaters) {
+    ctx.globalAlpha = Math.max(0, 1 - f.t / 1.1);
+    text(f.text, f.x, f.y - f.t * 50, 24, f.color, 800);
+  }
+  ctx.globalAlpha = 1;
+  if (levelUpT > 0) {
+    ctx.globalAlpha = Math.min(1, levelUpT * 2);
+    const s = 1 + (1.4 - levelUpT) * 0.2;
+    ctx.save();
+    ctx.translate(W / 2, 350);
+    ctx.scale(s, s);
+    Kit.brick(ctx, -110, -26, 220, 52, "#7c3aed", 12);
+    text(`LEVEL ${level}!`, 0, 2, 28, "#fff", 800);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+}
+
+reset();
+Kit.loop(update, draw).start();
+Kit.overlay("Math Blitz",
+  "Solve as many problems as you can in 60 seconds!\n\n" +
+  "Type the answer with the number keys (Enter to submit)\nor pick a brick with A S D F or the mouse.\n\n" +
+  "Answer in a row to grow your combo up to x5.\nQuick answers earn bonus points. Problems get harder as you go!",
+  "Start").then(() => { reset(); phase = "play"; });
+</script>
+</body>
+</html>

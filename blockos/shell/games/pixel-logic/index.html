@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel Logic</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .kit-stage canvas:focus { outline: none; }
+  .choices { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .choices .kit-btn { margin: 0; width: 100%; display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 12px 20px; box-shadow: 0 4px 0 var(--sh); }
+  .choices .kit-btn:active { box-shadow: 0 2px 0 var(--sh); }
+  .choices .kit-btn small { font-size: 13px; font-weight: 700; opacity: .9; }
+  .choices .kit-btn:focus-visible, .choices .kit-btn.sel { outline: 3px solid #fff; outline-offset: 2px; }
+  .toggle { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-weight: 700; cursor: pointer; }
+  .toggle input { width: 20px; height: 20px; accent-color: #12b76a; cursor: pointer; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "pixel-logic";
+const { canvas, ctx, W, H } = Kit.stage(760, 720);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+// Hand-made pictures ("#" = filled). Colors are used for the reveal.
+const PICTURES = [
+  { name: "Heart", color: "#ef4444", rows: [".#.#.", "#####", "#####", ".###.", "..#.."] },
+  { name: "Tree", color: "#22c55e", rows: ["..#..", ".###.", "#####", "..#..", ".###."] },
+  { name: "Arrow", color: "#3b82f6", rows: ["..#..", ".###.", "#.#.#", "..#..", "..#.."] },
+  { name: "Smile", color: "#facc15", rows: [".#.#.", ".#.#.", ".....", "#...#", "#####"] },
+  { name: "House", color: "#fb923c", rows: ["..#..", ".###.", "#####", "##.##", "##.##"] },
+  { name: "Key", color: "#facc15", rows: ["###..", "#.#..", "#####", "...#.", "...##"] },
+  { name: "Rocket", color: "#94a3b8", rows: [
+    "....##....", "...####...", "...#..#...", "...#..#...", "...####...",
+    "..######..", ".##.##.##.", "#...##...#", "....##....", "...#..#..."] },
+  { name: "Cat", color: "#fb923c", rows: [
+    "#........#", "##......##", "###....###", "##########", "#.##..##.#",
+    "##########", "####..####", "##.####.##", ".########.", "..######.."] },
+  { name: "Mushroom", color: "#ef4444", rows: [
+    "...####...", ".##..####.", "##....####", "###..##..#", "#######..#",
+    "##########", "...#..#...", "...#..#...", "...####...", ".########."] },
+  { name: "Fish", color: "#38bdf8", rows: [
+    "..........", "....####..", "#..######.", "##.##.####", "##########",
+    "##.#######", "#..######.", "....####..", "......#...", ".........."] },
+  { name: "Pine", color: "#16a34a", rows: [
+    "....##....", "...####...", "..######..", "...####...", ".########.",
+    "..######..", "##########", "....##....", "....##....", "..######.."] },
+  { name: "Big Heart", color: "#ec4899", rows: [
+    ".##....##.", "####..####", "##########", "##########", "##########",
+    ".########.", "..######..", "...####...", "....##....", ".........."] },
+  { name: "Sailboat", color: "#3b82f6", rows: [
+    ".......#.......", ".......##......", "......###......", ".....#.###.....", "....##.####....",
+    "...###.#####...", "..####.######..", ".......#.......", "###############", ".#############.",
+    "..###########..", "...#########...", "...............", ".##..###..###..", "###############"] },
+  { name: "Castle", color: "#a8a29e", rows: [
+    "#.#.#.....#.#.#", "#####.....#####", "#####.#.#.#####", "##.##.###.##.##", "#####.....#####",
+    "###############", "###############", "##.#########.##", "##.###...###.##", "######...######",
+    "#####.....#####", "#####.....#####", "#####.....#####", "###############", "..............."] },
+  { name: "Robot", color: "#64748b", rows: [
+    ".......#.......", "......###......", "...#########...", "...#.......#...", "...#.##.##.#...",
+    "...#.......#...", "...#..###..#...", "...#########...", ".....#####.....", ".#############.",
+    "##.#########.##", "##.##.#.#.##.##", "...#########...", "...###...###...", "..####...####.."] },
+];
+const SIZES = [
+  { n: 5, label: "Small", color: "#12b76a", sh: "#0b7a47", base: 100, par: 60 },
+  { n: 10, label: "Medium", color: "#f59e0b", sh: "#b45309", base: 400, par: 300 },
+  { n: 15, label: "Large", color: "#ef4444", sh: "#b91c1c", base: 900, par: 900 },
+];
+const REVEAL_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#a855f7", "#fb923c", "#14b8a6", "#ec4899"];
+
+let size = SIZES[0], n, sol, cells, rowClues, colClues, cell, ox, oy, clueStep;
+let picture, phase, time, mistakes, checkMistakes = true, cursor, drag, flashes, reveal, clock = 0;
+let lastPicks = [];
+try { checkMistakes = localStorage.getItem("blockos.pixel-logic.check") !== "0"; } catch (_) {}
+
+// ---------- clues & solver ----------
+function lineClue(line) {
+  const out = [];
+  let run = 0;
+  for (const v of line) {
+    if (v) run++;
+    else if (run) { out.push(run); run = 0; }
+  }
+  if (run) out.push(run);
+  return out;
+}
+const getRow = (g, r) => g[r];
+const getCol = (g, c) => g.map((row) => row[c]);
+
+// Line solver: given clue and current knowledge (1 filled, 0 empty, -1 unknown) returns refined line or null.
+function solveLine(clue, line) {
+  const len = line.length;
+  const canFill = new Array(len).fill(false), canEmpty = new Array(len).fill(false);
+  const cur = new Array(len).fill(0);
+  let any = false;
+  function place(ci, start) {
+    if (ci === clue.length) {
+      for (let i = start; i < len; i++) if (line[i] === 1) return;
+      for (let i = 0; i < len; i++) { if (i >= start) cur[i] = 0; cur[i] ? (canFill[i] = true) : (canEmpty[i] = true); }
+      any = true;
+      return;
+    }
+    const k = clue[ci];
+    let rest = 0;
+    for (let j = ci + 1; j < clue.length; j++) rest += clue[j] + 1;
+    for (let s = start; s + k + rest <= len; s++) {
+      if (s > start && line[s - 1] === 1) break; // a filled cell would be left uncovered
+      let ok = true;
+      for (let i = s; i < s + k; i++) if (line[i] === 0) { ok = false; break; }
+      if (!ok) continue;
+      if (s + k < len && line[s + k] === 1) continue;
+      for (let i = start; i < s; i++) cur[i] = 0;
+      for (let i = s; i < s + k; i++) cur[i] = 1;
+      if (s + k < len) cur[s + k] = 0;
+      place(ci + 1, Math.min(len, s + k + 1));
+    }
+  }
+  place(0, 0);
+  if (!any) return null;
+  return line.map((v, i) => (v !== -1 ? v : canFill[i] && !canEmpty[i] ? 1 : canEmpty[i] && !canFill[i] ? 0 : -1));
+}
+
+function lineSolvable(rc, cc, N) {
+  const g = Array.from({ length: N }, () => new Array(N).fill(-1));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let r = 0; r < N; r++) {
+      const res = solveLine(rc[r], g[r]);
+      if (!res) return false;
+      res.forEach((v, c) => { if (g[r][c] !== v) { g[r][c] = v; changed = true; } });
+    }
+    for (let c = 0; c < N; c++) {
+      const res = solveLine(cc[c], getCol(g, c));
+      if (!res) return false;
+      res.forEach((v, r) => { if (g[r][c] !== v) { g[r][c] = v; changed = true; } });
+    }
+  }
+  return g.every((row) => row.every((v) => v !== -1));
+}
+
+// ---------- puzzle generation ----------
+function generatePicture(N) {
+  for (let attempt = 0; attempt < 60; attempt++) {
+    let g = Array.from({ length: N }, () => Array.from({ length: N }, () => Math.random() < 0.55));
+    // mirror for a picture-like look, then smooth into blobs
+    const mirror = Math.random() < 0.7;
+    if (mirror) for (const row of g) for (let c = 0; c < N / 2; c++) row[N - 1 - c] = row[c];
+    if (N > 5) {
+      g = g.map((row, r) => row.map((v, c) => {
+        let s = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+          const rr = r + dr, cc = c + dc;
+          if (rr >= 0 && cc >= 0 && rr < N && cc < N && g[rr][cc]) s++;
+        }
+        return s >= 5 || (v && s >= 4);
+      }));
+    }
+    const grid = g.map((row) => row.map((v) => (v ? 1 : 0)));
+    const filled = grid.flat().filter(Boolean).length;
+    if (filled < N * N * 0.3 || filled > N * N * 0.75) continue;
+    const rc = grid.map((row) => lineClue(row)), cc = grid[0].map((_, c) => lineClue(getCol(grid, c)));
+    if (lineSolvable(rc, cc, N)) return { name: null, color: Kit.pick(REVEAL_COLORS), grid };
+  }
+  return null;
+}
+
+function pickPuzzle(N) {
+  const hand = PICTURES.filter((p) => p.rows.length === N && !lastPicks.includes(p.name));
+  if (hand.length && Math.random() < 0.6) {
+    const p = Kit.pick(hand);
+    lastPicks = [...lastPicks.slice(-4), p.name];
+    return { name: p.name, color: p.color, grid: p.rows.map((r) => [...r].map((ch) => (ch === "#" ? 1 : 0))) };
+  }
+  const gen = generatePicture(N);
+  if (gen) return gen;
+  const p = Kit.pick(PICTURES.filter((q) => q.rows.length === N));
+  return { name: p.name, color: p.color, grid: p.rows.map((r) => [...r].map((ch) => (ch === "#" ? 1 : 0))) };
+}
+
+function newPuzzle(sz) {
+  size = sz;
+  n = sz.n;
+  picture = pickPuzzle(n);
+  sol = picture.grid;
+  rowClues = sol.map((row) => lineClue(row));
+  colClues = sol[0].map((_, c) => lineClue(getCol(sol, c)));
+  cells = Array.from({ length: n }, () => new Array(n).fill(0)); // 0 empty, 1 filled, 2 marked
+  clueStep = n === 5 ? 30 : n === 10 ? 22 : 18;
+  const maxRow = Math.max(1, ...rowClues.map((c) => c.length));
+  const maxCol = Math.max(1, ...colClues.map((c) => c.length));
+  const clueW = maxRow * clueStep + 16, clueH = maxCol * clueStep + 12;
+  const top = 64;
+  cell = Math.floor(Math.min((W - 40 - clueW) / n, (H - top - 30 - clueH) / n, 84));
+  const total = clueW + cell * n;
+  ox = Math.floor((W - total) / 2) + clueW;
+  oy = top + clueH + Math.floor((H - top - 30 - clueH - cell * n) / 2);
+  time = 0;
+  mistakes = 0;
+  cursor = { r: 0, c: 0 };
+  flashes = [];
+  reveal = 0;
+  phase = "play";
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`${n} x ${n}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- rules ----------
+function lineDone(isRow, i) {
+  const line = isRow ? cells[i] : cells.map((row) => row[i]);
+  const clue = isRow ? rowClues[i] : colClues[i];
+  const got = lineClue(line.map((v) => v === 1));
+  return got.length === clue.length && got.every((v, k) => v === clue[k]);
+}
+function solvedNow() {
+  for (let i = 0; i < n; i++) if (!lineDone(true, i) || !lineDone(false, i)) return false;
+  return true;
+}
+
+function setCell(r, c, value) {
+  if (phase !== "play") return;
+  const cur = cells[r][c];
+  if (cur === value) return;
+  if (value === 1 && checkMistakes && !sol[r][c]) {
+    // wrong fill: mark it as empty and count a mistake
+    cells[r][c] = 2;
+    mistakes++;
+    flashes.push({ r, c, t: 0.6 });
+    Kit.sfx("hit");
+    return;
+  }
+  if (checkMistakes && cur === 2 && flashes.some((f) => f.r === r && f.c === c)) return;
+  cells[r][c] = value;
+  Kit.sfx(value === 1 ? "click" : value === 2 ? "jump" : "click");
+  if (value === 1 && checkMistakes) {
+    const rowOk = lineDone(true, r), colOk = lineDone(false, c);
+    if (rowOk || colOk) {
+      // auto-mark the rest of completed lines
+      for (let i = 0; i < n; i++) {
+        if (rowOk && cells[r][i] === 0) cells[r][i] = 2;
+        if (colOk && cells[i][c] === 0) cells[i][c] = 2;
+      }
+      Kit.sfx("coin");
+    }
+  }
+  if (solvedNow()) win();
+}
+
+async function win() {
+  phase = "won";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (cells[r][c] === 2) cells[r][c] = 0;
+  const secs = Math.floor(time);
+  const speed = Math.max(0, (size.par - secs) / size.par);
+  const points = Math.max(10, Math.round(size.base * (1 + speed) * Math.pow(0.85, mistakes)));
+  const best = Kit.finish(ID, points);
+  Kit.sfx("win");
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1500));
+  const what = picture.name ? `You drew: ${picture.name}!` : "Mystery picture complete!";
+  menu("Solved!", `${what}\nTime ${fmt(secs)}${checkMistakes ? `, mistakes ${mistakes}` : ""}\nPoints: ${points}   Best: ${best}`);
+}
+
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s) % 60).padStart(2, "0")}`;
+
+// ---------- menu ----------
+function menu(title, text) {
+  phase = phase === "won" ? "won" : "menu";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  const panel = document.createElement("div");
+  panel.className = "kit-panel";
+  const h = document.createElement("h1");
+  h.textContent = title;
+  const p = document.createElement("p");
+  p.textContent = text;
+  const box = document.createElement("div");
+  box.className = "choices";
+  let focus = SIZES.indexOf(size);
+  const buttons = SIZES.map((s, i) => {
+    const b = document.createElement("button");
+    b.className = "kit-btn" + (i === focus ? " sel" : "");
+    b.style.background = s.color;
+    b.style.setProperty("--sh", s.sh);
+    b.innerHTML = `<span>${i + 1}. ${s.n} x ${s.n}</span><small>${s.label}</small>`;
+    b.addEventListener("click", () => choose(i));
+    box.appendChild(b);
+    return b;
+  });
+  const tog = document.createElement("label");
+  tog.className = "toggle";
+  const cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = checkMistakes;
+  cb.addEventListener("change", () => {
+    checkMistakes = cb.checked;
+    try { localStorage.setItem("blockos.pixel-logic.check", checkMistakes ? "1" : "0"); } catch (_) {}
+  });
+  tog.append(cb, document.createTextNode("Mistake checking (M)"));
+  panel.append(h, p, box, tog);
+  o.appendChild(panel);
+  document.body.appendChild(o);
+  buttons[focus].focus();
+  const shownAt = performance.now();
+  function setFocus(i) {
+    buttons[focus].classList.remove("sel");
+    focus = (i + SIZES.length) % SIZES.length;
+    buttons[focus].classList.add("sel");
+    buttons[focus].focus();
+  }
+  function choose(i) {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    newPuzzle(SIZES[i]);
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function onKey(e) {
+    if (performance.now() - shownAt < 350) return;
+    const d = ["Digit1", "Digit2", "Digit3"].indexOf(e.code);
+    let handled = true;
+    if (d >= 0) choose(d);
+    else if (e.code === "Enter" || e.code === "Space") choose(focus);
+    else if (e.code === "KeyM") { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change")); }
+    else if (["ArrowUp", "ArrowLeft", "KeyW", "KeyA"].includes(e.code)) setFocus(focus - 1);
+    else if (["ArrowDown", "ArrowRight", "KeyS", "KeyD", "Tab"].includes(e.code)) setFocus(focus + 1);
+    else handled = false;
+    if (handled) { e.preventDefault(); e.stopPropagation(); }
+  }
+  addEventListener("keydown", onKey, true);
+}
+
+// ---------- input ----------
+function cellAt(e) {
+  const p = Kit.pointer(canvas, e);
+  const c = Math.floor((p.x - ox) / cell), r = Math.floor((p.y - oy) / cell);
+  return r >= 0 && c >= 0 && r < n && c < n ? { r, c, x: p.x, y: p.y } : { r: -1, c: -1, x: p.x, y: p.y };
+}
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.style.touchAction = "none";
+canvas.addEventListener("pointerdown", (e) => {
+  const hit = cellAt(e);
+  if (phase !== "play") return;
+  if (hit.y < 56 && hit.x > W - 150) { menu("Pixel Logic", "Pick a puzzle size."); return; }
+  if (hit.r < 0) return;
+  const right = e.button === 2 || e.shiftKey;
+  const cur = cells[hit.r][hit.c];
+  // the first cell decides what a drag does: fill, mark, or clear
+  const value = right ? (cur === 2 ? 0 : 2) : (cur === 1 ? 0 : 1);
+  if (right && cur === 1) return;
+  drag = { value, axis: null, r: hit.r, c: hit.c };
+  cursor = { r: hit.r, c: hit.c };
+  setCell(hit.r, hit.c, value);
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag || phase !== "play") return;
+  const hit = cellAt(e);
+  if (hit.r < 0) return;
+  // lock drags to one row or column so lines are easy to paint
+  if (!drag.axis && (hit.r !== drag.r || hit.c !== drag.c)) drag.axis = hit.r === drag.r ? "row" : "col";
+  const r = drag.axis === "row" ? drag.r : hit.r, c = drag.axis === "col" ? drag.c : hit.c;
+  cursor = { r, c };
+  const cur = cells[r][c];
+  if (drag.value === 0 && cur === 0) return;
+  if (drag.value !== 0 && cur !== 0) return; // never overwrite while painting
+  setCell(r, c, drag.value);
+});
+addEventListener("pointerup", () => { drag = null; });
+
+Kit.onKey((code) => {
+  if (phase !== "play") return;
+  const d = { ArrowUp: [-1, 0], KeyW: [-1, 0], ArrowDown: [1, 0], KeyS: [1, 0], ArrowLeft: [0, -1], KeyA: [0, -1], ArrowRight: [0, 1], KeyD: [0, 1] }[code];
+  if (d) {
+    cursor = { r: (cursor.r + d[0] + n) % n, c: (cursor.c + d[1] + n) % n };
+    // holding a paint key while moving paints along
+    if (Kit.key("Space") || Kit.key("KeyZ")) setCell(cursor.r, cursor.c, 1);
+    else if (Kit.key("KeyX")) setCell(cursor.r, cursor.c, 2);
+    return;
+  }
+  const cur = cells[cursor.r][cursor.c];
+  if (code === "Space" || code === "KeyZ" || code === "Enter") setCell(cursor.r, cursor.c, cur === 1 ? 0 : 1);
+  if (code === "KeyX") { if (cur !== 1) setCell(cursor.r, cursor.c, cur === 2 ? 0 : 2); }
+  if (code === "KeyR") menu("Pixel Logic", "Pick a puzzle size.");
+});
+
+// ---------- loop ----------
+function update(dt) {
+  clock += dt;
+  if (phase === "play") time += dt;
+  if (phase === "won") reveal = Math.min(1, reveal + dt * 1.2);
+  for (const f of flashes) f.t -= dt;
+  flashes = flashes.filter((f) => f.t > 0);
+}
+
+function draw() {
+  ctx.fillStyle = "#1b1f24";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.03)";
+  for (let y = 14; y < H; y += 28) for (let x = 14; x < W; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+  if (!sol) return;
+
+  // header
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fff"; ctx.font = `800 22px ${FONT}`;
+  ctx.fillText(`Pixel Logic ${n} x ${n}`, 24, 38);
+  ctx.fillStyle = "#9ca3af"; ctx.font = `700 15px ${FONT}`;
+  ctx.fillText(`Time ${fmt(time)}${checkMistakes ? `   Mistakes ${mistakes}` : "   Checking off"}`, 280, 38);
+  Kit.brick(ctx, W - 150, 14, 130, 38, "#475569", 8);
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.font = `800 15px ${FONT}`;
+  ctx.fillText("New (R)", W - 85, 39);
+
+  const bw = cell * n;
+  // clue backgrounds
+  ctx.fillStyle = "#262b33";
+  ctx.beginPath(); ctx.roundRect(ox - 4, 60, bw + 8, oy - 60, 8); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(24, oy - 4, ox - 24, bw + 8, 8); ctx.fill();
+  // highlight the cursor row/col
+  if (phase === "play") {
+    ctx.fillStyle = "rgba(250,204,21,.08)";
+    ctx.fillRect(24, oy + cursor.r * cell, ox - 24 + bw, cell);
+    ctx.fillRect(ox + cursor.c * cell, 60, cell, oy - 60 + bw);
+  }
+  // clues
+  const fs = Math.round(clueStep * 0.72);
+  ctx.font = `800 ${fs}px ${FONT}`;
+  ctx.textAlign = "center";
+  for (let r = 0; r < n; r++) {
+    const done = lineDone(true, r);
+    const clue = rowClues[r].length ? rowClues[r] : [0];
+    clue.forEach((v, i) => {
+      ctx.fillStyle = done ? "#4b5563" : "#e5e7eb";
+      ctx.fillText(v, ox - 10 - (clue.length - 1 - i) * clueStep - clueStep / 2 + 4, oy + r * cell + cell / 2 + fs * 0.36);
+    });
+  }
+  for (let c = 0; c < n; c++) {
+    const done = lineDone(false, c);
+    const clue = colClues[c].length ? colClues[c] : [0];
+    clue.forEach((v, i) => {
+      ctx.fillStyle = done ? "#4b5563" : "#e5e7eb";
+      ctx.fillText(v, ox + c * cell + cell / 2, oy - 10 - (clue.length - 1 - i) * clueStep + fs * 0.1);
+    });
+  }
+
+  // grid
+  ctx.fillStyle = "#d6d3d1";
+  ctx.fillRect(ox, oy, bw, bw);
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const x = ox + c * cell, y = oy + r * cell, v = cells[r][c];
+      ctx.fillStyle = (Math.floor(r / 5) + Math.floor(c / 5)) % 2 ? "#e7e5e4" : "#f5f5f4";
+      ctx.fillRect(x, y, cell, cell);
+      if (phase === "won" && sol[r][c]) {
+        const col = picture.color;
+        Kit.brick(ctx, x + 1, y + 1, cell - 2, cell - 2, mix("#1f2937", col, reveal), Math.min(5, cell / 6));
+      } else if (v === 1) {
+        Kit.brick(ctx, x + 1, y + 1, cell - 2, cell - 2, "#1f2937", Math.min(5, cell / 6));
+      } else if (v === 2) {
+        const f = flashes.find((q) => q.r === r && q.c === c);
+        ctx.strokeStyle = f ? "#ef4444" : "#9ca3af";
+        ctx.lineWidth = Math.max(2, cell / 12);
+        const m = cell * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(x + m, y + m); ctx.lineTo(x + cell - m, y + cell - m);
+        ctx.moveTo(x + cell - m, y + m); ctx.lineTo(x + m, y + cell - m);
+        ctx.stroke();
+        if (f) { ctx.fillStyle = `rgba(239,68,68,${f.t * 0.6})`; ctx.fillRect(x, y, cell, cell); }
+      }
+    }
+  ctx.strokeStyle = "rgba(0,0,0,.18)"; ctx.lineWidth = 1;
+  for (let i = 1; i < n; i++) {
+    ctx.beginPath(); ctx.moveTo(ox + i * cell + 0.5, oy); ctx.lineTo(ox + i * cell + 0.5, oy + bw); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ox, oy + i * cell + 0.5); ctx.lineTo(ox + bw, oy + i * cell + 0.5); ctx.stroke();
+  }
+  ctx.strokeStyle = "#57534e"; ctx.lineWidth = 2.5;
+  for (let i = 0; i <= n; i += 5) {
+    ctx.beginPath(); ctx.moveTo(ox + i * cell, oy); ctx.lineTo(ox + i * cell, oy + bw); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ox, oy + i * cell); ctx.lineTo(ox + bw, oy + i * cell); ctx.stroke();
+  }
+  if (phase === "play") {
+    ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 3;
+    ctx.strokeRect(ox + cursor.c * cell + 1.5, oy + cursor.r * cell + 1.5, cell - 3, cell - 3);
+  }
+  ctx.fillStyle = "#6b7280"; ctx.font = `600 13px ${FONT}`; ctx.textAlign = "center";
+  ctx.fillText("Left: fill  -  Right: mark empty  -  Drag to paint  -  Arrows + Space / X", W / 2, H - 10);
+}
+
+function mix(a, b, t) {
+  const pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
+  const ch = (s) => Math.round(((pa >> s) & 255) * (1 - t) + ((pb >> s) & 255) * t);
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+}
+
+const game = Kit.loop(update, draw);
+newPuzzle(SIZES[0]);
+phase = "menu";
+game.start();
+menu("Pixel Logic", "Fill in squares to reveal a hidden picture.\nThe numbers tell you the runs of filled squares in each row and column, in order.\n\nLeft-click: fill, right-click: mark empty\nKeys: arrows move, Space fills, X marks");
+</script>
+</body>
+</html>

@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Turbo Lanes</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "turbo-lanes";
+const { canvas, ctx, W, H } = Kit.stage(480, 720);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+
+const ROAD_L = 60, ROAD_R = 420, LANES = 4, LANE_W = (ROAD_R - ROAD_L) / LANES;
+const CAR_W = 42, CAR_H = 72, CAR_Y = H - 150;
+const STEER = 520, STEER_ACCEL = 9;
+const BOOST_MULT = 1.65, BOOST_DRAIN = 0.32;
+const TRAFFIC_COLORS = ["#3b82f6", "#22c55e", "#a855f7", "#facc15", "#14b8a6", "#ec4899", "#f2f4f5", "#6b7280"];
+const TYPES = {
+  car: { w: 40, h: 70 },
+  van: { w: 44, h: 86 },
+  truck: { w: 48, h: 128 },
+};
+
+let car, traffic, coins, particles, popups, scenery;
+let dist, speed, score, coinCount, boost, boosting, spawnT, coinT, state, shake, time;
+let mouse = { active: false, x: W / 2, down: false };
+
+const laneX = (i) => ROAD_L + LANE_W * (i + 0.5);
+
+function reset() {
+  car = { x: laneX(1), vx: 0, tilt: 0 };
+  traffic = [];
+  coins = [];
+  particles = [];
+  popups = [];
+  scenery = [];
+  for (let y = -40; y < H + 40; y += 70) addScenery(y);
+  dist = 0;
+  speed = 330;
+  score = 0;
+  coinCount = 0;
+  boost = 0.35;
+  boosting = false;
+  spawnT = 0.8;
+  coinT = 1.5;
+  shake = 0;
+  time = 0;
+  state = "play";
+  updateHud();
+}
+
+function addScenery(y) {
+  for (const side of [0, 1]) {
+    if (Math.random() < 0.35) continue;
+    const x = side ? Kit.rand(ROAD_R + 18, W - 18) : Kit.rand(18, ROAD_L - 18);
+    scenery.push({ x, y: y + Kit.rand(-20, 20), kind: Math.random() < 0.7 ? "tree" : "bush", s: Kit.rand(0.8, 1.15) });
+  }
+}
+
+function updateHud() {
+  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- spawning ----------
+function spawnRow() {
+  // block some lanes but always leave at least one open
+  const difficulty = Math.min(1, time / 90);
+  const maxBlocked = difficulty > 0.45 ? 3 : 2;
+  const n = Kit.randInt(1, maxBlocked);
+  const lanes = [0, 1, 2, 3].sort(() => Math.random() - 0.5).slice(0, n);
+  for (const lane of lanes) {
+    const kind = Math.random() < 0.15 + difficulty * 0.1 ? "truck" : Math.random() < 0.3 ? "van" : "car";
+    const t = TYPES[kind];
+    const y = -t.h - Kit.rand(0, 60);
+    // keep space from vehicles already in this lane
+    if (traffic.some((v) => v.lane === lane && v.y < 140)) continue;
+    traffic.push({
+      lane, x: laneX(lane), y, w: t.w, h: t.h, kind,
+      own: Kit.rand(120, 210),
+      color: Kit.pick(TRAFFIC_COLORS),
+      change: Math.random() < difficulty * 0.35 ? Kit.rand(0.5, 1.6) : -1,  // seconds until it changes lane
+      target: lane, blink: 0, passed: false,
+    });
+  }
+}
+
+function spawnCoins() {
+  // a short line of coins down one lane
+  const lane = Kit.randInt(0, LANES - 1);
+  const n = Kit.randInt(3, 5);
+  for (let i = 0; i < n; i++) coins.push({ x: laneX(lane), y: -30 - i * 46, spin: i * 0.6 });
+}
+
+// ---------- input ----------
+canvas.addEventListener("pointermove", (e) => { mouse.active = true; mouse.x = Kit.pointer(canvas, e).x; });
+canvas.addEventListener("pointerdown", (e) => { mouse.active = true; mouse.x = Kit.pointer(canvas, e).x; if (e.button === 0) mouse.down = true; });
+addEventListener("pointerup", () => { mouse.down = false; });
+addEventListener("blur", () => { mouse.down = false; });
+
+// ---------- update ----------
+function update(dt) {
+  shake = Math.max(0, shake - dt);
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; p.vy += (p.g || 0) * dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const p of popups) p.t += dt;
+  popups = popups.filter((p) => p.t < 0.9);
+  if (state !== "play") return;
+  time += dt;
+
+  // steering: keys accelerate sideways; the mouse pulls the car toward the pointer
+  const dir = (Kit.key("ArrowRight") || Kit.key("KeyD") ? 1 : 0) - (Kit.key("ArrowLeft") || Kit.key("KeyA") ? 1 : 0);
+  let target = dir * STEER;
+  if (dir) mouse.active = false;
+  else if (mouse.active) target = Kit.clamp((mouse.x - car.x) * 9, -STEER, STEER);
+  car.vx += (target - car.vx) * Math.min(1, dt * STEER_ACCEL);
+  car.x = Kit.clamp(car.x + car.vx * dt, ROAD_L + CAR_W / 2 + 4, ROAD_R - CAR_W / 2 - 4);
+  if (car.x <= ROAD_L + CAR_W / 2 + 4 || car.x >= ROAD_R - CAR_W / 2 - 4) car.vx = 0;
+  car.tilt += (car.vx / STEER * 0.22 - car.tilt) * Math.min(1, dt * 10);
+
+  // speed builds up over time; boost and brake on top of it
+  const base = Math.min(860, 330 + time * 5.5);
+  const wantBoost = Kit.key("ArrowUp") || Kit.key("KeyW") || Kit.key("Space") || mouse.down;
+  boosting = wantBoost && boost > 0;
+  if (boosting) boost = Math.max(0, boost - BOOST_DRAIN * dt);
+  const braking = Kit.key("ArrowDown") || Kit.key("KeyS");
+  const want = base * (boosting ? BOOST_MULT : 1) * (braking ? 0.6 : 1);
+  speed += (want - speed) * Math.min(1, dt * (want > speed ? 2.2 : 4));
+  const dy = speed * dt;
+  dist += dy;
+
+  // scenery and road scroll
+  for (const s of scenery) s.y += dy;
+  scenery = scenery.filter((s) => s.y < H + 60);
+  while (scenery.length < 22) addScenery(Math.min(...scenery.map((s) => s.y), H) - 70);
+
+  // traffic
+  spawnT -= dt * (speed / 330);
+  if (spawnT <= 0) { spawnRow(); spawnT = Math.max(0.55, 1.15 - time * 0.006) * Kit.rand(0.85, 1.2); }
+  coinT -= dt;
+  if (coinT <= 0) { spawnCoins(); coinT = Kit.rand(2.2, 3.6); }
+
+  const carBox = { x: car.x - CAR_W / 2 + 4, y: CAR_Y + 6, w: CAR_W - 8, h: CAR_H - 10 };
+  for (const v of traffic) {
+    v.y += (speed - v.own) * dt;
+    if (v.change > 0) {
+      v.change -= dt;
+      if (v.change <= 0) {
+        const opts = [v.lane - 1, v.lane + 1].filter((l) => l >= 0 && l < LANES && !traffic.some((o) => o !== v && o.lane === l && Math.abs(o.y - v.y) < 160));
+        if (opts.length) { v.target = Kit.pick(opts); v.blink = 1.0; }
+      }
+    }
+    if (v.blink > 0) {
+      v.blink -= dt;
+      if (v.blink <= 0) v.lane = v.target;    // signal first, then move over
+    }
+    v.x += (laneX(v.lane) - v.x) * Math.min(1, dt * 2.5);
+
+    if (v.dead) continue;
+    const box = { x: v.x - v.w / 2 + 3, y: v.y + 4, w: v.w - 6, h: v.h - 8 };
+    if (overlap(carBox, box)) {
+      if (boosting) smash(v);
+      else return crash(v);
+    } else if (!v.passed && v.y > CAR_Y + CAR_H) {
+      v.passed = true;
+      const gap = Math.abs(v.x - car.x) - (v.w + CAR_W) / 2;
+      if (gap < 12) {
+        score += 30;
+        popups.push({ x: car.x, y: CAR_Y - 20, text: "Close call! +30", t: 0, color: "#facc15" });
+        Kit.sfx("click");
+      }
+    }
+  }
+  traffic = traffic.filter((v) => v.y < H + 40 && !(v.dead && v.y > H));
+  // a car that catches up with the one ahead of it in its lane slows down to match
+  for (const a of traffic)
+    for (const b of traffic)
+      if (a !== b && !a.dead && !b.dead && a.lane === b.lane && a.y < b.y && b.y - (a.y + a.h) < 28) b.own = Math.min(b.own, a.own);
+
+  for (const c of coins) {
+    c.y += dy;
+    c.spin += dt * 6;
+    if (!c.got && Math.abs(c.x - car.x) < 30 && c.y > CAR_Y - 10 && c.y < CAR_Y + CAR_H + 10) {
+      c.got = true;
+      coinCount++;
+      score += 20;
+      boost = Math.min(1, boost + 0.14);
+      Kit.sfx("coin");
+      for (let i = 0; i < 6; i++) particles.push({ x: c.x, y: c.y, vx: Kit.rand(-120, 120), vy: Kit.rand(-120, 60), life: 0.4, size: 4, color: "#facc15" });
+    }
+  }
+  coins = coins.filter((c) => !c.got && c.y < H + 30);
+
+  // exhaust and boost flames
+  if (Math.random() < dt * (boosting ? 60 : 14)) {
+    particles.push({
+      x: car.x + Kit.rand(-10, 10), y: CAR_Y + CAR_H, vx: Kit.rand(-20, 20), vy: Kit.rand(60, 140), life: Kit.rand(0.2, 0.4), size: Kit.rand(4, 8),
+      color: boosting ? Kit.pick(["#facc15", "#fb923c", "#ef4444"]) : "rgba(200,200,200,.5)",
+    });
+  }
+
+  const s = Math.floor(dist / 25);
+  if (s !== car.distScore) { score += s - (car.distScore || 0); car.distScore = s; }
+  updateHud();
+}
+
+const overlap = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+function smash(v) {
+  v.dead = true;
+  v.spinV = Kit.rand(-8, 8);
+  v.flyX = (v.x < car.x ? -1 : 1) * Kit.rand(200, 360);
+  score += 50;
+  shake = 0.15;
+  Kit.sfx("hit");
+  popups.push({ x: v.x, y: v.y + v.h / 2, text: "SMASH +50", t: 0, color: "#fb923c" });
+  burst(v.x, v.y + v.h / 2, [v.color, "#ffffff", "#1f2328"], 16);
+}
+
+function burst(x, y, colors, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = Kit.rand(80, 300);
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: Kit.rand(0.4, 0.9), size: Kit.rand(4, 9), color: Kit.pick(colors), g: 200 });
+  }
+}
+
+async function crash(v) {
+  state = "crash";
+  shake = 0.5;
+  Kit.sfx("hit");
+  burst(car.x, CAR_Y + 20, ["#ef4444", "#facc15", "#ffffff", "#1f2328"], 30);
+  burst(v.x, v.y + v.h / 2, [v.color, "#1f2328"], 12);
+  setTimeout(() => Kit.sfx("lose"), 200);
+  const best = Kit.finish(ID, score);
+  updateHud();
+  await new Promise((r) => setTimeout(r, 1000));
+  await Kit.overlay("Crash!", `Distance: ${(dist / 1000).toFixed(2)} km\nCoins: ${coinCount}\nScore: ${score}\nBest: ${best}`, "Drive again");
+  reset();
+}
+
+// ---------- drawing ----------
+function drawRoad() {
+  // grass
+  ctx.fillStyle = "#3f9b45";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.06)";
+  const so = dist % 30;
+  for (let y = -30 + so; y < H; y += 30)
+    for (const x of [15, 45]) {
+      ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(W - x, y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+  // asphalt
+  ctx.fillStyle = "#3a3f46";
+  ctx.fillRect(ROAD_L, 0, ROAD_R - ROAD_L, H);
+  // curbs: alternating red and white blocks
+  const co = dist % 40;
+  for (let y = -40 + co; y < H; y += 40) {
+    const n = Math.floor((y - co + dist) / 40);
+    const c = ((n % 2) + 2) % 2 ? "#ef4444" : "#f2f4f5";
+    ctx.fillStyle = c;
+    ctx.fillRect(ROAD_L - 10, y, 10, 20);
+    ctx.fillRect(ROAD_R, y, 10, 20);
+    ctx.fillStyle = c === "#ef4444" ? "#f2f4f5" : "#ef4444";
+    ctx.fillRect(ROAD_L - 10, y + 20, 10, 20);
+    ctx.fillRect(ROAD_R, y + 20, 10, 20);
+  }
+  // lane dashes
+  ctx.fillStyle = "rgba(255,255,255,.75)";
+  const lo = dist % 60;
+  for (let i = 1; i < LANES; i++) {
+    const x = ROAD_L + i * LANE_W - 3;
+    for (let y = -60 + lo; y < H; y += 60) ctx.fillRect(x, y, 6, 30);
+  }
+  // speed lines while boosting
+  if (boosting) {
+    ctx.fillStyle = "rgba(255,255,255,.25)";
+    for (let i = 0; i < 10; i++) {
+      const x = ROAD_L + ((i * 97 + time * 300) % (ROAD_R - ROAD_L));
+      const y = ((i * 211 + dist * 1.5) % (H + 120)) - 120;
+      ctx.fillRect(x, y, 2, 70);
+    }
+  }
+}
+
+function drawTree(s) {
+  ctx.save();
+  ctx.translate(s.x, s.y);
+  ctx.scale(s.s, s.s);
+  ctx.fillStyle = "rgba(0,0,0,.2)";
+  ctx.fillRect(-14, -8, 34, 34);
+  if (s.kind === "tree") {
+    Kit.brick(ctx, -18, -18, 36, 36, "#1f7a34", 6);
+    Kit.brick(ctx, -11, -11, 22, 22, "#2fa04a", 5);
+  } else {
+    Kit.brick(ctx, -12, -8, 24, 16, "#5cbf4a", 4);
+  }
+  ctx.restore();
+}
+
+function drawVehicle(x, y, w, h, color, opts = {}) {
+  // x = center, y = top edge
+  const l = x - w / 2;
+  ctx.fillStyle = "rgba(0,0,0,.28)";
+  ctx.fillRect(l + 4, y + 6, w, h);
+  // wheels
+  ctx.fillStyle = "#111317";
+  for (const wy of [y + 10, y + h - 24]) { ctx.fillRect(l - 3, wy, 6, 15); ctx.fillRect(l + w - 3, wy, 6, 15); }
+  if (opts.truck) ctx.fillRect(l - 3, y + h / 2 - 6, 6, 14), ctx.fillRect(l + w - 3, y + h / 2 - 6, 6, 14);
+  Kit.brick(ctx, l, y, w, h, color, 6);
+  if (opts.truck) {
+    // cab in front (bottom, since traffic drives the same way you do: front faces up)
+    Kit.brick(ctx, l + 3, y + 3, w - 6, 30, shade(color, 0.15), 4);
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(l + 7, y + 8, w - 14, 10);
+    ctx.fillStyle = "rgba(0,0,0,.15)";
+    for (let ly = y + 40; ly < y + h - 8; ly += 14) ctx.fillRect(l + 5, ly, w - 10, 3);
+  } else {
+    ctx.fillStyle = "#1e293b";
+    ctx.fillRect(l + 6, y + 14, w - 12, 13);           // windshield
+    ctx.fillRect(l + 6, y + h - 20, w - 12, 9);        // rear window
+    Kit.brick(ctx, l + 6, y + 29, w - 12, h - 52, shade(color, 0.12), 3);  // roof
+    // a stud on the roof, of course
+    ctx.fillStyle = shade(color, 0.3);
+    ctx.beginPath(); ctx.arc(x, y + 29 + (h - 52) / 2, 5, 0, Math.PI * 2); ctx.fill();
+  }
+  // lights
+  ctx.fillStyle = "#fde68a";
+  ctx.fillRect(l + 4, y + 1, 7, 4); ctx.fillRect(l + w - 11, y + 1, 7, 4);
+  ctx.fillStyle = opts.brake ? "#ff2222" : "#b91c1c";
+  ctx.fillRect(l + 4, y + h - 5, 8, 4); ctx.fillRect(l + w - 12, y + h - 5, 8, 4);
+  if (opts.blink && Math.floor(time * 6) % 2) {
+    ctx.fillStyle = "#fb923c";
+    const bx = opts.blink < 0 ? l - 4 : l + w - 2;
+    ctx.fillRect(bx, y + 2, 6, 6); ctx.fillRect(bx, y + h - 8, 6, 6);
+  }
+}
+
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (c) => Math.round(Kit.clamp(amt < 0 ? c * (1 + amt) : c + (255 - c) * amt, 0, 255));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+function drawPlayer() {
+  ctx.save();
+  ctx.translate(car.x, CAR_Y + CAR_H / 2);
+  ctx.rotate(car.tilt);
+  ctx.translate(-car.x, -(CAR_Y + CAR_H / 2));
+  if (boosting) {
+    ctx.fillStyle = "rgba(250,204,21,.25)";
+    ctx.beginPath(); ctx.roundRect(car.x - CAR_W / 2 - 8, CAR_Y - 8, CAR_W + 16, CAR_H + 16, 14); ctx.fill();
+  }
+  drawVehicle(car.x, CAR_Y, CAR_W, CAR_H, "#ef4444", { brake: Kit.key("ArrowDown") || Kit.key("KeyS") });
+  // racing stripes
+  ctx.fillStyle = "rgba(255,255,255,.85)";
+  ctx.fillRect(car.x - 7, CAR_Y + 2, 4, 11);
+  ctx.fillRect(car.x + 3, CAR_Y + 2, 4, 11);
+  ctx.fillRect(car.x - 7, CAR_Y + CAR_H - 11, 4, 9);
+  ctx.fillRect(car.x + 3, CAR_Y + CAR_H - 11, 4, 9);
+  ctx.restore();
+}
+
+function drawCoin(c) {
+  const w = Math.abs(Math.cos(c.spin)) * 11 + 2;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(c.x + 3, c.y + 4, w, 11, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#b45309";
+  ctx.beginPath(); ctx.ellipse(c.x, c.y, w, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#facc15";
+  ctx.beginPath(); ctx.ellipse(c.x, c.y - 1, Math.max(1, w - 2), 10, 0, 0, Math.PI * 2); ctx.fill();
+  // a lightning-bolt notch so you know it charges the boost
+  if (w > 7) {
+    ctx.fillStyle = "#b45309";
+    ctx.beginPath();
+    ctx.moveTo(c.x + 2, c.y - 7); ctx.lineTo(c.x - 4, c.y + 1); ctx.lineTo(c.x, c.y + 1);
+    ctx.lineTo(c.x - 2, c.y + 7); ctx.lineTo(c.x + 4, c.y - 1); ctx.lineTo(c.x, c.y - 1);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function text(str, x, y, size, color, align) {
+  ctx.font = `900 ${size}px ${FONT}`;
+  ctx.textAlign = align || "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(0,0,0,.7)";
+  ctx.strokeText(str, x, y);
+  ctx.fillStyle = color || "#fff";
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-1, 1) * shake * 18, Kit.rand(-1, 1) * shake * 18);
+  drawRoad();
+  for (const s of scenery) drawTree(s);
+  for (const c of coins) drawCoin(c);
+  for (const v of traffic) {
+    if (v.dead) {
+      ctx.save();
+      const age = (v.deadT = (v.deadT || 0) + 1 / 60);
+      const cx = v.x + v.flyX * age, cy = v.y + v.h / 2 - 200 * age;
+      ctx.globalAlpha = Math.max(0, 1 - age * 1.5);
+      ctx.translate(cx, cy);
+      ctx.rotate(v.spinV * age);
+      ctx.translate(-cx, -cy);
+      drawVehicle(cx, cy - v.h / 2, v.w, v.h, v.color, { truck: v.kind === "truck" });
+      ctx.restore();
+      continue;
+    }
+    drawVehicle(v.x, v.y, v.w, v.h, v.color, { truck: v.kind === "truck", blink: v.blink > 0 ? Math.sign(v.target - v.lane) : 0 });
+  }
+  if (state === "play") drawPlayer();
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 3);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const p of popups) {
+    ctx.globalAlpha = 1 - p.t / 0.9;
+    text(p.text, p.x, p.y - p.t * 50, 16, p.color);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // dashboard
+  ctx.fillStyle = "rgba(15,17,19,.78)";
+  ctx.beginPath(); ctx.roundRect(10, 10, 170, 66, 10); ctx.fill();
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "#a7adb4";
+  ctx.fillText("SPEED", 22, 26);
+  ctx.fillText("BOOST", 22, 58);
+  text(String(Math.round(speed / 3.2)), 120, 26, 22, "#ffffff", "right");
+  ctx.font = `800 11px ${FONT}`;
+  ctx.fillStyle = "#a7adb4";
+  ctx.textAlign = "left";
+  ctx.fillText("km/h", 126, 28);
+  ctx.fillStyle = "#2b2f35";
+  ctx.beginPath(); ctx.roundRect(70, 51, 98, 14, 7); ctx.fill();
+  ctx.fillStyle = boosting ? "#fb923c" : "#facc15";
+  if (boost > 0.01) { ctx.beginPath(); ctx.roundRect(70, 51, 98 * boost, 14, 7); ctx.fill(); }
+  ctx.fillStyle = "rgba(15,17,19,.78)";
+  ctx.beginPath(); ctx.roundRect(W - 130, 10, 120, 40, 10); ctx.fill();
+  text(`${(dist / 1000).toFixed(2)} km`, W - 70, 30, 17, "#ffffff");
+}
+
+const game = Kit.loop(update, draw);
+reset();
+state = "menu";
+game.start();
+Kit.overlay(
+  "Turbo Lanes",
+  "Weave through traffic on an endless highway. It keeps getting faster!\nGrab coins to charge your boost. While boosting you smash right through other cars.\nCars with a blinking light are about to change lanes.\n\n" +
+  "Left / Right or A / D (or the mouse) to steer\nUp, W, Space or hold the mouse button to boost\nDown or S to brake",
+  "Drive"
+).then(() => { reset(); });
+</script>
+</body>
+</html>

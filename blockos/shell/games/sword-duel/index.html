@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sword Duel</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "sword-duel";
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+
+const GROUND = 440;
+const LEFT = 70, RIGHT = 890;
+const GRAVITY = 1900;
+const ROUND_TIME = 60;
+
+// Attack definitions. Bands are vertical hit ranges relative to the attacker's feet.
+const MOVES = {
+  slash: { windup: 0.15, active: 0.12, recover: 0.22, cost: 16, dmg: 12, reach: 86, band: [-92, -30], knock: 240, stun: 0.32, guard: 14 },
+  air:   { windup: 0.1,  active: 0.14, recover: 0.16, cost: 16, dmg: 11, reach: 80, band: [-70, 30],  knock: 220, stun: 0.3, guard: 14 },
+  lunge: { windup: 0.24, active: 0.22, recover: 0.4,  cost: 30, dmg: 20, reach: 74, band: [-74, -48], knock: 400, stun: 0.48, guard: 26 },
+};
+
+const FOES = [
+  { name: "Squire Brick", body: "#ef4444", dark: "#991b1b", trim: "#fca5a5" },
+  { name: "Sir Blockwell", body: "#f97316", dark: "#9a3412", trim: "#fed7aa" },
+  { name: "Dame Cobble", body: "#a855f7", dark: "#6b21a8", trim: "#e9d5ff" },
+  { name: "Baron Mortar", body: "#14b8a6", dark: "#115e59", trim: "#99f6e4" },
+  { name: "Duke Granite", body: "#64748b", dark: "#1e293b", trim: "#e2e8f0" },
+  { name: "Obsidian Knight", body: "#27272a", dark: "#09090b", trim: "#facc15" },
+];
+
+let streak = 0, level = 0;
+let you, cpu, round, wins, roundTimer, phase, phaseT, banner, bannerSub, sparks, texts, shake, slowmo, time;
+const pressed = new Set();
+
+function makeFighter(isCpu) {
+  const foe = FOES[Math.min(level, FOES.length - 1)];
+  return {
+    cpu: isCpu,
+    name: isCpu ? foe.name + (level >= FOES.length ? " +" + (level - FOES.length + 1) : "") : "You",
+    colors: isCpu ? foe : { body: "#3b82f6", dark: "#1e3a8a", trim: "#bfdbfe" },
+    x: isCpu ? 640 : 320, y: GROUND, vx: 0, vy: 0, facing: isCpu ? -1 : 1,
+    maxHp: isCpu ? 100 + level * 8 : 100, hp: 0, stamina: 100,
+    action: null, hitstun: 0, blocking: false, blockStart: -9, walk: 0, ko: false, flash: 0,
+    ai: { next: 0, move: 0, block: 0, want: null },
+  };
+}
+
+function resetFighters() {
+  you = makeFighter(false);
+  cpu = makeFighter(true);
+  you.hp = you.maxHp;
+  cpu.hp = cpu.maxHp;
+}
+
+function startMatch() {
+  round = 1;
+  wins = [0, 0];
+  startRound();
+}
+
+function startRound() {
+  resetFighters();
+  sparks = [];
+  texts = [];
+  shake = 0;
+  slowmo = 0;
+  roundTimer = ROUND_TIME;
+  phase = "intro";
+  phaseT = 1.6;
+  banner = `Round ${round}`;
+  bannerSub = `${cpu.name}`;
+  updateHud();
+}
+
+function updateHud() {
+  Kit.hud(`Streak ${streak}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// ---------- input ----------
+Kit.onKey((code) => pressed.add(code));
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+let mouseBlock = false;
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.button === 2) mouseBlock = true;
+  else if (e.button === 0) pressed.add(e.shiftKey ? "MouseLunge" : "MouseSlash");
+});
+addEventListener("pointerup", (e) => { if (e.button === 2) mouseBlock = false; });
+
+function playerIntent() {
+  const k = Kit.key;
+  const intent = {
+    move: (k("ArrowRight") || k("KeyD") ? 1 : 0) - (k("ArrowLeft") || k("KeyA") ? 1 : 0),
+    jump: pressed.has("ArrowUp") || pressed.has("KeyW") || pressed.has("Space"),
+    slash: pressed.has("KeyJ") || pressed.has("KeyZ") || pressed.has("MouseSlash"),
+    lunge: pressed.has("KeyK") || pressed.has("KeyX") || pressed.has("MouseLunge"),
+    block: k("KeyL") || k("KeyC") || k("ArrowDown") || k("KeyS") || mouseBlock,
+  };
+  pressed.clear();
+  return intent;
+}
+
+// ---------- CPU brain ----------
+function cpuIntent(me, foe) {
+  const ai = me.ai;
+  const reaction = Math.max(0.1, 0.4 - level * 0.05);
+  const blockChance = Math.min(0.88, 0.32 + level * 0.11);
+  const aggression = Math.min(0.92, 0.42 + level * 0.09);
+  const intent = { move: 0, jump: false, slash: false, lunge: false, block: false };
+  const dist = Math.abs(foe.x - me.x);
+  const toward = Math.sign(foe.x - me.x) || 1;
+
+  // react to an incoming attack once our reaction time has passed
+  const threat = foe.action && foe.action.t < MOVES[foe.action.type].windup + 0.05 && dist < MOVES[foe.action.type].reach + 70;
+  if (threat && !ai.seen) { ai.seen = true; ai.react = time + reaction * Kit.rand(0.7, 1.3); }
+  if (!foe.action) ai.seen = false;
+  if (threat && ai.react && time >= ai.react) {
+    ai.react = 0;
+    const r = Math.random();
+    if (r < blockChance) ai.block = time + Kit.rand(0.35, 0.6);
+    else if (r < blockChance + 0.12 && me.stamina > 20 && foe.action.type !== "air") intent.jump = true;
+    else ai.move = -toward, ai.next = time + 0.3;
+  }
+  if (ai.block > time) {
+    intent.block = true;
+    return intent;
+  }
+  if (time >= ai.next) {
+    ai.next = time + Kit.rand(0.15, 0.35) * (1.4 - Math.min(0.6, level * 0.1));
+    ai.want = null;
+    if (me.stamina < 25) ai.move = dist < 220 ? -toward : 0;
+    else if (dist < 95) {
+      if (Math.random() < aggression) ai.want = Math.random() < 0.85 ? "slash" : "jumpslash";
+      else ai.move = Math.random() < 0.5 ? -toward : 0;
+    } else if (dist < 230 && me.stamina > 45 && Math.random() < aggression * 0.35) ai.want = "lunge";
+    else ai.move = Math.random() < 0.15 ? -toward : toward;
+  }
+  intent.move = ai.move;
+  if (ai.want === "slash" && dist < 100) { intent.slash = true; ai.want = null; }
+  else if (ai.want === "jumpslash") { intent.jump = true; ai.want = "airslash"; }
+  else if (ai.want === "airslash" && me.y < GROUND - 50) { intent.slash = true; ai.want = null; }
+  else if (ai.want === "lunge") { intent.lunge = true; ai.want = null; }
+  // punish a whiffed attack
+  if (foe.action && foe.action.t > MOVES[foe.action.type].windup + MOVES[foe.action.type].active && dist < 95 && Math.random() < aggression * 0.25) intent.slash = true;
+  return intent;
+}
+
+// ---------- fighter logic ----------
+function canAct(f) { return !f.action && f.hitstun <= 0 && !f.ko; }
+const onGround = (f) => f.y >= GROUND;
+
+function startAction(f, type) {
+  const m = MOVES[type];
+  if (f.stamina < m.cost) { f.flash = 0.25; return; }
+  f.stamina -= m.cost;
+  f.action = { type, t: 0, hit: false, lunged: false };
+  f.blocking = false;
+}
+
+function applyIntent(f, intent, dt) {
+  if (phase !== "fight") intent = { move: 0 };
+  const wasBlocking = f.blocking;
+  f.blocking = !!intent.block && canAct(f) && onGround(f);
+  if (f.blocking && !wasBlocking) f.blockStart = time;
+  if (canAct(f) && !f.blocking) {
+    if (intent.slash) startAction(f, onGround(f) ? "slash" : "air");
+    else if (intent.lunge && onGround(f)) startAction(f, "lunge");
+    else if (intent.jump && onGround(f)) {
+      if (f.stamina >= 8) { f.stamina -= 8; f.vy = -660; Kit.sfx("jump"); }
+      else f.flash = 0.25;
+    }
+  }
+  const speed = f.stamina < 12 ? 140 : 235;
+  if (canAct(f) && !f.blocking) {
+    const target = (intent.move || 0) * speed;
+    if (onGround(f)) f.vx = target;
+    else f.vx += (target - f.vx) * Math.min(1, 6 * dt);
+    if (onGround(f) && intent.move) f.walk += dt * 12;
+  } else if (onGround(f)) {
+    f.vx *= Math.exp(-7 * dt);
+  }
+}
+
+function updateFighter(f, foe, dt) {
+  f.flash = Math.max(0, f.flash - dt);
+  if (f.hitstun > 0) f.hitstun -= dt;
+  if (!f.action && !f.ko && f.hitstun <= 0) f.facing = foe.x >= f.x ? 1 : -1;
+  // stamina regen
+  const regen = f.action ? 0 : f.blocking ? 8 : 30;
+  f.stamina = Math.min(100, f.stamina + regen * dt);
+
+  if (f.action) {
+    const a = f.action, m = MOVES[a.type];
+    a.t += dt;
+    if (a.type === "lunge") {
+      if (a.t >= m.windup && a.t < m.windup + m.active) { f.vx = f.facing * 640; if (!a.lunged) { a.lunged = true; Kit.sfx("jump"); } }
+      else if (a.t >= m.windup + m.active) f.vx *= Math.exp(-10 * dt);
+      else f.vx = -f.facing * 40;
+    }
+    if (a.t >= m.windup && a.t < m.windup + m.active && !a.hit) tryHit(f, foe, m);
+    if (a.t >= m.windup + m.active + m.recover) f.action = null;
+    if (a.type === "air" && onGround(f) && a.t > m.windup + m.active) f.action = null;
+  }
+
+  f.vy += GRAVITY * dt;
+  f.y += f.vy * dt;
+  if (f.y >= GROUND) { f.y = GROUND; f.vy = 0; }
+  f.x = Kit.clamp(f.x + f.vx * dt, LEFT, RIGHT);
+  if (f.ko) f.x = Kit.clamp(f.x, LEFT + 90, RIGHT - 90);
+}
+
+function tryHit(att, def, m) {
+  const f = att.facing;
+  const x1 = att.x + f * 14, x2 = att.x + f * m.reach;
+  const lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+  const y1 = att.y + m.band[0], y2 = att.y + m.band[1];
+  // defender hurtbox
+  const hx1 = def.x - 17, hx2 = def.x + 17, hy1 = def.y - 104, hy2 = def.y;
+  if (hi < hx1 || lo > hx2 || y2 < hy1 || y1 > hy2 || def.ko) return;
+  att.action.hit = true;
+  const hitX = def.x - f * 16, hitY = Math.max(y1, hy1) / 2 + Math.min(y2, hy2) / 2;
+  const facingAttacker = Math.sign(att.x - def.x) === def.facing;
+  if (def.blocking && facingAttacker) {
+    if (time - def.blockStart < 0.2) {
+      // parry: attacker is thrown off balance
+      att.action = null;
+      att.hitstun = 0.65;
+      att.vx = -f * 220;
+      def.stamina = Math.min(100, def.stamina + 15);
+      spark(hitX, hitY, "#facc15", 18);
+      say("PARRY!", def, "#facc15");
+      Kit.sfx("score");
+      shake = 0.15;
+      return;
+    }
+    if (def.stamina >= m.guard) {
+      def.stamina -= m.guard;
+      def.hp = Math.max(1, def.hp - 1);
+      def.vx = f * 200;
+      att.vx = -f * 90;
+      spark(hitX, hitY, "#93c5fd", 10);
+      Kit.sfx("click");
+      return;
+    }
+    def.stamina = 0;
+    def.blocking = false;
+    def.hitstun = 0.85;
+    def.vx = f * 260;
+    damage(def, Math.round(m.dmg / 2));
+    say("GUARD BREAK!", def, "#fb923c");
+    spark(hitX, hitY, "#fb923c", 16);
+    Kit.sfx("hit");
+    shake = 0.25;
+    return;
+  }
+  const dmg = Math.round(m.dmg * (att.cpu ? 1 + level * 0.04 : 1));
+  damage(def, dmg);
+  def.action = null;
+  def.hitstun = m.stun;
+  def.vx = f * m.knock;
+  if (!onGround(def)) def.vy = -200;
+  spark(hitX, hitY, "#ef4444", 16);
+  say("-" + dmg, def, "#fff");
+  Kit.sfx("hit");
+  shake = 0.2;
+}
+
+function damage(f, n) {
+  f.hp = Math.max(0, f.hp - n);
+  f.flash = 0.15;
+  if (f.hp <= 0 && !f.ko) {
+    f.ko = true;
+    f.action = null;
+    f.vy = -380;
+    const other = f === you ? cpu : you;
+    f.vx = (f.x < other.x ? -1 : 1) * 220;
+    slowmo = 0.9;
+  }
+}
+
+function spark(x, y, color, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = Kit.rand(80, 320);
+    sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, life: Kit.rand(0.25, 0.5), color });
+  }
+}
+function say(text, f, color) {
+  texts.push({ text, x: f.x, y: f.y - 130, life: 0.9, color });
+}
+
+function separate() {
+  const minD = 54;
+  const d = cpu.x - you.x;
+  if (Math.abs(d) < minD && Math.abs(cpu.y - you.y) < 90 && !you.ko && !cpu.ko) {
+    const push = (minD - Math.abs(d)) / 2 * (Math.sign(d) || 1);
+    you.x = Kit.clamp(you.x - push, LEFT, RIGHT);
+    cpu.x = Kit.clamp(cpu.x + push, LEFT, RIGHT);
+  }
+}
+
+function endRound(winner) {
+  phase = "ko";
+  phaseT = 2.4;
+  if (winner === you) wins[0]++;
+  else if (winner === cpu) wins[1]++;
+  banner = winner === you ? "You win the round!" : winner === cpu ? `${cpu.name} wins the round` : "Draw";
+  bannerSub = winner ? (roundTimer <= 0 ? "Time!" : "K.O.") : "Time!";
+  Kit.sfx(winner === you ? "score" : winner === cpu ? "lose" : "click");
+}
+
+async function endMatch() {
+  phase = "over";
+  game.stop();
+  if (wins[0] > wins[1]) {
+    streak++;
+    const best = Kit.finish(ID, streak);
+    Kit.sfx("win");
+    level = streak;
+    updateHud();
+    const next = FOES[Math.min(level, FOES.length - 1)].name;
+    await Kit.overlay("Victory!", `You beat ${cpu.name} ${wins[0]}-${wins[1]}.\nWin streak: ${streak}  (best ${best})\n\nNext challenger: ${next}\nThey are faster and guard more often.`, "Next duel");
+  } else {
+    const best = Kit.finish(ID, streak);
+    Kit.sfx("lose");
+    await Kit.overlay("Defeated", `${cpu.name} won ${wins[1]}-${wins[0]}.\nYour streak ended at ${streak}.  (best ${best})`, "Try again");
+    streak = 0;
+    level = 0;
+    updateHud();
+  }
+  startMatch();
+  game.start();
+}
+
+function update(rawDt) {
+  time += rawDt;
+  let dt = rawDt;
+  if (slowmo > 0) { slowmo -= rawDt; dt = rawDt * 0.3; }
+  shake = Math.max(0, shake - rawDt);
+
+  const pi = playerIntent();
+  applyIntent(you, pi, dt);
+  applyIntent(cpu, cpuIntent(cpu, you), dt);
+  updateFighter(you, cpu, dt);
+  updateFighter(cpu, you, dt);
+  separate();
+
+  for (const s of sparks) { s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 900 * dt; s.life -= dt; }
+  sparks = sparks.filter((s) => s.life > 0);
+  for (const t of texts) { t.y -= 40 * dt; t.life -= dt; }
+  texts = texts.filter((t) => t.life > 0);
+
+  if (phase === "intro") {
+    phaseT -= rawDt;
+    if (phaseT <= 0.5 && banner !== "Fight!") { banner = "Fight!"; bannerSub = ""; Kit.sfx("score"); }
+    if (phaseT <= 0) phase = "fight";
+  } else if (phase === "fight") {
+    roundTimer -= dt;
+    if (you.ko || cpu.ko) endRound(you.ko && cpu.ko ? null : you.ko ? cpu : you);
+    else if (roundTimer <= 0) {
+      roundTimer = 0;
+      const a = you.hp / you.maxHp, b = cpu.hp / cpu.maxHp;
+      endRound(Math.abs(a - b) < 0.001 ? null : a > b ? you : cpu);
+    }
+  } else if (phase === "ko") {
+    phaseT -= rawDt;
+    if (phaseT <= 0) {
+      if (wins[0] >= 2 || wins[1] >= 2) endMatch();
+      else { round++; startRound(); }
+    }
+  }
+}
+
+// ---------- drawing ----------
+function drawBackground() {
+  const g = ctx.createLinearGradient(0, 0, 0, GROUND);
+  g.addColorStop(0, "#1e1b4b");
+  g.addColorStop(0.6, "#7c3aed");
+  g.addColorStop(1, "#f97316");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, GROUND);
+  // sun
+  for (const [sz, a] of [[150, 0.12], [118, 0.22], [86, 0.9]]) {
+    ctx.fillStyle = `rgba(253,224,71,${a})`;
+    ctx.fillRect(480 - sz / 2, 250 - sz / 2, sz, sz);
+  }
+  // distant blocky hills
+  ctx.fillStyle = "#3b0764";
+  const hills = [[0, 300, 140], [120, 270, 160], [260, 320, 120], [600, 280, 150], [760, 300, 200]];
+  for (const [x, y, w] of hills) ctx.fillRect(x, y, w, GROUND - y);
+  // castle wall
+  ctx.fillStyle = "#4b5563";
+  ctx.fillRect(0, 330, W, GROUND - 330);
+  for (let x = 0; x < W; x += 48) ctx.fillRect(x, 312, 28, 20);
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  for (let y = 336; y < GROUND; y += 18)
+    for (let x = (y / 18) % 2 ? -18 : 0; x < W; x += 36) ctx.fillRect(x, y, 34, 2), ctx.fillRect(x, y, 2, 16);
+  // banners
+  for (const [x, c] of [[150, "#3b82f6"], [810, cpu ? cpu.colors.body : "#ef4444"]]) {
+    ctx.fillStyle = "#1f2328";
+    ctx.fillRect(x - 2, 240, 4, 100);
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x + 2, 246); ctx.lineTo(x + 46, 246); ctx.lineTo(x + 46, 318); ctx.lineTo(x + 24, 304 + Math.sin(time * 2) * 3); ctx.lineTo(x + 2, 318);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.35)";
+    ctx.fillRect(x + 16, 262, 16, 16);
+  }
+  // torches
+  for (const x of [320, 640]) {
+    ctx.fillStyle = "#78350f";
+    ctx.fillRect(x - 4, 350, 8, 26);
+    const fl = Math.sin(time * 17 + x) * 2 + Math.sin(time * 9) * 2;
+    ctx.fillStyle = "#fb923c";
+    ctx.fillRect(x - 7, 334 - fl, 14, 18 + fl);
+    ctx.fillStyle = "#fde047";
+    ctx.fillRect(x - 4, 340 - fl, 8, 10 + fl);
+    ctx.fillStyle = "rgba(251,146,60,.12)";
+    ctx.beginPath(); ctx.arc(x, 345, 48 + fl * 2, 0, 7); ctx.fill();
+  }
+  // floor
+  ctx.fillStyle = "#57534e";
+  ctx.fillRect(0, GROUND, W, H - GROUND);
+  for (let y = GROUND; y < H; y += 25)
+    for (let x = ((y - GROUND) / 25) % 2 ? -30 : 0; x < W; x += 60)
+      Kit.brick(ctx, x + 1, y + 1, 58, 23, (x / 60 + y / 25) % 3 < 1 ? "#78716c" : "#6b6560", 3);
+}
+
+function swordAngle(f) {
+  // angle of the sword arm (0 = pointing forward, negative = up)
+  if (f.ko) return 0.6;
+  if (f.blocking) return -1.45;
+  if (f.hitstun > 0) return -0.3;
+  const a = f.action;
+  if (!a) return -0.9 + Math.sin(time * 3 + f.x) * 0.05;
+  const m = MOVES[a.type];
+  if (a.type === "lunge") {
+    if (a.t < m.windup) return -0.15;
+    return 0;
+  }
+  const up = -2.3, down = a.type === "air" ? 1.2 : 0.55;
+  if (a.t < m.windup) return -0.9 + (up + 0.9) * (a.t / m.windup);
+  if (a.t < m.windup + m.active) return up + (down - up) * ((a.t - m.windup) / m.active);
+  return down + (-0.9 - down) * Math.min(1, (a.t - m.windup - m.active) / m.recover);
+}
+
+function drawFighter(f) {
+  const c = f.colors;
+  ctx.save();
+  ctx.translate(f.x, f.y);
+  // shadow
+  ctx.fillStyle = "rgba(0,0,0,.3)";
+  const sh = Math.max(0.4, 1 - (GROUND - f.y) / 300);
+  ctx.beginPath(); ctx.ellipse(0, GROUND - f.y + 2, 26 * sh, 6 * sh, 0, 0, 7); ctx.fill();
+  if (f.ko && f.y >= GROUND) ctx.rotate(-f.facing * Math.PI / 2 * Math.min(1, (2.4 - phaseT) * 3));
+  ctx.scale(f.facing, 1);
+  const hurt = f.flash > 0 && Math.floor(f.flash * 30) % 2 === 0;
+  const lunge = f.action && f.action.type === "lunge" && f.action.t >= MOVES.lunge.windup;
+  ctx.rotate(lunge ? 0.18 : f.hitstun > 0 ? -0.12 : 0);
+
+  // legs
+  const stride = onGround(f) ? Math.sin(f.walk) * 7 : 5;
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(-12 + stride, -38, 11, 38);
+  ctx.fillRect(1 - stride, -38, 11, 38);
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(-13 + stride, -6, 13, 6);
+  ctx.fillRect(0 - stride, -6, 13, 6);
+  // back arm
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(-20, -74, 9, 30);
+  // torso
+  Kit.brick(ctx, -16, -78, 32, 42, hurt ? "#fff" : c.body, 4);
+  ctx.fillStyle = c.trim;
+  ctx.fillRect(-16, -46, 32, 5);
+  // head
+  Kit.brick(ctx, -13, -104, 26, 26, hurt ? "#fff" : "#fcd34d", 5);
+  ctx.fillStyle = "#1f2328";
+  ctx.fillRect(4, -96, 4, 5);
+  ctx.fillRect(-3, -96, 4, 5);
+  // helmet
+  ctx.fillStyle = c.dark;
+  ctx.fillRect(-15, -108, 30, 10);
+  ctx.fillRect(-15, -108, 8, 22);
+  ctx.fillStyle = c.trim;
+  ctx.fillRect(-4, -114, 8, 7);
+
+  // sword arm
+  const ang = swordAngle(f);
+  ctx.save();
+  const reachOut = lunge ? 14 : 0;
+  ctx.translate(8 + reachOut, -70);
+  ctx.rotate(ang);
+  ctx.fillStyle = c.body;
+  ctx.fillRect(-4, -5, 26, 10);
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(20, -6, 9, 12);
+  // sword
+  ctx.fillStyle = "#78350f";
+  ctx.fillRect(22, -3, 12, 6);
+  ctx.fillStyle = "#facc15";
+  ctx.fillRect(33, -11, 6, 22);
+  ctx.fillStyle = "#e5e7eb";
+  ctx.fillRect(39, -4, 56, 8);
+  ctx.fillStyle = "#9ca3af";
+  ctx.fillRect(39, 1, 56, 3);
+  ctx.beginPath(); ctx.moveTo(95, -4); ctx.lineTo(104, 0); ctx.lineTo(95, 4); ctx.fillStyle = "#e5e7eb"; ctx.fill();
+  ctx.restore();
+
+  // slash trail
+  if (f.action && f.action.type !== "lunge") {
+    const m = MOVES[f.action.type], a = f.action;
+    if (a.t >= m.windup && a.t < m.windup + m.active + 0.05) {
+      ctx.strokeStyle = "rgba(255,255,255,.55)";
+      ctx.lineWidth = 10;
+      ctx.beginPath();
+      ctx.arc(8, -70, 92, -2.2, ang, false);
+      ctx.stroke();
+    }
+  }
+  if (f.blocking) {
+    ctx.strokeStyle = `rgba(147,197,253,${time - f.blockStart < 0.2 ? 0.9 : 0.45})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(10, -60, 56, -1.1, 1.1); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function bar(x, y, w, h, frac, color, alignRight) {
+  ctx.fillStyle = "rgba(0,0,0,.55)";
+  ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
+  ctx.fillStyle = "#3f3f46";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = color;
+  const fw = w * Kit.clamp(frac, 0, 1);
+  ctx.fillRect(alignRight ? x + w - fw : x, y, fw, h);
+  ctx.fillStyle = "rgba(255,255,255,.2)";
+  ctx.fillRect(alignRight ? x + w - fw : x, y, fw, h * 0.35);
+}
+
+function drawUI() {
+  bar(24, 22, 360, 22, you.hp / you.maxHp, you.hp / you.maxHp > 0.3 ? "#22c55e" : "#ef4444");
+  bar(W - 384, 22, 360, 22, cpu.hp / cpu.maxHp, cpu.hp / cpu.maxHp > 0.3 ? "#22c55e" : "#ef4444", true);
+  bar(24, 52, 220, 10, you.stamina / 100, you.flash > 0 && you.stamina < 30 ? "#ef4444" : "#facc15");
+  bar(W - 244, 52, 220, 10, cpu.stamina / 100, "#facc15", true);
+  ctx.font = "bold 15px system-ui, sans-serif";
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "left";
+  ctx.fillText(you.name, 26, 84);
+  ctx.textAlign = "right";
+  ctx.fillText(cpu.name, W - 26, 84);
+  // round pips
+  for (let i = 0; i < 2; i++) {
+    ctx.fillStyle = i < wins[0] ? "#facc15" : "rgba(0,0,0,.5)";
+    ctx.fillRect(252 + i * 22, 50, 16, 14);
+    ctx.fillStyle = i < wins[1] ? "#facc15" : "rgba(0,0,0,.5)";
+    ctx.fillRect(W - 268 - i * 22, 50, 16, 14);
+  }
+  // timer
+  ctx.textAlign = "center";
+  Kit.brick(ctx, W / 2 - 38, 14, 76, 50, "#1f2328", 8);
+  ctx.font = "900 34px system-ui, sans-serif";
+  ctx.fillStyle = roundTimer < 10 ? "#ef4444" : "#fff";
+  ctx.fillText(String(Math.ceil(roundTimer)), W / 2, 52);
+
+  for (const t of texts) {
+    ctx.globalAlpha = Math.min(1, t.life * 2);
+    ctx.font = "900 22px system-ui, sans-serif";
+    ctx.fillStyle = "#000";
+    ctx.fillText(t.text, t.x + 2, t.y + 2);
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, t.x, t.y);
+  }
+  ctx.globalAlpha = 1;
+
+  if (phase === "intro" || phase === "ko") {
+    ctx.fillStyle = "rgba(0,0,0,.35)";
+    ctx.fillRect(0, 170, W, 120);
+    ctx.font = "900 56px system-ui, sans-serif";
+    ctx.fillStyle = "#000";
+    ctx.fillText(banner, W / 2 + 3, 240 + 3);
+    ctx.fillStyle = banner === "Fight!" ? "#facc15" : "#fff";
+    ctx.fillText(banner, W / 2, 240);
+    if (bannerSub) {
+      ctx.font = "bold 22px system-ui, sans-serif";
+      ctx.fillStyle = "#fde68a";
+      ctx.fillText(bannerSub, W / 2, 275);
+    }
+  }
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0) ctx.translate(Kit.rand(-6, 6) * shake * 4, Kit.rand(-6, 6) * shake * 4);
+  drawBackground();
+  // draw the attacker on top
+  const order = cpu.action && !you.action ? [you, cpu] : [cpu, you];
+  for (const f of order) drawFighter(f);
+  for (const s of sparks) {
+    ctx.globalAlpha = Math.min(1, s.life * 3);
+    ctx.fillStyle = s.color;
+    ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  drawUI();
+}
+
+time = 0;
+startMatch();
+const game = Kit.loop(update, draw);
+draw();
+Kit.overlay("Sword Duel",
+  "Best of 3 rounds against a CPU knight. Each win brings a tougher challenger.\nBlock right before a hit to PARRY. Attacks, jumps and blocked hits use stamina.\n\nA / D or Left / Right: move     W / Up / Space: jump\nJ or Z (left click): slash     K or X (Shift+click): lunge\nHold S / Down / L (right click): block",
+  "Fight").then(() => game.start());
+</script>
+</body>
+</html>

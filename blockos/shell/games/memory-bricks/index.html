@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory Bricks</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .mb-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .mb-choices .kit-btn { margin: 0; padding: 12px 10px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .mb-choices .kit-btn small { font-size: 12px; font-weight: 700; opacity: .85; }
+  .mb-choices .kit-btn:focus-visible, .mb-choices .kit-btn.is-current { outline: 3px solid #f2f4f5; outline-offset: 2px; }
+  .mb-s { background: #12b76a !important; box-shadow: 0 4px 0 #0b7a47 !important; }
+  .mb-m { background: #3b82f6 !important; box-shadow: 0 4px 0 #1e40af !important; }
+  .mb-l { background: #a855f7 !important; box-shadow: 0 4px 0 #6b21a8 !important; }
+  .mb-x { background: #ef4444 !important; box-shadow: 0 4px 0 #b91c1c !important; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script>
+"use strict";
+const ID = "memory-bricks";
+const { canvas, ctx, W, H } = Kit.stage(720, 560);
+const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const TOP = 64;
+const FLIP_TIME = 0.22, MISS_DELAY = 0.8;
+const CARD_FACE = "#f7f3ea", MATCHED_FACE = "#e9f7ee";
+let faceBg = CARD_FACE;          // symbols with cut-outs paint them in the card color
+
+const SIZES = {
+  s: { label: "Small", cols: 4, rows: 3 },
+  m: { label: "Medium", cols: 4, rows: 4 },
+  l: { label: "Large", cols: 6, rows: 4 },
+  x: { label: "Huge", cols: 6, rows: 5 },
+};
+
+let sizeKey = "s", cfg, cards, open, matched, moves, startTime, endTime, state, cursor, showCursor, combo, popups, particles, hoverCard;
+
+// ---------- symbols, all drawn on the canvas ----------
+const SYMBOLS = [
+  { color: "#f59e0b", draw: (s) => star(s, 5, 0.42) },
+  { color: "#ef4444", draw: (s) => heart(s) },
+  { color: "#3b82f6", draw: (s) => { ctx.lineWidth = s * 0.16; ctx.beginPath(); ctx.arc(0, 0, s * 0.3, 0, Math.PI * 2); ctx.stroke(); } },
+  { color: "#22c55e", draw: (s) => poly([[0, -0.38], [0.38, 0.3], [-0.38, 0.3]], s) },
+  { color: "#06b6d4", draw: (s) => poly([[0, -0.42], [0.3, 0], [0, 0.42], [-0.3, 0]], s) },
+  { color: "#a855f7", draw: (s) => { ctx.fillRect(-s * 0.34, -s * 0.34, s * 0.68, s * 0.68); ctx.fillStyle = faceBg; ctx.fillRect(-s * 0.18, -s * 0.18, s * 0.36, s * 0.36); } },
+  { color: "#fb923c", draw: (s) => { ctx.fillRect(-s * 0.12, -s * 0.38, s * 0.24, s * 0.76); ctx.fillRect(-s * 0.38, -s * 0.12, s * 0.76, s * 0.24); } },
+  { color: "#eab308", draw: (s) => { ctx.beginPath(); ctx.arc(0, 0, s * 0.34, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = faceBg; ctx.beginPath(); ctx.arc(s * 0.16, -s * 0.1, s * 0.3, 0, Math.PI * 2); ctx.fill(); } },
+  { color: "#d97706", draw: (s) => poly([[0.08, -0.42], [-0.26, 0.06], [-0.02, 0.06], [-0.1, 0.42], [0.26, -0.08], [0.02, -0.08]], s) },
+  { color: "#14b8a6", draw: (s) => { poly([[0, -0.4], [0.36, -0.06], [-0.36, -0.06]], s); ctx.fillRect(-s * 0.26, -s * 0.06, s * 0.52, s * 0.42); ctx.fillStyle = faceBg; ctx.fillRect(-s * 0.07, s * 0.12, s * 0.14, s * 0.24); } },
+  { color: "#15803d", draw: (s) => { poly([[0, -0.42], [0.3, -0.04], [-0.3, -0.04]], s); poly([[0, -0.2], [0.36, 0.22], [-0.36, 0.22]], s); ctx.fillStyle = "#92400e"; ctx.fillRect(-s * 0.07, s * 0.22, s * 0.14, s * 0.18); } },
+  { color: "#ca8a04", draw: (s) => { ctx.lineWidth = s * 0.1; ctx.beginPath(); ctx.arc(-s * 0.18, 0, s * 0.15, 0, Math.PI * 2); ctx.stroke(); ctx.fillRect(-s * 0.03, -s * 0.05, s * 0.42, s * 0.1); ctx.fillRect(s * 0.22, s * 0.05, s * 0.08, s * 0.14); ctx.fillRect(s * 0.32, s * 0.05, s * 0.07, s * 0.1); } },
+  { color: "#0ea5e9", draw: (s) => { ctx.beginPath(); ctx.moveTo(0, -s * 0.42); ctx.bezierCurveTo(s * 0.12, -s * 0.2, s * 0.32, 0, s * 0.3, s * 0.14); ctx.arc(0, s * 0.14, s * 0.3, 0, Math.PI); ctx.bezierCurveTo(-s * 0.32, 0, -s * 0.12, -s * 0.2, 0, -s * 0.42); ctx.fill(); } },
+  { color: "#ec4899", draw: (s) => { for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2 - Math.PI / 2; ctx.beginPath(); ctx.arc(Math.cos(a) * s * 0.2, Math.sin(a) * s * 0.2, s * 0.15, 0, Math.PI * 2); ctx.fill(); } ctx.fillStyle = "#facc15"; ctx.beginPath(); ctx.arc(0, 0, s * 0.12, 0, Math.PI * 2); ctx.fill(); } },
+  { color: "#f97316", draw: (s) => { ctx.beginPath(); ctx.arc(0, 0, s * 0.2, 0, Math.PI * 2); ctx.fill(); for (let i = 0; i < 8; i++) { ctx.save(); ctx.rotate((i / 8) * Math.PI * 2); ctx.fillRect(-s * 0.04, -s * 0.42, s * 0.08, s * 0.13); ctx.restore(); } } },
+  { color: "#facc15", draw: (s) => { poly([[-0.38, 0.26], [-0.38, -0.22], [-0.19, 0.0], [0, -0.32], [0.19, 0.0], [0.38, -0.22], [0.38, 0.26]], s); ctx.fillStyle = "#b45309"; ctx.fillRect(-s * 0.38, s * 0.2, s * 0.76, s * 0.08); } },
+  { color: "#65a30d", draw: (s) => poly([[0, -0.42], [0.36, -0.02], [0.13, -0.02], [0.13, 0.4], [-0.13, 0.4], [-0.13, -0.02], [-0.36, -0.02]], s) },
+  { color: "#dc2626", draw: (s) => { ctx.beginPath(); ctx.arc(0, s * 0.02, s * 0.36, Math.PI, 0); ctx.closePath(); ctx.fill(); ctx.fillStyle = "#e7d8c3"; ctx.fillRect(-s * 0.12, s * 0.02, s * 0.24, s * 0.34); ctx.fillStyle = "#fff"; for (const [x, y] of [[-0.18, -0.12], [0.12, -0.2], [0.2, -0.05]]) { ctx.beginPath(); ctx.arc(x * s, y * s, s * 0.06, 0, Math.PI * 2); ctx.fill(); } } },
+];
+
+function poly(pts, s) {
+  ctx.beginPath();
+  pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
+  ctx.closePath();
+  ctx.fill();
+}
+function star(s, n, inner) {
+  ctx.beginPath();
+  for (let i = 0; i < n * 2; i++) {
+    const r = (i % 2 ? inner : 1) * s * 0.42, a = (i / (n * 2)) * Math.PI * 2 - Math.PI / 2;
+    i ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+function heart(s) {
+  ctx.beginPath();
+  ctx.moveTo(0, s * 0.36);
+  ctx.bezierCurveTo(-s * 0.5, s * 0.02, -s * 0.36, -s * 0.42, 0, -s * 0.18);
+  ctx.bezierCurveTo(s * 0.36, -s * 0.42, s * 0.5, s * 0.02, 0, s * 0.36);
+  ctx.fill();
+}
+
+// ---------- game ----------
+function newGame(key) {
+  sizeKey = key || sizeKey;
+  cfg = SIZES[sizeKey];
+  const pairs = (cfg.cols * cfg.rows) / 2;
+  const picks = SYMBOLS.map((_, i) => i).sort(() => Math.random() - 0.5).slice(0, pairs);
+  const deck = picks.concat(picks);
+  for (let i = deck.length - 1; i > 0; i--) { const j = Kit.randInt(0, i); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+  const gap = 12;
+  const cw = Math.min((W - 40 - gap * (cfg.cols - 1)) / cfg.cols, ((H - TOP - 24 - gap * (cfg.rows - 1)) / cfg.rows) * 0.8);
+  const ch = cw / 0.8;
+  const ox = (W - (cw * cfg.cols + gap * (cfg.cols - 1))) / 2;
+  const oy = TOP + (H - TOP - 8 - (ch * cfg.rows + gap * (cfg.rows - 1))) / 2;
+  cards = deck.map((sym, i) => {
+    const c = i % cfg.cols, r = Math.floor(i / cfg.cols);
+    return {
+      sym, c, r, x: ox + c * (cw + gap), y: oy + r * (ch + gap), w: cw, h: ch,
+      face: 0,          // 0 = back up, 1 = face up (animated)
+      up: false, done: false,
+      deal: -i * 0.035, // negative = waiting to be dealt
+      pop: 0,
+    };
+  });
+  open = [];
+  moves = 0;
+  matched = 0;
+  combo = 0;
+  startTime = endTime = 0;
+  popups = [];
+  particles = [];
+  cursor = 0;
+  showCursor = false;
+  state = "playing";
+  updateHud();
+}
+
+const elapsed = () => (startTime ? ((endTime || performance.now()) - startTime) / 1000 : 0);
+const pairsTotal = () => cards.length / 2;
+
+function updateHud() {
+  const best = Kit.best(ID);
+  Kit.hud(`${cfg.label}<small>Best score ${best ?? "--"}</small>`);
+}
+
+function flip(card) {
+  if (state !== "playing" || !card || card.up || card.done || card.deal < 1) return;
+  // a third click closes a missed pair right away
+  if (open.length === 2) closeMissed();
+  if (!startTime) startTime = performance.now();
+  card.up = true;
+  open.push(card);
+  Kit.sfx("click");
+  if (open.length === 2) {
+    moves++;
+    const [a, b] = open;
+    if (a.sym === b.sym) {
+      a.done = b.done = true;
+      a.pop = b.pop = 1;
+      matched++;
+      combo++;
+      open = [];
+      Kit.sfx(combo >= 3 ? "score" : "coin");
+      sparkle(a); sparkle(b);
+      if (combo >= 2) popups = [{ x: (a.x + b.x + a.w) / 2, y: Math.min(a.y, b.y), text: `Combo x${combo}!`, t: 0 }];
+      if (matched === pairsTotal()) win();
+    } else {
+      combo = 0;
+      missTimer = MISS_DELAY;
+    }
+  }
+}
+
+let missTimer = 0;
+function closeMissed() {
+  for (const c of open) c.up = false;
+  open = [];
+  missTimer = 0;
+}
+
+function sparkle(card) {
+  for (let i = 0; i < 12; i++) {
+    const a = Math.random() * Math.PI * 2, v = Kit.rand(60, 200);
+    particles.push({ x: card.x + card.w / 2, y: card.y + card.h / 2, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: Kit.rand(0.4, 0.8), color: SYMBOLS[card.sym].color, size: Kit.rand(3, 7) });
+  }
+}
+
+function scoreFor(pairs, mv, secs) {
+  return Math.max(pairs * 20, pairs * 150 - (mv - pairs) * 20 - Math.floor(secs) * 2);
+}
+
+function win() {
+  state = "won";
+  endTime = performance.now();
+  const t = elapsed();
+  const pairs = pairsTotal();
+  const score = scoreFor(pairs, moves, t);
+  const stars = moves <= pairs * 1.5 ? 3 : moves <= pairs * 2.1 ? 2 : 1;
+  const prevMoves = Kit.best(`${ID}-${sizeKey}-moves`, undefined, true);
+  Kit.best(`${ID}-${sizeKey}-moves`, moves, true);
+  Kit.best(`${ID}-${sizeKey}-time`, Math.round(t * 10) / 10, true);
+  const best = Kit.finish(ID, score);
+  updateHud();
+  setTimeout(() => Kit.sfx("win"), 250);
+  setTimeout(() => {
+    showMenu("All matched!",
+      `${cfg.label} board: ${moves} moves in ${t.toFixed(1)} s\n` +
+      `Rating: ${"*".repeat(stars)}${"-".repeat(3 - stars)}   Score: ${score}\n` +
+      (prevMoves === null || moves < prevMoves ? "New fewest moves for this size!\n" : `Fewest moves: ${prevMoves}\n`) +
+      `Best score: ${best}\n\nPlay again:`);
+  }, 1100);
+}
+
+// ---------- board size menu ----------
+function showMenu(title, text) {
+  state = "menu";
+  const o = document.createElement("div");
+  o.className = "kit-overlay";
+  const panel = document.createElement("div");
+  panel.className = "kit-panel";
+  const h = document.createElement("h1");
+  h.textContent = title;
+  const p = document.createElement("p");
+  p.textContent = text;
+  const box = document.createElement("div");
+  box.className = "mb-choices";
+  const keys = Object.keys(SIZES);
+  const buttons = keys.map((key, i) => {
+    const s = SIZES[key];
+    const b = document.createElement("button");
+    b.className = `kit-btn mb-${key}` + (key === sizeKey ? " is-current" : "");
+    const bm = Kit.best(`${ID}-${key}-moves`, undefined, true);
+    const label = document.createElement("span");
+    label.textContent = `${i + 1}. ${s.label}`;
+    const small = document.createElement("small");
+    small.textContent = `${s.cols} x ${s.rows}, ${(s.cols * s.rows) / 2} pairs` + (bm !== null ? ` - best ${bm} moves` : "");
+    b.append(label, small);
+    b.addEventListener("click", () => choose(key));
+    box.appendChild(b);
+    return b;
+  });
+  panel.append(h, p, box);
+  o.appendChild(panel);
+  document.body.appendChild(o);
+  let focus = keys.indexOf(sizeKey);
+  buttons[focus].focus();
+  const shownAt = performance.now();
+  function choose(key) {
+    removeEventListener("keydown", onKey, true);
+    o.remove();
+    Kit.sfx("click");
+    newGame(key);
+    if (document.activeElement) document.activeElement.blur();
+  }
+  function onKey(e) {
+    if (performance.now() - shownAt < 350) return;
+    const n = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(e.code);
+    let handled = true;
+    if (n >= 0) choose(keys[n]);
+    else if (e.code === "Enter" || e.code === "Space") choose(keys[focus]);
+    else if (e.code === "ArrowLeft" || e.code === "KeyA") focus = (focus + 3) % 4;
+    else if (e.code === "ArrowRight" || e.code === "KeyD" || e.code === "Tab") focus = (focus + 1) % 4;
+    else if (e.code === "ArrowUp" || e.code === "KeyW" || e.code === "ArrowDown" || e.code === "KeyS") focus = (focus + 2) % 4;
+    else handled = false;
+    if (handled) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (o.isConnected) buttons[focus].focus();
+    }
+  }
+  addEventListener("keydown", onKey, true);
+}
+
+// ---------- input ----------
+function cardAt(e) {
+  const p = Kit.pointer(canvas, e);
+  return cards.find((c) => p.x >= c.x && p.x <= c.x + c.w && p.y >= c.y && p.y <= c.y + c.h) || null;
+}
+canvas.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || state !== "playing") return;
+  showCursor = false;
+  const card = cardAt(e);
+  if (card) { cursor = cards.indexOf(card); flip(card); }
+});
+canvas.addEventListener("pointermove", (e) => { hoverCard = state === "playing" ? cardAt(e) : null; });
+canvas.addEventListener("pointerleave", () => { hoverCard = null; });
+
+Kit.onKey((code) => {
+  if (state !== "playing") return;
+  const moveBy = { ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0], ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1] }[code];
+  if (moveBy) {
+    if (showCursor) {
+      const c = Kit.clamp(cards[cursor].c + moveBy[0], 0, cfg.cols - 1), r = Kit.clamp(cards[cursor].r + moveBy[1], 0, cfg.rows - 1);
+      cursor = r * cfg.cols + c;
+    }
+    showCursor = true;
+    return;
+  }
+  if (code === "Space" || code === "Enter") { showCursor = true; flip(cards[cursor]); }
+  if (code === "KeyR") { Kit.sfx("click"); newGame(); }
+});
+
+// ---------- loop ----------
+function update(dt) {
+  if (!cards) return;
+  for (const c of cards) {
+    if (c.deal < 1) c.deal = Math.min(1, c.deal + dt * 3.2);
+    const want = c.up || c.done ? 1 : 0;
+    c.face += Math.sign(want - c.face) * Math.min(Math.abs(want - c.face), dt / FLIP_TIME);
+    c.pop = Math.max(0, c.pop - dt * 2.5);
+  }
+  if (missTimer > 0) {
+    missTimer -= dt;
+    if (missTimer <= 0 && open.length === 2) { closeMissed(); Kit.sfx("hit"); }
+  }
+  for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 300 * dt; p.life -= dt; }
+  particles = particles.filter((p) => p.life > 0);
+  for (const p of popups) p.t += dt;
+  popups = popups.filter((p) => p.t < 1);
+}
+
+function drawCard(c) {
+  if (c.deal <= 0) return;
+  // deal: cards slide in from a deck below the board
+  const k = 1 - Math.pow(1 - Math.max(0, c.deal), 3);
+  const x = W / 2 - c.w / 2 + (c.x - (W / 2 - c.w / 2)) * k;
+  const y = H + 20 + (c.y - (H + 20)) * k;
+  const flipK = Math.cos(c.face * Math.PI);        // 1 = back, -1 = face
+  const sx = Math.max(0.02, Math.abs(flipK));
+  const showFace = flipK < 0;
+  const lift = c === hoverCard && !c.up && !c.done ? -3 : 0;
+  const pop = 1 + Math.sin(c.pop * Math.PI) * 0.08;
+  ctx.save();
+  ctx.translate(x + c.w / 2, y + c.h / 2 + lift);
+  ctx.scale(sx * pop, pop);
+  ctx.fillStyle = "rgba(0,0,0,.3)";
+  ctx.beginPath(); ctx.roundRect(-c.w / 2 + 3, -c.h / 2 + 5, c.w, c.h, 10); ctx.fill();
+  if (!showFace) {
+    Kit.brick(ctx, -c.w / 2, -c.h / 2, c.w, c.h, "#3b5bdb", 10);
+    // 2x3 studs on the back
+    for (let i = 0; i < 2; i++)
+      for (let j = 0; j < 3; j++) {
+        const px = (i - 0.5) * c.w * 0.42, py = (j - 1) * c.h * 0.28, r = c.w * 0.12;
+        ctx.fillStyle = "rgba(0,0,0,.2)";
+        ctx.beginPath(); ctx.arc(px, py + 2, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#5c7cfa";
+        ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,.25)";
+        ctx.beginPath(); ctx.arc(px - r * 0.25, py - r * 0.25, r * 0.4, 0, Math.PI * 2); ctx.fill();
+      }
+  } else {
+    faceBg = c.done ? MATCHED_FACE : CARD_FACE;
+    ctx.fillStyle = faceBg;
+    ctx.beginPath(); ctx.roundRect(-c.w / 2, -c.h / 2, c.w, c.h, 10); ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = c.done ? "#22c55e" : "#d6cfc0";
+    ctx.stroke();
+    const sym = SYMBOLS[c.sym];
+    ctx.fillStyle = sym.color;
+    ctx.strokeStyle = sym.color;
+    sym.draw(Math.min(c.w, c.h) * 0.92);
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.fillStyle = "#1b1e23";
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "rgba(255,255,255,.025)";
+  for (let y = TOP + 16; y < H; y += 32)
+    for (let x = 16; x < W; x += 32) { ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); }
+  if (!cards) return;
+
+  // top bar
+  ctx.fillStyle = "#24272d";
+  ctx.fillRect(0, 0, W, TOP - 10);
+  const stats = [["MOVES", String(moves)], ["PAIRS", `${matched} / ${pairsTotal()}`], ["TIME", elapsed().toFixed(1)]];
+  stats.forEach(([k, v], i) => {
+    const x = 24 + i * 140;
+    ctx.font = `800 11px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#8b929b";
+    ctx.fillText(k, x, 16);
+    ctx.font = `900 21px ${FONT}`;
+    ctx.fillStyle = "#f2f4f5";
+    ctx.fillText(v, x, 36);
+  });
+  ctx.font = `700 12px ${FONT}`;
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#6b7280";
+  ctx.fillText("R: new board", W - 20, 27);
+
+  for (const c of cards) drawCard(c);
+  if (showCursor && state === "playing") {
+    const c = cards[cursor];
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.roundRect(c.x - 5, c.y - 5, c.w + 10, c.h + 10, 13); ctx.stroke();
+  }
+  for (const p of particles) {
+    ctx.globalAlpha = Math.min(1, p.life * 2);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+  for (const p of popups) {
+    ctx.globalAlpha = 1 - p.t;
+    ctx.font = `900 22px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "rgba(0,0,0,.7)";
+    ctx.strokeText(p.text, p.x, p.y - 10 - p.t * 30);
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(p.text, p.x, p.y - 10 - p.t * 30);
+  }
+  ctx.globalAlpha = 1;
+}
+
+const game = Kit.loop(update, draw);
+newGame("s");
+state = "menu";
+game.start();
+showMenu("Memory Bricks",
+  "Flip two bricks at a time to find matching pairs. Remember where each picture hides!\nFewer moves and a faster time earn a higher score.\n\n" +
+  "Click a brick to flip it\nKeys: arrows to move, Space to flip, R for a new board\n\nChoose a board:");
+</script>
+</body>
+</html>
