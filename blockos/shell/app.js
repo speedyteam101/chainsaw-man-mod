@@ -235,6 +235,8 @@
       let html = `<div class="hello"><div class="headshot">${Avatar.draw(state.avatar, { headshot: true })}</div>
         <div><h1>Hello, ${esc(state.name)}!</h1><p>${GAMES.length} games ready to play. Press <b>MENU</b> to see them all.</p></div></div>`;
       html += row("Continue playing", rec);
+      html += row("3D experiences", GAMES.filter((g) => g.is3d));
+      html += row("Play with friends online", GAMES.filter((g) => g.multiplayer));
       html += row("Your favorites", favorites());
       html += row("Recommended for you", dailyShuffle(GAMES).slice(0, 12), "All");
       for (const genre of GENRES) html += row(genre, GAMES.filter((g) => g.genre === genre), genre);

@@ -19,6 +19,8 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 | --- | --- | --- |
 | Desktop shell | `shell/` | The BlockOS desktop: Home, Discover, Avatar (with a shop), Apps, Settings, the Game Menu and the in-game menu. Plain HTML/CSS/JS, works offline. |
 | Games | `shell/games/` | 58 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
+| 3D kit | `shell/games/kit3d.js` | Roblox-style 3D worlds (bundled three.js): studded parts, your avatar as a 3D character, camera, physics, other online players. |
+| Game server | `multiplayer/relay.js` | Lets players play together online (Node.js). Hosted from the Play Online page, or on the internet. |
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
 | Session | `system/blockos-session` | Starts Openbox, the shell server, and Chromium in full-screen kiosk mode showing the desktop. |
 | Installer | `system/install.sh` | Turns a plain Debian 12 or 13 install into BlockOS: installs packages, sets up auto-login, adds boot-menu branding. |
@@ -107,6 +109,20 @@ and please report the error.
   Switch between windows with Alt+Tab.
 - **Settings** has your display name, dark/light mode, accent color, game sounds, progress reset,
   system info, and Restart / Shut down. The power button in the top bar does the same.
+
+## Play online with friends
+
+Open **Play Online** in BlockOS.
+
+- **Same Wi-Fi:** one person clicks **Start hosting**. Everyone else types the address it shows
+  (like `192.168.1.23`) under **Join a server**. Games marked **Online** then put you all in the
+  same world, where you see each other's avatars and can use quick chat (press `/`).
+- **Over the internet:** someone has to run the game server on a computer with a public address.
+  See [`multiplayer/README.md`](multiplayer/README.md).
+- Chat only has ready-made phrases, so nobody can type messages to you. Only play with people you know.
+
+Games also award **badges** (shown in Avatar → Badges, +10 Bricks each). Where it makes sense, you
+play as your own avatar.
 
 ## Games
 
