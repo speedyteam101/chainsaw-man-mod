@@ -12,6 +12,8 @@
 "use strict";
 const ID = "brick-pinball";
 const { canvas, ctx, W, H } = Kit.stage(480, 720);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 
 const BALL_R = 9;
 const GRAVITY = 950;
@@ -98,6 +100,7 @@ function updateHud() {
 
 function addScore(n) {
   score += n * mult;
+  if (score >= 30000) badge("score-30k", "High Roller", "Score 30,000 points in one game.");
   updateHud();
 }
 
@@ -216,6 +219,8 @@ function collideTargets() {
       mult = Math.min(5, mult + 1);
       addScore(1000);
       flash(`Bank cleared! x${mult}`);
+      badge("bank", "Bank Buster", "Knock down the whole brick bank.");
+      if (mult >= 5) badge("mult-5", "Max Multiplier", "Raise the multiplier to x5.");
       Kit.sfx("win");
       bankT = 1.2;
     }
@@ -232,6 +237,7 @@ function checkLanes(prevY) {
         LANES.forEach((q) => (q.lit = false));
         saveT = Math.max(saveT, 8);
         flash("Lanes complete! Ball save");
+        badge("lanes", "A-B-C", "Light all three top lanes.");
         Kit.sfx("win");
       }
     }
@@ -324,6 +330,7 @@ function update(dt) {
 async function drain() {
   if (saveT > 0) {
     flash("Ball saved!");
+    badge("saved", "Close Call", "Get a drained ball saved.");
     Kit.sfx("score");
     serve();
     state = "play";
@@ -469,6 +476,11 @@ function drawUI() {
   ctx.font = "bold 12px system-ui, sans-serif";
   ctx.fillStyle = "#c4b5fd";
   ctx.fillText(`BALL ${Math.min(3, 4 - balls)}`, 8, 42);
+  ctx.font = "bold 11px system-ui, sans-serif";
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  let nm = ME;
+  while (nm.length > 3 && ctx.measureText(nm).width > 110) nm = nm.slice(0, -1);
+  ctx.fillText(nm === ME ? nm : nm + "...", 8, 58);
   ctx.textAlign = "right";
   ctx.font = "900 22px system-ui, sans-serif";
   ctx.fillStyle = mult > 1 ? "#facc15" : "rgba(255,255,255,.4)";

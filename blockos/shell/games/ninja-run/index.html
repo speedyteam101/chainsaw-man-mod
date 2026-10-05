@@ -14,6 +14,8 @@ const ID = "ninja-run";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
 const ME = Kit.player();
+// Kit.badge only awards once, but this keeps per-frame checks from touching storage every frame.
+const badgeOnce = (() => { const done = new Set(); return (...a) => { if (!done.has(a[1])) { done.add(a[1]); Kit.badge(...a); } }; })();
 let beamsDodged = 0;
 
 const GROUND = 440;
@@ -222,8 +224,8 @@ function update(dt) {
       if (++beamsDodged === 10) Kit.badge(ID, "limbo-master", "Limbo Master", "Slid under 10 red beams in one run.");
     }
   }
-  if (meters() >= 500) Kit.badge(ID, "rooftop-runner", "Rooftop Runner", "Ran 500 m in a single run.");
-  if (meters() >= 1500) Kit.badge(ID, "shadow-sprinter", "Shadow Sprinter", "Ran 1500 m in a single run.");
+  if (meters() >= 500) badgeOnce(ID, "rooftop-runner", "Rooftop Runner", "Ran 500 m in a single run.");
+  if (meters() >= 1500) badgeOnce(ID, "shadow-sprinter", "Shadow Sprinter", "Ran 1500 m in a single run.");
   obstacles = obstacles.filter((o) => o.x + o.w > scroll - 100);
   pits = pits.filter((q) => q.x + q.w > scroll - 100);
   coins = coins.filter((c) => !c.got && c.x > scroll - 50);

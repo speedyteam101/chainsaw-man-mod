@@ -13,6 +13,8 @@
 const ID = "tower-stack";
 const { canvas, ctx, W, H } = Kit.stage(480, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 const BH = 30;            // block height
 const DEPTH = 16;         // fake 3D depth of the top face
@@ -58,7 +60,7 @@ function nextBlock() {
 }
 
 function updateHud() {
-  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Score ${score}<small>${esc(ME.name)} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 // ---------- input ----------
@@ -94,6 +96,11 @@ function drop() {
   }
   dust(topBlock());
   updateHud();
+  const blocks = stack.length - 1;
+  if (blocks >= 10) Kit.badge(ID, "builder", "Builder", "Stacked 10 blocks.");
+  if (blocks >= 25) Kit.badge(ID, "skyscraper", "Skyscraper", "Stacked 25 blocks.");
+  if (blocks >= 50) Kit.badge(ID, "space-tower", "Space Tower", "Stacked 50 blocks, all the way up to the stars.");
+  if (combo >= 5) Kit.badge(ID, "perfectionist", "Perfectionist", "Made 5 perfect drops in a row.");
   nextBlock();
 }
 

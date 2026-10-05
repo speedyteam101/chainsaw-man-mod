@@ -23,6 +23,9 @@
 const ID = "solitaire";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(980, 760);
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let usedUndo = false;
 canvas.style.outline = "none";
 
 const CW = 104, CH = 146, GAPX = 30, LEFT = 36, TOP = 22, TAB_Y = 196;
@@ -331,6 +334,7 @@ function deal() {
   found = [[], [], [], []];
   score = 0; moves = 0; time = 0; started = false;
   history = [];
+  usedUndo = false;
   drag = null; hint = null; bounce = null;
   phase = "play";
   layout();
@@ -343,7 +347,7 @@ function fmtTime(s) {
   return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
 }
 function updateHud() {
-  Kit.hud(`Score ${score}<small>${fmtTime(time)} - ${moves} moves - Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Score ${score}<small>${esc(ME.name)} - ${fmtTime(time)} - ${moves} moves - Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 /* ---------- layout ---------- */
@@ -399,6 +403,7 @@ function pushHistory() { history.push(snapshot()); if (history.length > 400) his
 function undo() {
   if (phase !== "play" || !history.length) return;
   const h = history.pop();
+  usedUndo = true;
   const byId = (id) => cards[id];
   stock = h.stock.map(byId); waste = h.waste.map(byId);
   found = h.found.map((p) => p.map(byId)); tab = h.tab.map((p) => p.map(byId));
@@ -539,6 +544,10 @@ function win() {
   const best = Kit.finish(ID, score);
   updateHud();
   Kit.sfx("win");
+  Kit.badge(ID, "first-win", "Card Shark", "Won a game of Solitaire.");
+  if (drawCount === 3) Kit.badge(ID, "draw-three", "Classic Challenge", "Won a Draw 3 game.");
+  if (secs < 300) Kit.badge(ID, "quick-deal", "Quick Deal", "Won a game in under 5 minutes.");
+  if (!usedUndo) Kit.badge(ID, "no-take-backs", "No Take-Backs", "Won a game without using Undo.");
   setTimeout(() => startBounce(bonus, best, secs), 700);
 }
 

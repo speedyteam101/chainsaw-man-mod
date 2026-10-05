@@ -24,6 +24,7 @@
 const ID = "reversi";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(640, 720);
+const ME = Kit.player();
 canvas.style.outline = "none";
 const CELL = 68, BX = (W - CELL * 8) / 2, BY = 100;
 const BLACK = 1, WHITE = -1;
@@ -256,6 +257,7 @@ function place(m) {
     flipping.push({ sq: s, t: -d * 0.07, to: side });
   }
   Kit.sfx(m.flips.length >= 5 ? "coin" : "click");
+  if (mode === "cpu" && side === BLACK && m.flips.length >= 8) Kit.badge(ID, "big-flip", "Big Flip", "Flipped 8 or more discs with a single move.");
   phase = "anim";
   const myRound = round;
   const longest = Math.max(...m.flips.map((s) => Math.max(Math.abs((s >> 3) - r0), Math.abs((s & 7) - c0))));
@@ -276,6 +278,13 @@ async function gameOver() {
     title = result === BLACK ? "You win!" : result === WHITE ? "CPU wins" : "It's a tie";
     const best = Kit.finish(ID, b);
     text = `Final score: You ${b} - ${w} CPU\nBest: ${best} discs`;
+    if (result === BLACK) {
+      Kit.badge(ID, "first-victory", "First Victory", "Beat the CPU at Reversi.");
+      if (levelKey === "medium" || levelKey === "hard") Kit.badge(ID, "strategist", "Strategist", "Beat the Medium or Hard CPU.");
+      if (levelKey === "hard") Kit.badge(ID, "grandmaster", "Grandmaster", "Beat the Hard CPU.");
+      if ([0, 7, 56, 63].every((sq) => board[sq] === BLACK)) Kit.badge(ID, "corner-king", "Corner King", "Won while holding all four corners.");
+      if (w === 0) Kit.badge(ID, "wipeout", "Wipeout", "Won with not a single CPU disc left on the board.");
+    }
     Kit.sfx(result === BLACK ? "win" : result === WHITE ? "lose" : "score");
   } else {
     if (result === BLACK) tally.black++; else if (result === WHITE) tally.white++;
@@ -391,10 +400,14 @@ function draw() {
   // score panels
   Kit.brick(ctx, BX, 16, 160, 56, "#2b2f35", 10);
   disc(BX + 32, 44, BLACK, 1, 18);
-  text(String(nb), BX + 110, 45, 28, "#fff", 800);
+  // in a CPU game the panels also carry the player labels
+  const labels = mode === "cpu";
+  text(String(nb), BX + 110, labels ? 38 : 45, labels ? 24 : 28, "#fff", 800);
+  if (labels) text(ME.name.length > 11 ? ME.name.slice(0, 10) + "." : ME.name, BX + 102, 60, 12, "#facc15", 800);
   Kit.brick(ctx, W - BX - 160, 16, 160, 56, "#e5e7eb", 10);
   disc(W - BX - 128, 44, WHITE, 1, 18);
-  text(String(nw), W - BX - 50, 45, 28, "#1f2328", 800);
+  text(String(nw), W - BX - 50, labels ? 38 : 45, labels ? 24 : 28, "#1f2328", 800);
+  if (labels) text("CPU", W - BX - 50, 60, 12, "#6b7280", 800);
   let status = "";
   if (phase === "cpu") status = "CPU is thinking...";
   else if (phase === "input") status = mode === "cpu" ? "Your move" : `${name(turn)} to move`;

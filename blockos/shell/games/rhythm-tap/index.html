@@ -26,6 +26,7 @@
 const ID = "rhythm-tap";
 const { canvas, ctx, W, H } = Kit.stage(640, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
 const LANES = 4, LANE_W = 92, LX = (W - LANES * LANE_W) / 2, HIT_Y = 612;
 const LANE_COLORS = ["#ef4444", "#facc15", "#22c55e", "#3b82f6"];
 const LANE_KEYS = [["KeyD", "ArrowLeft"], ["KeyF", "ArrowDown"], ["KeyJ", "ArrowUp"], ["KeyK", "ArrowRight"]];
@@ -267,6 +268,7 @@ function press(lane) {
   const perfect = bestD <= PERFECT;
   combo++;
   maxCombo = Math.max(maxCombo, combo);
+  if (combo >= 100) Kit.badge(ID, "combo-100", "Combo 100", "Hit 100 notes in a row.");
   const mult = 1 + Math.min(3, Math.floor(combo / 10));
   score += (perfect ? 300 : 100) * mult;
   counts[perfect ? "perfect" : "good"]++;
@@ -295,6 +297,12 @@ async function endSong(cleared) {
   const acc = total ? (counts.perfect + counts.good * 0.5) / total : 0;
   const grade = !cleared ? "F" : acc >= 0.95 ? "S" : acc >= 0.85 ? "A" : acc >= 0.7 ? "B" : acc >= 0.5 ? "C" : "D";
   const best = Kit.finish(ID, score);
+  if (cleared) {
+    Kit.badge(ID, "song-cleared", "Song Cleared", "Made it to the end of a song.");
+    if (diffIdx === 2) Kit.badge(ID, "hard-rocker", "Hard Rocker", "Cleared a song on Hard.");
+    if (counts.miss === 0 && total > 0) Kit.badge(ID, "full-combo", "Full Combo", "Cleared a song without missing a single note.");
+    if (grade === "S") Kit.badge(ID, "superstar", "Superstar", "Earned an S grade.");
+  }
   const key = `${ID}-${songIdx}-${diffIdx}`;
   Kit.best(key, score);
   Kit.sfx(cleared ? "win" : "lose");
@@ -546,6 +554,19 @@ function draw() {
     ctx.fillText(counts ? counts.good : 0, W - 14, 195);
     ctx.fillText(counts ? counts.miss : 0, W - 14, 245);
   }
+  drawDancer();
+}
+
+// Your BlockOS avatar dances to the beat beside the lanes.
+function drawDancer() {
+  const playing = phase === "play" && song && songTime() > 0;
+  const t = playing ? songTime() : performance.now() / 1000;
+  const beat = song && song.beat ? song.beat : 0.6;
+  const bounce = playing ? (beatPulse || 0) * 8 : 0;
+  const facing = playing && Math.floor(t / (beat * 2)) % 2 ? -1 : 1;
+  Kit.drawAvatar(ctx, LX + LANES * LANE_W + (W - LX - LANES * LANE_W) / 2, 540 - bounce, 118, {
+    look: ME.avatar, facing, walk: playing ? (t / beat) * Math.PI : 0, air: playing && combo >= 10 && (beatPulse || 0) > 0.6, name: ME.name,
+  });
 }
 
 function hexA(hex, a) {

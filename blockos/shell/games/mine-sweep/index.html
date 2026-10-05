@@ -24,6 +24,8 @@
 const ID = "mine-sweep";
 const { canvas, ctx, W, H } = Kit.stage(800, 600);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const TOP = 72;
 
 const DIFFS = {
@@ -89,7 +91,7 @@ const elapsed = () => (state === "playing" ? (performance.now() - startTime) / 1
 
 function updateHud() {
   const best = Kit.best(`${ID}-${diff}`, undefined, true);
-  Kit.hud(`${cfg ? cfg.label : ""}<small>Best ${best === null ? "--" : best.toFixed(1) + "s"}</small>`);
+  Kit.hud(`${cfg ? cfg.label : ""}<small>${esc(ME.name)} &middot; Best ${best === null ? "--" : best.toFixed(1) + "s"}</small>`);
 }
 
 // ---------- actions ----------
@@ -160,6 +162,11 @@ function win() {
   state = outcome = "won";
   endTime = performance.now();
   const t = Math.round(elapsed() * 10) / 10;
+  Kit.badge(ID, "cleared", "All Clear", "Cleared your first minefield.");
+  if (diff === "medium") Kit.badge(ID, "mine-expert", "Mine Expert", "Cleared a Medium minefield.");
+  if (diff === "hard") Kit.badge(ID, "bomb-squad", "Bomb Squad", "Cleared a Hard minefield.");
+  if (diff === "easy" && t < 20) Kit.badge(ID, "speed-sweeper", "Speed Sweeper", "Cleared an Easy minefield in under 20 seconds.");
+  if (flags === 0 && diff !== "easy") Kit.badge(ID, "no-flags", "No Flags Needed", "Cleared a Medium or Hard minefield without placing a flag.");
   for (const c of cells) if (c.mine && !c.flag) { c.flag = true; flags++; }
   const prev = Kit.best(`${ID}-${diff}`, undefined, true);
   Kit.best(`${ID}-${diff}`, t, true);

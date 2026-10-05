@@ -23,6 +23,7 @@
 const ID = "memory-bricks";
 const { canvas, ctx, W, H } = Kit.stage(720, 560);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
 const TOP = 64;
 const FLIP_TIME = 0.22, MISS_DELAY = 0.8;
 const CARD_FACE = "#f7f3ea", MATCHED_FACE = "#e9f7ee";
@@ -144,6 +145,7 @@ function flip(card) {
       combo++;
       open = [];
       Kit.sfx(combo >= 3 ? "score" : "coin");
+      if (combo >= 4) Kit.badge(ID, "hot-streak", "Hot Streak", "Found 4 pairs in a row without a miss.");
       sparkle(a); sparkle(b);
       if (combo >= 2) popups = [{ x: (a.x + b.x + a.w) / 2, y: Math.min(a.y, b.y), text: `Combo x${combo}!`, t: 0 }];
       if (matched === pairsTotal()) win();
@@ -184,6 +186,10 @@ function win() {
   Kit.best(`${ID}-${sizeKey}-time`, Math.round(t * 10) / 10, true);
   const best = Kit.finish(ID, score);
   updateHud();
+  Kit.badge(ID, "good-memory", "Good Memory", "Matched every pair on a board.");
+  if (stars === 3) Kit.badge(ID, "three-stars", "Three Stars", "Earned a 3-star rating on a board.");
+  if (sizeKey === "x") Kit.badge(ID, "memory-master", "Memory Master", "Cleared the Huge 6 x 5 board.");
+  if (sizeKey !== "s" && t < 40) Kit.badge(ID, "quick-recall", "Quick Recall", "Cleared a Medium or bigger board in under 40 seconds.");
   setTimeout(() => Kit.sfx("win"), 250);
   setTimeout(() => {
     showMenu("All matched!",
@@ -369,6 +375,14 @@ function draw() {
     ctx.fillStyle = "#f2f4f5";
     ctx.fillText(v, x, 36);
   });
+  // player label
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#8b929b";
+  ctx.fillText("PLAYER", 444, 16);
+  ctx.font = `900 18px ${FONT}`;
+  ctx.fillStyle = "#facc15";
+  ctx.fillText(ME.name.length > 14 ? ME.name.slice(0, 13) + "." : ME.name, 444, 36);
   ctx.font = `700 12px ${FONT}`;
   ctx.textAlign = "right";
   ctx.fillStyle = "#6b7280";

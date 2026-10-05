@@ -24,6 +24,9 @@
 const ID = "sudoku";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(840, 600);
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let hintsUsed = 0;
 canvas.style.outline = "none";
 const CELL = 58, BX = 28, BY = 40, BOARD = CELL * 9;
 const PX = 600, PY = 150, PAD = 68; // number pad
@@ -190,6 +193,7 @@ function newGame() {
   sel = 40;
   notesMode = false;
   mistakes = 0;
+  hintsUsed = 0;
   time = 0;
   undoStack = [];
   flashes = [];
@@ -206,7 +210,7 @@ function fmtTime(s) {
 function bestKey() { return ID + "-" + diffKey; }
 function updateHud() {
   const b = Kit.best(bestKey(), undefined, true);
-  Kit.hud(`${DIFFS[diffKey].name} ${fmtTime(time || 0)}<small>Best ${b === null ? "--" : fmtTime(b)}</small>`);
+  Kit.hud(`${DIFFS[diffKey].name} ${fmtTime(time || 0)}<small>${esc(ME.name)} &middot; Best ${b === null ? "--" : fmtTime(b)}</small>`);
 }
 
 function countOf(n) {
@@ -292,6 +296,7 @@ function hint() {
     target = Kit.pick(empty);
   }
   sel = target;
+  hintsUsed++;
   time += HINT_PENALTY;
   const c = cellCenter(sel);
   floaters.push({ text: "+" + HINT_PENALTY + "s", x: c.x, y: c.y - 20, t: 0, color: "#facc15" });
@@ -310,6 +315,11 @@ function win() {
   Kit.best(bestKey(), secs, true);
   const best = Kit.finish(ID, secs, true);
   updateHud();
+  Kit.badge(ID, "sudoku-solver", "Sudoku Solver", "Solved your first Sudoku.");
+  if (diffKey === "medium" || diffKey === "hard") Kit.badge(ID, "puzzle-pro", "Puzzle Pro", "Solved a Medium or Hard Sudoku.");
+  if (diffKey === "hard") Kit.badge(ID, "sudoku-master", "Sudoku Master", "Solved a Hard Sudoku.");
+  if (mistakes === 0 && hintsUsed === 0) Kit.badge(ID, "clean-grid", "Clean Grid", "Solved a Sudoku with no mistakes and no hints.");
+  if (secs < 300) Kit.badge(ID, "speed-solver", "Speed Solver", "Solved a Sudoku in under 5 minutes.");
   setTimeout(async () => {
     const bd = Kit.best(bestKey(), undefined, true);
     await Kit.overlay("Solved!", `${DIFFS[diffKey].name} puzzle in ${fmtTime(secs)}\nMistakes: ${mistakes}\nBest (${DIFFS[diffKey].name}): ${fmtTime(bd)}\nBest overall: ${fmtTime(best)}`, "Next puzzle");

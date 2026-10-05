@@ -21,6 +21,7 @@
 const ID = "slide-puzzle";
 const { canvas, ctx, W, H } = Kit.stage(600, 690);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
 const BOARD = 540, BX = 30, BY = 100;
 const SIZES = [
   { n: 3, label: "Easy", color: "#12b76a", sh: "#0b7a47" },
@@ -206,6 +207,11 @@ async function solved() {
   Kit.best(`${ID}-${n}`, moves, true);
   Kit.finish(ID, moves, true);
   updateHud();
+  Kit.badge(ID, "puzzle-solver", "Puzzle Solver", "Solved your first sliding puzzle.");
+  if (n === 5) Kit.badge(ID, "slide-master", "Slide Master", "Solved the Hard 5 x 5 puzzle.");
+  if (n >= 4 && !showNumbers) Kit.badge(ID, "picture-perfect", "No Numbers Needed", "Solved a 4 x 4 or bigger puzzle with the numbers turned off.");
+  if (n === 3 && moves <= 30) Kit.badge(ID, "smooth-mover", "Smooth Mover", "Solved the 3 x 3 puzzle in 30 moves or fewer.");
+  if (n === 4 && secs < 120) Kit.badge(ID, "speed-slider", "Speed Slider", "Solved the 4 x 4 puzzle in under 2 minutes.");
   await new Promise((r) => setTimeout(r, 1400));
   const record = sizeBestBefore === null || moves < sizeBestBefore;
   menu("Solved!", `${n} x ${n} in ${moves} move${moves === 1 ? "" : "s"} and ${fmtTime(secs)}.${record ? "\nNew best for this size!" : `\nBest for ${n} x ${n}: ${sizeBestBefore} moves`}`);
@@ -325,6 +331,8 @@ function draw() {
   ctx.textAlign = "left";
   ctx.fillStyle = "#fff"; ctx.font = `800 24px ${FONT}`;
   ctx.fillText(`${n} x ${n}`, BX, 46);
+  ctx.fillStyle = "#facc15"; ctx.font = `800 15px ${FONT}`;
+  ctx.fillText(ME.name.length > 16 ? ME.name.slice(0, 15) + "." : ME.name, BX + 84, 44);
   ctx.fillStyle = "#a5b4fc"; ctx.font = `700 15px ${FONT}`;
   ctx.fillText(`Moves ${moves}   Time ${fmtTime(time)}`, BX, 70);
   Kit.brick(ctx, W - 280, 26, 120, 44, showNumbers ? "#6366f1" : "#475569", 8);

@@ -13,6 +13,10 @@
 const ID = "turbo-lanes";
 const { canvas, ctx, W, H } = Kit.stage(480, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
+// Kit.badge only awards once, but this keeps per-frame checks from touching storage every frame.
+const badgeOnce = (() => { const done = new Set(); return (...a) => { if (!done.has(a[1])) { done.add(a[1]); Kit.badge(...a); } }; })();
+let smashes = 0, closeCalls = 0;
 
 const ROAD_L = 60, ROAD_R = 420, LANES = 4, LANE_W = (ROAD_R - ROAD_L) / LANES;
 const CAR_W = 42, CAR_H = 72, CAR_Y = H - 150;
@@ -49,6 +53,8 @@ function reset() {
   coinT = 1.5;
   shake = 0;
   time = 0;
+  smashes = 0;
+  closeCalls = 0;
   state = "play";
   updateHud();
 }
@@ -170,6 +176,7 @@ function update(dt) {
       if (gap < 12) {
         score += 30;
         popups.push({ x: car.x, y: CAR_Y - 20, text: "Close call! +30", t: 0, color: "#facc15" });
+        if (++closeCalls === 5) Kit.badge(ID, "daredevil", "Daredevil", "Pulled off 5 close calls in one drive.");
         Kit.sfx("click");
       }
     }
@@ -187,6 +194,7 @@ function update(dt) {
       c.got = true;
       coinCount++;
       score += 20;
+      if (coinCount === 25) Kit.badge(ID, "coin-cruiser", "Coin Cruiser", "Collected 25 coins in one drive.");
       boost = Math.min(1, boost + 0.14);
       Kit.sfx("coin");
       for (let i = 0; i < 6; i++) particles.push({ x: c.x, y: c.y, vx: Kit.rand(-120, 120), vy: Kit.rand(-120, 60), life: 0.4, size: 4, color: "#facc15" });
@@ -204,6 +212,8 @@ function update(dt) {
 
   const s = Math.floor(dist / 25);
   if (s !== car.distScore) { score += s - (car.distScore || 0); car.distScore = s; }
+  if (dist >= 1000) badgeOnce(ID, "road-trip", "Road Trip", "Drove 1 km without crashing.");
+  if (dist >= 5000) badgeOnce(ID, "highway-hero", "Highway Hero", "Drove 5 km without crashing.");
   updateHud();
 }
 
@@ -214,6 +224,7 @@ function smash(v) {
   v.spinV = Kit.rand(-8, 8);
   v.flyX = (v.x < car.x ? -1 : 1) * Kit.rand(200, 360);
   score += 50;
+  if (++smashes === 10) Kit.badge(ID, "wrecking-ball", "Wrecking Ball", "Smashed 10 cars while boosting in one drive.");
   shake = 0.15;
   Kit.sfx("hit");
   popups.push({ x: v.x, y: v.y + v.h / 2, text: "SMASH +50", t: 0, color: "#fb923c" });
@@ -362,6 +373,14 @@ function drawPlayer() {
   ctx.fillRect(car.x - 7, CAR_Y + CAR_H - 11, 4, 9);
   ctx.fillRect(car.x + 3, CAR_Y + CAR_H - 11, 4, 9);
   ctx.restore();
+  // driver name tag
+  ctx.font = `800 12px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(0,0,0,.55)";
+  ctx.fillText(ME.name, car.x + 1, CAR_Y + CAR_H + 19);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(ME.name, car.x, CAR_Y + CAR_H + 18);
 }
 
 function drawCoin(c) {

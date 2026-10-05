@@ -15,6 +15,8 @@ const T = 30, COLS = 20, SH = 12;            // tile size, tower width in tiles,
 const { ctx, W, H } = Kit.stage(COLS * T, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
 const ME = Kit.player();
+// Kit.badge only awards once, but this keeps per-frame checks from touching storage every frame.
+const badgeOnce = (() => { const done = new Set(); return (...a) => { if (!done.has(a[1])) { done.add(a[1]); Kit.badge(...a); } }; })();
 let walkPhase = 0;
 
 const PW = 20, PH = 28;
@@ -334,8 +336,8 @@ function update(dt) {
   if (h > maxHeight) {
     maxHeight = h;
     updateHud();
-    if (maxHeight >= 100) Kit.badge(ID, "sky-high", "Sky High", "Climbed 100 m up the tower.");
-    if (maxHeight >= 200) Kit.badge(ID, "cloud-walker", "Cloud Walker", "Climbed 200 m up the tower.");
+    if (maxHeight >= 100) badgeOnce(ID, "sky-high", "Sky High", "Climbed 100 m up the tower.");
+    if (maxHeight >= 200) badgeOnce(ID, "cloud-walker", "Cloud Walker", "Climbed 200 m up the tower.");
   }
   if (player.climbing && (up || down)) walkPhase += dt * 10;
   else if (player.grounded && Math.abs(player.vx) > 20) walkPhase += dt * Math.abs(player.vx) / 16;

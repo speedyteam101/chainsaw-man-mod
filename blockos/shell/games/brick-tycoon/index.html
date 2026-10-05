@@ -21,6 +21,11 @@ const DROP_PERIOD = 2;          // seconds between drops for a dropper at belt l
 const MAX_BELT = 20, MAX_POLISH = 15;
 const FONT = '"Noto Sans","DejaVu Sans",system-ui,sans-serif';
 const { canvas, ctx, W, H } = Kit.stage(960, 600);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let millionaire = false, pressCount = 0;
+// your avatar runs the factory: it paces beside the press and hops when you press
+const boss = { x: 540, dir: -1, walk: 0, pause: 1, hop: 0 };
 
 const TIERS = [
   { name: "Clay Dropper",    cost: 15,     value: 1,    color: "#c2410c" },
@@ -84,6 +89,7 @@ function earn(v) {
   S.cash += v;
   S.run += v;
   S.total += v;
+  if (!millionaire && S.total >= 1e6) { millionaire = true; badge("millionaire", "Millionaire", "Earn $1M in lifetime cash."); }
 }
 
 const SUFFIX = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx", "Sp", "Oc", "No", "Dc"];
@@ -161,6 +167,8 @@ function tryBuy(r, many) {
   rowFlash[r] = 1;
   rowFlashColor[r] = "#22c55e";
   Kit.sfx("coin");
+  if (S.owned.some((n) => n > 0)) badge("first-dropper", "Open for Business", "Buy your first dropper.");
+  if (S.owned[4] > 0) badge("crystal", "Crystal Clear", "Buy a Crystal Dropper.");
   const fx = SHOP.x + SHOP.w - 60;
   floats.push({ x: fx, y: rowY(r) + 10, text: n > 1 ? `x${n}` : "Bought!", color: "#86efac", life: 0.9, size: 15 });
   save();
@@ -190,6 +198,8 @@ function press() {
   const v = clickValue();
   earn(v);
   pressAnim = 1;
+  boss.hop = 1;
+  if (++pressCount === 200) badge("hard-worker", "Hard Worker", "Work the brick press 200 times in one visit.");
   Kit.sfx("click");
   floats.push({ x: PRESS.cx + Kit.rand(-40, 40), y: 440, text: "+" + money(v, true), color: "#fde68a", life: 1, size: 22 });
   burst(PRESS.cx, 470, "#f97316", 6, 160);
@@ -272,6 +282,17 @@ function update(dt) {
   parts = parts.filter((p) => p.life > 0);
 
   pressAnim = Math.max(0, pressAnim - dt * 5);
+  boss.hop = Math.max(0, boss.hop - dt * 4);
+  if (boss.pause > 0) boss.pause -= dt;
+  else {
+    boss.x += boss.dir * 38 * dt;
+    boss.walk += dt * 9;
+    if (boss.x < 505 || boss.x > 578) {
+      boss.x = Kit.clamp(boss.x, 505, 578);
+      boss.dir *= -1;
+      boss.pause = Kit.rand(1, 3);
+    }
+  }
   binPulse = Math.max(0, binPulse - dt * 3);
   rebirthFlash = Math.max(0, rebirthFlash - dt * 1.2);
   for (let i = 0; i < rowFlash.length; i++) rowFlash[i] = Math.max(0, rowFlash[i] - dt * 3);
@@ -473,6 +494,18 @@ function drawPress() {
   else text(`+${money(clickValue(), true)}`, cx, 530, 15, "#e5e7eb", "center");
 }
 
+function drawBoss() {
+  const y = 580, hop = Math.sin(boss.hop * Math.PI) * 14;
+  ctx.fillStyle = "rgba(0,0,0,.3)";
+  ctx.beginPath();
+  ctx.ellipse(boss.x, y + 2, 18, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const walking = boss.pause <= 0 && boss.hop <= 0;
+  // face the press while working it, otherwise the way you're walking
+  const facing = boss.hop > 0 ? -1 : boss.dir;
+  Kit.drawAvatar(ctx, boss.x, y - hop, 104, { look: ME.avatar, facing, walk: walking ? boss.walk : 0, air: boss.hop > 0, name: ME.name });
+}
+
 function drawShop() {
   ctx.fillStyle = "#111418";
   ctx.beginPath();
@@ -543,6 +576,7 @@ function draw() {
   drawPolisher();
   drawBin();
   drawPress();
+  drawBoss();
   for (const f of flyers) {
     const x = f.x0 + (f.x1 - f.x0) * f.t;
     const y = f.y0 + (f.y1 - f.y0) * f.t - Math.sin(Math.PI * f.t) * 150;
@@ -680,6 +714,7 @@ async function askRebirth() {
   rebirthFlash = 1;
   Kit.sfx("win");
   toast = { text: `Reborn! Everything now earns x${rebirthMult()}`, life: 4 };
+  badge("rebirth", "Reborn", "Rebirth your factory for the first time.");
   save();
   Kit.finish(ID, Math.floor(S.total));
   updateHud();

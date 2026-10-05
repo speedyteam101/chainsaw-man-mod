@@ -24,6 +24,10 @@
 const ID = "dots-boxes";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(640, 720);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let chain = 0;   // boxes you've claimed in a row this turn
 canvas.style.outline = "none";
 const AREA = 500, AX = (W - AREA) / 2, AY = 130;
 const PLAYER_COLORS = { 1: { main: "#3b82f6", dark: "#1d4ed8", light: "#93c5fd" }, 2: { main: "#ef4444", dark: "#b91c1c", light: "#fca5a5" } };
@@ -206,12 +210,13 @@ function newGame() {
   scores = { 1: 0, 2: 0 };
   last = -1; hover = -1; cursor = 0;
   pops = []; lineAnims = [];
+  chain = 0;
   round++;
   beginTurn();
 }
 
 function updateHud() {
-  if (mode === "cpu") Kit.hud(`${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0} boxes</small>`);
+  if (mode === "cpu") Kit.hud(`${esc(ME)} vs ${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0} boxes</small>`);
   else Kit.hud(`Blue ${tally[1]} - ${tally[2]} Red<small>2 players</small>`);
 }
 
@@ -238,8 +243,12 @@ function drawLine(l) {
     if (!owner[b] && sides(drawn, b) === 4) { owner[b] = turn; made++; pops.push({ b, t: 0 }); }
   }
   completesNow = made > 0;
-  if (made) { scores[turn] += made; Kit.sfx(made > 1 ? "coin" : "score"); }
-  else { Kit.sfx("click"); turn = turn === 1 ? 2 : 1; }
+  if (made) {
+    scores[turn] += made;
+    Kit.sfx(made > 1 ? "coin" : "score");
+    if (mode === "cpu" && turn === 1 && (chain += made) >= 5) badge("chain-5", "Chain Reaction", "Claim 5 boxes in a single turn against the CPU.");
+  }
+  else { Kit.sfx("click"); turn = turn === 1 ? 2 : 1; chain = 0; }
   beginTurn();
 }
 
@@ -251,6 +260,11 @@ async function gameOver() {
   let title, text;
   if (mode === "cpu") {
     title = winner === 1 ? "You win!" : winner === 2 ? "CPU wins" : "It's a tie";
+    if (winner === 1) {
+      badge("first-win", "Dot Dasher", "Beat the CPU at Dots and Boxes.");
+      if (levelKey === "hard") badge("hard-win", "Box Tactician", "Beat the Hard CPU.");
+      if (sizeKey === "large") badge("large-win", "Big Board", "Beat the CPU on a Large board.");
+    }
     const best = Kit.finish(ID, a);
     text = `You ${a} - ${b} CPU\nBest: ${best} boxes`;
     Kit.sfx(winner === 1 ? "win" : winner === 2 ? "lose" : "score");
@@ -390,7 +404,18 @@ function draw() {
     const x = p === 1 ? AX : W - AX - 190;
     const col = PLAYER_COLORS[p];
     Kit.brick(ctx, x, 18, 190, 64, col.main, 10);
-    text(pname(p), x + 16, 50, 20, "#fff", 800, "left");
+    let label = pname(p), size = 20;
+    if (mode === "cpu" && p === 1) {
+      // your name on your score panel
+      label = ME;
+      ctx.font = `800 ${size}px ${FONT}`;
+      while (size > 13 && ctx.measureText(label).width > 112) { size--; ctx.font = `800 ${size}px ${FONT}`; }
+      if (ctx.measureText(label).width > 112) {
+        while (label.length > 3 && ctx.measureText(label + "..").width > 112) label = label.slice(0, -1);
+        label += "..";
+      }
+    }
+    text(label, x + 16, 50, size, "#fff", 800, "left");
     text(String(scores[p]), x + 174, 51, 34, "#fff", 800, "right");
     if ((phase === "input" || phase === "cpu") && turn === p) {
       ctx.fillStyle = "#facc15";

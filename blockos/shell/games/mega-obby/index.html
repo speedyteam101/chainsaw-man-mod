@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mega Obby</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .mo-banner {
+    position: fixed; left: 50%; top: 18%; transform: translate(-50%, -50%) scale(.9); z-index: 15;
+    font-size: 44px; font-weight: 900; color: #fff; text-shadow: 0 3px 0 #000, 0 0 18px rgba(0,0,0,.45);
+    opacity: 0; transition: opacity .3s, transform .3s; pointer-events: none; white-space: nowrap; text-align: center;
+  }
+  .mo-banner small { display: block; font-size: 18px; font-weight: 700; color: #fde68a; }
+  .mo-banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  .mo-bar {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 15; width: min(520px, 70vw); height: 12px;
+    background: rgba(0,0,0,.5); border: 2px solid rgba(255,255,255,.25); border-radius: 8px; overflow: visible; pointer-events: none;
+  }
+  .mo-bar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #22c55e, #facc15); border-radius: 6px; }
+  .mo-bar b { position: absolute; top: -7px; width: 4px; height: 22px; margin-left: -2px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1px #000; }
+  .mo-tip { position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 15; font-weight: 700; font-size: 14px;
+    color: #e5e7eb; text-shadow: 0 1px 2px #000; pointer-events: none; transition: opacity .4s; }
+  .kit-btn.mo-alt { background: #4b5563; box-shadow: 0 4px 0 #1f2937; margin-left: 10px; }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script type="module">
+import { World, THREE } from "../kit3d.js";
+
+const ID = "mega-obby";
+const SAVE_KEY = "blockos.megaobby.v1";
+const G = 196.2;
+const STAGES = 45;
+const PAL = ["#ef4444", "#fb923c", "#facc15", "#22c55e", "#14b8a6", "#3b82f6", "#a855f7", "#ec4899"];
+// A clock every player shares (roughly), so moving parts line up between computers.
+const clock = () => (performance.timeOrigin + performance.now()) / 1000 - 1.7e9;
+
+const world = new World({ sky: "#86cdfb", fogNear: 170, fogFar: 470 });
+world.camera.far = 520;
+world.camera.updateProjectionMatrix();
+window.world = world;
+
+// ------------------------------------------------------------------ a local building frame
+// x = sideways (right), y = up, f = forward along the course. Headings are 90 degree turns,
+// so parts stay axis-aligned and collide exactly.
+const FWD = [[0, -1], [-1, 0], [0, 1], [1, 0]];
+class Frame {
+  constructor(o, h) {
+    this.o = o.clone(); this.h = h;
+    const fw = FWD[h];
+    this.fw = fw; this.rt = [-fw[1], fw[0]];
+  }
+  p(x, y, f) { return [this.o.x + this.rt[0] * x + this.fw[0] * f, this.o.y + y, this.o.z + this.rt[1] * x + this.fw[1] * f]; }
+  v(x, y, f) { return new THREE.Vector3(...this.p(x, y, f)); }
+  s(sx, sy, sf) { return this.h % 2 ? [sf, sy, sx] : [sx, sy, sf]; }
+  part(o) { return world.part(Object.assign({}, o, { pos: this.p(...o.at), size: this.s(...o.size) })); }
+  place(m, x, y, f) { const q = this.p(x, y, f); m.position.set(q[0], q[1], q[2]); }
+  blk(x, top, f, sx, sf, color, extra) { return this.part(Object.assign({ at: [x, top - 0.5, f], size: [sx, 1, sf], color }, extra)); }
+  // rotation about the local forward axis (windmills)
+  spinFwd(m, a) { if (this.h % 2) m.rotation.set(a * (this.h === 1 ? 1 : -1), 0, 0); else m.rotation.set(0, 0, a * (this.h === 0 ? -1 : 1)); m.updateMatrixWorld(); }
+}
+
+// ------------------------------------------------------------------ shared systems
+const anims = [];          // fn(t, dt)
+const hazards = [];        // { mesh, on: () => bool }  kill when touched while on
+const fallers = [];        // blocks that drop after being touched
+const belts = [];          // { mesh, dir: Vector3, speed }
+const turntables = [];     // { colliders, cx, cz, w }
+const lowZones = [];       // Box3
+const pushers = [];        // sliding walls that shove you sideways
+let warnMats = null, padOn = null, padOff = null;
+
+function templateMats(color, material) {
+  const m = world.part({ size: [1, 1, 1], pos: [0, -999, 0], color, material, collide: false });
+  world.remove(m);
+  return m.material;
+}
+warnMats = templateMats("#f8fafc", "neon");
+padOn = templateMats("#22c55e", "neon");
+padOff = templateMats("#94a3b8", "neon");
+
+function launchPad(F, x, top, f, size, height) {
+  const v = Math.sqrt(2 * G * height);
+  return F.part({
+    at: [x, top + 0.15, f], size: [size, 0.3, size], color: "#4ade80", material: "neon", studs: false, collide: false,
+    onTouch: (p) => { if (p.vel.y < v * 0.5) { p.vel.y = v; p.onGround = false; Kit.sfx("jump"); } },
+  });
+}
+function killPart(F, at, size, extra) {
+  return F.part(Object.assign({ at, size, color: "#ff2d2d", material: "neon", kill: true, studs: false }, extra));
+}
+
+// ------------------------------------------------------------------ stage builders
+// Each gets (F, d, color, i) and returns { len, rise }: where the next checkpoint pad starts
+// (forward distance) and how high its top is. The pad is 8x8 and begins at f = len.
+const B = {
+  gaps(F, d, c) {
+    const s = 5 - d * 1.5, g = 3 + d * 2.5;
+    let f = g, y = 0;
+    for (let k = 0; k < 4; k++) {
+      y += (k % 2 ? 1 : 0.5) * (d > 0.5 ? 1.6 : 1);
+      F.blk(d > 0.3 ? (k % 2 ? 2 : -2) : 0, y, f + s / 2, s, s, c);
+      f += s + g;
+    }
+    return { len: f, rise: y };
+  },
+  stairs(F, d, c) {
+    const s = 4 - d, g = 2 + d * 1.5, r = 2.5 + d;
+    const xs = [0, 3, -3, 3, 0];
+    let f = g, y = 0;
+    for (let k = 0; k < 5; k++) {
+      y += r;
+      F.blk(xs[k], y, f + s / 2, s, s, c);
+      F.part({ at: [xs[k], y - 4, f + s / 2], size: [s * 0.5, 6, s * 0.5], color: "#64748b", studs: false });
+      f += s + g;
+    }
+    return { len: f, rise: y };
+  },
+  killStrips(F, d, c) {
+    const L = 40;
+    F.blk(0, 0, L / 2, 8, L, "#94a3b8");
+    const h = 1 + d, depth = 1.4 + d;
+    for (let k = 0; k < 5; k++) {
+      const f = 6 + k * 7;
+      if (k % 2 === 0) killPart(F, [0, h / 2, f], [8, h, depth]);
+      else killPart(F, [k % 4 === 1 ? -1.5 : 1.5, h / 2 + (d > 0.5 ? 0.6 : 0), f], [5, h, depth + 1]);
+    }
+    return { len: L, rise: 0 };
+  },
+  beam(F, d, c) {
+    const w = 2.2 - d * 1.0;
+    const pts = [[0, 0], [0, 12], [6, 12], [6, 24], [-4, 24], [-4, 32], [0, 32], [0, 36]];
+    for (let k = 0; k < pts.length - 1; k++) {
+      const [x0, f0] = pts[k], [x1, f1] = pts[k + 1];
+      if (x0 === x1) F.blk(x0, 0, (f0 + f1) / 2, w, Math.abs(f1 - f0) + w, c);
+      else F.blk((x0 + x1) / 2, 0, f0, Math.abs(x1 - x0) + w, w, c);
+    }
+    return { len: 36, rise: 0 };
+  },
+  movers(F, d, c) {
+    const n = d > 0.5 ? 3 : 2, range = 6 + d * 4, speed = 1 + d * 0.8, s = 6 - d * 1.5;
+    let f = 3;
+    for (let k = 0; k < n; k++) {
+      const fc = f + s / 2, ph = k * 2.1;
+      const m = F.part({ at: [0, -0.5, fc], size: [s, 1, s], color: c, moving: true });
+      anims.push((t) => F.place(m, Math.sin(t * speed + ph) * range, -0.5, fc));
+      f += s + 3;
+    }
+    return { len: f, rise: 0 };
+  },
+  jumpPad(F, d, c) {
+    const H = 14 + d * 8;
+    F.blk(0, 0, 3, 6, 6, "#475569");
+    launchPad(F, 0, 0, 3, 4, H + 4);
+    F.part({ at: [0, H - 6, 12], size: [8, 12, 8], color: c });
+    return { len: 16, rise: H };
+  },
+  spinner(F, d, c) {
+    const nb = d < 0.4 ? 1 : d < 0.8 ? 2 : 3, speed = 1.5 + d * 1.1;
+    F.blk(0, 0, 8, 16, 16, c);
+    F.part({ at: [0, 2, 8], size: [1.6, 4, 1.6], color: "#334155" });
+    const center = F.v(0, 1.5, 8);
+    for (let k = 0; k < nb; k++) {
+      const bar = world.part({ size: [15, 1, 1], pos: [center.x, center.y, center.z], color: "#ff2d2d", material: "neon", kill: true, collide: false, studs: false, rot: [0, 0.01, 0] });
+      anims.push((t) => { bar.rotation.y = t * speed + (k * Math.PI) / nb; bar.updateMatrixWorld(); });
+    }
+    return { len: 16, rise: 0 };
+  },
+  falling(F, d, c) {
+    const n = d > 0.5 ? 6 : 5, s = 4 - d * 0.8, g = 2.5 + d * 1.5;
+    let f = g;
+    for (let k = 0; k < n; k++) {
+      const m = F.blk(k % 2 ? 1.5 : -1.5, 0, f + s / 2, s, s, c, { onTouch: () => dropBlock(m) });
+      fallers.push({ m, state: 0, time: 0, mats: m.material, delay: 0.55 - d * 0.2 });
+      f += s + g;
+    }
+    return { len: f, rise: 0 };
+  },
+  conveyor(F, d, c, i) {
+    const speed = 7 + d * 5;
+    if (i % 2) {
+      // a long belt that pushes you backwards, with kill bricks to hop
+      const L = 36;
+      belt(F, 0, 0, L / 2, 7, L, F.v(0, 0, -1).sub(F.v(0, 0, 0)), speed, false);
+      for (let k = 0; k < 3; k++) killPart(F, [0, 0.5, 9 + k * 9], [7, 1, 1.2]);
+      return { len: L, rise: 0 };
+    }
+    // two belts pushing you sideways off the edge
+    belt(F, 0, 0, 7, 6, 14, F.v(1, 0, 0).sub(F.v(0, 0, 0)), speed * 0.75, true);
+    belt(F, 0, 0, 25, 6, 14, F.v(-1, 0, 0).sub(F.v(0, 0, 0)), speed * 0.75, true);
+    return { len: 32, rise: 0 };
+  },
+  wallHop(F, d, c) {
+    const L = 36, w = 3;
+    F.blk(0, 0, L / 2, w, L, c);
+    const out = 0.5 + d * 0.8;
+    for (let k = 0; k < 3; k++) {
+      const side = k % 2 ? -1 : 1;
+      // the wall covers the whole beam plus "out" studs on one side and a lot on the other
+      const xr = w / 2 + out, xl = -10;
+      const cx = side * (xr + xl) / 2, wx = xr - xl;
+      F.part({ at: [cx, 4.5, 8 + k * 10], size: [wx, 9, 1], color: "#e2e8f0" });
+    }
+    return { len: L, rise: 0 };
+  },
+  glass(F, d, c, i) {
+    const rows = d > 0.5 ? 5 : 4;
+    let f = 2;
+    let seed = i * 7 + 3;
+    for (let r = 0; r < rows; r++) {
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+      const real = (seed >> 8) & 1;
+      for (let col = 0; col < 2; col++) {
+        F.part({ at: [col ? 3 : -3, -0.25, f + 2.5], size: [5, 0.5, 5], color: "#bae6fd", material: "glass", collide: col === real, studs: false });
+      }
+      f += 7;
+    }
+    return { len: f, rise: 0 };
+  },
+  lowGrav(F, d, c) {
+    const gaps = [11, 12, 13, 12], rises = [4, 6, 5, 6].map((r) => r + d * 2);
+    let f = 0, y = 0;
+    for (let k = 0; k < 4; k++) {
+      f += gaps[k];
+      y += rises[k];
+      F.blk(k % 2 ? 3 : -3, y, f + 2.5, 5, 5, "#c084fc");
+      f += 5;
+    }
+    f += 9;
+    // the zone itself
+    const a = F.v(-12, -14, 0), b = F.v(12, y + 26, f + 3);
+    const box = new THREE.Box3(a.clone().min(b), a.clone().max(b));
+    lowZones.push(box);
+    const size = new THREE.Vector3(); box.getSize(size);
+    const center = new THREE.Vector3(); box.getCenter(center);
+    const zone = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), ZONE_MAT);
+    zone.position.copy(center);
+    world.scene.add(zone);
+    return { len: f, rise: y + 1 };
+  },
+  elevators(F, d, c) {
+    const w = 0.9 + d * 0.5;
+    const A = F.part({ at: [0, -0.5, 5], size: [6, 1, 6], color: c, moving: true });
+    const Bm = F.part({ at: [0, 9.5, 14], size: [6, 1, 6], color: c, moving: true });
+    anims.push((t) => {
+      F.place(A, 0, 5 - 5 * Math.cos(t * w) - 0.5, 5);
+      F.place(Bm, 0, 15 + 5 * Math.cos(t * w) - 0.5, 14);
+    });
+    F.part({ at: [0, 18, 20], size: [6, 4, 4], color: "#475569" });
+    return { len: 22, rise: 20 };
+  },
+  lasers(F, d, c) {
+    const L = 40;
+    F.blk(0, 0, L / 2, 7, L, "#64748b");
+    for (let k = 0; k < 4; k++) {
+      const f = 7 + k * 8.5;
+      F.part({ at: [-4, 3, f], size: [1, 6, 1], color: "#1e293b" });
+      F.part({ at: [4, 3, f], size: [1, 6, 1], color: "#1e293b" });
+      const beams = [];
+      for (const y of [0.8, 2.4, 4.0]) beams.push(F.part({ at: [0, y, f], size: [7, 0.35, 0.35], color: "#ff2d2d", material: "neon", collide: false, studs: false, shadow: false }));
+      const ph = k * 1.7, w = 2.2 + d * 0.8, duty = -0.35 + d * 0.3;
+      const on = () => Math.sin(clock() * w + ph) > duty;
+      for (const m of beams) hazards.push({ mesh: m, on });
+      anims.push(() => { const v = on(); for (const m of beams) m.visible = v; });
+    }
+    return { len: L, rise: 0 };
+  },
+  trampolines(F, d, c) {
+    F.blk(0, 0, 2.5, 5, 5, "#475569");
+    launchPad(F, 0, 0, 2.5, 3.6, 13);
+    let f = 5, y = 0;
+    for (let k = 0; k < 4; k++) {
+      f += 7 + d * 2;
+      y += 6;
+      F.blk(k % 2 ? -2.5 : 2.5, y, f + 2.5, 5, 5, c);
+      launchPad(F, k % 2 ? -2.5 : 2.5, y, f + 2.5, 3.6, 13);
+      f += 5;
+    }
+    f += 7;
+    return { len: f, rise: y + 5 };
+  },
+  killMaze(F, d, c, i) {
+    const cols = 4, rows = 6, s = 5;
+    let col = i % cols;
+    const safe = [];
+    for (let r = 0; r < rows; r++) {
+      const row = new Set([col]);
+      if (r % 2 === 1) {
+        const next = col === 0 ? 2 : col === 3 ? 1 : (r + i) % 4 < 2 ? col - 1 : col + 1;
+        for (let k = Math.min(col, next); k <= Math.max(col, next); k++) row.add(k);
+        col = next;
+      }
+      safe.push(row);
+    }
+    for (let r = 0; r < rows; r++) {
+      for (let k = 0; k < cols; k++) {
+        const x = (k - 1.5) * s, f = 1 + r * s + s / 2;
+        if (safe[r].has(k)) F.blk(x, 0, f, s, s, c);
+        else F.part({ at: [x, -0.4, f], size: [s, 1, s], color: "#ff2d2d", material: "neon", kill: true, studs: false });
+      }
+    }
+    F.blk(0, 0, 0.5, cols * s, 1, "#64748b");
+    F.blk(0, 0, 1 + rows * s + 0.5, cols * s, 1, "#64748b");
+    return { len: 2 + rows * s, rise: 0 };
+  },
+  windmill(F, d, c) {
+    const L = 30, w = 1.1 + d * 0.6;
+    F.blk(0, 0, L / 2, 7, L, c);
+    for (let k = 0; k < 2; k++) {
+      const f = 9 + k * 12, ph = k * 0.8;
+      F.part({ at: [0, 9, f], size: [2, 2, 2], color: "#334155", collide: false });
+      for (let b = 0; b < 2; b++) {
+        const bar = F.part({ at: [0, 9, f], size: [20, 1.2, 1.2], color: "#ff2d2d", material: "neon", kill: true, collide: false, studs: false, rot: [0.01, 0.01, 0] });
+        anims.push((t) => F.spinFwd(bar, t * w + ph + (b * Math.PI) / 2));
+      }
+    }
+    return { len: L, rise: 0 };
+  },
+  pushers(F, d, c) {
+    const L = 34, w = 1.3 + d * 0.7;
+    F.blk(0, 0, L / 2, 4, L, c);
+    for (let k = 0; k < 3; k++) {
+      const f = 8 + k * 9, ph = k * 2.2;
+      const m = F.part({ at: [0, 2.5, f], size: [3, 5, 4], color: "#7f1d1d", moving: true });
+      const pu = { m, F, x: 0, v: 0 };
+      pushers.push(pu);
+      anims.push((t) => { const x = Math.sin(t * w + ph) * 8; pu.v = x - pu.x; pu.x = x; F.place(m, x, 2.5, f); });
+    }
+    return { len: L, rise: 0 };
+  },
+  turntable(F, d, c) {
+    const R = 9, w = 0.6 + d * 0.5;
+    const center = F.v(0, 0, R + 1);
+    const grp = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(R, R, 1, 28), new THREE.MeshLambertMaterial({ color: c }));
+    disc.position.y = -0.5; disc.receiveShadow = true;
+    grp.add(disc);
+    for (let k = 0; k < 4; k++) {
+      const st = new THREE.Mesh(new THREE.BoxGeometry(R * 1.9, 0.08, 0.7), STRIPE_MAT);
+      st.position.y = 0.02; st.rotation.y = (k * Math.PI) / 4; grp.add(st);
+    }
+    grp.position.copy(center);
+    world.scene.add(grp);
+    const cols = [];
+    for (const [a, b] of [[1, 0.42], [0.87, 0.72], [0.72, 0.87], [0.42, 1]]) {
+      const m = world.part({ size: [2 * R * a, 1, 2 * R * b], pos: [center.x, center.y - 0.5, center.z], color: c, studs: false });
+      m.visible = false;
+      cols.push(m);
+    }
+    world.part({ size: [1.4, 3.5, 1.4], pos: [center.x, center.y + 1.75, center.z], color: "#334155" });
+    const bar = world.part({ size: [2 * R - 1.5, 1, 1], pos: [center.x, center.y + 1.5, center.z], color: "#ff2d2d", material: "neon", kill: true, collide: false, studs: false, rot: [0, 0.01, 0] });
+    turntables.push({ colliders: cols, cx: center.x, cz: center.z, w });
+    anims.push((t) => { grp.rotation.y = t * w; bar.rotation.y = -t * (0.9 + d * 0.5); bar.updateMatrixWorld(); });
+    return { len: 2 * R + 2, rise: 0 };
+  },
+  climb(F, d, c) {
+    const H = 14 + Math.round(d * 2) * 3.5;
+    F.blk(0, 0, 5, 8, 10, "#64748b");
+    F.part({ at: [0, H / 2, 14], size: [14, H, 2], color: c });
+    const n = Math.round(H / 3.5) - 1;
+    for (let k = 0; k < n; k++) {
+      const x = [-3, 1.5, 5, 1.5, -3, -5][k % 6];
+      F.part({ at: [x, 3.5 * (k + 1) - 0.5, 12], size: [2.5, 1, 2], color: "#f8fafc" });
+    }
+    return { len: 15, rise: H };
+  },
+  drop(F, d, c) {
+    let f = 0, y = 0;
+    for (let k = 0; k < 4; k++) {
+      f += 4;
+      y -= 6;
+      const x = k % 2 ? 3 : -3;
+      F.blk(x, y, f + 3, 6, 6, c);
+      if (k > 0) killPart(F, [x + (k % 2 ? -1.6 : 1.6), y + 1.5, f + 3], [1.4, 3, 1.4]);
+      f += 6;
+    }
+    f += 3;
+    return { len: f, rise: y };
+  },
+  tightrope(F, d, c) {
+    const L = 34;
+    F.blk(0, 0, L / 2, 1.6, L, c);
+    for (let k = 0; k < 2; k++) {
+      const f = 11 + k * 12;
+      F.blk(0, 0, f, 5, 5, c);
+      const center = F.v(0, 1.5, f);
+      const bar = world.part({ size: [9, 1, 1], pos: [center.x, center.y, center.z], color: "#ff2d2d", material: "neon", kill: true, collide: false, studs: false, rot: [0, 0.01, 0] });
+      anims.push((t) => { bar.rotation.y = t * (2 + d) * (k ? -1 : 1); bar.updateMatrixWorld(); });
+    }
+    return { len: L, rise: 0 };
+  },
+};
+
+const ZONE_MAT = new THREE.MeshBasicMaterial({ color: "#c084fc", transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide });
+const STRIPE_MAT = new THREE.MeshBasicMaterial({ color: "#ffffff" });
+
+function belt(F, x, top, f, sx, sf, dir, speed, sideways) {
+  const m = F.blk(x, top, f, sx, sf, "#1f2937", { studs: false });
+  belts.push({ m, dir: dir.normalize(), speed });
+  // moving chevron stripes on top
+  const n = Math.floor((sideways ? sx : sf) / 2.5);
+  const span = n * 2.5;
+  for (let k = 0; k < n; k++) {
+    const s = F.part({ at: [0, top + 0.06, 0], size: sideways ? [0.5, 0.12, sf - 0.6] : [sx - 0.6, 0.12, 0.5], color: "#facc15", material: "neon", collide: false, studs: false, shadow: false });
+    anims.push((t) => {
+      let o = ((t * speed + k * 2.5) % span) - span / 2;
+      // move along dir (in local terms: sideways -> x, otherwise -f)
+      if (sideways) F.place(s, x + o * Math.sign(F.rt[0] * dir.x + F.rt[1] * dir.z || 1), top + 0.06, f);
+      else F.place(s, x, top + 0.06, f - o);
+    });
+  }
+}
+
+function dropBlock(m) {
+  const fb = fallers.find((q) => q.m === m);
+  if (!fb || fb.state !== 0) return;
+  fb.state = 1; fb.time = 0;
+  m.material = warnMats;
+}
+function stepFallers(dt) {
+  for (const fb of fallers) {
+    if (fb.state === 0) continue;
+    fb.time += dt;
+    if (fb.state === 1 && fb.time > fb.delay) {
+      fb.state = 2; fb.time = 0;
+      fb.m.visible = false;
+      const i = world.solids.indexOf(fb.m);
+      if (i >= 0) world.solids.splice(i, 1);
+    } else if (fb.state === 2 && fb.time > 3) {
+      fb.state = 0;
+      fb.m.visible = true;
+      fb.m.material = fb.mats;
+      world.solids.push(fb.m);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ the course
+const PLAN = [
+  ["gaps", 0], ["stairs", 0], ["killStrips", 0], ["beam", 0], ["movers", 0],
+  ["jumpPad", 0], ["spinner", 0], ["falling", 0], ["conveyor", 0], ["wallHop", 0],
+  ["glass", 0], ["lowGrav", 0], ["elevators", 0], ["lasers", 0], ["trampolines", 0],
+  ["killMaze", 0], ["windmill", 0], ["pushers", 0], ["turntable", 0], ["climb", 0],
+  ["gaps", 0.5], ["drop", 0.5], ["spinner", 0.5], ["conveyor", 0.5], ["beam", 0.6],
+  ["falling", 0.6], ["lasers", 0.6], ["movers", 0.6], ["lowGrav", 0.6], ["wallHop", 0.7],
+  ["windmill", 0.7], ["killStrips", 0.7], ["pushers", 0.7], ["trampolines", 0.7], ["turntable", 0.8],
+  ["climb", 0.8], ["glass", 0.8], ["elevators", 0.8], ["spinner", 1], ["gaps", 1],
+  ["conveyor", 1], ["lasers", 1], ["tightrope", 1], ["movers", 1], ["jumpPad", 1],
+];
+const NAMES = {
+  gaps: "Mind the gap", stairs: "Sky stairs", killStrips: "Hot strips", beam: "Balance beam", movers: "Sliders",
+  jumpPad: "Launch pad", spinner: "Spinner", falling: "Crumbling path", conveyor: "Conveyors", wallHop: "Wall hops",
+  glass: "Glass bridge", lowGrav: "Low gravity", elevators: "Elevators", lasers: "Lasers", trampolines: "Trampolines",
+  killMaze: "Lava tiles", windmill: "Windmills", pushers: "Pushers", turntable: "Turntable", climb: "Wall climb",
+  drop: "The drop", tightrope: "Tightrope",
+};
+
+const pads = [];      // { n, spawn: Vector3, yaw, mesh, top }
+const START_Y = 60;
+(function buildCourse() {
+  let pos = new THREE.Vector3(0, START_Y, 0);   // top-center of the next checkpoint pad
+  let heading = 0, armLen = 0;
+  const arms = [];
+  const need = (k) => (k < 2 ? 70 : arms[k - 2] + 46);
+  // lobby around the first pad
+  world.part({ size: [22, 2, 22], pos: [0, START_Y - 1.5, 6], color: "#e2e8f0" });
+  for (let n = 1; n <= STAGES + 1; n++) {
+    const color = PAL[(n - 1) % PAL.length];
+    const turn = n <= STAGES && armLen >= need(arms.length);
+    const oldHeading = heading;
+    if (turn) { arms.push(armLen); armLen = 0; heading = (heading + 1) % 4; }
+    if (n === STAGES + 1) { buildFinish(pos, oldHeading); break; }
+    // checkpoint pad
+    const base = world.part({ size: [8, 1, 8], pos: [pos.x, pos.y - 0.5, pos.z], color: "#334155" });
+    const glow = world.part({ size: [6, 0.2, 6], pos: [pos.x, pos.y + 0.1, pos.z], color: "#94a3b8", material: "neon", collide: false, studs: false });
+    glow.material = padOff;
+    const pad = { n, spawn: new THREE.Vector3(pos.x, pos.y + 0.2, pos.z), yaw: heading * Math.PI / 2, glow, base };
+    base.userData.part.onTouch = () => reachStage(n);
+    world.touchers.push(base);
+    pads.push(pad);
+    world.label(String(n), { pos: [pos.x, pos.y + 9, pos.z], height: 3.2 });
+    // the challenge
+    const [kind, d] = PLAN[n - 1];
+    let origin = pos.clone();
+    const fw = FWD[heading];
+    origin.x += fw[0] * 4; origin.z += fw[1] * 4;
+    if (turn) {
+      // a short walkway after the corner so stages never bump into each other
+      const W = new Frame(origin, heading);
+      W.blk(0, 0, 6, 4, 12, "#cbd5e1");
+      origin.x += fw[0] * 12; origin.z += fw[1] * 12;
+      armLen += 12;
+    }
+    const F = new Frame(origin, heading);
+    const r = B[kind](F, d, color, n);
+    pad.name = NAMES[kind];
+    pad.F = F;
+    if (n === 9) buildSecret(new Frame(pos, heading));
+    armLen += r.len + 8;
+    pos = F.v(0, r.rise, r.len + 4);
+  }
+})();
+
+function buildFinish(pos, heading) {
+  const F = new Frame(pos, heading);
+  F.part({ at: [0, -1, 6], size: [20, 2, 20], color: "#facc15" });
+  const fin = F.part({ at: [0, 0.15, 6], size: [10, 0.3, 10], color: "#fde047", material: "neon", collide: false, studs: false, onTouch: () => finishRun() });
+  F.part({ at: [0, 1.5, 12], size: [4, 3, 3], color: "#a16207" });
+  F.part({ at: [0, 4, 12], size: [2, 2, 2], color: "#facc15" });
+  F.part({ at: [0, 6.5, 12], size: [5, 3, 4], color: "#facc15" });
+  F.part({ at: [-3, 7, 12], size: [1, 2, 1], color: "#facc15" });
+  F.part({ at: [3, 7, 12], size: [1, 2, 1], color: "#facc15" });
+  for (const x of [-9, 9]) {
+    F.part({ at: [x, 6, -3], size: [1, 12, 1], color: "#f8fafc" });
+    F.part({ at: [x * 0.8 + (x > 0 ? 0.5 : -0.5), 11, -3], size: [3, 2, 0.3], color: x > 0 ? "#111827" : "#f8fafc", studs: false });
+  }
+  world.label("FINISH", { pos: F.p(0, 13, 6), height: 4 });
+  pads.push({ n: STAGES + 1, spawn: new THREE.Vector3(...F.p(0, 0.3, 6)), yaw: heading * Math.PI / 2, glow: fin, finish: true, name: "Finish" });
+}
+
+function buildSecret(F) {
+  // faint glass stepping stones off the right side of the stage 9 pad, to a hidden island
+  F.part({ at: [9.5, -0.25, 0], size: [3, 0.5, 3], color: "#e0f2fe", material: "glass", studs: false });
+  F.part({ at: [15, 0.75, -1], size: [3, 0.5, 3], color: "#e0f2fe", material: "glass", studs: false });
+  F.part({ at: [20.5, 1.75, 0], size: [3, 0.5, 3], color: "#e0f2fe", material: "glass", studs: false });
+  F.blk(26.5, 2, 0, 6, 6, "#a855f7");
+  F.part({ at: [26.5, 3.2, 0], size: [2, 2, 2], color: "#facc15", material: "neon", studs: false, collide: false, onTouch: () => {
+    if (Kit.badge(ID, "secret", "Secret Finder", "Found the hidden island off stage 9.")) Kit.sfx("coin");
+    else Kit.sfx("coin");
+    banner("Secret found!", "There's always something off the path");
+  } });
+}
+
+// a sea of clouds far below, so you can feel the height
+{
+  const sea = new THREE.Mesh(new THREE.PlaneGeometry(4000, 4000), new THREE.MeshBasicMaterial({ color: "#f1f5f9" }));
+  sea.rotation.x = -Math.PI / 2;
+  sea.position.y = START_Y - 140;
+  world.scene.add(sea);
+  const puff = new THREE.MeshBasicMaterial({ color: "#ffffff" });
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  for (let k = 0; k < 40; k++) {
+    const a = k * 2.39996, r = 40 + ((k * 53) % 330);
+    const m = new THREE.Mesh(geo, puff);
+    m.scale.set(30 + (k % 4) * 16, 8 + (k % 3) * 4, 24 + (k % 5) * 8);
+    m.position.set(Math.cos(a) * r, START_Y - 138, Math.sin(a) * r);
+    world.scene.add(m);
+  }
+}
+
+// ------------------------------------------------------------------ progress & saving
+let save = { stage: 1, time: 0, deaths: 0, finished: false };
+try { save = Object.assign(save, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); } catch (_) {}
+save.stage = Math.max(1, Math.min(STAGES + 1, save.stage | 0));
+let stage = 1, runTime = 0, deaths = 0, finished = false, playing = false;
+let streak = 0;                 // stages cleared in a row without dying
+let runDeaths = 0;
+function persist() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ stage, time: Math.round(runTime), deaths, finished })); } catch (_) {}
+}
+
+const bannerEl = document.createElement("div");
+bannerEl.className = "mo-banner";
+document.body.appendChild(bannerEl);
+let bannerT = 0;
+function banner(title, sub) {
+  bannerEl.innerHTML = "";
+  bannerEl.append(title);
+  if (sub) { const s = document.createElement("small"); s.textContent = sub; bannerEl.appendChild(s); }
+  bannerEl.classList.add("on");
+  bannerT = 2.2;
+}
+const bar = document.createElement("div");
+bar.className = "mo-bar";
+bar.innerHTML = "<i></i>";
+document.body.appendChild(bar);
+const tip = document.createElement("div");
+tip.className = "mo-tip";
+document.body.appendChild(tip);
+const others = new Map();   // id -> marker element on the progress bar
+
+function setPadLit(n) {
+  for (const p of pads) if (!p.finish) p.glow.material = p.n <= n ? padOn : padOff;
+}
+
+function reachStage(n) {
+  if (!playing || finished) return;
+  if (n <= stage) {
+    const p = pads[n - 1];
+    if (n === stage) world.checkpoint([p.spawn.x, p.spawn.y, p.spawn.z]);
+    return;
+  }
+  if (n > stage + 1) { banner("Not so fast!", `Finish stage ${stage} first`); return; }
+  stage = n;
+  streak++;
+  const p = pads[n - 1];
+  world.checkpoint([p.spawn.x, p.spawn.y, p.spawn.z]);
+  setPadLit(stage);
+  Kit.sfx("score");
+  banner(`Stage ${n}`, p.name);
+  persist();
+  if (stage === 2) Kit.badge(ID, "first", "First Steps", "Cleared your first stage of Mega Obby.");
+  for (const m of [10, 20, 30, 40]) {
+    if (stage === m + 1) {
+      Kit.badge(ID, "stage" + m, `Stage ${m} Cleared`, `Made it past stage ${m} of Mega Obby.`);
+      Kit.finish(ID, m);
+      if (net.online) net.event({ k: "st", s: m });
+    }
+  }
+  if (streak >= 10) Kit.badge(ID, "untouchable", "Untouchable", "Cleared 10 stages in a row without dying.");
+  updateBoard();
+}
+
+function finishRun() {
+  if (!playing || finished || stage < STAGES) return;
+  finished = true;
+  stage = STAGES + 1;
+  streak++;
+  Kit.sfx("win");
+  setPadLit(stage);
+  const fin = pads[STAGES];
+  world.checkpoint([fin.spawn.x, fin.spawn.y, fin.spawn.z]);
+  persist();
+  Kit.badge(ID, "champion", "Obby Champion", "Beat all 45 stages of Mega Obby.");
+  if (streak >= 10) Kit.badge(ID, "untouchable", "Untouchable", "Cleared 10 stages in a row without dying.");
+  Kit.finish(ID, STAGES);
+  if (net.online) net.event({ k: "fin", t: Math.round(runTime) });
+  banner("You beat Mega Obby!", `${fmt(runTime)} - ${deaths} deaths`);
+  updateBoard();
+  setTimeout(async () => {
+    const again = await endScreen();
+    if (again) startOver();
+  }, 2500);
+}
+
+function endScreen() {
+  return new Promise((resolve) => {
+    let over = false;
+    Kit.overlay("You beat Mega Obby!", `All ${STAGES} stages cleared in ${fmt(runTime)} with ${deaths} ${deaths === 1 ? "death" : "deaths"}.\nHang out on the winners' platform, or run it again from stage 1.`, "Stay here").then(() => resolve(over));
+    const panel = [...document.querySelectorAll(".kit-overlay .kit-panel")].pop();
+    const b = document.createElement("button");
+    b.className = "kit-btn mo-alt";
+    b.textContent = "Start over";
+    b.onclick = () => { over = true; panel.querySelector(".kit-btn").click(); };
+    panel.appendChild(b);
+  });
+}
+
+function startOver() {
+  stage = 1; runTime = 0; deaths = 0; finished = false; streak = 0;
+  persist();
+  setPadLit(1);
+  const p = pads[0];
+  world.checkpoint([p.spawn.x, p.spawn.y, p.spawn.z]);
+  world.respawn();
+}
+
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+// ------------------------------------------------------------------ player & online
+stage = save.stage; runTime = save.time || 0; deaths = save.deaths || 0; finished = !!save.finished && save.stage > STAGES;
+const startPad = pads[Math.min(stage, pads.length) - 1];
+const me = world.spawnPlayer({ pos: [startPad.spawn.x, startPad.spawn.y, startPad.spawn.z], yaw: startPad.yaw });
+setPadLit(stage);
+world.onRespawn((p) => {
+  const pad = pads[Math.min(stage, pads.length) - 1];
+  p.yaw = world.cam.yaw = pad.yaw;
+});
+world.onDeath(() => {
+  if (!playing) return;
+  deaths++;
+  runDeaths++;
+  streak = 0;
+  persist();
+});
+Kit.onKey((code) => { if (code === "KeyR" && playing && me.alive) world.kill(); });
+
+const net = Kit.net(ID, { room: "main" });
+world.online(net);
+window.net = net;
+// Share our stage along with the position the kit already sends.
+const sendState = net.state.bind(net);
+net.state = (s) => sendState(Object.assign(s, { st: stage, dd: deaths }));
+net.on("event", (pl, e) => {
+  if (!e || typeof e !== "object") return;
+  if (e.k === "st" && Number.isFinite(e.s)) Kit.toast(`${pl.name} reached stage ${e.s | 0}!`, "", "#3b82f6");
+  if (e.k === "fin") Kit.toast(`${pl.name} beat Mega Obby!`, Number.isFinite(e.t) ? `Time: ${fmt(e.t)}` : "", "#facc15");
+});
+net.on("leave", (pl) => { const el = others.get(pl.id); if (el) { el.remove(); others.delete(pl.id); } });
+
+function updateBoard() {
+  const rows = [{ name: me.name, values: [Math.min(stage, STAGES + 1) > STAGES ? "Done" : stage, deaths], me: true, s: stage }];
+  for (const pl of net.players.values()) {
+    const s = pl.state || {};
+    const st = Math.max(1, Math.min(STAGES + 1, s.st | 0 || 1));
+    rows.push({ name: pl.name, values: [st > STAGES ? "Done" : st, s.dd | 0], s: st });
+    let el = others.get(pl.id);
+    if (!el) { el = document.createElement("b"); el.style.background = (pl.avatar && pl.avatar.torso) || "#3b82f6"; bar.appendChild(el); others.set(pl.id, el); }
+    el.style.left = ((st - 1) / STAGES) * 100 + "%";
+  }
+  rows.sort((a, b) => b.s - a.s);
+  Kit.leaderboard(["Stage", "Deaths"], rows);
+  bar.firstChild.style.width = ((Math.min(stage, STAGES + 1) - 1) / STAGES) * 100 + "%";
+  return rows;
+}
+
+// for testing from the console
+window.obby = { pads, get stage() { return stage; }, set stage(n) { stage = n; setPadLit(n); }, get deaths() { return deaths; }, reachStage };
+
+// ------------------------------------------------------------------ main loop
+let boardT = 0;
+world.start((dt) => {
+  const t = clock();
+  for (const fn of anims) fn(t, dt);
+  stepFallers(dt);
+  const p = me;
+  if (p.alive) {
+    // belts
+    if (p.onGround && p.standingOn) {
+      for (const b of belts) if (b.m === p.standingOn) p.pos.addScaledVector(b.dir, b.speed * dt);
+      for (const tt of turntables) {
+        if (tt.colliders.includes(p.standingOn)) {
+          const a = tt.w * dt, dx = p.pos.x - tt.cx, dz = p.pos.z - tt.cz;
+          p.pos.x = tt.cx + dx * Math.cos(a) + dz * Math.sin(a);
+          p.pos.z = tt.cz - dx * Math.sin(a) + dz * Math.cos(a);
+          p.yaw += a;
+        }
+      }
+    }
+    // low gravity
+    const c = new THREE.Vector3(p.pos.x, p.pos.y + 2.6, p.pos.z);
+    let low = false;
+    for (const z of lowZones) if (z.containsPoint(c)) low = true;
+    if (low) { p.vel.y += G * 0.7 * dt; if (p.vel.y < -40) p.vel.y = -40; }
+    // sliding walls push you sideways (the kit would resolve them along x first)
+    for (const pu of pushers) {
+      const m = pu.m, s = m.userData.part.size, q = m.position;
+      if (Math.abs(p.pos.x - q.x) < s.x / 2 + 0.95 && Math.abs(p.pos.z - q.z) < s.z / 2 + 0.95 && p.pos.y < q.y + s.y / 2 && p.pos.y + 5.2 > q.y - s.y / 2) {
+        const lat = pu.F.h % 2 ? "z" : "x";
+        const sgn = pu.F.rt[lat === "x" ? 0 : 1] * (pu.v >= 0 ? 1 : -1);
+        p.pos[lat] = sgn > 0 ? q[lat] + s[lat] / 2 + 0.97 : q[lat] - s[lat] / 2 - 0.97;
+      }
+    }
+    // lasers
+    for (const h of hazards) if (h.on() && world.touching(h.mesh)) { world.kill(); break; }
+    // fell off the course
+    if (p.alive && p.pos.y < world.spawn.y - 45) world.kill();
+    tip.textContent = low ? "Low gravity zone - jumps go much higher" : "";
+  }
+  if (playing && !finished) runTime += dt;
+  if (bannerT > 0) { bannerT -= dt; if (bannerT <= 0) bannerEl.classList.remove("on"); }
+  boardT -= dt;
+  if (boardT <= 0) {
+    boardT = 0.5;
+    const rows = updateBoard();
+    const st = Math.min(stage, STAGES + 1);
+    Kit.hud(`${finished ? "Finished!" : `Stage ${st} / ${STAGES}`}<small>${fmt(runTime)} - ${deaths} ${deaths === 1 ? "death" : "deaths"}${net.online && rows.length > 1 ? ` - place ${rows.findIndex((r) => r.me) + 1} of ${rows.length}` : ""}</small>`);
+  }
+});
+
+// ------------------------------------------------------------------ start screen
+(async function startScreen() {
+  updateBoard();
+  me.frozen = true;
+  const cont = save.stage > 1 && !(save.stage > STAGES);
+  const text = `${STAGES} stages of obstacles high in the sky. Each glowing pad is a checkpoint - fall and you'll respawn there.\n\nWASD / arrows to move, Space to jump, drag or Left/Right to turn the camera, mouse wheel to zoom, Shift for shift lock, R to reset your character.` +
+    (cont ? `\n\nYou made it to stage ${save.stage} last time.` : save.stage > STAGES ? "\n\nYou've already beaten it. Run it again?" : "");
+  let over = false;
+  const done = Kit.overlay("Mega Obby", text, cont ? `Continue (stage ${save.stage})` : save.stage > STAGES ? "Play again" : "Play");
+  if (cont) {
+    const panel = [...document.querySelectorAll(".kit-overlay .kit-panel")].pop();
+    const b = document.createElement("button");
+    b.className = "kit-btn mo-alt";
+    b.textContent = "Start over";
+    b.onclick = () => { over = true; panel.querySelector(".kit-btn").click(); };
+    panel.appendChild(b);
+  }
+  await done;
+  playing = true;
+  me.frozen = false;
+  if (over || save.stage > STAGES) startOver();
+  else {
+    const pad = pads[stage - 1];
+    world.checkpoint([pad.spawn.x, pad.spawn.y, pad.spawn.z]);
+  }
+  banner(`Stage ${stage}`, pads[stage - 1].name);
+})();
+</script>
+</body>
+</html>

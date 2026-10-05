@@ -23,6 +23,8 @@
 const ID = "pixel-logic";
 const { canvas, ctx, W, H } = Kit.stage(760, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 // Hand-made pictures ("#" = filled). Colors are used for the reveal.
 const PICTURES = [
@@ -207,7 +209,7 @@ function newPuzzle(sz) {
 }
 
 function updateHud() {
-  Kit.hud(`${n} x ${n}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`${n} x ${n}<small>${esc(ME.name)} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 // ---------- rules ----------
@@ -260,6 +262,11 @@ async function win() {
   const best = Kit.finish(ID, points);
   Kit.sfx("win");
   updateHud();
+  Kit.badge(ID, "pixel-artist", "Pixel Artist", "Solved your first picture puzzle.");
+  if (n >= 10) Kit.badge(ID, "picture-perfect", "Picture Perfect", "Solved a Medium 10 x 10 puzzle.");
+  if (n >= 15) Kit.badge(ID, "grand-mosaic", "Grand Mosaic", "Solved a Large 15 x 15 puzzle.");
+  if (n >= 10 && checkMistakes && mistakes === 0) Kit.badge(ID, "flawless-logic", "Flawless Logic", "Solved a Medium or Large puzzle without a mistake.");
+  if (n >= 10 && secs < size.par) Kit.badge(ID, "under-par", "Under Par", "Solved a Medium or Large puzzle faster than par time.");
   await new Promise((r) => setTimeout(r, 1500));
   const what = picture.name ? `You drew: ${picture.name}!` : "Mystery picture complete!";
   menu("Solved!", `${what}\nTime ${fmt(secs)}${checkMistakes ? `, mistakes ${mistakes}` : ""}\nPoints: ${points}   Best: ${best}`);

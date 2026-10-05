@@ -29,6 +29,8 @@
 const ID = "fishing-frenzy";
 const SAVE_KEY = "blockos.fishing-frenzy.save";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 
 const SURFACE = 215;
 const DOCK_END = 210;
@@ -242,6 +244,11 @@ function landFish() {
   updateHud();
   Kit.sfx(RARITY[f.sp.rarity].tier >= 3 ? "win" : "coin");
   splash(DOCK_END + 10, SURFACE, 20);
+  badge("first-catch", "First Catch", "Land your first fish.");
+  if (f.sp.id === "boot") badge("old-boot", "Boot Camp", "Reel in an old boot.");
+  if (RARITY[f.sp.rarity].tier >= 3) badge("rare", "Rare Find", "Catch a Rare (or rarer) fish.");
+  if (f.sp.rarity === "legendary") badge("legendary", "Legend of the Deep", "Catch a Legendary fish.");
+  if (SPECIES.filter((s) => save.journal[s.id]).length >= 10) badge("collector", "Collector", "Discover 10 different species in your journal.");
 }
 
 function loseFish(why) {
@@ -445,6 +452,7 @@ function buy(kind, cost) {
   save.coins -= cost;
   save[kind]++;
   persist();
+  if (kind === "rod" && save.rod >= ROD_COST.length - 1) badge("max-rod", "Titan Angler", "Upgrade to the Titan Rod.");
   Kit.sfx("win");
   say(kind === "rod" ? `New rod: ${ROD_NAMES[save.rod]}!` : `New bait: ${BAIT_NAMES[save.bait]}!`, "#4ade80");
   updateHud();
@@ -606,23 +614,13 @@ function drawWorld() {
 
 function drawFisher() {
   const x = 186, y = SURFACE - 44;
-  ctx.fillStyle = "#1e3a8a";
-  ctx.fillRect(x - 12, y - 36, 10, 36);
-  ctx.fillRect(x + 2, y - 36, 10, 36);
-  Kit.brick(ctx, x - 15, y - 76, 30, 42, "#f97316", 4);
-  ctx.fillStyle = "#fde68a";
-  ctx.fillRect(x - 15, y - 60, 30, 6);
-  Kit.brick(ctx, x - 12, y - 102, 24, 24, "#fcd34d", 5);
-  ctx.fillStyle = "#1f2937";
-  ctx.fillRect(x + 4, y - 94, 4, 4);
-  // hat
-  ctx.fillStyle = "#15803d";
-  ctx.fillRect(x - 16, y - 106, 32, 6);
-  ctx.fillRect(x - 10, y - 116, 20, 10);
-  // rod
+  // your own avatar stands on the dock, a step back so the arm reaches the rod
+  const h = 96, u = h / 5.2, ax = x - 22;
   const bend = state === "reeling" ? tension / 100 : 0;
   const raise = state === "charging" ? -charge * 0.5 : 0;
   const ang = -0.75 + raise + bend * 0.35;
+  Kit.drawAvatar(ctx, ax, y, h, { look: ME.avatar, facing: 1, walk: -0.25 + bend * 0.2, name: ME.name });
+  // rod
   ctx.save();
   ctx.translate(x + 10, y - 56);
   ctx.rotate(ang);
@@ -633,9 +631,15 @@ function drawFisher() {
   ctx.restore();
   ROD_TIP.x = x + 10 + Math.cos(ang) * 70;
   ROD_TIP.y = y - 56 + Math.sin(ang) * 70;
-  // arm
-  ctx.fillStyle = "#fcd34d";
-  ctx.fillRect(x + 6, y - 62, 14, 8);
+  // arm from the shoulder out to the rod grip
+  const sx = ax + u * 0.15, sy = y - 3.7 * u;
+  const reach = Math.atan2(y - 56 - sy, x + 14 - sx), len = Math.hypot(x + 14 - sx, y - 56 - sy);
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(reach);
+  ctx.fillStyle = ME.avatar.arms;
+  ctx.fillRect(0, -u * 0.4, len, u * 0.8);
+  ctx.restore();
 }
 
 function drawLine() {

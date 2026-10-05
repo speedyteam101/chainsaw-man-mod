@@ -14,6 +14,8 @@
 const ID = "pipe-connect";
 const { canvas, ctx, W, H } = Kit.stage(760, 640);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const AREA = 504, TOP = 92;
 // direction bits
 const NB = 1, EB = 2, SB = 4, WB = 8;
@@ -122,7 +124,7 @@ function reset() {
 }
 
 function updateHud() {
-  Kit.hud(`Score ${score}<small>Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Score ${score}<small>${esc(ME.name)} &middot; Level ${level} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 // Follows the pipes from the source without water, to highlight the connected route.
@@ -187,6 +189,11 @@ async function win() {
   score += bonus;
   updateHud();
   Kit.sfx("win");
+  Kit.badge(ID, "plumber", "Plumber", "Connected the water to the drain.");
+  if (earlyBonus >= 50) Kit.badge(ID, "head-start", "Head Start", "Opened the tap with 10 or more seconds to spare and still connected.");
+  if (filledCount >= 25) Kit.badge(ID, "long-haul", "Long Haul", "Sent water through 25 pipes in one level.");
+  if (level >= 5) Kit.badge(ID, "master-plumber", "Master Plumber", "Cleared level 5.");
+  if (level >= 10) Kit.badge(ID, "waterworks-wizard", "Waterworks Wizard", "Cleared level 10.");
   for (let i = 0; i < 30; i++) splash(ox + N * cell + 30, oy + drainRow * cell + cell / 2);
   await new Promise((r) => setTimeout(r, 700));
   await Kit.overlay("Connected!", `The water reached the drain.\nLevel bonus +${level * 100}${earlyBonus ? `\nEarly start bonus +${earlyBonus}` : ""}\nScore: ${score}`, "Next level");

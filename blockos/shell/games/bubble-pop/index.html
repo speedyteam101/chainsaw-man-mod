@@ -24,6 +24,8 @@ const DEAD_Y = H - 118;             // bubbles below this line end the game
 const MAX_ROWS = 18;
 const SPEED = 960;
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 
 const PALETTE = [
   { fill: "#ef4444", dark: "#991b1b" },
@@ -188,6 +190,7 @@ function land(x, y, color) {
     }
     const pts = group.length * 10;
     score += pts;
+    if (group.length >= 7) badge("mega-pop", "Mega Pop", "Pop 7 or more bubbles in one match.");
     popups.push({ x: cellX(r, c), y: cellY(r), text: "+" + pts, t: 1 });
     Kit.sfx("score");
     dropFloating();
@@ -231,6 +234,7 @@ function dropFloating() {
     const pts = dropped * 20 * Math.min(5, Math.ceil(dropped / 3));
     score += pts;
     popups.push({ x: W / 2, y: DEAD_Y - 40, text: `Drop x${dropped}  +${pts}`, t: 1.4 });
+    if (dropped >= 10) badge("avalanche", "Avalanche", "Drop 10 or more hanging bubbles with one shot.");
     Kit.sfx("coin");
   }
 }
@@ -260,6 +264,9 @@ async function levelClear() {
   score += bonus;
   updateHud();
   Kit.sfx("win");
+  badge("level-1", "Bubble Buster", "Clear your first level.");
+  if (level >= 5) badge("level-5", "Pop Pro", "Clear level 5.");
+  if (score >= 5000) badge("score-5000", "Bubble Bank", "Reach 5,000 points.");
   await Kit.overlay(`Level ${level} clear!`, `Board bonus +${bonus}\nScore: ${score}`, "Next level");
   level++;
   buildLevel();
@@ -429,6 +436,10 @@ function draw() {
   Kit.brick(ctx, SHOOT_X - 46, SHOOT_Y + 10, 92, 34, "#64748b", 6);
   Kit.brick(ctx, SHOOT_X - 30, SHOOT_Y + 2, 60, 18, "#94a3b8", 5);
   if (state !== "over") drawBubble(SHOOT_X, SHOOT_Y, current);
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(226,232,240,.7)";
+  ctx.fillText(ME, SHOOT_X, H - 5);
 
   // next bubble + shots-until-drop meter
   ctx.fillStyle = "#cbd5e1";

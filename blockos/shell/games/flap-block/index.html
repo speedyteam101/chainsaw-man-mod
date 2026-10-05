@@ -12,6 +12,13 @@
 "use strict";
 const ID = "flap-block";
 const { canvas, ctx, W, H } = Kit.stage(480, 640);
+const ME = Kit.player().name;
+const MEDAL_BADGES = {
+  5: ["bronze", "Bronze Brick", "Pass 5 pillars in one flight."],
+  15: ["silver", "Silver Brick", "Pass 15 pillars in one flight."],
+  30: ["gold", "Gold Brick", "Pass 30 pillars in one flight."],
+  50: ["diamond", "Diamond Brick", "Pass 50 pillars in one flight."],
+};
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 
 const GROUND_Y = H - 72;
@@ -103,6 +110,7 @@ function update(dt) {
       if (!p.passed && p.x + PIPE_W / 2 < PX) {
         p.passed = true;
         score++;
+        if (MEDAL_BADGES[score]) Kit.badge(ID, ...MEDAL_BADGES[score]);
         Kit.sfx(score % 10 === 0 ? "coin" : "score");
         if (score % 10 === 0) flashT = 0.4;
         updateHud();
@@ -315,7 +323,9 @@ function draw() {
     text("Space, Up or click to flap", W / 2, H * 0.62, 20, "#ffffff");
   } else {
     text(String(score), W / 2, 64, 56, "#ffffff");
+    text(ME, W / 2, 104, 15, "rgba(255,255,255,.85)");
   }
+  if (state === "ready") text(ME, PX, cube.y - CUBE / 2 - 22, 14, "#ffffff");
 }
 
 const game = Kit.loop(update, draw);

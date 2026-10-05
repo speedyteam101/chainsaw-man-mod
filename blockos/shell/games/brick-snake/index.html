@@ -13,6 +13,9 @@
 const ID = "brick-snake";
 const CELL = 24, COLS = 26, ROWS = 20;
 const { ctx, W, H } = Kit.stage(COLS * CELL, ROWS * CELL);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
 let snake, dir, queued, food, score, stepTime, timer, alive;
 
@@ -35,7 +38,7 @@ function placeFood() {
 }
 
 function updateHud() {
-  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Score ${score}<small>${esc(ME)} · Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 const DIRS = {
@@ -63,6 +66,10 @@ function step() {
     score += 10;
     stepTime = Math.max(0.055, stepTime - 0.003);
     Kit.sfx("coin");
+    if (snake.length >= 10) badge("length-10", "Growing Up", "Grow your snake to 10 bricks long.");
+    if (stepTime <= 0.055) badge("top-speed", "Top Speed", "Eat enough bricks to reach full speed.");
+    if (score >= 500) badge("score-500", "Brick Python", "Score 500 in one game.");
+    if ((head.x === 0 || head.x === COLS - 1) && (head.y === 0 || head.y === ROWS - 1)) badge("cornered", "Cornered", "Eat a brick tucked in a corner of the board.");
     placeFood();
     updateHud();
   } else {

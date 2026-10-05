@@ -14,6 +14,9 @@ const ID = "disaster-island";
 const T = 24, COLS = 40, ROWS = 23;
 const { ctx, W, H } = Kit.stage(960, 540);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let hurtThisRound = false, survivedKinds = new Set();
 const SEA_ROW = 18;                        // calm sea surface (row index)
 const SEA_Y = SEA_ROW * T + 8;
 
@@ -170,6 +173,7 @@ function reset() {
   round = 0;
   score = 0;
   lastDisaster = null;
+  survivedKinds = new Set();
   player = { x: 0, y: 0, vx: 0, vy: 0, grounded: false, hp: 100, air: 1, stamina: 1, face: 1, hurt: 0, buffer: 0, coyote: 0 };
   newRound();
 }
@@ -188,6 +192,7 @@ function newRound() {
   player.y = sp.y;
   player.vx = player.vy = 0;
   player.air = 1;
+  hurtThisRound = false;
   round++;
   disaster = Kit.pick(DISASTER_IDS.filter((d) => d !== lastDisaster));
   lastDisaster = disaster;
@@ -222,6 +227,7 @@ function hurt(amount, kx, ky) {
   if (player.hp <= 0) return;
   player.hp -= amount;
   player.hurt = 0.25;
+  if (amount > 0) hurtThisRound = true;
   if (kx !== undefined) { player.vx += kx; player.vy += ky; }
   if (amount >= 8) Kit.sfx("hit");
   if (player.hp <= 0) { player.hp = 0; gameOver(); }
@@ -364,6 +370,12 @@ function update(dt) {
     score += pts;
     msg = `Survived! +${pts}`;
     Kit.sfx("win");
+    survivedKinds.add(disaster);
+    badge("survivor", "Survivor", "Survive your first disaster.");
+    if (!hurtThisRound) badge("untouched", "Not a Scratch", "Survive a disaster without taking any damage.");
+    if (round >= 5) badge("round-5", "Disaster Veteran", "Survive 5 disasters in one game.");
+    if (round >= 10) badge("round-10", "Island Legend", "Survive 10 disasters in one game.");
+    if (survivedKinds.size >= DISASTER_IDS.length) badge("seen-it-all", "Seen It All", "Survive every kind of disaster in one game.");
     updateHud();
   } else if (phase === "survived" && phaseT <= 0) {
     player.hp = Math.min(100, player.hp + 40);
@@ -627,19 +639,16 @@ function drawPlayer() {
   if (player.hp <= 0) return;
   const x = Math.round(player.x), y = Math.round(player.y);
   if (player.hurt > 0 && Math.floor(player.hurt * 30) % 2) return;
-  const run = player.grounded && Math.abs(player.vx) > 20 ? Math.sin(performance.now() / 50) : 0;
-  ctx.fillStyle = "#1e3a8a";
-  ctx.fillRect(x + 2 + run * 2, y + PH - 7, 5, 7);
-  ctx.fillRect(x + PW - 7 - run * 2, y + PH - 7, 5, 7);
-  Kit.brick(ctx, x, y + 9, PW, PH - 15, "#f97316", 3);
-  ctx.fillStyle = "#fcd34d";
-  ctx.fillRect(x - 3, y + 10 + run * 2, 3, 7);
-  ctx.fillRect(x + PW, y + 10 - run * 2, 3, 7);
-  Kit.brick(ctx, x + 1, y, PW - 2, 10, "#fcd34d", 3);
-  ctx.fillStyle = "#111";
-  const ex = x + PW / 2 + player.face * 2;
-  ctx.fillRect(ex - 4, y + 3, 2, 3);
-  ctx.fillRect(ex + 2, y + 3, 2, 3);
+  // your own avatar, feet on the bottom of the hitbox
+  const running = player.grounded && Math.abs(player.vx) > 20;
+  const swimming = player.y + PH > waterY + 4;
+  Kit.drawAvatar(ctx, x + PW / 2, y + PH, PH + 5, {
+    look: ME.avatar,
+    facing: player.face,
+    walk: running ? performance.now() / 70 : swimming ? performance.now() / 160 : 0,
+    air: !player.grounded && !swimming,
+    name: ME.name,
+  });
 }
 
 function drawTornado() {

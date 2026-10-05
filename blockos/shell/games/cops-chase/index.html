@@ -13,6 +13,9 @@
 const ID = "cops-chase";
 const T = 32, COLS = 31, ROWS = 19;
 const { canvas, ctx, W, H } = Kit.stage(COLS * T, ROWS * T);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let timeBadges = 0;   // how many survival badges this run has already checked off
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
 
 const DIRS = [{ dx: 1, dy: 0 }, { dx: -1, dy: 0 }, { dx: 0, dy: 1 }, { dx: 0, dy: -1 }];
@@ -99,6 +102,7 @@ function reset() {
   const mid = [Math.floor(COLS / 2 / 4) * 4 + 1, Math.floor(ROWS / 2 / 4) * 4 + 1];
   player = makeCar(mid[0], mid[1], 6);
   player.nitro = 0;
+  timeBadges = 0;
   cops = [];
   bags = [];
   pickups = [];
@@ -245,6 +249,8 @@ function onPlayerTile() {
     if (b.x === player.tx && b.y === player.ty && !b.got) {
       b.got = true;
       cash += b.value;
+      if (b.gold) badge("gold-rush", "Gold Rush", "Grab a gold cash bag before it vanishes.");
+      if (cash >= 3000) badge("big-score", "Big Score", "Have $3,000 in one getaway.");
       Kit.sfx(b.gold ? "score" : "coin");
       popups.push({ x: posX(player), y: posY(player) - 10, text: `+$${b.value}`, life: 1, color: b.gold ? "#facc15" : "#86efac" });
       burst(posX(player), posY(player), 12, b.gold ? ["#facc15", "#fde68a"] : ["#22c55e", "#86efac"], 160);
@@ -254,6 +260,7 @@ function onPlayerTile() {
     if (p.x === player.tx && p.y === player.ty && !p.got) {
       p.got = true;
       player.nitro = 3.5;
+      badge("nitro", "Nitro Boost", "Grab a blue nitro bolt.");
       Kit.sfx("win");
       popups.push({ x: posX(player), y: posY(player) - 10, text: "NITRO!", life: 1, color: "#38bdf8" });
     }
@@ -278,6 +285,8 @@ function update(dt) {
   if (!alive) return;
 
   time += dt;
+  if (timeBadges === 0 && time >= 60) { timeBadges = 1; badge("survive-60", "Slippery", "Stay free for 60 seconds."); }
+  if (timeBadges === 1 && time >= 150) { timeBadges = 2; badge("survive-150", "Most Wanted", "Stay free for 150 seconds."); }
   queuedT -= dt;
   if (queuedT <= 0) queued = null;
   player.nitro = Math.max(0, player.nitro - dt);
@@ -492,7 +501,16 @@ function draw() {
     }
     drawCar(c, "#f8fafc", "#111827", true);
   }
-  if (alive || Math.floor(performance.now() / 100) % 2) drawCar(player, player.nitro > 0 ? "#38bdf8" : "#f97316", "#7c2d12", false);
+  if (alive || Math.floor(performance.now() / 100) % 2) {
+    drawCar(player, player.nitro > 0 ? "#38bdf8" : "#f97316", "#7c2d12", false);
+    // Roblox-style name tag over your getaway car
+    ctx.font = "bold 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(0,0,0,.65)";
+    ctx.fillText(ME, posX(player) + 1, posY(player) - 18);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(ME, posX(player), posY(player) - 19);
+  }
   for (const q of particles) {
     ctx.globalAlpha = Kit.clamp(q.life * 2, 0, 1);
     ctx.fillStyle = q.color;

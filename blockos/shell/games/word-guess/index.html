@@ -13,6 +13,8 @@
 const ID = "word-guess";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(560, 770);
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 canvas.style.outline = "none";
 
 // Secret words: common, friendly 5-letter words.
@@ -157,7 +159,7 @@ function newRound() {
 }
 
 function updateHud() {
-  Kit.hud(`Streak ${streak}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Streak ${streak}<small>${esc(ME.name)} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 // Scores a guess: "hit" right spot, "near" in the word elsewhere, "miss" not (counting duplicates properly).
@@ -217,6 +219,11 @@ async function roundOver(won) {
     bounce = { row: guesses.length - 1, t: 0 };
     Kit.sfx("win");
     showToast(["Genius!", "Magnificent!", "Brilliant!", "Great job!", "Nice!", "Phew!"][guesses.length - 1]);
+    Kit.badge(ID, "first-word", "Word Finder", "Guessed your first secret word.");
+    if (guesses.length <= 3) Kit.badge(ID, "brilliant", "Brilliant!", "Guessed the word in 3 tries or fewer.");
+    if (guesses.length === 1) Kit.badge(ID, "genius", "Genius!", "Guessed the word on the very first try.");
+    if (guesses.length === ROWS) Kit.badge(ID, "phew", "Phew!", "Guessed the word on your last try.");
+    if (streak >= 5) Kit.badge(ID, "on-a-roll", "On a Roll", "Built a streak of 5 words in a row.");
   } else {
     Kit.sfx("lose");
     showToast(answer, 99);

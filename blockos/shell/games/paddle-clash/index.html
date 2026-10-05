@@ -26,6 +26,7 @@
 const ID = "paddle-clash";
 const { canvas, ctx, W, H } = Kit.stage(800, 500);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
 
 const WIN_SCORE = 7;
 const PADDLE_W = 14, PADDLE_H = 86, PADDLE_SPEED = 560, BALL = 14;
@@ -279,6 +280,7 @@ function paddleHit(p, dir) {
   ball.x = dir > 0 ? p.x + PADDLE_W + BALL / 2 : p.x - BALL / 2;
   p.glow = 1;
   rally++;
+  if (rally >= 20 && state === "play") Kit.badge(ID, "marathon-rally", "Marathon Rally", "Kept a rally going for 20 hits.");
   shake = Math.min(8, 2 + ball.speed / 200);
   for (let i = 0; i < 12; i++) {
     const a = (dir > 0 ? 0 : Math.PI) + Kit.rand(-1, 1);
@@ -317,6 +319,9 @@ async function endMatch(winner) {
     const best = Kit.finish(ID, score);
     Kit.sfx(won ? "win" : "lose");
     title = won ? "You win!" : "CPU wins";
+    if (won) Kit.badge(ID, "first-win", "First Win", "Beat the CPU in a match.");
+    if (won && diff === DIFFS.hard) Kit.badge(ID, "hard-hitter", "Hard Hitter", "Beat the CPU on Hard.");
+    if (won && right.score === 0) Kit.badge(ID, "shutout", "Shutout", "Won a match 7 - 0 against the CPU.");
     text = `${left.score} - ${right.score} on ${diff.name}\nMatch score: ${score}\nBest: ${best}`;
   } else {
     Kit.sfx("win");
@@ -432,7 +437,7 @@ function draw() {
     ctx.font = `800 13px ${FONT}`;
     ctx.textAlign = "center";
     ctx.fillStyle = "rgba(255,255,255,.4)";
-    ctx.fillText(mode === "cpu" ? "YOU" : "BLUE", W / 2 - 80, 106);
+    ctx.fillText(mode === "cpu" ? ME.name.slice(0, 14).toUpperCase() : "BLUE", W / 2 - 80, 106);
     ctx.fillText(mode === "cpu" ? "CPU" : "RED", W / 2 + 80, 106);
     if (rally >= 3) ctx.fillText(`RALLY ${rally}`, W / 2, H - 14);
   }

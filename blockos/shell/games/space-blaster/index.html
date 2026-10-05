@@ -12,6 +12,7 @@
 "use strict";
 const ID = "space-blaster";
 const { canvas, ctx, W, H } = Kit.stage(800, 600);
+const ME = Kit.player();
 const TAU = Math.PI * 2;
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 
@@ -154,7 +155,9 @@ function addScore(n) {
     lives++;
     banner = { text: "Extra ship!", t: 1.5 };
     Kit.sfx("coin");
+    Kit.badge(ID, "extra-ship", "Extra Ship", "Scored enough points to earn a bonus ship.");
   }
+  if (score >= 10000) Kit.badge(ID, "ace-pilot", "Ace Pilot", "Scored 10,000 points in one game.");
   updateHud();
 }
 
@@ -207,6 +210,7 @@ function destroySaucer(s, byPlayer) {
   if (byPlayer) {
     addScore(s.small ? 1000 : 200);
     Kit.sfx("score");
+    if (s.small && state === "play") Kit.badge(ID, "saucer-sniper", "Saucer Sniper", "Shot down a small flying saucer.");
   }
 }
 
@@ -387,6 +391,8 @@ function update(dt) {
         waveDelay = 2.2;
         banner = { text: "Wave clear!", t: 1.8 };
         Kit.sfx("score");
+        if (state === "play" && wave >= 1) Kit.badge(ID, "rock-breaker", "Rock Breaker", "Cleared a wave of space rocks.");
+        if (state === "play" && wave >= 5) Kit.badge(ID, "deep-space", "Deep Space", "Cleared wave 5.");
       } else if ((waveDelay -= dt) <= 0) {
         waveDelay = 0;
         nextWave();
@@ -550,6 +556,8 @@ function draw() {
   ctx.font = `700 14px ${FONT}`;
   ctx.textAlign = "left";
   ctx.fillText(`WAVE ${wave}`, 14, 30);
+  ctx.fillStyle = "rgba(250,204,21,.75)";
+  ctx.fillText(`Pilot ${ME.name}`, 14, 88);
 
   if (banner) {
     ctx.globalAlpha = Math.min(1, banner.t * 2);

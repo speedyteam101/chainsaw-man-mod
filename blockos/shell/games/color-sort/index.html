@@ -13,6 +13,9 @@
 "use strict";
 const ID = "color-sort";
 const { canvas, ctx, W, H } = Kit.stage(780, 620);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let undoUsed = false;
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const CAP = 4;
 const COLORS = ["#ef4444", "#fb923c", "#facc15", "#84cc16", "#16a34a", "#14b8a6", "#38bdf8", "#2563eb", "#a855f7", "#ec4899", "#92400e", "#e5e7eb"];
@@ -104,6 +107,7 @@ function startLevel(sameLayout) {
   cursor = 0;
   moves = 0;
   extraUsed = false;
+  undoUsed = false;
   flying = null;
   popups = [];
   celebrate = 0;
@@ -191,6 +195,7 @@ function landFlying() {
 function undo() {
   if (phase !== "play" || flying || !history.length) { Kit.sfx("hit"); return; }
   const h = history.pop();
+  undoUsed = true;
   tubes = h.tubes;
   extraUsed = h.extraUsed;
   selected = -1;
@@ -218,6 +223,11 @@ async function win() {
   Kit.sfx("win");
   const best = Kit.finish(ID, level);
   const stars = moves <= colorsFor(level) * 3 ? 3 : moves <= colorsFor(level) * 4.5 ? 2 : 1;
+  badge("first-sort", "Sorted!", "Sort your first level.");
+  if (stars === 3) badge("three-stars", "Three Stars", "Earn a 3-star rating on a level.");
+  if (colorsFor(level) >= 5 && !undoUsed && !extraUsed) badge("clean-pour", "Clean Pour", "Sort a 5+ color level without undo or the extra tube.");
+  if (level >= 10) badge("level-10", "Sorting Pro", "Sort level 10.");
+  if (level >= 25) badge("level-25", "Color Master", "Sort level 25.");
   await new Promise((r) => setTimeout(r, 900));
   await Kit.overlay(`Level ${level} sorted!`, `${moves} moves${extraUsed ? " (used the extra tube)" : ""}\nRating: ${"*".repeat(stars)}${"-".repeat(3 - stars)}\nBest level reached: ${best}`, "Next level");
   level++;
@@ -302,6 +312,10 @@ function draw() {
   ctx.fillText(`Level ${level}`, 24, 46);
   ctx.fillStyle = "#93c5fd"; ctx.font = `700 15px ${FONT}`;
   ctx.fillText(`${colorsFor(level)} colors  -  ${moves} moves`, 24, 72);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#cbd5e1"; ctx.font = `800 16px ${FONT}`;
+  ctx.fillText(ME, W - 24, 46);
+  ctx.textAlign = "left";
 
   for (let i = 0; i < tubes.length; i++) {
     const l = layout[i];

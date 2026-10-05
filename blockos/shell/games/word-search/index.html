@@ -26,6 +26,9 @@
 const ID = "word-search";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(960, 620);
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let hintsUsed = 0;
 canvas.style.outline = "none";
 const GX = 28, GY = 30, GSIZE = 560;
 const PANEL_X = 620;
@@ -169,7 +172,7 @@ function fmtTime(s) {
 }
 function updateHud() {
   const b = Kit.best(ID, undefined, true);
-  Kit.hud(`${fmtTime(time || 0)}<small>Best ${b === null ? "--" : fmtTime(b)}</small>`);
+  Kit.hud(`${fmtTime(time || 0)}<small>${esc(ME.name)} &middot; Best ${b === null ? "--" : fmtTime(b)}</small>`);
 }
 
 function newGame() {
@@ -185,6 +188,7 @@ function newGame() {
   keyAnchor = null;
   flash = wrongFlash = hintCell = null;
   foundCount = 0;
+  hintsUsed = 0;
   particles = [];
   cursor = { r: Math.floor(N / 2), c: Math.floor(N / 2) };
   phase = "play";
@@ -276,6 +280,7 @@ function hint() {
   if (!left.length) return;
   const w = Kit.pick(left);
   hintCell = { r: w.r0, c: w.c0, t: 0 };
+  hintsUsed++;
   time += HINT_PENALTY;
   updateHud();
   Kit.sfx("jump");
@@ -288,6 +293,10 @@ async function win() {
   const secs = Math.floor(time);
   const best = Kit.finish(ID, secs, true);
   updateHud();
+  Kit.badge(ID, "word-spotter", "Word Spotter", "Found every word in a puzzle.");
+  if (levelKey === "hard") Kit.badge(ID, "eagle-eye", "Eagle Eye", "Finished a Hard puzzle with words hidden in every direction.");
+  if (hintsUsed === 0 && levelKey !== "easy") Kit.badge(ID, "no-peeking", "No Peeking", "Finished a Normal or Hard puzzle without a hint.");
+  if (levelKey !== "easy" && secs < 120) Kit.badge(ID, "quick-eyes", "Quick Eyes", "Finished a Normal or Hard puzzle in under 2 minutes.");
   await new Promise((r) => setTimeout(r, 1600));
   await Kit.overlay("All words found!", `${themeName} - ${LEVELS[levelKey].name}\nTime: ${fmtTime(secs)}\nBest: ${fmtTime(best)}`, "Play again");
   menu();

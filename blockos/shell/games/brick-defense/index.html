@@ -408,6 +408,19 @@ function drawMap() {
   Kit.brick(ctx, ex + 4, ey - 10, T - 8, T + 20, "#1d4ed8", 6);
   ctx.fillStyle = "#facc15";
   ctx.fillRect(ex + 14, ey - 22, 4, 14);
+  // Roblox-style name tag: this is your base
+  ctx.save();
+  ctx.font = `800 12px ${FONT}`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "alphabetic";
+  const tag = ME + "'s base";
+  const tw = ctx.measureText(tag).width;
+  const ty = ey - 29 < 16 ? ey + T + 26 : ey - 29;   // below the base when it sits on the top row
+  ctx.fillStyle = "rgba(0,0,0,.45)";
+  ctx.fillRect(MX - tw - 10, ty - 13, tw + 8, 17);
+  ctx.fillStyle = "#fff";
+  ctx.fillText(tag, MX - 6, ty);
+  ctx.restore();
   ctx.fillRect(ex + 18, ey - 22, 10, 7);
 }
 
@@ -512,15 +525,6 @@ function drawPanel() {
   ctx.font = `900 13px ${FONT}`;
   ctx.fillText("BRICK", x + 24, 22);
   ctx.fillText("DEFENSE", x + 24, 36);
-  // your name, top right of the panel
-  ctx.save();
-  ctx.font = `800 12px ${FONT}`;
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#93c5fd";
-  let nm = ME;
-  while (nm.length > 3 && ctx.measureText(nm).width > 64) nm = nm.slice(0, -1);
-  ctx.fillText(nm === ME ? nm : nm.slice(0, -1) + "..", MX + PANEL - 12, 29);
-  ctx.restore();
   ctx.font = `800 20px ${FONT}`;
   ctx.fillStyle = "#facc15";
   ctx.fillText(`$${money}`, x, 78);

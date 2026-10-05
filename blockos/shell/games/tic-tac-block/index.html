@@ -25,6 +25,7 @@
 const ID = "tic-tac-block";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(600, 680);
+const ME = Kit.player();
 const CELL = 150, BX = (W - CELL * 3) / 2, BY = 120;
 const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
 const P = {
@@ -193,9 +194,13 @@ function endRound(w, line) {
     if (w === 2) streak = 0; else streak++;
     Kit.finish(ID, streak);
     result = w === 1 ? "You win!" : w === 2 ? "CPU wins" : "Draw!";
+    if (w === 1) Kit.badge(ID, "three-in-a-row", "Three in a Row", "Beat the CPU.");
+    if (!w && diff === DIFFS.hard) Kit.badge(ID, "stalemate", "Stalemate", "Held the unbeatable Hard CPU to a draw.");
+    if (streak >= 5 && diff === DIFFS.hard) Kit.badge(ID, "iron-wall", "Iron Wall", "Went 5 rounds unbeaten against the Hard CPU.");
     Kit.sfx(w === 1 ? "win" : w === 2 ? "lose" : "score");
   } else {
     result = w ? `${P[w].name} wins!` : "Draw!";
+    Kit.badge(ID, "friendly-match", "Friendly Match", "Finished a 2-player round.");
     Kit.sfx(w ? "win" : "score");
   }
   if (w) {
@@ -470,7 +475,8 @@ function draw() {
 
   // scoreboard
   const y = BY + CELL * 3 + 50;
-  const names = mode === "cpu" ? ["You (X)", "Draws", "CPU (O)"] : ["X", "Draws", "O"];
+  const me = ME.name.length > 8 ? ME.name.slice(0, 7) + "." : ME.name;
+  const names = mode === "cpu" ? [`${me} (X)`, "Draws", "CPU (O)"] : ["X", "Draws", "O"];
   const vals = [tally[1], tally.draw, tally[2]];
   const cols = [P[1].color, "#64748b", P[2].color];
   for (let i = 0; i < 3; i++) {

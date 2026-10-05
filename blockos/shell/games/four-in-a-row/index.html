@@ -26,6 +26,8 @@ const ID = "four-in-a-row";
 const COLS = 7, ROWS = 6, CELL = 78;
 const { canvas, ctx, W, H } = Kit.stage(640, 680);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 const BX = (W - COLS * CELL) / 2, BY = 118; // board top-left
 const DISC_R = 30;
 const COLORS = {
@@ -214,6 +216,13 @@ function endRound(winner, line) {
   if (mode === "cpu") {
     if (winner === 1) streak++;
     else if (winner === 2) streak = 0;
+    if (winner === 1) {
+      badge("first-win", "Four Up", "Beat the CPU at Four in a Row.");
+      if (diff === DIFFS.hard) badge("hard-win", "Connect Master", "Beat the Hard CPU.");
+      if (streak >= 3) badge("streak-3", "Hat Trick", "Beat the CPU 3 rounds in a row.");
+      if (board.filter((v) => v === 1).length <= 4) badge("speed-four", "Speed Four", "Beat the CPU using only 4 discs.");
+      if (line && new Set(line.map((q) => q[0])).size > 1 && new Set(line.map((q) => q[1])).size > 1) badge("diagonal", "Diagonal Dash", "Beat the CPU with a diagonal line.");
+    }
     Kit.finish(ID, streak);
     result = winner === 1 ? "You win!" : winner === 2 ? "CPU wins" : "Draw";
     Kit.sfx(winner === 1 ? "win" : winner === 2 ? "lose" : "hit");
@@ -523,15 +532,22 @@ function draw() {
 
   // scoreboard
   const y = BY + ROWS * CELL + 46;
-  const names = mode === "cpu" ? ["You", "Draws", "CPU"] : ["Red", "Draws", "Yellow"];
+  const names = mode === "cpu" ? [ME, "Draws", "CPU"] : ["Red", "Draws", "Yellow"];
   const vals = [tally[1], tally.draw, tally[2]];
   const cols = [COLORS[1].main, "#64748b", COLORS[2].main];
   for (let i = 0; i < 3; i++) {
     const x = W / 2 + (i - 1) * 170;
     Kit.brick(ctx, x - 70, y - 22, 140, 36, cols[i], 8);
     ctx.fillStyle = i === 2 ? "#422006" : "#fff";
-    ctx.font = `800 17px ${FONT}`;
-    ctx.fillText(`${names[i]}  ${vals[i]}`, x, y + 2);
+    let size = 17, label = `${names[i]}  ${vals[i]}`;
+    ctx.font = `800 ${size}px ${FONT}`;
+    while (size > 11 && ctx.measureText(label).width > 128) { size--; ctx.font = `800 ${size}px ${FONT}`; }
+    if (ctx.measureText(label).width > 128) {
+      let nm = names[i];
+      while (nm.length > 3 && ctx.measureText(`${nm}..  ${vals[i]}`).width > 128) nm = nm.slice(0, -1);
+      label = `${nm}..  ${vals[i]}`;
+    }
+    ctx.fillText(label, x, y + 2);
   }
   if (phase === "end") {
     ctx.fillStyle = "rgba(242,244,245,.7)";

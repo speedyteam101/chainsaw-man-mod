@@ -15,6 +15,9 @@ const SAVE_KEY = "blockos.pet-hatchery.save";
 const { canvas, ctx, W, H } = Kit.stage(960, 600);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
 const MAX_EQUIP = 3, MAX_PETS = 24;
+const ME = Kit.player();
+// Kit.badge only awards once, but this keeps per-frame checks from touching storage every frame.
+const badgeOnce = (() => { const done = new Set(); return (...a) => { if (!done.has(a[1])) { done.add(a[1]); Kit.badge(...a); } }; })();
 
 // ---------- data ----------
 const RARITIES = [
@@ -109,6 +112,7 @@ function say(text) { toast = text; toastT = 2.2; }
 function addCoins(n) {
   state.coins += n;
   state.earned += n;
+  if (state.earned >= 1e6) badgeOnce(ID, "coin-millionaire", "Coin Millionaire", "Earned a million coins.");
 }
 
 function tapCoin(x, y) {
@@ -170,6 +174,11 @@ function finishHatch() {
     if (petBonus(pet) > petBonus(weakest)) state.equipped[state.equipped.indexOf(weakest.id)] = pet.id;
   }
   if (isNew) say(`New pet discovered: ${petDef(pet).name}!`);
+  Kit.badge(ID, "first-hatch", "First Hatch", "Hatched your very first pet.");
+  if (pet.r >= 3) Kit.badge(ID, "lucky-find", "Lucky Find", "Hatched an Epic or Legendary pet.");
+  if (pet.r === 4) Kit.badge(ID, "legendary", "Legendary!", "Hatched a Legendary pet.");
+  if (pet.egg === EGGS.length - 1) Kit.badge(ID, "over-the-rainbow", "Over the Rainbow", "Hatched a pet from the Rainbow Egg.");
+  if (Object.keys(state.index).filter((k) => k.includes(":")).length >= 10) Kit.badge(ID, "pet-collector", "Pet Collector", "Discovered 10 different pets in the Pet Index.");
   hatch = null;
   persist();
   Kit.finish(ID, Math.floor(state.earned));
@@ -411,6 +420,8 @@ function draw() {
   ctx.fillStyle = "rgba(255,255,255,.45)";
   ctx.fillRect(cx - s * 0.32, cy - s * 0.32, s * 0.1, s * 0.22);
   buttons.push({ x: cx - 80, y: cy - 80, w: 160, h: 160, fn: (p) => tapCoin(p.x, p.y - 20) });
+  // you, as your BlockOS avatar, tapping the coin block
+  Kit.drawAvatar(ctx, 54, 326, 92, { look: ME.avatar, facing: 1, walk: coinPulse * 2.2 });
   ctx.fillStyle = "#fff";
   ctx.font = `700 13px ${FONT}`;
   ctx.fillText("Tap the coin block (Space)", cx, 352);
@@ -543,6 +554,7 @@ function drawHatch() {
     const wob = Math.sin(k * 14) * 0.08 * (1 + k * 1.4);
     const cracks = k > 1.3 ? 2 : k > 0.7 ? 1 : 0;
     drawEgg(W / 2, 300, 170 + k * 12, egg, wob, cracks);
+    Kit.drawAvatar(ctx, W / 2 - 250, 470, 170, { look: ME.avatar, facing: 1, name: ME.name });
     ctx.fillStyle = "#fff";
     ctx.font = `900 26px ${FONT}`;
     ctx.textAlign = "center";
@@ -563,6 +575,7 @@ function drawHatch() {
     ctx.restore();
     const scale = Math.min(1, since * 4);
     drawPet(W / 2, 335, 190 * scale, p, Math.sin(t * 3) * 6);
+    Kit.drawAvatar(ctx, W / 2 - 250, 470 - Math.abs(Math.sin(t * 6)) * 14, 170, { look: ME.avatar, facing: 1, air: true, name: ME.name });
     ctx.textAlign = "center";
     ctx.font = `900 22px ${FONT}`;
     ctx.fillStyle = rar.color;

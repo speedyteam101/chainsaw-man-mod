@@ -24,6 +24,9 @@
 const ID = "checkers";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(640, 720);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 canvas.style.outline = "none";
 const CELL = 70, BX = (W - CELL * 8) / 2, BY = 88;
 const RED = 1, BLACK = -1;
@@ -238,7 +241,7 @@ function newGame() {
 }
 
 function updateHud() {
-  if (mode === "cpu") Kit.hud(`${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  if (mode === "cpu") Kit.hud(`${esc(ME)} vs ${LEVELS[levelKey].name} CPU<small>Best ${Kit.best(ID) ?? 0}</small>`);
   else Kit.hud(`Red ${tally.red} - ${tally.black} Black<small>2 players</small>`);
 }
 
@@ -294,7 +297,12 @@ function endTurn(m) {
   const to = m.path[m.path.length - 1];
   const moved = board[to];
   const wasMan = Math.abs(moved) === 1;
-  if (wasMan && (to >> 3) === kingRow(moved)) { board[to] = moved * 2; Kit.sfx("coin"); }
+  if (wasMan && (to >> 3) === kingRow(moved)) {
+    board[to] = moved * 2;
+    Kit.sfx("coin");
+    if (mode === "cpu" && turn === RED) badge("king", "Crowned", "Crown one of your pieces king against the CPU.");
+  }
+  if (mode === "cpu" && turn === RED && m.caps.length >= 3) badge("triple-jump", "Triple Jump", "Capture 3 pieces in a single move against the CPU.");
   quiet = m.caps.length || wasMan ? 0 : quiet + 1;
   lastMove = m;
   turn = -turn;
@@ -311,6 +319,9 @@ async function gameOver(winner) {
     if (winner === RED) {
       score = LEVELS[levelKey].points + reds * 20;
       title = "You win!";
+      badge("first-win", "First Victory", "Beat the CPU at checkers.");
+      if (levelKey === "medium" || levelKey === "hard") badge("medium-win", "Board Tactician", "Beat the Medium CPU.");
+      if (levelKey === "hard") badge("hard-win", "Grandmaster", "Beat the Hard CPU.");
       text = `You beat the ${LEVELS[levelKey].name} CPU with ${reds} piece${reds === 1 ? "" : "s"} left.\nScore: ${score}`;
       Kit.sfx("win");
     } else if (winner === BLACK) {
@@ -507,10 +518,20 @@ function draw() {
   else if (phase === "end") status = result === 0 ? "Draw" : mode === "cpu" ? (result === RED ? "You win!" : "CPU wins") : `${sideName(result)} wins!`;
   Kit.brick(ctx, BX, 16, 150, 52, "#ef4444", 10);
   drawPiece(BX + 30, 42, 1, 0.55);
-  text(String(reds), BX + 100, 43, 26, "#fff", 800);
+  if (mode === "cpu") {
+    // your name on your side of the scoreboard
+    ctx.font = `800 11px ${FONT}`;
+    let nm = ME;
+    while (nm.length > 3 && ctx.measureText(nm).width > 84) nm = nm.slice(0, -1);
+    text(nm === ME ? nm : nm + "..", BX + 100, 28, 11, "#fee2e2", 800);
+    text(String(reds), BX + 100, 50, 22, "#fff", 800);
+  } else text(String(reds), BX + 100, 43, 26, "#fff", 800);
   Kit.brick(ctx, W - BX - 150, 16, 150, 52, "#374151", 10);
   drawPiece(W - BX - 120, 42, -1, 0.55);
-  text(String(blacks), W - BX - 50, 43, 26, "#fff", 800);
+  if (mode === "cpu") {
+    text("CPU", W - BX - 50, 28, 11, "#d1d5db", 800);
+    text(String(blacks), W - BX - 50, 50, 22, "#fff", 800);
+  } else text(String(blacks), W - BX - 50, 43, 26, "#fff", 800);
   text(status, W / 2, 42, 20, turn === RED ? "#fca5a5" : "#d1d5db", 800);
   if (phase === "input" || phase === "anim") {
     ctx.fillStyle = turn === RED ? "#ef4444" : "#9ca3af";

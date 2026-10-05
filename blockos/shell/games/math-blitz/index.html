@@ -13,6 +13,8 @@
 const ID = "math-blitz";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(720, 560);
+const ME = Kit.player();
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 canvas.style.outline = "none";
 const ROUND_TIME = 60;
 const CHOICE_KEYS = ["KeyA", "KeyS", "KeyD", "KeyF"];
@@ -98,7 +100,7 @@ function nextQuestion() {
 }
 
 function updateHud() {
-  Kit.hud(`Score ${score}<small>Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`Score ${score}<small>${esc(ME.name)} &middot; Best ${Kit.best(ID) ?? 0}</small>`);
 }
 
 function answer(value, fromIndex) {
@@ -116,6 +118,9 @@ function answer(value, fromIndex) {
     Kit.sfx(streak % 3 === 0 && multiplier() > 1 ? "score" : "coin");
     const newLevel = Math.min(10, 1 + Math.floor(correct / 4));
     if (newLevel > level) { level = newLevel; levelUpT = 1.4; Kit.sfx("jump"); }
+    if (level >= 5) Kit.badge(ID, "math-whiz", "Math Whiz", "Reached level 5 in a single round.");
+    if (level >= 10) Kit.badge(ID, "human-calculator", "Human Calculator", "Reached level 10 in a single round.");
+    if (multiplier() >= 5) Kit.badge(ID, "combo-king", "Combo King", "Built your combo all the way up to x5.");
     nextQuestion();
   } else {
     wrong++;
@@ -135,6 +140,9 @@ async function endRound() {
   const best = Kit.finish(ID, score);
   updateHud();
   const acc = correct + wrong ? Math.round((correct / (correct + wrong)) * 100) : 0;
+  if (correct > 0) Kit.badge(ID, "first-blitz", "First Blitz", "Finished your first 60-second round.");
+  if (score >= 1500) Kit.badge(ID, "blitz-master", "Blitz Master", "Scored 1,500 points in one round.");
+  if (correct >= 20 && wrong === 0) Kit.badge(ID, "perfect-accuracy", "Perfect Accuracy", "Answered 20 or more in a round without a single mistake.");
   await new Promise((r) => setTimeout(r, 600));
   await Kit.overlay("Time's up!", `Score: ${score}\nCorrect: ${correct}   Wrong: ${wrong}   (${acc}%)\nBest streak: ${bestStreak}   Level reached: ${level}\n\nBest score: ${best}`, "Play again");
   reset();
