@@ -14,6 +14,8 @@ const ID = "road-hopper";
 const C = 48, COLS = 14, ROWS = 15;
 const { canvas, ctx, W, H } = Kit.stage(COLS * C, ROWS * C);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
+let logRides = 0, sideFace = 1;
 const HOP_TIME = 0.13;
 const LOOP_PAD = 4 * C, LOOP = W + LOOP_PAD * 2;   // moving things wrap around this loop
 
@@ -107,6 +109,7 @@ function reset() {
   t = 0;
   queued = null;
   hawk = null;
+  logRides = 0;
   updateHud();
 }
 const colX = (c) => c * C + C / 2;
@@ -136,6 +139,7 @@ canvas.addEventListener("pointerdown", (e) => {
 function tryHop(dx, dy) {
   if (player.hop > 0) { queued = [dx, dy]; return; }
   player.face = dx === 0 ? (dy > 0 ? 0 : 2) : (dx > 0 ? 1 : 3);
+  if (dx) sideFace = dx;
   const targetRow = player.row + dy;
   if (targetRow < 0 || targetRow < Math.floor(camRow)) return;
   const L = lane(targetRow);
@@ -145,6 +149,9 @@ function tryHop(dx, dy) {
   if (L.type !== "river") tx = colX(Kit.clamp(Math.round((tx - C / 2) / C), 0, COLS - 1));
   if (tx < C / 2 - 1 || tx > W - C / 2 + 1) return;
   if (L.type === "grass" && L.trees.has(Math.round((tx - C / 2) / C))) { player.squash = 0.4; return; }
+  const here = lane(player.row);
+  if (here.type === "rail" && here.train.state !== "wait" && targetRow !== player.row)
+    Kit.badge(ID, "close-call", "Close Call", "Hopped off the tracks with a train on the way.");
   player.fromX = player.x;
   player.fromRow = player.row;
   player.toX = tx;
@@ -223,9 +230,15 @@ function update(dt) {
   camRow += creep * dt;
   if (rowY(player.row) > H - 4) {
     hawk = { x: player.x, y: -200, grabbed: false };
+    Kit.badge(ID, "hawk-snack", "Hawk Snack", "Dawdled too long and got carried off by the hawk.");
     return die("Too slow! The hawk swooped in.", "hawk");
   }
-  if (player.row > maxRow) { maxRow = player.row; updateHud(); }
+  if (player.row > maxRow) {
+    maxRow = player.row;
+    updateHud();
+    if (maxRow >= 25) Kit.badge(ID, "on-the-move", "On the Move", "Scored 25 in Road Hopper.");
+    if (maxRow >= 100) Kit.badge(ID, "road-warrior", "Road Warrior", "Scored 100 in Road Hopper.");
+  }
 }
 
 function land() {
@@ -237,6 +250,7 @@ function land() {
     const log = L.objs.find((o) => player.x > o.x + 4 && player.x < o.x + o.w - 4);
     if (!log) return die("Splash! You can't swim.", "splash");
     player.onLog = log;
+    if (++logRides === 15) Kit.badge(ID, "log-rider", "Log Rider", "Rode 15 logs in a single run.");
   }
   if (queued) {
     const q = queued;
@@ -399,27 +413,9 @@ function drawPlayer() {
   const s = player.squash * 0.2;
   ctx.scale(1 + s, 1 - s);
   ctx.fillStyle = "rgba(0,0,0,.25)";
-  ctx.fillRect(-15, -8, 34, 28);
-  // body
-  Kit.brick(ctx, -16, -16, 32, 30, "#f8fafc", 6);
-  // wing
-  ctx.fillStyle = "#e2e8f0";
-  const wingSide = player.face === 3 ? 6 : -14;
-  ctx.fillRect(wingSide, -2, 8, 12);
-  // head features by facing
-  const fx = [0, 1, 0, -1][player.face], fy = [-1, 0, 1, 0][player.face];
-  ctx.fillStyle = "#ef4444";                         // comb
-  ctx.fillRect(-4 + fx * 4, -22, 8, 7);
-  ctx.fillStyle = "#fb923c";                         // beak
-  ctx.fillRect(-4 + fx * 15, -6 + fy * 12 - (fy < 0 ? 4 : 0), 8, 6);
-  ctx.fillStyle = "#111";
-  if (player.face !== 0) {
-    ctx.fillRect(-7 + fx * 8, -10, 4, 4);
-    if (fx === 0) ctx.fillRect(3, -10, 4, 4);
-  }
-  ctx.fillStyle = "#f97316";                         // feet
-  ctx.fillRect(-10, 13, 6, 4);
-  ctx.fillRect(4, 13, 6, 4);
+  ctx.fillRect(-15, 8, 30, 10);
+  // the player's own BlockOS avatar, feet near the bottom of the tile
+  Kit.drawAvatar(ctx, 0, 16, 38, { look: ME.avatar, facing: sideFace, walk: player.hop > 0 ? 1.2 : 0, air: player.hop > 0 });
   ctx.restore();
 }
 

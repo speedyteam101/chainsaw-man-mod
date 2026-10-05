@@ -20,6 +20,8 @@
 const ID = "brick-defense";
 const T = 40, COLS = 20, ROWS = 15, PANEL = 180;
 const { canvas, ctx, W, H } = Kit.stage(COLS * T + PANEL, ROWS * T);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
 const MX = COLS * T;   // panel x
 
@@ -168,6 +170,7 @@ function upgrade(t) {
   t.spent += c;
   t.level++;
   Kit.sfx("coin");
+  if (t.level >= 2) badge("max-tower", "Fully Loaded", "Upgrade a tower to its max level.");
   burst(t.x * T + T / 2, t.y * T + T / 2, 14, ["#facc15", "#fff"], 140);
 }
 
@@ -264,6 +267,10 @@ function update(rawDt) {
       money += bonus;
       score += wave * 10;
       floatText(MX / 2, H / 2, `Wave ${wave} cleared! +$${bonus}`, "#facc15");
+      if (wave >= 5) badge("wave-5", "Boss Breaker", "Survive wave 5 and its boss.");
+      if (wave >= 10) badge("wave-10", "Fortress", "Clear wave 10.");
+      if (wave >= 20) badge("wave-20", "Unbreakable", "Clear wave 20.");
+      if (wave >= 10 && lives >= 20) badge("perfect-10", "Perfect Defense", "Clear wave 10 without losing a single life.");
       Kit.sfx("win");
       updateHud();
     }
@@ -505,6 +512,15 @@ function drawPanel() {
   ctx.font = `900 13px ${FONT}`;
   ctx.fillText("BRICK", x + 24, 22);
   ctx.fillText("DEFENSE", x + 24, 36);
+  // your name, top right of the panel
+  ctx.save();
+  ctx.font = `800 12px ${FONT}`;
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#93c5fd";
+  let nm = ME;
+  while (nm.length > 3 && ctx.measureText(nm).width > 64) nm = nm.slice(0, -1);
+  ctx.fillText(nm === ME ? nm : nm.slice(0, -1) + "..", MX + PANEL - 12, 29);
+  ctx.restore();
   ctx.font = `800 20px ${FONT}`;
   ctx.fillStyle = "#facc15";
   ctx.fillText(`$${money}`, x, 78);

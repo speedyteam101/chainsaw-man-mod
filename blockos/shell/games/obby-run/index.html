@@ -164,7 +164,6 @@ function spawnPlayer() {
 }
 
 function startRun() {
-  padBounces = 0;
   runTime = 0;
   deaths = 0;
   worldT = 0;
@@ -642,7 +641,7 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(Math.round(p.x + p.w / 2), Math.round(p.y + p.h));
   ctx.scale(p.sx, p.sy);
-  Kit.drawAvatar(ctx, 0, 0, 33, { look: ME.avatar, facing: p.face, walk: p.run, air: !p.onGround, name: ME.name });
+  Kit.drawAvatar(ctx, 0, 0, 36, { look: ME.avatar, facing: p.face, walk: p.run, air: !p.onGround, name: ME.name });
   ctx.restore();
 }
 

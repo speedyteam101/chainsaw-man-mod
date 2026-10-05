@@ -27,6 +27,7 @@ const SAVE_KEY = "blockos.mining-sim.save";
 const T = 32, COLS = 30, DEPTH = 260, SURFACE = 6;
 const { canvas, ctx, W, H } = Kit.stage(COLS * T, 600);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
 
 // ---------- data ----------
 const LAYERS = [
@@ -272,7 +273,11 @@ function update(dt) {
   if (player.y === SURFACE - 1 && !moving) {
     if (player.x >= 2 && player.x <= 4 && bagCount() > 0) sell();
   }
-  if (player.y - SURFACE > save.deepest) save.deepest = player.y - SURFACE;
+  if (player.y - SURFACE > save.deepest) {
+    save.deepest = player.y - SURFACE;
+    if (save.deepest >= 50) Kit.badge(ID, "deep-digger", "Deep Digger", "Dug 50 m below the surface.");
+    if (save.deepest >= 130) Kit.badge(ID, "magma-explorer", "Magma Explorer", "Reached the Magma Rock layer.");
+  }
 
   const target = player.ry * T - H * 0.4;
   camY += (Math.max(-40, target) - camY) * Math.min(1, dt * 8);
@@ -321,6 +326,8 @@ function breakBlock(x, y) {
   if (cell.kind === "ore") {
     const o = ORE_BY_ID[cell.ore];
     save.bag[o.id] = (save.bag[o.id] || 0) + 1;
+    if (o.id === "diamond") Kit.badge(ID, "diamond", "Shine Bright", "Mined your first Diamond.");
+    if (o.id === "star") Kit.badge(ID, "starstone", "Starstruck", "Found the legendary Starstone.");
     popups.push({ x: x * T + T / 2, y: y * T, text: `+1 ${o.name}`, color: o.color === "#1f2937" ? "#d1d5db" : o.color, life: 1 });
     Kit.sfx("coin");
   } else Kit.sfx("click");
@@ -346,6 +353,8 @@ function sell() {
   Kit.sfx("score");
   popups.push({ x: 3.5 * T, y: (SURFACE - 2) * T, text: `+$${value.toLocaleString()}`, color: "#86efac", life: 1.6 });
   say(`Sold ${n} ore for $${value.toLocaleString()}`);
+  Kit.badge(ID, "first-sale", "First Paycheck", "Sold your first load of ore.");
+  if (save.earned >= 10000) Kit.badge(ID, "mogul", "Mining Mogul", "Earned $10,000 from selling ore.");
   burst(3.5 * T, (SURFACE - 1) * T, 20, ["#facc15", "#22c55e"], 200);
   Kit.finish(ID, save.earned);
   persist();
@@ -511,20 +520,25 @@ function drawSurface() {
 }
 
 function drawPlayer() {
+  // The player's own BlockOS avatar (hitbox and grid movement unchanged).
   const x = player.rx * T + 6, y = player.ry * T - camY + 2;
-  // legs, body, head
-  ctx.fillStyle = "#1e3a8a";
-  ctx.fillRect(x + 3, y + 22, 7, 8);
-  ctx.fillRect(x + 11, y + 22, 7, 8);
-  Kit.brick(ctx, x, y + 11, 20, 13, "#f59e0b", 3);
-  Kit.brick(ctx, x + 2, y, 16, 12, "#fcd34d", 3);
-  ctx.fillStyle = "#facc15";
-  ctx.fillRect(x, y - 3, 20, 5);           // hard hat
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(x + (player.face > 0 ? 14 : 2), y - 2, 4, 3);   // lamp
-  ctx.fillStyle = "#111";
-  ctx.fillRect(x + 10 + player.face * 2 - 3, y + 4, 2, 3);
-  ctx.fillRect(x + 10 + player.face * 2 + 2, y + 4, 2, 3);
+  const fx = player.rx * T + T / 2, fy = player.ry * T - camY + T;
+  const moving = Math.abs(player.rx - player.x) > 0.01 || Math.abs(player.ry - player.y) > 0.01;
+  const walk = moving && !player.falling ? (player.rx + player.ry) * Math.PI * 2 : 0;
+  Kit.drawAvatar(ctx, fx, fy, 30, { look: ME.avatar, facing: player.face, walk, air: player.falling });
+  if (!ME.avatar.hat || ME.avatar.hat === "none") {
+    // miner's hard hat with a lamp, unless they already wear a hat
+    const u = 30 / 5.2;
+    ctx.save();
+    ctx.translate(fx, fy);
+    ctx.scale(player.face, 1);
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(-u * 0.75, -5.6 * u, u * 1.5, u * 0.55);
+    ctx.fillRect(-u * 0.9, -5.15 * u, u * 1.8, u * 0.18);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(u * 0.5, -5.5 * u, u * 0.35, u * 0.35);
+    ctx.restore();
+  }
   // pickaxe swing
   const d = digging && !digging.blocked ? [digging.x - player.x, digging.y - player.y] : [player.face, 0];
   const ang = Math.atan2(d[1], d[0]) + Math.sin(player.swing * 12) * 0.6 * (player.swing > 0 ? 1 : 0);

@@ -13,6 +13,14 @@
 const ID = "brick-2048";
 const N = 4;
 const { canvas, ctx, W, H } = Kit.stage(480, 580);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const TILE_BADGES = {
+  256: ["tile-256", "Brick Builder", "Make a 256 brick."],
+  512: ["tile-512", "Halfway There", "Make a 512 brick."],
+  1024: ["tile-1024", "Big Brick", "Make a 1024 brick."],
+  2048: ["tile-2048", "2048!", "Make the 2048 brick."],
+};
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const BOARD_X = 20, BOARD_Y = 116, BOARD = 440, GAP = 12;
 const TILE = (BOARD - GAP * (N + 1)) / N;
@@ -98,6 +106,7 @@ function move(dr, dc) {
 
   if (!moved) return;
   score += gained;
+  if (gained >= 256) badge("chain", "Chain Reaction", "Earn 256 or more points in a single slide.");
   if (gained) {
     popups.push({ text: "+" + gained, t: 0 });
     Kit.sfx(gained >= 128 ? "coin" : "score");
@@ -119,6 +128,7 @@ function finishSlide() {
       t.merging = false;
       t.pop = POP_TIME;
       if (t.v === 2048) reached2048 = true;
+      if (TILE_BADGES[t.v]) badge(...TILE_BADGES[t.v]);
     }
   }
   addTile();
@@ -274,7 +284,13 @@ function draw() {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#a7adb4";
-  ctx.fillText("Merge matching bricks!", 20, 90);
+  let tag = ME + " - merge matching bricks!";
+  if (ctx.measureText(tag).width > 320) {
+    tag = ME;
+    while (tag.length > 3 && ctx.measureText(tag + "...").width > 220) tag = tag.slice(0, -1);
+    if (tag !== ME) tag += "...";
+  }
+  ctx.fillText(tag, 20, 90);
 
   scoreBox(250, "SCORE", score);
   scoreBox(360, "BEST", Math.max(score, Kit.best(ID) ?? 0));

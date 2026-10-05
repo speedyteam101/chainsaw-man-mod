@@ -12,6 +12,8 @@
 "use strict";
 const ID = "sword-duel";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player();
+const HURT_LOOK = Object.assign({}, ME.avatar, { head: "#ffffff", torso: "#ffffff", arms: "#ffffff", legs: "#ffffff" });
 
 const GROUND = 440;
 const LEFT = 70, RIGHT = 890;
@@ -42,7 +44,7 @@ function makeFighter(isCpu) {
   const foe = FOES[Math.min(level, FOES.length - 1)];
   return {
     cpu: isCpu,
-    name: isCpu ? foe.name + (level >= FOES.length ? " +" + (level - FOES.length + 1) : "") : "You",
+    name: isCpu ? foe.name + (level >= FOES.length ? " +" + (level - FOES.length + 1) : "") : ME.name,
     colors: isCpu ? foe : { body: "#3b82f6", dark: "#1e3a8a", trim: "#bfdbfe" },
     x: isCpu ? 640 : 320, y: GROUND, vx: 0, vy: 0, facing: isCpu ? -1 : 1,
     maxHp: isCpu ? 100 + level * 8 : 100, hp: 0, stamina: 100,
@@ -234,6 +236,7 @@ function tryHit(att, def, m) {
       def.stamina = Math.min(100, def.stamina + 15);
       spark(hitX, hitY, "#facc15", 18);
       say("PARRY!", def, "#facc15");
+      if (def === you) Kit.badge(ID, "perfect-parry", "Perfect Parry", "Parried an attack by blocking just in time.");
       Kit.sfx("score");
       shake = 0.15;
       return;
@@ -306,7 +309,10 @@ function separate() {
 function endRound(winner) {
   phase = "ko";
   phaseT = 2.4;
-  if (winner === you) wins[0]++;
+  if (winner === you) {
+    wins[0]++;
+    if (you.hp === you.maxHp) Kit.badge(ID, "flawless", "Flawless", "Won a round without taking any damage.");
+  }
   else if (winner === cpu) wins[1]++;
   banner = winner === you ? "You win the round!" : winner === cpu ? `${cpu.name} wins the round` : "Draw";
   bannerSub = winner ? (roundTimer <= 0 ? "Time!" : "K.O.") : "Time!";
@@ -319,6 +325,9 @@ async function endMatch() {
   if (wins[0] > wins[1]) {
     streak++;
     const best = Kit.finish(ID, streak);
+    Kit.badge(ID, "first-victory", "First Victory", "Won your first sword duel.");
+    if (streak >= 3) Kit.badge(ID, "knight-slayer", "Knight Slayer", "Won 3 duels in a row.");
+    if (streak >= 6) Kit.badge(ID, "obsidian-conqueror", "Obsidian Conqueror", "Defeated the Obsidian Knight.");
     Kit.sfx("win");
     level = streak;
     updateHud();
@@ -462,32 +471,37 @@ function drawFighter(f) {
   const lunge = f.action && f.action.type === "lunge" && f.action.t >= MOVES.lunge.windup;
   ctx.rotate(lunge ? 0.18 : f.hitstun > 0 ? -0.12 : 0);
 
-  // legs
-  const stride = onGround(f) ? Math.sin(f.walk) * 7 : 5;
-  ctx.fillStyle = c.dark;
-  ctx.fillRect(-12 + stride, -38, 11, 38);
-  ctx.fillRect(1 - stride, -38, 11, 38);
-  ctx.fillStyle = "#1f2328";
-  ctx.fillRect(-13 + stride, -6, 13, 6);
-  ctx.fillRect(0 - stride, -6, 13, 6);
-  // back arm
-  ctx.fillStyle = c.dark;
-  ctx.fillRect(-20, -74, 9, 30);
-  // torso
-  Kit.brick(ctx, -16, -78, 32, 42, hurt ? "#fff" : c.body, 4);
-  ctx.fillStyle = c.trim;
-  ctx.fillRect(-16, -46, 32, 5);
-  // head
-  Kit.brick(ctx, -13, -104, 26, 26, hurt ? "#fff" : "#fcd34d", 5);
-  ctx.fillStyle = "#1f2328";
-  ctx.fillRect(4, -96, 4, 5);
-  ctx.fillRect(-3, -96, 4, 5);
-  // helmet
-  ctx.fillStyle = c.dark;
-  ctx.fillRect(-15, -108, 30, 10);
-  ctx.fillRect(-15, -108, 8, 22);
-  ctx.fillStyle = c.trim;
-  ctx.fillRect(-4, -114, 8, 7);
+  if (f.cpu) {
+    // legs
+    const stride = onGround(f) ? Math.sin(f.walk) * 7 : 5;
+    ctx.fillStyle = c.dark;
+    ctx.fillRect(-12 + stride, -38, 11, 38);
+    ctx.fillRect(1 - stride, -38, 11, 38);
+    ctx.fillStyle = "#1f2328";
+    ctx.fillRect(-13 + stride, -6, 13, 6);
+    ctx.fillRect(0 - stride, -6, 13, 6);
+    // back arm
+    ctx.fillStyle = c.dark;
+    ctx.fillRect(-20, -74, 9, 30);
+    // torso
+    Kit.brick(ctx, -16, -78, 32, 42, hurt ? "#fff" : c.body, 4);
+    ctx.fillStyle = c.trim;
+    ctx.fillRect(-16, -46, 32, 5);
+    // head
+    Kit.brick(ctx, -13, -104, 26, 26, hurt ? "#fff" : "#fcd34d", 5);
+    ctx.fillStyle = "#1f2328";
+    ctx.fillRect(4, -96, 4, 5);
+    ctx.fillRect(-3, -96, 4, 5);
+    // helmet
+    ctx.fillStyle = c.dark;
+    ctx.fillRect(-15, -108, 30, 10);
+    ctx.fillRect(-15, -108, 8, 22);
+    ctx.fillStyle = c.trim;
+    ctx.fillRect(-4, -114, 8, 7);
+  } else {
+    // the player's own BlockOS avatar (the hurtbox is unchanged)
+    Kit.drawAvatar(ctx, 0, 0, 106, { look: hurt ? HURT_LOOK : ME.avatar, facing: 1, walk: Math.abs(f.vx) > 20 ? f.walk : 0, air: !onGround(f) });
+  }
 
   // sword arm
   const ang = swordAngle(f);
@@ -495,9 +509,9 @@ function drawFighter(f) {
   const reachOut = lunge ? 14 : 0;
   ctx.translate(8 + reachOut, -70);
   ctx.rotate(ang);
-  ctx.fillStyle = c.body;
+  ctx.fillStyle = f.cpu ? c.body : ME.avatar.arms;
   ctx.fillRect(-4, -5, 26, 10);
-  ctx.fillStyle = "#fcd34d";
+  ctx.fillStyle = f.cpu ? "#fcd34d" : ME.avatar.arms;
   ctx.fillRect(20, -6, 9, 12);
   // sword
   ctx.fillStyle = "#78350f";

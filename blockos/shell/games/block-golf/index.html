@@ -12,6 +12,9 @@
 "use strict";
 const ID = "block-golf";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let golfer = { x: 0, y: 0, walk: 0, moving: false, facing: 1 };   // your avatar, walks up to the ball
 
 const BALL_R = 7;
 const CUP_R = 11;
@@ -79,6 +82,7 @@ function loadHole() {
   aim = { angle: Math.atan2(hole.cup[1] - hole.tee[1], hole.cup[0] - hole.tee[0]), power: 0.5 };
   dragging = null;
   lastShot = { x: ball.x, y: ball.y };
+  golfer = { x: ball.x - 22, y: ball.y + 6, walk: 0, moving: false, facing: 1 };
   particles = [];
   ripples = [];
   msg = `Hole ${holeIdx + 1}  -  Par ${hole.par}`;
@@ -185,6 +189,7 @@ function physicsStep(dt) {
     ball.x = lastShot.x; ball.y = lastShot.y;
     ball.vx = ball.vy = 0;
     msg = "Splash! +1 stroke";
+    badge("splash", "Making Waves", "Putt your ball into the water.");
     msgT = 1.6;
     Kit.sfx("lose");
     updateHud();
@@ -228,6 +233,12 @@ async function holeDone() {
   const name = strokes >= MAX_STROKES ? "Picked up" : scoreName(strokes, hole.par);
   const t = total(), d = t - parSoFar(card.length);
   updateHud();
+  if (strokes === 1) badge("hole-in-one", "Hole in One!", "Sink a ball with your first putt.");
+  if (strokes < hole.par) badge("birdie", "Birdie", "Finish a hole under par.");
+  if (card.length === HOLES.length) {
+    badge("full-round", "Full Round", "Play all nine holes.");
+    if (d <= 0) badge("par-round", "Par Excellence", "Finish a full round at or under par.");
+  }
   if (holeIdx < HOLES.length - 1) {
     await wait(700);
     await Kit.overlay(name, `Hole ${holeIdx + 1}: ${strokes} stroke${strokes === 1 ? "" : "s"} (par ${hole.par})\nTotal: ${t} (${fmtPar(d)})\n\n${cardLine()}`, "Next hole");
@@ -261,9 +272,43 @@ function shoot(power) {
   updateHud();
 }
 
+function updateGolfer(dt) {
+  // stand beside the ball while aiming; stay put and watch while it rolls
+  const face = Math.cos(aim.angle) >= 0 ? 1 : -1;
+  if (state === "aim") {
+    const tx = ball.x - face * 22, ty = ball.y + 6;
+    const dx = tx - golfer.x, dy = ty - golfer.y, d = Math.hypot(dx, dy);
+    const step = 260 * dt;
+    golfer.moving = d > 2;
+    if (d <= step) { golfer.x = tx; golfer.y = ty; } else { golfer.x += (dx / d) * step; golfer.y += (dy / d) * step; }
+    if (golfer.moving) { golfer.walk += dt * 13; golfer.facing = dx < -1 ? -1 : dx > 1 ? 1 : face; }
+    else golfer.facing = face;
+  } else {
+    golfer.moving = false;
+    if (Math.abs(ball.x - golfer.x) > 8) golfer.facing = ball.x < golfer.x ? -1 : 1;
+  }
+}
+
+function drawGolfer() {
+  const g = golfer, h = 46, u = h / 5.2;
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  ctx.beginPath(); ctx.ellipse(g.x, g.y, 11, 4, 0, 0, 7); ctx.fill();
+  Kit.drawAvatar(ctx, g.x, g.y, h, { look: ME.avatar, facing: g.facing, walk: g.moving ? g.walk : 0 });
+  if (state === "aim" && !g.moving) {
+    // putter from the hands down to the ball
+    const hx = g.x + g.facing * u * 0.5, hy = g.y - 2.2 * u;
+    ctx.strokeStyle = "#9ca3af";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(ball.x - g.facing * (BALL_R + 4), ball.y + 2); ctx.stroke();
+    ctx.fillStyle = "#4b5563";
+    ctx.fillRect(ball.x - g.facing * (BALL_R + 4) - 2, ball.y - 4, 4, 9);
+  }
+}
+
 function update(dt) {
   time += dt;
   msgT = Math.max(0, msgT - dt);
+  updateGolfer(dt);
   for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; p.life -= dt; }
   particles = particles.filter((p) => p.life > 0);
   for (const r of ripples) r.t += dt;
@@ -461,6 +506,8 @@ function draw() {
       ctx.setLineDash([]);
     }
   }
+
+  drawGolfer();
 
   // ball trail and ball
   ball.trail.forEach((t, i) => {

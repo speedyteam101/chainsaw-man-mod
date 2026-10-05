@@ -13,6 +13,9 @@
 const ID = "battle-tanks";
 const T = 30, COLS = 32, ROWS = 18;
 const { canvas, ctx, W, H } = Kit.stage(COLS * T, ROWS * T);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let waveHit = false;   // took damage during the current wave
 
 const EMPTY = 0, BRICK = 1, STEEL = 2, BUSH = 3, WATER = 4;
 const TANK_R = 12;
@@ -114,6 +117,7 @@ function makeTank(cx, cy, type) {
 
 function nextWave() {
   wave++;
+  waveHit = false;
   genMap();
   player.x = PLAYER_SPAWN.cx * T + T / 2;
   player.y = PLAYER_SPAWN.cy * T + T / 2;
@@ -285,6 +289,7 @@ function updateShells(dt) {
         a.dead = b.dead = true;
         debris(a.x, a.y, "#fde68a", 8);
         score += 10;
+        badge("intercept", "Intercept", "Shoot an enemy shell out of the air.");
       }
     }
   shells = shells.filter((s) => !s.dead && s.age < 6);
@@ -295,6 +300,7 @@ function hitTank(t, s) {
     if (player.inv > 0 || state !== "play") return;
     if (player.powers.shield > 0) { debris(t.x, t.y, "#93c5fd", 10); Kit.sfx("click"); return; }
     player.hp--;
+    waveHit = true;
     player.inv = 1.2;
     player.hitFlash = 0.2;
     explode(t.x, t.y, false);
@@ -309,7 +315,10 @@ function hitTank(t, s) {
   if (t.hp <= 0) {
     t.dead = true;
     explode(t.x, t.y, true);
-    if (s.owner === "player") score += t.def.points;
+    if (s.owner === "player") {
+      score += t.def.points;
+      badge("first-kill", "Tank Buster", "Destroy your first enemy tank.");
+    }
     Kit.sfx("coin");
     if (Math.random() < 0.35) {
       const kind = Kit.pick(player.hp < MAX_HP ? ["rapid", "triple", "shield", "bounce", "repair", "repair"] : ["rapid", "triple", "shield", "bounce"]);
@@ -467,6 +476,9 @@ async function waveCleared() {
   player.hp = Math.min(MAX_HP, player.hp + 1);
   updateHud();
   Kit.sfx("win");
+  if (wave >= 3) badge("wave-3", "Holding the Line", "Clear wave 3.");
+  if (wave >= 6) badge("wave-6", "Iron Commander", "Clear wave 6.");
+  if (wave >= 2 && !waveHit) badge("untouched", "Untouched", "Clear a wave (2 or later) without taking a hit.");
   msg = `Wave ${wave} cleared! +${bonus}`;
   msgT = 2.2;
   await new Promise((r) => setTimeout(r, 2200));
@@ -600,7 +612,18 @@ function draw() {
     drawPowerIcon(p.kind, p.x, p.y + Math.sin(time * 5) * 2, 22);
   }
   for (const e of enemies) drawTank(e, { body: e.def.color, dark: e.def.dark });
-  if (state !== "over") drawTank(player, { body: "#3b82f6", dark: "#1e40af" });
+  if (state !== "over") {
+    drawTank(player, { body: "#3b82f6", dark: "#1e40af" });
+    if (player.spawnT <= 0) {
+      // Roblox-style name tag over your tank
+      ctx.font = "bold 11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillStyle = "rgba(0,0,0,.6)";
+      ctx.fillText(ME, player.x + 1, player.y - 29);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(ME, player.x, player.y - 30);
+    }
+  }
 
   for (const s of shells) {
     ctx.fillStyle = s.owner === "player" ? "#fde047" : "#f87171";

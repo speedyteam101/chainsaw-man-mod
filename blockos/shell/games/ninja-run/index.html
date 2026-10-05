@@ -13,6 +13,8 @@
 const ID = "ninja-run";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
+let beamsDodged = 0;
 
 const GROUND = 440;
 const PX = 180;                         // player's screen x
@@ -34,6 +36,7 @@ function reset() {
   alive = true;
   t = 0;
   nextX = 900;
+  beamsDodged = 0;
   p = { y: GROUND - STAND.h, vy: 0, onGround: true, jumps: 0, sliding: false, slideT: 0, spin: 0, dead: false, buffer: 0 };
   updateHud();
 }
@@ -209,9 +212,18 @@ function update(dt) {
       c.got = true;
       coinCount++;
       Kit.sfx("coin");
+      if (coinCount === 50) Kit.badge(ID, "coin-collector", "Coin Collector", "Grabbed 50 coins in a single run.");
       burst(cx, c.y, 6, ["#facc15", "#fde68a"], 120);
     }
   }
+  for (const o of obstacles) {
+    if (o.type === "beam" && !o.passed && o.x + o.w - scroll < b.x) {
+      o.passed = true;
+      if (++beamsDodged === 10) Kit.badge(ID, "limbo-master", "Limbo Master", "Slid under 10 red beams in one run.");
+    }
+  }
+  if (meters() >= 500) Kit.badge(ID, "rooftop-runner", "Rooftop Runner", "Ran 500 m in a single run.");
+  if (meters() >= 1500) Kit.badge(ID, "shadow-sprinter", "Shadow Sprinter", "Ran 1500 m in a single run.");
   obstacles = obstacles.filter((o) => o.x + o.w > scroll - 100);
   pits = pits.filter((q) => q.x + q.w > scroll - 100);
   coins = coins.filter((c) => !c.got && c.x > scroll - 50);
@@ -369,39 +381,24 @@ function drawNinja() {
     ctx.rotate(p.spin);
     ctx.translate(-PX, -(y + s.h / 2));
   }
+  // The player's own BlockOS avatar, wearing a ninja headband. Hitboxes are unchanged.
   if (p.sliding) {
-    Kit.brick(ctx, x, y + 4, s.w - 12, s.h - 4, "#1e293b", 4);           // body
-    Kit.brick(ctx, x + s.w - 20, y, 20, 18, "#1e293b", 4);               // head
-    ctx.fillStyle = "#ef4444";
-    ctx.fillRect(x + s.w - 22, y + 4, 22, 5);
-    ctx.fillRect(x + s.w - 34 - Math.sin(t * 30) * 3, y + 2, 12, 4);
-    ctx.fillStyle = "#fde68a";
-    ctx.fillRect(x + s.w - 9, y + 10, 6, 4);
+    // feet-first slide: the avatar leans back with its head trailing behind
+    ctx.save();
+    ctx.translate(x + s.w - 2, GROUND - 7);
+    ctx.rotate(-1.35);
+    Kit.drawAvatar(ctx, 0, 0, 44, { look: ME.avatar, facing: 1, air: true });
+    drawHeadband(44, false);
+    ctx.restore();
     // dust
     if (Math.random() < 0.5) particles.push({ x: x + 4, y: GROUND - 4, vx: -120, vy: -40, life: 0.3, size: 4, color: "#94a3b8" });
   } else {
-    const run = p.onGround ? Math.sin(t * 22) : 0;
-    // legs
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(x + 4 + run * 5, y + s.h - 12, 9, 12);
-    ctx.fillRect(x + s.w - 13 - run * 5, y + s.h - 12, 9, 12);
-    Kit.brick(ctx, x, y + 18, s.w, s.h - 28, "#1e293b", 4);               // torso
-    ctx.fillStyle = "#334155";
-    ctx.fillRect(x + 2, y + 30, s.w - 4, 4);                              // belt
-    Kit.brick(ctx, x + 1, y, s.w - 2, 20, "#1e293b", 5);                 // head
-    ctx.fillStyle = "#fde68a";
-    ctx.fillRect(x + 6, y + 8, s.w - 10, 6);                              // eye slit
-    ctx.fillStyle = "#0f172a";
-    ctx.fillRect(x + s.w - 10, y + 9, 4, 4);
-    ctx.fillStyle = "#ef4444";
-    ctx.fillRect(x, y + 3, s.w - 1, 4);                                   // headband
-    const flap = Math.sin(t * 25) * 4;
-    ctx.fillRect(x - 14, y + 3 + flap * 0.5, 14, 4);
-    ctx.fillRect(x - 22, y + 6 + flap, 10, 4);
-    // arms
-    ctx.fillStyle = "#1e293b";
-    ctx.fillRect(x + s.w - 4, y + 22 - run * 3, 8, 6);
-    ctx.fillRect(x - 4, y + 22 + run * 3, 8, 6);
+    const fx = PX, fy = y + s.h;
+    Kit.drawAvatar(ctx, fx, fy, 50, { look: ME.avatar, facing: 1, walk: p.onGround ? t * 22 : 0, air: !p.onGround, name: alive ? ME.name : "" });
+    ctx.save();
+    ctx.translate(fx, fy);
+    drawHeadband(50, true);
+    ctx.restore();
     if (p.jumps === 2 && p.vy < 0) {
       ctx.strokeStyle = "rgba(226,232,240,.5)";
       ctx.lineWidth = 2;
@@ -409,6 +406,17 @@ function drawNinja() {
     }
   }
   ctx.restore();
+}
+
+// Red ninja headband with flapping tails, drawn relative to the avatar's feet (h = avatar height).
+function drawHeadband(h, tails) {
+  const u = h / 5.2;
+  const flap = Math.sin(t * 25) * u * 0.4;
+  ctx.fillStyle = "#ef4444";
+  ctx.fillRect(-u * 0.66, -5.05 * u, u * 1.32, u * 0.32);
+  if (!tails) return;
+  ctx.fillRect(-u * 1.9, -5.0 * u + flap * 0.5, u * 1.3, u * 0.3);
+  ctx.fillRect(-u * 2.7, -4.8 * u + flap, u * 1.0, u * 0.3);
 }
 
 function draw() {

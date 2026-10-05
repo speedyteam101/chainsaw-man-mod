@@ -23,6 +23,8 @@
 const ID = "blob-rush";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(960, 600);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 const WALL = 22;
 const TAU = Math.PI * 2;
 const CONFETTI = ["#ef4444", "#facc15", "#22c55e", "#3b82f6", "#a855f7", "#ec4899", "#fb923c", "#2dd4bf"];
@@ -84,6 +86,7 @@ function waveList(n) {
 
 function nextWave() {
   wave++;
+  if (wave >= 10) badge("wave-10", "Blob Veteran", "Survive to wave 10.");
   queue = waveList(wave);
   spawnTimer = 1.2;
   waveBanner = { text: wave % 5 === 0 ? `Wave ${wave}: King Blob!` : `Wave ${wave}`, t: 2 };
@@ -306,6 +309,8 @@ function killEnemy(e) {
   const t = TYPES[e.type];
   kills++;
   score += t.points;
+  if (e.type === "boss") badge("king-slayer", "King Slayer", "Pop the King Blob.");
+  if (kills === 200) badge("kills-200", "Pop Star", "Pop 200 blobs in one run.");
   updateHud();
   popups.push({ x: e.x, y: e.y - e.r, text: "+" + t.points, life: 0.8, color: "#fef9c3" });
   // confetti pop
@@ -506,6 +511,8 @@ async function waveCleared() {
   const choice = await pickUpgrade(`Wave ${wave} cleared!`, `+${bonus} bonus. Pick an upgrade:`);
   choice.apply();
   taken[choice.id] = (taken[choice.id] || 0) + 1;
+  badge("wave-1", "First Splat", "Clear your first wave of blobs.");
+  if (choice.max < 99 && taken[choice.id] >= choice.max) badge("maxed", "Maxed Out", "Max out an upgrade.");
   player.inv = Math.max(player.inv, 1);
   bullets = [];
   goo = [];
@@ -686,26 +693,30 @@ function drawBlob(e) {
 function drawPlayer() {
   const p = player;
   if (p.inv > 0 && p.dash <= 0 && Math.floor(p.inv * 14) % 2 === 0) return;
-  const bob = Math.sin(p.walk) * 2;
+  const moving = p.walk !== p.lastWalk;
+  p.lastWalk = p.walk;
+  if (moving) p.still = 0; else p.still = (p.still || 0) + 1;
   ctx.fillStyle = "rgba(0,0,0,.3)";
   ctx.beginPath();
   ctx.ellipse(p.x, p.y + 15, 15, 5, 0, 0, TAU);
   ctx.fill();
-  // blaster
-  ctx.save();
-  ctx.translate(p.x, p.y - 2 + bob);
-  ctx.rotate(p.aim);
-  Kit.brick(ctx, 6, -5, 22, 10, "#6b7280", 3);
-  ctx.fillStyle = rapid > 0 ? "#f59e0b" : spread > 0 ? "#22c55e" : "#facc15";
-  ctx.fillRect(24, -4, 6, 8);
-  ctx.restore();
-  // body and head
-  Kit.brick(ctx, p.x - 14, p.y - 14 + bob, 28, 28, p.hurt > 0 ? "#fca5a5" : "#3b82f6", 6);
-  Kit.brick(ctx, p.x - 10, p.y - 24 + bob, 20, 14, "#facc15", 4);
-  const lx = Math.cos(p.aim) * 2.5, ly = Math.sin(p.aim) * 1.5;
-  ctx.fillStyle = "#111";
-  ctx.fillRect(p.x - 6 + lx, p.y - 20 + bob + ly, 3, 4);
-  ctx.fillRect(p.x + 3 + lx, p.y - 20 + bob + ly, 3, 4);
+  const facing = Math.cos(p.aim) < 0 ? -1 : 1;
+  const look = p.hurt > 0 ? Object.assign({}, ME.avatar, { torso: "#fca5a5", head: "#fecaca" }) : ME.avatar;
+  const blaster = () => {
+    ctx.save();
+    ctx.translate(p.x + facing * 3, p.y - 4);
+    ctx.rotate(p.aim);
+    Kit.brick(ctx, 6, -5, 22, 10, "#6b7280", 3);
+    ctx.fillStyle = rapid > 0 ? "#f59e0b" : spread > 0 ? "#22c55e" : "#facc15";
+    ctx.fillRect(24, -4, 6, 8);
+    ctx.restore();
+  };
+  // aiming up: the blaster is behind you; otherwise it's in front
+  if (Math.sin(p.aim) < -0.3) blaster();
+  Kit.drawAvatar(ctx, p.x, p.y + 15, 46, {
+    look, facing, walk: p.still < 3 ? p.walk : 0, air: p.dash > 0,
+  });
+  if (Math.sin(p.aim) >= -0.3) blaster();
 }
 
 const HEART = [".XX.XX.", "XXXXXXX", "XXXXXXX", ".XXXXX.", "..XXX..", "...X..."];

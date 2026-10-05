@@ -12,6 +12,9 @@
 "use strict";
 const ID = "block-bowling";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let strikeRun = 0;   // strikes in a row (for the Turkey badge)
 
 const CY = 300;              // lane centre line
 const HALF = 78;             // half lane width
@@ -39,6 +42,7 @@ function rackPins() {
 
 function newGame() {
   frames = Array.from({ length: 10 }, () => []);
+  strikeRun = 0;
   frameIdx = 0;
   rollInFrame = 0;
   aim = { y: CY, angle: 0 };
@@ -265,6 +269,10 @@ function endRoll() {
   else if (cleared) { msg = "Spare!"; Kit.sfx("score"); }
   else { msg = count === 0 ? (ball.gutter ? "Gutter ball" : "Miss") : `${count} pin${count === 1 ? "" : "s"}`; if (count) Kit.sfx("coin"); }
   msgT = 1.6;
+  strikeRun = strike ? strikeRun + 1 : 0;
+  if (strike) badge("first-strike", "Strike!", "Bowl your first strike.");
+  else if (cleared) badge("spare", "Spare Parts", "Knock down the leftovers for a spare.");
+  if (strikeRun >= 3) badge("turkey", "Turkey", "Bowl three strikes in a row.");
   let frameOver;
   if (!tenth) frameOver = strike || rollInFrame === 1;
   else frameOver = f.length === 3 || (f.length === 2 && f[0] + f[1] < 10);
@@ -281,6 +289,8 @@ async function afterSweep() {
     phase = "done";
     const total = runningTotal();
     const best = Kit.finish(ID, total);
+    badge("ten-frames", "Ten Frames", "Finish a full game of bowling.");
+    if (total >= 150) badge("score-150", "Big Roller", "Score 150 or more in one game.");
     const strikes = flatRolls().length ? frames.reduce((a, f, i) => a + marks(i).filter((m) => m === "X").length, 0) : 0;
     Kit.sfx("win");
     await Kit.overlay("Game over", `Final score: ${total}\nStrikes: ${strikes}\nBest game: ${best}`, "Bowl again");
@@ -393,8 +403,24 @@ function drawBall() {
   ctx.restore();
 }
 
+function drawPlayerCard(x, y, w, h) {
+  // the bowler: your avatar and name next to the scorecard
+  Kit.brick(ctx, x, y, w, h, "#1e293b", 6);
+  Kit.drawAvatar(ctx, x + 22, y + h - 7, h - 24, { look: ME.avatar, facing: 1, walk: phase === "rolling" ? 0.5 : 0 });
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "bold 11px system-ui, sans-serif";
+  ctx.fillText("BOWLER", x + 42, y + 26);
+  ctx.fillStyle = "#fff";
+  let size = 15;
+  ctx.font = `900 ${size}px system-ui, sans-serif`;
+  while (size > 9 && ctx.measureText(ME.name).width > w - 48) { size--; ctx.font = `900 ${size}px system-ui, sans-serif`; }
+  ctx.fillText(ME.name, x + 42, y + 46);
+}
+
 function drawScorecard() {
   const x0 = 20, y0 = 14, fw = 78, fh = 70;
+  drawPlayerCard(x0 + 10 * fw + 30, y0, W - (x0 + 10 * fw + 30) - 12, fh);
   const totals = scoreFrames();
   ctx.font = "bold 13px system-ui, sans-serif";
   for (let i = 0; i < 10; i++) {

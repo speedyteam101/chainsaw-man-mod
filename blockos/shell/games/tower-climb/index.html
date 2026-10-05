@@ -14,6 +14,8 @@ const ID = "tower-climb";
 const T = 30, COLS = 20, SH = 12;            // tile size, tower width in tiles, rows per section
 const { ctx, W, H } = Kit.stage(COLS * T, 720);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
+let walkPhase = 0;
 
 const PW = 20, PH = 28;
 const RUN = 220, ACCEL = 2200, GRAV = 1800, JUMP = 660, MAX_FALL = 900, CLIMB = 160;
@@ -329,7 +331,15 @@ function update(dt) {
 
   // score and camera
   const h = Math.max(0, Math.floor(-(player.y + PH) / T));
-  if (h > maxHeight) { maxHeight = h; updateHud(); }
+  if (h > maxHeight) {
+    maxHeight = h;
+    updateHud();
+    if (maxHeight >= 100) Kit.badge(ID, "sky-high", "Sky High", "Climbed 100 m up the tower.");
+    if (maxHeight >= 200) Kit.badge(ID, "cloud-walker", "Cloud Walker", "Climbed 200 m up the tower.");
+  }
+  if (player.climbing && (up || down)) walkPhase += dt * 10;
+  else if (player.grounded && Math.abs(player.vx) > 20) walkPhase += dt * Math.abs(player.vx) / 16;
+  else walkPhase = 0;
   ensureSections(Math.floor(player.y / T));
   const targetCam = player.y - H * 0.55;
   camY += (targetCam - camY) * Math.min(1, dt * 6);
@@ -342,9 +352,12 @@ function reachCheckpoint(o) {
   burst(o.x + o.w / 2, o.y, 18, ["#facc15", "#22c55e", "#fff"], 200);
   msg = `Stage ${o.section + 1}!`;
   msgT = 1.6;
+  if (o.section === 1) Kit.badge(ID, "first-checkpoint", "First Checkpoint", "Reached the first checkpoint flag.");
+  if (o.section >= 4 && lives === START_LIVES) Kit.badge(ID, "untouchable", "Untouchable", "Reached stage 5 without losing a life.");
   if (o.section % 5 === 0 && lives < 9) {
     lives++;
     msg += "  +1 life";
+    Kit.badge(ID, "extra-life", "Extra Life", "Earned a bonus life by clearing 5 stages.");
     Kit.sfx("win");
   }
   updateHud();
@@ -523,21 +536,10 @@ function drawObj(o) {
 
 function drawPlayer() {
   if (dead) return;
-  const x = Math.round(player.x), y = Math.round(player.y - camY);
-  const run = player.grounded && Math.abs(player.vx) > 20 ? Math.sin(t * 20) : 0;
-  ctx.fillStyle = "#1d4ed8";
-  ctx.fillRect(x + 3 + run * 2, y + PH - 9, 6, 9);
-  ctx.fillRect(x + PW - 9 - run * 2, y + PH - 9, 6, 9);
-  Kit.brick(ctx, x, y + 11, PW, PH - 19, "#22c55e", 3);
-  ctx.fillStyle = "#fcd34d";
-  ctx.fillRect(x - 3, y + 12 + run * 2, 4, 9);
-  ctx.fillRect(x + PW - 1, y + 12 - run * 2, 4, 9);
-  Kit.brick(ctx, x + 2, y, PW - 4, 12, "#fcd34d", 3);
-  ctx.fillStyle = "#111";
-  const ex = x + PW / 2 + player.face * 2;
-  ctx.fillRect(ex - 5, y + 3, 3, 3);
-  ctx.fillRect(ex + 2, y + 3, 3, 3);
-  ctx.fillRect(ex - 3, y + 8, 6, 1);
+  // The player's own BlockOS avatar, feet on the bottom of the (unchanged) PW x PH hitbox.
+  const x = Math.round(player.x + PW / 2), y = Math.round(player.y - camY + PH);
+  Kit.drawAvatar(ctx, x, y, 34, { look: ME.avatar, facing: player.face, walk: walkPhase,
+    air: !player.grounded && !player.climbing, name: ME.name });
 }
 
 function drawWalls() {

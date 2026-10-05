@@ -12,6 +12,9 @@
 "use strict";
 const ID = "brick-breaker";
 const { canvas, ctx, W, H } = Kit.stage(640, 520);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let lostThisLevel = 0;
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 
 const COLS = 12, BW = 48, BH = 20, GAP = 4;
@@ -126,6 +129,7 @@ function loadLevel() {
   particles = [];
   wideTime = 0;
   slowTime = 0;
+  lostThisLevel = 0;
   serve();
   banner = { text: `Level ${levelIndex + 1}`, sub: lvl.name, t: 2 };
 }
@@ -309,6 +313,7 @@ function applyPower(type) {
       for (const off of [-0.45, 0.45]) extra.push({ x: b.x, y: b.y, vx: Math.cos(a + off) * speed, vy: Math.sin(a + off) * speed });
     }
     balls.push(...extra);
+    if (balls.length >= 9) badge("ball-pit", "Ball Pit", "Have 9 balls bouncing at once.");
   }
   banner = { text: { wide: "Wide paddle!", multi: "Multi-ball!", slow: "Slow ball", life: "Extra life!" }[type], sub: "", t: 1 };
   updateHud();
@@ -316,6 +321,7 @@ function applyPower(type) {
 
 function loseLife() {
   lives--;
+  lostThisLevel++;
   drops = [];
   wideTime = 0;
   slowTime = 0;
@@ -332,6 +338,10 @@ function levelClear() {
   updateHud();
   Kit.sfx("win");
   banner = { text: "Level clear!", sub: `Bonus +${bonus}`, t: 1.8 };
+  badge("level-1", "Brick Smasher", "Clear your first level.");
+  if (lostThisLevel === 0) badge("perfect", "Perfect Level", "Clear a level without losing a ball.");
+  if (levelIndex + 1 >= 4) badge("level-4", "Halfway Hero", "Clear level 4.");
+  if (levelIndex + 1 >= LEVELS.length) badge("all-levels", "Wall Wrecker", "Clear all 8 levels.");
   setTimeout(() => {
     if (levelIndex + 1 >= LEVELS.length) return endGame(true);
     levelIndex++;
@@ -452,6 +462,13 @@ function draw() {
     ctx.fillStyle = wideTime > 0 ? "#4ade80" : "#60a5fa";
     ctx.fillRect(px + (i + 0.5) * (paddle.w / studs) - 4, PADDLE_Y - 3, 8, 4);
   }
+
+  // your name under the paddle
+  ctx.font = `800 11px ${FONT}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255,255,255,.55)";
+  ctx.fillText(ME, paddle.x, PADDLE_Y + PADDLE_H + 10);
 
   for (const b of balls) {
     ctx.fillStyle = "rgba(255,255,255,.12)";

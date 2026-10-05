@@ -26,6 +26,8 @@ const ID = "pizza-shop";
 const { canvas, ctx, W, H } = Kit.stage(900, 640);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const DAYS = 7, DAY_LENGTH = 100, MAX_HEARTS = 5;
+const ME = Kit.player();
+let chefCheer = 0;
 
 const TOPPINGS = [
   { id: "pepperoni", name: "Pepperoni", day: 1, key: "1" },
@@ -229,6 +231,9 @@ function serve(slot) {
   dayStats.income += price;
   dayStats.tips += tip;
   if (perfectBake) dayStats.perfect++;
+  chefCheer = 0.5;
+  Kit.badge(ID, "first-slice", "First Slice", "Served your first happy customer.");
+  if (c.crispy && perfectBake) Kit.badge(ID, "extra-crispy", "Extra Crispy", "Served a perfectly crispy pizza to a customer who asked for one.");
   popup(SLOT_X[slot], 170, `+$${price}${tip ? `  tip $${tip}` : ""}`, "#facc15");
   Kit.sfx("coin");
   customerLeaves(slot, true);
@@ -257,6 +262,8 @@ async function endDay() {
   phase = "summary";
   Kit.sfx("win");
   updateHud();
+  if (dayStats.served >= 5 && dayStats.angry === 0) Kit.badge(ID, "five-star-day", "Five-Star Day", "Finished a day without a single angry customer.");
+  if (day >= DAYS && hearts > 0) Kit.badge(ID, "pizza-tycoon", "Pizza Tycoon", "Kept the shop open for all 7 days.");
   const lines = `Served ${dayStats.served} customers (${dayStats.perfect} perfect bakes)\nSales $${dayStats.income} + tips $${dayStats.tips}\nAngry customers: ${dayStats.angry}`;
   if (day >= DAYS) {
     const best = Kit.finish(ID, earned);
@@ -324,6 +331,7 @@ function shop(title, text) {
       money -= u.cost[lvl];
       up[u.id]++;
       Kit.sfx("coin");
+      if (UPGRADES.every((x) => up[x.id] >= x.max)) Kit.badge(ID, "dream-kitchen", "Dream Kitchen", "Bought every shop upgrade.");
       updateHud();
       render();
       go.focus();
@@ -435,6 +443,7 @@ function update(dt) {
     // once the doors are shut and the last customer is gone, wrap up the day
     if (phase === "closing" && customers.every((c) => !c) && dayTime < -1) endDay();
   }
+  chefCheer = Math.max(0, chefCheer - dt);
   for (const l of leaving) l.t += dt * 1.8;
   leaving = leaving.filter((l) => l.t < 1);
   for (const p of popups) { p.t -= dt; p.y -= 26 * dt; }
@@ -558,6 +567,21 @@ function drawCustomer(x, c, alpha, mood) {
   ctx.globalAlpha = 1;
 }
 
+// You, the chef: your own BlockOS avatar behind the counter (the counter hides the legs).
+function drawChef() {
+  const x = 62, y = 236, h = 112;
+  Kit.drawAvatar(ctx, x, y, h, { look: ME.avatar, facing: 1, air: chefCheer > 0, name: ME.name });
+  if (!ME.avatar.hat || ME.avatar.hat === "none") {
+    // a chef's hat
+    const u = h / 5.2;
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(x - u * 0.65, y - 5.6 * u, u * 1.3, u * 0.45);
+    ctx.beginPath(); ctx.roundRect(x - u * 0.8, y - 6.5 * u, u * 1.6, u * 1.0, u * 0.4); ctx.fill();
+    ctx.fillStyle = "rgba(0,0,0,.08)";
+    ctx.fillRect(x - u * 0.65, y - 5.3 * u, u * 1.3, u * 0.12);
+  }
+}
+
 function keycap(k, x, y) {
   ctx.fillStyle = "#1e293b";
   ctx.beginPath(); ctx.roundRect(x, y, 18, 17, 4); ctx.fill();
@@ -594,6 +618,7 @@ function draw() {
     if (c) drawCustomer(x + (1 - c.enter) * 60, c, c.enter, c.patience / c.maxPatience);
   }
   for (const l of leaving) drawCustomer(l.x + (l.happy ? -1 : 1) * l.t * 90, l.c, 1 - l.t, l.happy ? 1 : 0);
+  drawChef();
   // counter
   ctx.fillStyle = "#713f12"; ctx.fillRect(0, 202, W, 48);
   for (let x = 0, i = 0; x < W; x += 75, i++) Kit.brick(ctx, x + 1, 206, 73, 40, i % 2 ? "#a16207" : "#b45309", 4);

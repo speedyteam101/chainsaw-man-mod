@@ -12,6 +12,7 @@
 "use strict";
 const ID = "penalty-kick";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player();
 
 // Goal space: gx in [-1, 1] post to post, gy in [0, 1] ground to crossbar.
 const GOAL = { cx: 480, ground: 300, halfW: 235, height: 176 };
@@ -294,6 +295,10 @@ function resolveShot() {
     msgColor = byYou ? "#ef4444" : "#22c55e";
     Kit.sfx(byYou ? "lose" : "coin");
   }
+  if (byYou && res === "goal") Kit.badge(ID, "first-goal", "Back of the Net", "Scored your first penalty.");
+  if (byYou && res === "post") Kit.badge(ID, "woodwork", "Off the Woodwork", "Rattled the post or crossbar.");
+  if (!byYou && res === "saved") Kit.badge(ID, "safe-hands", "Safe Hands", "Saved a penalty as the keeper.");
+  if (byYou && results.you.length === KICKS && results.you.every(Boolean)) Kit.badge(ID, "perfect-five", "Perfect Five", "Scored all five of your penalties.");
   updateHud();
 }
 
@@ -328,6 +333,8 @@ async function endMatch(winner) {
   const best = Kit.finish(ID, pts);
   Kit.sfx(winner === "you" ? "win" : "lose");
   const yg = results.you.filter(Boolean).length, cg = results.cpu.filter(Boolean).length;
+  if (winner === "you") Kit.badge(ID, "shootout-win", "Shootout Winner", "Won a penalty shootout.");
+  if (winner === "you" && cg === 0) Kit.badge(ID, "clean-sheet", "Clean Sheet", "Won a shootout without letting in a goal.");
   await Kit.overlay(winner === "you" ? "You win the shootout!" : "The CPU wins", `Final: You ${yg} - ${cg} CPU\nGoals scored: ${goals}   Kicks stopped: ${saves}\nPoints: ${pts}   Best: ${best}`, "Play again");
   newMatch();
   game.start();
@@ -415,9 +422,12 @@ function drawKeeper() {
   ctx.fillStyle = "rgba(0,0,0,.25)";
   ctx.beginPath(); ctx.ellipse(0, GOAL.ground - p.y + 2, 30, 6, 0, 0, 7); ctx.fill();
   ctx.rotate(ang);
-  const kit = "#facc15", dark = "#a16207";
+  // when you are in goal, the keeper wears your avatar's colors
+  const mine = !!shooter.cpu;
+  const kit = mine ? ME.avatar.torso : "#facc15", dark = mine ? "rgba(0,0,0,.25)" : "#a16207";
+  const arms = mine ? ME.avatar.arms : kit, head = mine ? ME.avatar.head : "#fcd34d";
   // legs
-  ctx.fillStyle = "#1f2937";
+  ctx.fillStyle = mine ? ME.avatar.legs : "#1f2937";
   ctx.fillRect(-14, 22, 11, 34); ctx.fillRect(3, 22, 11, 34);
   // body
   Kit.brick(ctx, -18, -22, 36, 48, kit, 5);
@@ -429,22 +439,37 @@ function drawKeeper() {
     ctx.save();
     ctx.translate(s * 16, -16);
     ctx.rotate(s * (Math.PI / 2 + 0.3 - spread));
-    ctx.fillStyle = kit;
+    ctx.fillStyle = arms;
     ctx.fillRect(-5, -34, 10, 34);
     ctx.fillStyle = "#22c55e";
     ctx.fillRect(-7, -44, 14, 13);
     ctx.restore();
   }
   // head
-  Kit.brick(ctx, -12, -48, 24, 24, "#fcd34d", 5);
+  Kit.brick(ctx, -12, -48, 24, 24, head, 5);
   ctx.fillStyle = "#1f2937";
   ctx.fillRect(-6, -40, 4, 4); ctx.fillRect(3, -40, 4, 4);
   ctx.fillRect(-13, -50, 26, 7);
   ctx.restore();
+  if (mine && !keeper.diving) {
+    ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(0,0,0,.6)";
+    ctx.fillText(ME.name, p.x + 1, p.y - 69);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(ME.name, p.x, p.y - 70);
+  }
 }
 
 function drawShooter() {
   const s = shooter;
+  if (!s.cpu) {
+    // you take the kick as your own BlockOS avatar, running up from the left
+    ctx.fillStyle = "rgba(0,0,0,.25)";
+    ctx.beginPath(); ctx.ellipse(s.x, s.y + 8, 34, 9, 0, 0, 7); ctx.fill();
+    Kit.drawAvatar(ctx, s.x, s.y + 8, 150, { look: ME.avatar, facing: 1, walk: s.run, air: s.kick > 0 });
+    return;
+  }
   const leg = Math.sin(s.run) * 8;
   ctx.save();
   ctx.translate(s.x, s.y);

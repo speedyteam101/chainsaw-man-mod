@@ -15,6 +15,8 @@ const COLS = 10, ROWS = 20, CELL = 26;
 const BX = 140, BY = 20;                 // top-left corner of the well on the canvas
 const { ctx, W, H } = Kit.stage(540, 560);
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
+const ME = Kit.player();
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 
 // Piece shapes in their spawn orientation, as [x, y] cells inside a size x size box.
 const SHAPES = {
@@ -189,6 +191,9 @@ function lock() {
     const label = LINE_NAMES[full.length] + (combo > 0 ? `  Combo x${combo + 1}` : "");
     popups.push({ text: label, sub: "+" + gained, y: BY + full[0] * CELL, t: 0 });
     Kit.sfx(full.length === 4 ? "win" : "score");
+    badge("first-line", "Line Up", "Clear your first line.");
+    if (full.length === 4) badge("four-rows", "Four at Once", "Clear 4 lines with a single piece.");
+    if (combo >= 2) badge("combo", "Combo Chain", "Clear lines with 3 pieces in a row.");
   } else {
     combo = -1;
     Kit.sfx("hit");
@@ -202,9 +207,11 @@ function finishClear() {
   board = board.filter((_, y) => !rows.includes(y));
   while (board.length < ROWS) board.unshift(Array(COLS).fill(null));
   lines += rows.length;
+  if (lines >= 50) badge("lines-50", "Line Master", "Clear 50 lines in one game.");
   const newLevel = Math.min(20, 1 + Math.floor(lines / 10));
   if (newLevel > level) {
     level = newLevel;
+    if (level >= 5) badge("level-5", "Speeding Up", "Reach level 5.");
     popups.push({ text: "Level " + level, sub: "Faster!", y: BY + 200, t: 0 });
     Kit.sfx("coin");
   }
@@ -358,6 +365,20 @@ function draw() {
   panel(414, BY, 112, 300);
   label("NEXT", 470, BY + 20, "center", 13);
   queue.slice(0, 5).forEach((t, i) => miniPiece(t, 470, BY + 58 + i * 54, i === 0 ? 20 : 15));
+
+  // player card: your avatar cheers when you clear lines
+  panel(14, BY + 338, 112, 182);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(14, BY + 338, 112, 182);
+  ctx.clip();
+  const hop = clearing ? Math.abs(Math.sin(clearing.t * 18)) * 10 : 0;
+  Kit.drawAvatar(ctx, 70, BY + 482 - hop, 104, { look: ME.avatar, facing: 1, air: !!clearing });
+  ctx.restore();
+  let ns = 14;
+  ctx.font = `800 ${ns}px ${FONT}`;
+  while (ns > 9 && ctx.measureText(ME.name).width > 100) { ns--; ctx.font = `800 ${ns}px ${FONT}`; }
+  label(ME.name, 70, BY + 506, "center", ns, "#f2f4f5");
 
   // controls reminder
   ctx.globalAlpha = 0.8;

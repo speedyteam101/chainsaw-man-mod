@@ -13,6 +13,8 @@
 const ID = "maze-escape";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const { canvas, ctx, W, H } = Kit.stage(800, 600);
+const ME = Kit.player();
+let sideFace = 1;
 const TOP = 56;                 // height of the in-canvas status bar
 const LEVELS = 10;
 const STEP_TIME = 0.085;        // seconds to walk one cell
@@ -213,6 +215,10 @@ async function levelDone() {
   state = "clear";
   const timeBonus = Math.floor(timeLeft) * 5;
   const gained = 100 * level + timeBonus;
+  if (level === 1) Kit.badge(ID, "first-escape", "First Escape", "Found your way out of the first maze.");
+  if (level === 4) Kit.badge(ID, "lights-out", "Lights Out", "Escaped your first dark maze.");
+  if (level >= 3 && timeLeft >= timeMax / 2) Kit.badge(ID, "quick-feet", "Quick Feet", "Cleared level 3 or later with half the clock still left.");
+  if (coins.length && coins.every((c) => c.got)) Kit.badge(ID, "treasure-hunter", "Treasure Hunter", "Grabbed every coin in a maze before escaping.");
   score += gained;
   updateHud();
   Kit.sfx("win");
@@ -241,7 +247,10 @@ async function levelDone() {
 
 async function finishRun(won) {
   state = "over";
-  if (won) score += 1000;
+  if (won) {
+    score += 1000;
+    Kit.badge(ID, "escape-artist", "Escape Artist", "Escaped all 10 mazes.");
+  }
   updateHud();
   loop.stop();
   draw();
@@ -274,6 +283,7 @@ function tryStep(dir) {
   player.y += DIRS[dir].dy;
   player.t = 0;
   player.face = dir;
+  if (DIRS[dir].dx) sideFace = DIRS[dir].dx;
   return true;
 }
 
@@ -433,6 +443,7 @@ function drawDoor() {
 }
 
 function drawPlayer() {
+  // The player's own BlockOS avatar standing in its cell.
   const c = { x: ox + player.fx * cell + cell / 2, y: oy + player.fy * cell + cell / 2 };
   const s = cell * 0.66;
   const hop = player.t < 1 ? Math.sin(player.t * Math.PI) * cell * 0.08 : 0;
@@ -440,18 +451,7 @@ function drawPlayer() {
   ctx.beginPath();
   ctx.ellipse(c.x, c.y + s * 0.42, s * 0.42, s * 0.14, 0, 0, Math.PI * 2);
   ctx.fill();
-  Kit.brick(ctx, c.x - s / 2, c.y - s / 2 - hop, s, s, "#f97316", Math.max(2, s * 0.18));
-  // face looks the way we're walking
-  const d = DIRS[player.face];
-  const ex = d.dx * s * 0.12, ey = d.dy * s * 0.1;
-  ctx.fillStyle = "#fff";
-  const eye = Math.max(2, s * 0.2);
-  ctx.fillRect(c.x - s * 0.24 + ex - eye / 2, c.y - s * 0.12 - hop + ey - eye / 2, eye, eye);
-  ctx.fillRect(c.x + s * 0.24 + ex - eye / 2, c.y - s * 0.12 - hop + ey - eye / 2, eye, eye);
-  ctx.fillStyle = "#111";
-  const pupil = Math.max(1.5, eye * 0.5);
-  ctx.fillRect(c.x - s * 0.24 + ex * 1.6 - pupil / 2, c.y - s * 0.12 - hop + ey * 1.6 - pupil / 2, pupil, pupil);
-  ctx.fillRect(c.x + s * 0.24 + ex * 1.6 - pupil / 2, c.y - s * 0.12 - hop + ey * 1.6 - pupil / 2, pupil, pupil);
+  Kit.drawAvatar(ctx, c.x, c.y + s * 0.45 - hop, cell * 0.74, { look: ME.avatar, facing: sideFace, walk: player.t < 1 ? player.bob : 0 });
 }
 
 function drawFog() {

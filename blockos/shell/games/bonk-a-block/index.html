@@ -14,6 +14,8 @@ const ID = "bonk-a-block";
 const FONT = '"Noto Sans","DejaVu Sans",system-ui,sans-serif';
 const ROUND_TIME = 60;
 const { canvas, ctx, W, H } = Kit.stage(900, 600);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
 
 // Key layouts: QWE/ASD/ZXC (plus numpad) for 3x3, 1234/QWER/ASDF/ZXCV for 4x4.
 const KEYS3 = [["KeyQ", "KeyW", "KeyE"], ["KeyA", "KeyS", "KeyD"], ["KeyZ", "KeyX", "KeyC"]];
@@ -133,6 +135,7 @@ function bonk(i) {
     shake = 0.5;
     burst(h.x, h.y - 40 * scale, ["#f97316", "#facc15", "#ef4444", "#52525b", "#a1a1aa"], 30, 420);
     floatText(h.x, h.y - 90 * scale, "-25  -3s", "#fca5a5", 26);
+    badge("kaboom", "Kaboom", "Bonk a bomb. Oops!");
     Kit.sfx("hit");
     updateHud();
     return;
@@ -155,12 +158,15 @@ function bonk(i) {
   burst(h.x, h.y - 60 * scale, ["#fef08a", "#fde047", "#ffffff"], 10, 260, 300);
   if (c.type === "gold") {
     timeLeft = Math.min(ROUND_TIME, timeLeft + 2);
+    badge("gold", "Golden Bonk", "Bonk a gold critter.");
     floatText(h.x, h.y - 100 * scale, `+${pts}  +2s`, "#fde047", 28);
     Kit.sfx("coin");
   } else {
     floatText(h.x, h.y - 100 * scale, "+" + pts, "#ffffff", 24);
     Kit.sfx(combo % 5 === 0 ? "coin" : "score");
   }
+  if (combo >= 15) badge("combo-15", "Combo Crusher", "Reach a 15-bonk combo.");
+  if (score >= 1000) badge("score-1000", "Bonk Master", "Score 1000 points in one round.");
   if (combo > 0 && combo % 5 === 0) banner = { text: `COMBO x${comboMult().toFixed(1)}`, life: 1 };
   updateHud();
 }
@@ -233,6 +239,7 @@ async function endRound() {
   Kit.sfx("win");
   const best = Kit.finish(ID, score);
   const acc = swings ? Math.round((bonks / swings) * 100) : 0;
+  if (bonks >= 30 && acc >= 90) badge("sharp-eye", "Sharp Eye", "Finish a round with 30+ bonks and 90% accuracy.");
   await Kit.overlay("Time's up!", `Score: ${score}\nBest: ${best}\n\nBonks: ${bonks}\nBest combo: ${bestCombo}\nAccuracy: ${acc}%`, "Play again");
   reset();
   game.start();
@@ -431,6 +438,12 @@ function draw() {
   Kit.brick(ctx, 68, 23, Math.max(10, 246 * pct), 20, pct < 0.2 ? "#ef4444" : pct < 0.5 ? "#facc15" : "#22c55e", 6);
   text(Math.ceil(timeLeft) + "s", 330, 33, 18, "#fff", "left");
   text("SCORE " + score, 400, 33, 20, "#fff", "left");
+  // player name, Roblox style
+  ctx.font = `800 16px ${FONT}`;
+  let nm = ME;
+  while (nm.length > 3 && ctx.measureText(nm).width > 170) nm = nm.slice(0, -1);
+  if (nm !== ME) nm += "...";
+  text(nm, W - 20, 33, 16, "#bbf7d0", "right");
   if (combo >= 2) {
     text(`COMBO ${combo}`, 560, 26, 16, "#fde047", "left");
     text(`x${comboMult().toFixed(1)} points`, 560, 46, 12, "#bbf7d0", "left", 700);

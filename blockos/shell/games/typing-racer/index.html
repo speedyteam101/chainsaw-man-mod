@@ -24,6 +24,7 @@ const ID = "typing-racer";
 const FONT = "'Noto Sans', 'DejaVu Sans', sans-serif";
 const MONO = "'DejaVu Sans Mono', 'Noto Sans Mono', 'Consolas', monospace";
 const { canvas, ctx, W, H } = Kit.stage(960, 600);
+const ME = Kit.player();
 
 const SENTENCES = [
   "The quick brown fox jumps over the lazy dog.",
@@ -65,7 +66,7 @@ const LEVELS = {
   champ: { name: "Champion", wpm: [50, 62, 78] },
 };
 const CAR_COLORS = [
-  { body: "#22c55e", dark: "#15803d", name: "You" },
+  { body: "#22c55e", dark: "#15803d", name: ME.name.slice(0, 10) },
   { body: "#ef4444", dark: "#b91c1c", name: "Blaze" },
   { body: "#3b82f6", dark: "#1d4ed8", name: "Bolt" },
   { body: "#facc15", dark: "#ca8a04", name: "Zippy" },
@@ -252,6 +253,12 @@ function playerFinish() {
   if (place === 1) for (let i = 0; i < 80; i++) confetti.push({ x: Kit.rand(0, W), y: Kit.rand(-200, 0), vy: Kit.rand(80, 200), vx: Kit.rand(-40, 40), c: Kit.pick(["#ef4444", "#facc15", "#22c55e", "#3b82f6", "#a855f7"]), r: Math.random() * 6 });
   const best = Kit.finish(ID, wpm);
   updateHud();
+  Kit.badge(ID, "first-finish", "First Finish", "Crossed the finish line in a typing race.");
+  if (place === 1) Kit.badge(ID, "checkered-flag", "Checkered Flag", "Won a typing race.");
+  if (place === 1 && levelKey === "champ") Kit.badge(ID, "champion-typist", "Champion Typist", "Won a race on Champion difficulty.");
+  if (wpm >= 40) Kit.badge(ID, "swift-fingers", "Swift Fingers", "Finished a race at 40 WPM or faster.");
+  if (wpm >= 70) Kit.badge(ID, "lightning-keys", "Lightning Keys", "Finished a race at 70 WPM or faster.");
+  if (acc === 100) Kit.badge(ID, "flawless-typist", "Flawless Typist", "Finished a race with 100% accuracy.");
   setTimeout(async () => {
     const ord = ["1st", "2nd", "3rd", "4th"][place - 1];
     await Kit.overlay(place === 1 ? "You win!" : `You finished ${ord}`,
@@ -324,6 +331,15 @@ function drawCar(c) {
   ctx.fillStyle = "#bfe3ff";
   ctx.fillRect(-2, -20, 14, 10);
   ctx.fillRect(-20, -20, 14, 10);
+  if (c.lane === 0) {
+    // you at the wheel: your own BlockOS avatar, seen through the front window
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-2, -20, 14, 10);
+    ctx.clip();
+    Kit.drawAvatar(ctx, 4, 16, 36, { look: ME.avatar, facing: 1 });
+    ctx.restore();
+  }
   // spoiler
   ctx.fillStyle = c.dark;
   ctx.fillRect(-48, -16, 8, 10);

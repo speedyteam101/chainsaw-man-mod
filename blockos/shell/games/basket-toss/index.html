@@ -12,6 +12,8 @@
 "use strict";
 const ID = "basket-toss";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const LOOK = Kit.player().avatar;
 
 const FLOOR = 470;
 const GRAVITY = 1350;
@@ -179,6 +181,11 @@ function score1(b) {
   else if (streak > 3 && streak % 3 === 0) popups.push({ x: W / 2, y: 150, text: `Unstoppable! x${multiplier()}`, life: 1.6, color: "#fb923c", big: true });
   if (makes % 4 === 0) popups.push({ x: W / 2, y: 200, text: levelText(level()), life: 2, color: "#22c55e", big: true });
   Kit.sfx(swish ? "coin" : "score");
+  badge("first-basket", "First Bucket", "Sink your first basket.");
+  if (swish) badge("swish", "Nothing but Net", "Sink a swish without touching the rim or board.");
+  if (b.three) badge("downtown", "From Downtown", "Sink a 3-pointer from behind the line.");
+  if (streak >= 6) badge("on-fire", "Red Hot", "Make 6 baskets in a row.");
+  if (score >= 60) badge("score-60", "Sixty Club", "Score 60 points in one round.");
   for (let i = 0; i < 14; i++) {
     const a = Kit.rand(-Math.PI, 0);
     particles.push({ x: hoop.x + RIM_W / 2, y: hoop.y + 20, vx: Math.cos(a) * Kit.rand(60, 200), vy: Math.sin(a) * Kit.rand(60, 200), life: 0.7, color: Kit.pick(["#facc15", "#fb923c", "#fff"]) });
@@ -362,27 +369,19 @@ function drawShooter() {
   const ready = cooldown <= 0 && state === "play";
   ctx.fillStyle = "rgba(0,0,0,.25)";
   ctx.beginPath(); ctx.ellipse(x, f + 2, 26, 6, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = "#1f2937";
-  ctx.fillRect(x - 13, f - 8, 12, 8); ctx.fillRect(x + 2, f - 8, 12, 8);
-  ctx.fillStyle = "#fcd34d";
-  ctx.fillRect(x - 11, f - 40, 9, 32); ctx.fillRect(x + 3, f - 40, 9, 32);
-  ctx.fillStyle = "#1d4ed8";
-  ctx.fillRect(x - 14, f - 52, 29, 18);
-  Kit.brick(ctx, x - 15, f - 92, 30, 42, "#2563eb", 4);
-  ctx.fillStyle = "#fff";
-  ctx.font = "bold 16px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("7", x, f - 64);
-  Kit.brick(ctx, x - 12, f - 118, 24, 24, "#fcd34d", 5);
-  ctx.fillStyle = "#1f2937";
-  ctx.fillRect(x + 3, f - 110, 4, 5);
-  ctx.fillRect(x - 13, f - 120, 26, 6);
-  // arms reach up toward the ball
-  ctx.fillStyle = "#fcd34d";
+  // the player's own avatar, standing at the spot
+  const h = 120, u = h / 5.2;
+  const ax = x - 10;   // stand just behind the ball so the face stays visible
+  Kit.drawAvatar(ctx, ax, f, h, { look: LOOK, facing: 1, walk: -0.45 + Math.sin(time * 2) * 0.04 });
+  // shooting arm reaches up toward the ball
+  const sx = ax + u * 0.2, sy = f - 3.8 * u, hp = handPos();
+  const reach = ready ? Math.atan2(hp.y - sy, hp.x - sx) : -1.2;
+  const len = ready ? Math.max(u * 1.6, Math.hypot(hp.x - sx, hp.y - sy) - 8) : u * 1.9;
+  ctx.fillStyle = LOOK.arms;
   ctx.save();
-  ctx.translate(x + 8, f - 86);
-  ctx.rotate(ready ? -1.9 : -1.2);
-  ctx.fillRect(0, -4, 30, 8);
+  ctx.translate(sx, sy);
+  ctx.rotate(reach);
+  ctx.fillRect(0, -u * 0.4, len, u * 0.8);
   ctx.restore();
   if (ready) drawBall({ x: handPos().x, y: handPos().y, age: 0, vx: 1, spin: 0 });
 }
