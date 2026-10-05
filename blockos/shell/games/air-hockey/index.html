@@ -19,6 +19,9 @@
 "use strict";
 const ID = "air-hockey";
 const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player().name;
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+let worstGap = 0;   // biggest deficit this match (for the comeback badge)
 
 const T = { x1: 40, y1: 40, x2: 920, y2: 500 };   // table playing area
 const MID = (T.x1 + T.x2) / 2;
@@ -38,6 +41,7 @@ let you, cpu, puck, goals, state, pauseT, msg, msgT, time, trail, sparks, pointe
 
 function newMatch() {
   goals = [0, 0];
+  worstGap = 0;
   you = { x: T.x1 + 110, y: CYM, vx: 0, vy: 0, px: T.x1 + 110, py: CYM };
   cpu = { x: T.x2 - 110, y: CYM, vx: 0, vy: 0, px: T.x2 - 110, py: CYM, mode: "defend" };
   pointer = { x: you.x, y: you.y, active: false };
@@ -53,8 +57,10 @@ function faceoff(side) {
 }
 
 function updateHud() {
-  Kit.hud(`You ${goals[0]} - ${goals[1]} CPU<small>${diff.name} · Best ${Kit.best(ID) ?? 0}</small>`);
+  Kit.hud(`${escHtml(ME)} ${goals[0]} - ${goals[1]} CPU<small>${diff.name} · Best ${Kit.best(ID) ?? 0}</small>`);
 }
+
+function escHtml(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 
 // ---------- input ----------
 canvas.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -176,6 +182,8 @@ function bump() {
 
 function scored(side) {
   goals[side]++;
+  worstGap = Math.max(worstGap, goals[1] - goals[0]);
+  if (side === 0) badge("first-goal", "First Goal", "Score your first goal in Air Hockey.");
   state = "goal";
   pauseT = 1.4;
   msg = side === 0 ? "GOAL!" : "CPU scores";
@@ -197,6 +205,12 @@ async function endMatch() {
   const won = goals[0] > goals[1];
   const pts = Math.round((goals[0] * 100 + (won ? 500 : 0) + (won ? (WIN - goals[1]) * 50 : 0)) * diff.mult);
   const best = Kit.finish(ID, pts);
+  if (won) {
+    badge("first-win", "Table Champion", "Win an Air Hockey match.");
+    if (goals[1] === 0) badge("shutout", "Shutout", "Win a match without letting the CPU score.");
+    if (diff === DIFFS.hard) badge("hard-win", "Hockey Pro", "Beat the Hard CPU.");
+    if (worstGap >= 3) badge("comeback", "Comeback Kid", "Win a match after trailing by 3 or more goals.");
+  }
   Kit.sfx(won ? "win" : "lose");
   await Kit.overlay(won ? "You win!" : "CPU wins", `Final: You ${goals[0]} - ${goals[1]} CPU (${diff.name})\nPoints: ${pts}   Best: ${best}`, "Play again");
   await pickDifficulty();
@@ -273,7 +287,9 @@ function drawTable() {
   ctx.fillText(`${goals[1]}`, MID + 40, 30);
   ctx.fillStyle = "rgba(255,255,255,.6)";
   ctx.font = "bold 12px system-ui, sans-serif";
-  ctx.fillText("YOU", MID - 80, 28);
+  ctx.textAlign = "right";
+  ctx.fillText(ME.toUpperCase().slice(0, 14), MID - 62, 28);
+  ctx.textAlign = "center";
   ctx.fillText("CPU", MID + 80, 28);
 }
 

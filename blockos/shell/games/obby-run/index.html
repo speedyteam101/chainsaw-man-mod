@@ -17,6 +17,8 @@ const WORLD_H = ROWS * T;
 const LAVA_Y = 15 * T + 12;      // lava surface
 const { ctx, W, H } = Kit.stage(960, 540);
 const FONT = "'Noto Sans', 'DejaVu Sans', 'Segoe UI', sans-serif";
+const ME = Kit.player();
+let padBounces = 0, stageDeaths0 = 0;
 
 // Player tuning
 const PW = 22, PH = 30;
@@ -152,6 +154,7 @@ function buildStage(i) {
   camY = WORLD_H - H;
   bannerT = 2.4;
   stageStart = runTime;
+  stageDeaths0 = deaths;
 }
 
 function spawnPlayer() {
@@ -161,6 +164,7 @@ function spawnPlayer() {
 }
 
 function startRun() {
+  padBounces = 0;
   runTime = 0;
   deaths = 0;
   worldT = 0;
@@ -322,6 +326,7 @@ function updatePlayer(dt) {
       p.sx = 0.7; p.sy = 1.4;
       pd.squish = 1;
       Kit.sfx("jump");
+      if (++padBounces === 10) Kit.badge(ID, "bounce-house", "Bounce House", "Launched off 10 jump pads.");
       burst(pd.x + pd.w / 2, pd.y, ["#facc15", "#fde68a"], 8, 160);
     }
   }
@@ -368,6 +373,8 @@ function clearStage() {
   stateT = 1.8;
   splitText = fmt(runTime - stageStart);
   Kit.sfx("win");
+  if (stageIndex === 0) Kit.badge(ID, "first-steps", "First Steps", "Cleared the first obby stage.");
+  if (deaths === stageDeaths0) Kit.badge(ID, "clean-stage", "Not a Scratch", "Cleared a stage without dying once.");
   burst(goalRect.x + goalRect.w / 2, goalRect.y + 20, ["#facc15", "#22c55e", "#3b82f6", "#ec4899", "#ffffff"], 40, 380);
 }
 
@@ -376,6 +383,9 @@ async function winRun() {
   game.stop();
   const score = Number(runTime.toFixed(2));
   const best = Kit.finish(ID, score, true);
+  Kit.badge(ID, "obby-complete", "Obby Champion", "Finished all 4 Obby Run stages.");
+  if (deaths === 0) Kit.badge(ID, "deathless", "Lava Proof", "Finished the whole obby without a single death.");
+  if (score < 120) Kit.badge(ID, "speedrunner", "Speedrunner", "Finished the whole obby in under 2 minutes.");
   updateHud(true);
   await Kit.overlay("Obby Complete!", `Time: ${fmt(score)}\nDeaths: ${deaths}\nBest: ${fmt(best)}`, "Play again");
   startRun();
@@ -627,28 +637,12 @@ function drawGoal() {
 }
 
 function drawPlayer() {
+  // The player's own BlockOS avatar; the hitbox (PW x PH) is unchanged.
   const p = player;
   ctx.save();
   ctx.translate(Math.round(p.x + p.w / 2), Math.round(p.y + p.h));
-  ctx.scale(p.sx * p.face, p.sy);
-  const swing = Math.sin(p.run) * 4;
-  const air = !p.onGround;
-  // legs
-  ctx.fillStyle = "#1e3a8a";
-  ctx.fillRect(-10, -10 + (air ? -2 : Math.max(0, swing)), 9, 10 - (air ? 0 : Math.max(0, swing)));
-  ctx.fillRect(1, -10 + (air ? 0 : Math.max(0, -swing)), 9, 10 - (air ? 0 : Math.max(0, -swing)));
-  // arms
-  ctx.fillStyle = "#facc15";
-  ctx.fillRect(-15, -21 + (air ? -6 : swing), 5, 11);
-  ctx.fillRect(10, -21 + (air ? -6 : -swing), 5, 11);
-  // torso
-  Kit.brick(ctx, -11, -21, 22, 12, "#3b82f6", 3);
-  // head
-  Kit.brick(ctx, -8, -31, 16, 11, "#facc15", 3);
-  ctx.fillStyle = "#111827";
-  ctx.fillRect(1, -28, 2, 3);
-  ctx.fillRect(5, -28, 2, 3);
-  ctx.fillRect(2, -23, 4, 1);
+  ctx.scale(p.sx, p.sy);
+  Kit.drawAvatar(ctx, 0, 0, 33, { look: ME.avatar, facing: p.face, walk: p.run, air: !p.onGround, name: ME.name });
   ctx.restore();
 }
 
