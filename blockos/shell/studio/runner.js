@@ -13,7 +13,9 @@
 window.StudioRunner = (function () {
   "use strict";
 
-  const SANDBOX = "allow-scripts allow-pointer-lock";
+  // allow-forms lets the kit's chat box use its submit event; the policy's form-action 'none'
+  // still stops any form from sending data anywhere.
+  const SANDBOX = "allow-scripts allow-pointer-lock allow-forms";
   const GAMES_URL = new URL("games/", location.href).href;
   const MAX_DATA = 200000;   // characters of saved data per game
 

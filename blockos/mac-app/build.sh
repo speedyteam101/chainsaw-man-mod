@@ -38,7 +38,7 @@ node -e '
 ' "$STAGE/package.json"
 (cd "$STAGE" && npm install --omit=dev --no-audit --no-fund --silent)   # the game server's "ws" library
 (cd "$ROOT/shell" && cp -R index.html config.js style.css app.js avatar.js assets studio "$STAGE/shell/")
-cp "$ROOT/shell/games/catalog.js" "$ROOT/shell/games/kit.js" "$ROOT/shell/games/kit.css" "$ROOT/shell/games/kit3d.js" "$ROOT/shell/games/touch.js" "$STAGE/shell/games/"
+cp "$ROOT/shell/games/catalog.js" "$ROOT/shell/games/kit.js" "$ROOT/shell/games/kit.css" "$ROOT/shell/games/kit3d.js" "$ROOT/shell/games/easy3d.js" "$ROOT/shell/games/touch.js" "$STAGE/shell/games/"
 cp -R "$ROOT/shell/games/lib" "$STAGE/shell/games/lib"
 node -e '
   global.window = {};

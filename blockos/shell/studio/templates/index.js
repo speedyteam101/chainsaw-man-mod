@@ -1,5 +1,6 @@
 // Starter templates for the Create studio. Each one is a complete game in templates/<file>.
 window.STUDIO_TEMPLATES = [
+  { id: "easy3d", title: "Easy 3D obby", description: "The easiest way to make a 3D game: name your parts, then use simple commands like killOnTouch(\"lava block\").", genre: "Obby", color: "#eab308", file: "easy3d.html" },
   { id: "blank", title: "Blank game", description: "The smallest start: your avatar walks around with the arrow keys and picks up coins.", genre: "Arcade", color: "#64748b", file: "blank.html" },
   { id: "clicker", title: "Clicker", description: "Click a big brick to earn points, buy upgrades and keep your progress.", genre: "Simulator", color: "#ef4444", file: "clicker.html" },
   { id: "platformer", title: "Platformer", description: "Run and jump through a side-scrolling level you draw with letters. Grab coins, reach the flag.", genre: "Adventure", color: "#f97316", file: "platformer.html" },

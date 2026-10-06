@@ -476,8 +476,9 @@ select {
 .st-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 12px; }
 .st-editor { position: relative; display: flex; min-height: 0; overflow: hidden; background: #0f1115; border: 1px solid var(--line); border-radius: 12px;
   --code-font: "DejaVu Sans Mono", "Menlo", "Consolas", monospace; }
-.st-gutter, .st-code pre, .st-code textarea { font: 13.5px/20px var(--code-font); tab-size: 2; }
-.st-gutter { flex: none; width: 46px; padding: 10px 8px 10px 0; text-align: right; color: #5b6470; white-space: pre; user-select: none; background: #0c0e11; overflow: hidden; }
+.st-gutter > div, .st-code pre, .st-code textarea { font: 13.5px/20px var(--code-font); tab-size: 2; }
+.st-gutter { flex: none; width: 46px; text-align: right; color: #5b6470; white-space: pre; user-select: none; background: #0c0e11; overflow: hidden; }
+.st-gutter > div { padding: 10px 8px 10px 0; will-change: transform; }
 .st-gutter b { color: #ff6b6b; }
 .st-code { position: relative; flex: 1; min-width: 0; overflow: hidden; }
 .st-code pre, .st-code textarea { position: absolute; inset: 0; margin: 0; padding: 10px 12px; white-space: pre; border: 0; }

@@ -26,7 +26,7 @@ for name in ("style.css", "app.js", "avatar.js", "config.js"):
     shutil.copy2(SHELL / name, OUT / name)
 shutil.copytree(SHELL / "assets", OUT / "assets")
 shutil.copytree(SHELL / "studio", OUT / "studio")
-for name in ("catalog.js", "kit.js", "kit.css", "kit3d.js", "touch.js"):
+for name in ("catalog.js", "kit.js", "kit.css", "kit3d.js", "easy3d.js", "touch.js"):
     shutil.copy2(SHELL / "games" / name, OUT / "games" / name)
 shutil.copytree(SHELL / "games" / "lib", OUT / "games" / "lib")
 for game_id in ids:

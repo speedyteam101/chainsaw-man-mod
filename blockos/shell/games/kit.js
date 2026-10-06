@@ -436,6 +436,8 @@
   ].map(([name, ids]) => [name, [...new Set(ids)].filter((i) => QUICK_CHAT[i])]);
 
   function serverAddress() {
+    // Games made by players run in BlockOS's sandbox (studio/runner.js), which passes the address in BLOCKOS_SERVER.
+    if (typeof window.BLOCKOS_SERVER === "string") return window.BLOCKOS_SERVER;
     try { return localStorage.getItem("blockos.server") || ""; } catch (_) { return ""; }
   }
 
@@ -481,8 +483,7 @@
   // Which server of this game to play on ("s1", "s2", ...). BlockOS opens games with
   // ?server=s2 from the server list; the room name gets the server added, e.g. "main-s2".
   const SERVER = (() => {
-    // Community games run from BlockOS's sandbox (studio/runner.js), which sets BLOCKOS_SERVER instead.
-    const s = window.BLOCKOS_SERVER || new URLSearchParams(location.search).get("server");
+    const s = new URLSearchParams(location.search).get("server");
     return /^s\d{1,3}$/.test(s || "") ? s : "s1";
   })();
   const roomName = (room) => `${String(room || "main").slice(0, 16)}-${SERVER}`;

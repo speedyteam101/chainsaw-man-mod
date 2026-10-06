@@ -46,6 +46,67 @@ Go to that line in your code and look for things like:</p>
 `,
   },
   {
+    id: "easy3d",
+    title: "Easy 3D",
+    html: `
+<p>The easiest way to make a 3D game. Start from the <b>Easy 3D obby</b> template, or put this in a new game:</p>
+<pre><code>&lt;!doctype html&gt;
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;My Obby&lt;/title&gt;&lt;link rel="stylesheet" href="kit.css"&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;script src="kit.js"&gt;&lt;/script&gt;
+&lt;script type="module"&gt;
+import "./easy3d.js";
+
+part("part 1", 0, 0, -12);
+color("part 1", "red");
+killOnTouch("part 1");
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+<h3>How it works</h3>
+<ul>
+  <li>Make a part and give it a name: <code>part("part 1", x, y, z)</code>. You can add a size too: <code>part("wall", 0, 3, -20, 10, 6, 1)</code> (width, height, depth).</li>
+  <li><b>x</b> is left and right, <b>y</b> is up, and <b>z</b> is forward: more negative means further ahead.</li>
+  <li>Then use the part's name to give it powers. Names can be anything, like <code>"part 1"</code> or <code>"Big Wall"</code>, but must match exactly.</li>
+  <li>You start on a yellow spawn pad at 0, 0, 0 (move it with <code>spawn(x, y, z)</code>). The game starts by itself.</li>
+  <li>Capital letters in commands don't matter: <code>killOnTouch</code> and <code>killontouch</code> both work.</li>
+</ul>
+<h3>Looks</h3>
+<ul>
+  <li><code>color("part 1", "blue")</code>: red, orange, yellow, gold, lime, green, teal, cyan, lightblue, blue, darkblue, purple, pink, brown, white, gray, black, or a color code like <code>"#ff8800"</code>.</li>
+  <li><code>glow("part 1")</code>, <code>glass("part 1")</code>, <code>wood("part 1")</code>, <code>smooth("part 1")</code> (no studs).</li>
+  <li><code>size("part 1", width, height, depth)</code>, <code>moveTo("part 1", x, y, z)</code>.</li>
+  <li><code>sky("darkblue")</code>, <code>sign("Hello!", x, y, z)</code> for floating words.</li>
+</ul>
+<h3>Powers</h3>
+<ul>
+  <li><code>killOnTouch("part 1")</code>: touching it sends you back to your last checkpoint.</li>
+  <li><code>checkpoint("part 2")</code>: touching it saves your place (it turns green).</li>
+  <li><code>finish("end")</code>: touching it wins the game.</li>
+  <li><code>bounce("part 3", 100)</code>: a trampoline. Bigger numbers bounce higher.</li>
+  <li><code>disappearOnTouch("part 4")</code>: vanishes just after you touch it, then comes back.</li>
+  <li><code>ghost("part 5")</code>: you can walk through it.</li>
+  <li><code>moveSideToSide("part 6", 8, 1)</code>, <code>moveUpAndDown(...)</code>, <code>moveForwardAndBack(...)</code>: the numbers are how far and how fast. You can ride on moving parts.</li>
+  <li><code>spin("bar", 1)</code>: spins round. Spinning parts are ghosts, so add <code>killOnTouch</code> for a spinning kill bar.</li>
+  <li><code>coin(x, y, z)</code>: a coin to collect.</li>
+  <li><code>lava()</code>: lava far below, so falling sends you back.</li>
+  <li><code>walkSpeed(16)</code> and <code>jumpPower(52)</code> change how fast you walk and how high you jump.</li>
+  <li><code>hide("part 1")</code> and <code>show("part 1")</code>.</li>
+</ul>
+<h3>Your own code</h3>
+<pre><code>onTouch("button", function () {
+  message("You found the secret!");
+  hide("secret door");
+});
+
+forever(function (dt) {
+  // runs again and again while you play
+});</code></pre>
+<p>If you spell a name wrong, the Output panel tells you which part it couldn't find.</p>
+`,
+  },
+  {
     id: "drawing",
     title: "Drawing and moving",
     html: `

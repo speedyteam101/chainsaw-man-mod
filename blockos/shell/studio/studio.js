@@ -160,7 +160,7 @@ window.BlockStudio = function (ctx) {
       </div>
       <div class="st-main">
         <div class="st-editor">
-          <div class="st-gutter" id="stGutter" aria-hidden="true"></div>
+          <div class="st-gutter" aria-hidden="true"><div id="stGutter"></div></div>
           <div class="st-code"><pre id="stHi" aria-hidden="true"></pre>
             <textarea id="stCode" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Code"></textarea></div>
         </div>

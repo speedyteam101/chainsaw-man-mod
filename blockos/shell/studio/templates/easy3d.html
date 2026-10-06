@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Easy Obby</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY 3D =====
+// 1. Make a part:      part("name", x, y, z)
+//    x = left/right, y = up, z = forward (more negative = further ahead)
+// 2. Give it powers:   color("name", "red")   killOnTouch("name")   glow("name")
+// Press Run (Ctrl+Enter) to play. The full list of commands is at the bottom.
+
+sky("lightblue");
+lava();                          // lava far below: fall in and you go back to your checkpoint
+
+// ----- Stage 1: jump across -----
+part("jump 1", 0, 0, -12);
+part("jump 2", 0, 1, -20);
+part("jump 3", 0, 2, -28);
+color("jump 1", "green");
+color("jump 2", "green");
+color("jump 3", "green");
+
+part("checkpoint 1", 0, 2, -40, 10, 1, 10);
+checkpoint("checkpoint 1");
+
+// ----- Stage 2: don't touch the red! -----
+part("bridge", 0, 2, -60, 4, 1, 30);
+color("bridge", "blue");
+
+part("kill block", 0, 3, -60, 4, 1, 2);
+color("kill block", "red");
+glow("kill block");
+killOnTouch("kill block");
+
+part("slider", 0, 2, -82);
+color("slider", "yellow");
+moveSideToSide("slider", 7, 1.2);     // distance 7, speed 1.2
+
+coin(0, 5, -52);
+coin(0, 5, -68);
+
+// ----- Stage 3: bounce to the finish -----
+part("trampoline", 0, 2, -92, 6, 1, 6);
+color("trampoline", "pink");
+bounce("trampoline", 110);
+
+part("finish", 0, 12, -104, 10, 1, 10);
+color("finish", "gold");
+glow("finish");
+finish("finish");
+sign("FINISH", 0, 18, -104);
+
+// ===== ALL THE COMMANDS =====
+// part(name, x, y, z, width, height, depth)   size(name, width, height, depth)   moveTo(name, x, y, z)
+// color(name, "red")  glow(name)  glass(name)  wood(name)  smooth(name)  ghost(name)
+// killOnTouch(name)   checkpoint(name)   finish(name)   bounce(name, power)   disappearOnTouch(name)
+// moveSideToSide(name, distance, speed)   moveUpAndDown(...)   moveForwardAndBack(...)   spin(name, speed)
+// coin(x, y, z)   sign("text", x, y, z)   hide(name)   show(name)
+// sky("blue")   lava()   spawn(x, y, z)   walkSpeed(16)   jumpPower(52)   message("Hi!")
+// onTouch(name, function () { message("You touched it!"); });
+// forever(function (dt) { ... });   runs again and again while you play
+</script>
+</body>
+</html>
