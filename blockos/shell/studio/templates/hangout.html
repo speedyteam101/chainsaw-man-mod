@@ -173,8 +173,10 @@ Kit.loop(update, draw).start();
 // Each button with data-key="..." holds that key down while a finger is on it.
 document.querySelectorAll("[data-key]").forEach((btn) => {
   const send = (type) => document.body.dispatchEvent(new KeyboardEvent(type, { code: btn.dataset.key, bubbles: true }));
-  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add("on"); send("keydown"); });
-  const up = () => { if (btn.classList.contains("on")) { btn.classList.remove("on"); send("keyup"); } };
+  let downAt = 0;
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add("on"); downAt = Date.now(); send("keydown"); });
+  // Let go of the key, but hold it at least 0.1 seconds so even a super quick tap counts.
+  const up = () => { if (btn.classList.contains("on")) { btn.classList.remove("on"); setTimeout(() => send("keyup"), Math.max(0, 100 - (Date.now() - downAt))); } };
   btn.addEventListener("pointerup", up);
   btn.addEventListener("lostpointercapture", up);
 });
