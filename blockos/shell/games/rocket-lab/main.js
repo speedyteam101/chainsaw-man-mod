@@ -339,7 +339,7 @@ function renderShop() {
       btn = `<button disabled>Locked</button>`;
     }
     const sub = !save.owned[k] && !unlocked(k) ? `Unlocks when you ${GOALS[p.need].text}.` : `${partStat(k)}. ${p.info}`;
-    return `<div class="card ${unlocked(k) ? "" : "locked"}" title="${esc(p.info)}"><i class="ic" style="background:${ICON[k]}"></i><b>${esc(p.name)}</b>${btn}<small>${esc(sub)}</small></div>`;
+    return `<div class="card ${save.owned[k] || unlocked(k) ? "" : "locked"}" title="${esc(p.info)}"><i class="ic" style="background:${ICON[k]}"></i><b>${esc(p.name)}</b>${btn}<small>${esc(sub)}</small></div>`;
   }).join("");
   $("shop").innerHTML = `<h2>Parts <small>adds to stage ${selStage + 1}</small></h2>${cards}`;
   placePanels();
@@ -981,36 +981,34 @@ function updateFlightHud() {
 function drawGauge() {
   const f = flight;
   const cv = $("gauge"), g = cv.getContext("2d");
-  const W = cv.width, H = cv.height, cx = W / 2, cy = H - 10, R = 80;
+  const W = cv.width, H = cv.height, cx = W / 2, cy = H / 2, R = H / 2 - 8;
   g.clearRect(0, 0, W, H);
   g.fillStyle = "rgba(18,20,24,.75)";
-  g.beginPath(); g.arc(cx, cy, R + 8, Math.PI, 0); g.fill();
+  g.beginPath(); g.arc(cx, cy, R + 7, 0, Math.PI * 2); g.fill();
   g.strokeStyle = "#475569"; g.lineWidth = 2;
-  g.beginPath(); g.arc(cx, cy, R, Math.PI, 0); g.stroke();
-  // ticks every 30 degrees from straight up (0) to sideways (90)
+  g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+  // up / sideways / down ticks
   g.fillStyle = "#94a3b8";
-  g.font = "700 10px sans-serif";
-  g.textAlign = "center";
-  for (const d of [-90, -45, 0, 45, 90]) {
+  for (let d = 0; d < 360; d += 45) {
     const a = (d * Math.PI) / 180;
-    g.fillRect(cx + Math.sin(a) * (R - 6) - 1, cy - Math.cos(a) * (R - 6) - 1, 3, 3);
+    g.fillRect(cx + Math.sin(a) * (R - 4) - 1.5, cy - Math.cos(a) * (R - 4) - 1.5, 3, 3);
   }
-  const mark = (ang, color, len, w) => {
-    const a = Math.max(-Math.PI / 2 - 0.2, Math.min(Math.PI / 2 + 0.2, ang));
+  g.font = "800 9px sans-serif"; g.textAlign = "center"; g.fillStyle = "#cbd5e1";
+  g.fillText("UP", cx, cy - R + 13);
+  const mark = (a, color, len, w) => {
     g.strokeStyle = color; g.lineWidth = w;
     g.beginPath(); g.moveTo(cx + Math.sin(a) * (R - len), cy - Math.cos(a) * (R - len)); g.lineTo(cx + Math.sin(a) * (R + 6), cy - Math.cos(a) * (R + 6)); g.stroke();
   };
   const pro = f.speed > 20 ? Math.atan2(f.vSide, f.vUp) : 0;
   const guide = guideTilt(f, F.orbit);
-  if (f.lifted && !f.capsuleOnly) { mark(guide, "#facc15", 18, 5); mark(pro, "#4ade80", 12, 4); }
-  // the rocket
+  if (f.lifted && !f.capsuleOnly) { mark(guide, "#facc15", 14, 5); mark(pro, "#4ade80", 9, 4); }
   const t = f.tilt;
   g.save();
   g.translate(cx, cy);
   g.rotate(t);
-  g.fillStyle = "#f8fafc"; g.fillRect(-5, -52, 10, 40);
-  g.fillStyle = "#ef4444"; g.beginPath(); g.moveTo(-5, -52); g.lineTo(0, -62); g.lineTo(5, -52); g.fill();
-  g.fillRect(-9, -18, 4, 8); g.fillRect(5, -18, 4, 8);
+  g.fillStyle = "#f8fafc"; g.fillRect(-4, -20, 8, 34);
+  g.fillStyle = "#ef4444"; g.beginPath(); g.moveTo(-4, -20); g.lineTo(0, -29); g.lineTo(4, -20); g.fill();
+  g.fillRect(-8, 6, 4, 8); g.fillRect(4, 6, 4, 8);
   g.restore();
   const deg = (r) => Math.round((r * 180) / Math.PI);
   $("gaugeText").innerHTML = f.capsuleOnly ? "" : `Tilt ${deg(t)}° - <b>orbit guide ${deg(guide)}°</b> - <em>flying ${deg(pro)}°</em>`;
