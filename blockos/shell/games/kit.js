@@ -32,7 +32,8 @@
   const IS_TOUCH = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0 && !matchMedia("(pointer: fine)").matches;
   if (IS_TOUCH && document.currentScript) {
     const s = document.createElement("script");
-    s.src = new URL("touch.js", document.currentScript.src).href;
+    // Games made by players on the web version get touch.js handed to them (studio/runner.js).
+    s.src = window.BLOCKOS_TOUCH_URL || new URL("touch.js", document.currentScript.src).href;
     document.head.appendChild(s);
   }
 

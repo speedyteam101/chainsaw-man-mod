@@ -41,8 +41,8 @@ window.StudioRunner = (function () {
     } catch (_) { return null; }
   }
 
-  function policy(server) {
-    const g = GAMES_URL;
+  function policy(server, inline) {
+    const g = GAMES_URL + (inline ? " data:" : "");
     return [
       "default-src 'none'",
       `script-src 'unsafe-inline' ${g}`,
@@ -120,14 +120,51 @@ window.StudioRunner = (function () {
     const json = JSON.stringify(seed).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     const attr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
     const shimSrc = "(" + shim.toString().replace(/\n\s*/g, " ") + ")(" + json + ");";
-    return `<!doctype html><html><head><base href="${attr(GAMES_URL)}"><meta http-equiv="Content-Security-Policy" content="${attr(policy(seed.server))}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><script>${shimSrc}</script>` + String(code || "");
+    return `<!doctype html><html><head><base href="${attr(GAMES_URL)}"><meta http-equiv="Content-Security-Policy" content="${attr(policy(seed.server, !!o.kit))}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><script>${shimSrc}</script>` + (o.kit || "") + String(code || "");
+  }
+
+  // On the web version (BlockOS in a browser, not the app or the VM) the host doesn't let the
+  // sandbox load the kit's files, so BlockOS fetches them itself and hands them over as data: URLs:
+  // kit.js and kit.css as tags at the very start, and the 3D kit through an import map so
+  // import "./kit3d.js" and import "./easy3d.js" still work. Everything goes on line 1, so error
+  // line numbers still match the editor. The game's own kit.js / kit.css tags are taken out.
+  const LOCAL = location.protocol === "blockos:" || /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+  const files = {};
+  const text = (f) => files[f] || (files[f] = fetch(GAMES_URL + f).then((r) => { if (!r.ok) throw new Error(f); return r.text(); }));
+  const dataUrl = (s, type) => `data:${type};base64,` + btoa(unescape(encodeURIComponent(s)));
+  async function inlineKit(code) {
+    const [kit, css, touch] = await Promise.all([text("kit.js"), text("kit.css"), text("touch.js")]);
+    const js = (s) => dataUrl(s, "text/javascript");
+    let head = `<link rel="stylesheet" href="${css ? dataUrl(css, "text/css") : ""}">` +
+      `<script>window.BLOCKOS_TOUCH_URL=${JSON.stringify(js(touch))};</script><script src="${js(kit)}"></script>`;
+    if (/kit3d|easy3d/.test(code)) {
+      const [three, kit3d, easy] = await Promise.all([text("lib/three.min.js"), text("kit3d.js"), text("easy3d.js")]);
+      const t3 = js(three);
+      const k3 = js(kit3d.replace(/from\s+["']\.\/lib\/three\.min\.js["']/g, 'from "blockos-three"'));
+      const imports = {
+        "blockos-three": t3, [GAMES_URL + "lib/three.min.js"]: t3,
+        [GAMES_URL + "kit3d.js"]: k3,
+        [GAMES_URL + "easy3d.js"]: js(easy.replace(/from\s+["']\.\/kit3d\.js["']/g, `from ${JSON.stringify(GAMES_URL + "kit3d.js")}`)),
+      };
+      head = `<script type="importmap">${JSON.stringify({ imports }).replace(/</g, "\\u003c")}</script>` + head;
+    }
+    const kitFile = String.raw`(?:\.\.?\/)?kit\.(?:js|css)`;
+    const stripped = code
+      .replace(new RegExp(String.raw`<script\s+src=["']${kitFile}["']\s*>\s*</script>`, "gi"), "")
+      .replace(new RegExp(String.raw`<link[^>\n]*href=["']${kitFile}["'][^>\n]*>`, "gi"), "");
+    return { head, code: stripped };
   }
 
   // Put a game into an iframe (made sandboxed first: the sandbox flags apply from the next page load).
   function load(frame, code, opts) {
     frame.setAttribute("sandbox", SANDBOX);
     frame.removeAttribute("src");
-    frame.srcdoc = build(code, opts);
+    const run = (frame.blockosRun = (frame.blockosRun || 0) + 1);
+    if (LOCAL && !api.forceInline) { frame.srcdoc = build(code, opts); return; }
+    inlineKit(String(code || "")).then(
+      (r) => { if (frame.blockosRun === run) frame.srcdoc = build(r.code, Object.assign({}, opts, { kit: r.head })); },
+      () => { if (frame.blockosRun === run) frame.srcdoc = build(code, opts); },
+    );
   }
 
   // Saved data for a game: localStorage key "blockos.studio.data.<id>".
@@ -143,5 +180,6 @@ window.StudioRunner = (function () {
     try { localStorage.setItem("blockos.studio.data." + id, text); } catch (_) {}
   }
 
-  return { SANDBOX, build, load, loadData, onSave, policy };
+  const api = { SANDBOX, build, load, loadData, onSave, policy, forceInline: false };
+  return api;
 })();
