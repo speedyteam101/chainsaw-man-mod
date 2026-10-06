@@ -399,6 +399,7 @@
   //
   // const net = Kit.net("my-game", { room: "main", chat: true });
   //   net.online      true when BlockOS is connected to a server (Settings > Play online)
+  //   net.server      which numbered server this is ("s1", "s2", ...), chosen in BlockOS's server list
   //   net.me          { id, name, avatar }
   //   net.players     Map of everyone else: id -> { id, name, avatar, state }
   //   net.isHost      true for the player who's been in the room longest; let them run shared things (NPCs, timers)
@@ -477,6 +478,14 @@
 
   // ------------------------------------------------------------------ online play
 
+  // Which server of this game to play on ("s1", "s2", ...). BlockOS opens games with
+  // ?server=s2 from the server list; the room name gets the server added, e.g. "main-s2".
+  const SERVER = (() => {
+    const s = new URLSearchParams(location.search).get("server");
+    return /^s\d{1,3}$/.test(s || "") ? s : "s1";
+  })();
+  const roomName = (room) => `${String(room || "main").slice(0, 16)}-${SERVER}`;
+
   function net(gameId, opts) {
     const o = opts || {};
     const me = player();
@@ -484,6 +493,7 @@
     const api = {
       online: false,
       me: { id: null, name: me.name, avatar: me.avatar, uid: friends.code() },
+      server: SERVER,
       players: new Map(),
       isHost: true,
       on(type, fn) { (handlers[type] = handlers[type] || []).push(fn); return api; },
@@ -519,7 +529,7 @@
       const url = serverAddress();
       if (!url || closed) return;
       try { ws = new WebSocket(url); } catch (_) { return; }
-      ws.onopen = () => send({ t: "hello", game: gameId, room: o.room || "main", name: me.name, avatar: me.avatar, uid: api.me.uid });
+      ws.onopen = () => send({ t: "hello", game: gameId, room: roomName(o.room), name: me.name, avatar: me.avatar, uid: api.me.uid });
       ws.onmessage = (ev) => {
         let m;
         try { m = JSON.parse(ev.data); } catch (_) { return; }
@@ -575,6 +585,9 @@
           }
         } else if (m.t === "fr") {
           handleFriendMessage(api, m);
+        } else if (m.t === "err") {
+          closed = true;   // e.g. the server is full: don't keep retrying
+          gameToast("Can't join this server", String(m.m || ""), "#ef4444");
         }
       };
       ws.onclose = () => {

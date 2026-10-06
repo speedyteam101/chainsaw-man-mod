@@ -174,7 +174,7 @@
     const plays = state.plays[g.id] || 0;
     return `<button class="tile" data-open="${g.id}">${thumb(g)}
       <div class="t-name">${esc(g.title)}</div>
-      <div class="t-meta"><span>${esc(g.genre)}</span><span>${plays ? plays + (plays === 1 ? " play" : " plays") : "New"}</span>${g.multiplayer ? '<span class="t-online">Online</span>' : ""}${g.is3d ? '<span class="t-3d">3D</span>' : ""}</div></button>`;
+      <div class="t-meta"><span>${esc(g.genre)}</span><span>${plays ? plays + (plays === 1 ? " play" : " plays") : "New"}</span>${g.multiplayer ? (lobby.stats[g.id] ? `<span class="t-online">${lobby.stats[g.id]} playing</span>` : '<span class="t-online">Online</span>') : ""}${g.is3d ? '<span class="t-3d">3D</span>' : ""}</div></button>`;
   }
   function row(title, games, seeAll) {
     if (!games.length) return "";
@@ -318,8 +318,12 @@
             <p class="hint">Turns this computer into a game server. Your friends join it from their BlockOS using the address shown above.</p>
             ${hosting ? '<button class="btn red" id="stopHost">Stop hosting</button>' : '<button class="btn green" id="startHost">Start hosting</button>'}</div>
           ${internetPanel()}`;
+      const officialPanel = OFFICIAL ? `<div class="panel"><h2>Official server</h2>
+          <p class="hint">BlockOS's always-on server, where everyone can meet. It has many game servers, like Roblox: pick one on a game's page or just press Play.</p>
+          ${addr === OFFICIAL ? `<p class="ok"><b>You're on the official server.</b></p>` : '<button class="btn green" id="goOfficial">Join the official server</button>'}</div>` : "";
       page.innerHTML = `<h1 class="page-title">Play Online</h1>
         <div class="panel"><h2>Status</h2><p>${status}</p>${addr ? '<button class="btn" id="goOffline">Go offline</button>' : ""}</div>
+        ${officialPanel}
         ${hostPanel}
         <div class="panel"><h2>Join a server</h2>
           <p class="hint">Type the address your friend sees on their Play Online page, or an internet server address (starting with wss://).</p>
@@ -336,6 +340,8 @@
       const stop = $("#stopHost");
       if (stop) stop.onclick = async () => { await setHosting(false); setServer(""); render(); };
       $("#joinBtn").onclick = () => joinServer($("#joinAddr").value);
+      const goOfficial = $("#goOfficial");
+      if (goOfficial) goOfficial.onclick = () => { setServer(OFFICIAL); toast("Joined the official server."); render(); };
       const goPublic = $("#goPublic");
       if (goPublic) goPublic.onclick = () => setInternet(true);
       const stopPublic = $("#stopPublic");
@@ -356,7 +362,7 @@
         const p = lobby.presence[code];
         if (!p) return { text: online ? "Offline" : "", game: null };
         const g = GAME_BY_ID[p.game];
-        return g ? { text: `Playing ${g.title}`, game: g.id } : { text: "On BlockOS", game: null };
+        return g ? { text: `Playing ${g.title}${p.server ? ` (${serverName(p.server)})` : ""}`, game: g.id, server: p.server } : { text: "On BlockOS", game: null };
       };
       const sorted = list.sort((a, b) => (!!lobby.presence[b[0]] - !!lobby.presence[a[0]]));
       page.innerHTML = `<h1 class="page-title">Friends</h1>
@@ -380,7 +386,7 @@
             const st = status(code);
             return `<div class="friend-row"><div class="headshot">${Avatar.draw(f.avatar, { headshot: true })}</div>
               <div class="friend-info"><b>${esc(f.name)}</b><small class="${lobby.presence[code] ? "on" : ""}">${esc(st.text || Friends.pretty(code))}</small></div>
-              ${st.game ? `<button class="btn green" data-play="${st.game}">Join</button>` : ""}
+              ${st.game ? `<button class="btn green" data-play="${st.game}" data-server="${esc(st.server || "")}">Join</button>` : ""}
               ${chatMode() === "off" ? "" : `<button class="btn" data-dm="${code}">Message${Friends.unread()[code] ? ` <em class="dm-count">${Friends.unread()[code]}</em>` : ""}</button>`}
               <button class="btn" data-fr-remove="${code}">Remove</button></div>`;
           }).join("") : `<div class="empty">No friends yet. Add someone with their code, or from the People list in an online game.</div>`}</div>`;
@@ -473,8 +479,13 @@
   function serverAddress() {
     try { return localStorage.getItem("blockos.server") || ""; } catch (_) { return ""; }
   }
+  const OFFICIAL = ((window.BLOCKOS_CONFIG || {}).officialServer || "").trim();
   function setServer(url) {
-    try { url ? localStorage.setItem("blockos.server", url) : localStorage.removeItem("blockos.server"); } catch (_) {}
+    try {
+      url ? localStorage.setItem("blockos.server", url) : localStorage.removeItem("blockos.server");
+      // Remember that the player went offline on purpose, so the official server isn't rejoined.
+      if (OFFICIAL) localStorage.setItem("blockos.offline", url ? "0" : "1");
+    } catch (_) {}
     updateOnlinePill();
     lobbyConnect();
   }
@@ -618,7 +629,7 @@
   // While BlockOS is online, the desktop keeps one connection to the server in the "lobby"
   // so it can see which friends are online and receive friend requests.
   const lobby = {
-    ws: null, connected: false, presence: {}, url: "",
+    ws: null, connected: false, presence: {}, url: "", stats: {},
     send(msg) { if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg)); },
   };
   function lobbyConnect() {
@@ -636,7 +647,15 @@
     ws.onmessage = (ev) => {
       let m;
       try { m = JSON.parse(ev.data); } catch (_) { return; }
-      if (m.t === "welcome") { lobby.connected = true; askWho(); if (view.page === "friends") render(); }
+      if (m.t === "welcome") { lobby.connected = true; askWho(); lobby.send({ t: "stats" }); if (view.page === "friends") render(); }
+      else if (m.t === "list") {
+        serverLists[m.game] = { servers: m.servers || {}, max: m.max || 12, time: Date.now() };
+        renderServerList(m.game);
+      } else if (m.t === "stats") {
+        const changed = JSON.stringify(lobby.stats) !== JSON.stringify(m.games || {});
+        lobby.stats = m.games || {};
+        if (changed && player.hidden && modal.hidden && ["home", "discover", "online", "search"].includes(view.page)) render();
+      }
       else if (m.t === "who") {
         lobby.presence = {};
         for (const [c, p] of Object.entries(m.s || {})) if (p) lobby.presence[c] = p;
@@ -661,6 +680,7 @@
     ws.onclose = () => {
       lobby.connected = false;
       lobby.presence = {};
+      lobby.stats = {};
       if (lobby.ws === ws) { lobby.ws = null; setTimeout(lobbyConnect, 4000); }
     };
   }
@@ -669,6 +689,7 @@
     if (ids.length) lobby.send({ t: "who", ids });
   }
   setInterval(askWho, 8000);
+  setInterval(() => lobby.send({ t: "stats" }), 15000);
 
   let openDm = null;
   function openMessages(code) {
@@ -750,7 +771,62 @@
         <div class="play-row">
           <button class="btn green play-btn" data-play="${id}" autofocus aria-label="Play">${icon("play")}</button>
           <button class="btn square-btn ${isFav(id) ? "on" : ""}" data-fav="${id}" title="Favorite">${icon("heart")}</button>
-        </div></div></div>`);
+        </div></div></div>
+      ${g.multiplayer && lobby.connected ? `<div class="servers"><div class="servers-head"><h3>Servers</h3>
+        <button class="btn" data-new-server="${id}">New server</button></div><div id="serverList" class="empty">Looking for servers...</div></div>` : ""}`);
+    if (g.multiplayer && lobby.connected) { serverListFor = id; lobby.send({ t: "list", game: id }); }
+  }
+
+  // ---------------------------------------------------------------- servers (like Roblox)
+
+  const serverName = (s) => "Server " + String(s).slice(1);
+  let serverListFor = null;
+  const serverLists = {};   // game -> { servers: { s1: 3 }, max }
+  function renderServerList(game) {
+    const el = $("#serverList");
+    if (!el || serverListFor !== game) return;
+    const info = serverLists[game] || { servers: {}, max: 12 };
+    // Always show servers 1-3, plus any others with people on them.
+    const ids = new Set(["s1", "s2", "s3", ...Object.keys(info.servers)]);
+    const friendsOn = {};
+    for (const [code, p] of Object.entries(lobby.presence)) {
+      const f = Friends.list()[code];
+      if (f && p.game === game && p.server) (friendsOn[p.server] = friendsOn[p.server] || []).push(f.name);
+    }
+    el.className = "server-list";
+    el.innerHTML = [...ids].sort((a, b) => +a.slice(1) - +b.slice(1)).map((s) => {
+      const n = info.servers[s] || 0;
+      const full = n >= info.max;
+      return `<div class="server-row"><div><b>${serverName(s)}</b>
+        <small>${n}/${info.max} players${friendsOn[s] ? ` - friends: ${friendsOn[s].map(esc).join(", ")}` : ""}</small>
+        <i class="server-bar"><i style="width:${Math.min(100, (n / info.max) * 100)}%"></i></i></div>
+        <button class="btn ${full ? "" : "green"}" data-play="${game}" data-server="${s}" ${full ? "disabled" : ""}>${full ? "Full" : "Join"}</button></div>`;
+    }).join("");
+  }
+  setInterval(() => { if (serverListFor && !modal.hidden && lobby.connected) lobby.send({ t: "list", game: serverListFor }); }, 4000);
+
+  // The Play button: like Roblox, put you on the busiest server that still has room.
+  function quickPlay(id) {
+    const g = GAME_BY_ID[id];
+    if (!g || !g.multiplayer || !lobby.connected) return play(id);
+    const info = serverLists[id];
+    const pick = () => {
+      const data = serverLists[id] || { servers: {}, max: 12 };
+      const open = Object.entries(data.servers).filter(([, n]) => n < data.max).sort((a, b) => b[1] - a[1]);
+      if (open.length) return open[0][0];
+      for (let i = 1; ; i++) if (!data.servers["s" + i]) return "s" + i;
+    };
+    if (info && Date.now() - info.time < 5000) return play(id, pick());
+    lobby.send({ t: "list", game: id });
+    let waited = 0;
+    const wait = setInterval(() => {
+      waited += 100;
+      if ((serverLists[id] && Date.now() - serverLists[id].time < 5000) || waited > 1500) { clearInterval(wait); play(id, pick()); }
+    }, 100);
+  }
+  function newServer(id) {
+    const data = serverLists[id] || { servers: {} };
+    for (let i = 1; ; i++) if (!data.servers["s" + i]) return play(id, "s" + i);
   }
 
   const player = $("#player");
@@ -759,9 +835,10 @@
   let playing = null;
   let lastAward = {};
 
-  function play(id) {
+  function play(id, server) {
     const g = GAME_BY_ID[id];
     if (!g) return;
+    if (server && !/^s\d{1,3}$/.test(server)) server = null;
     closeModal();
     closeMenu();
     playing = id;
@@ -771,7 +848,8 @@
     $("#pmTitle").textContent = g.title;
     pmenu.hidden = true;
     player.hidden = false;
-    frame.src = `games/${id}/index.html`;
+    frame.src = `games/${id}/index.html${server ? `?server=${server}` : ""}`;
+    if (server) toast(`Joining ${esc(g.title)}, ${serverName(server)}`);
     frame.onload = () => frame.contentWindow && frame.contentWindow.focus();
   }
   function leaveGame() {
@@ -790,7 +868,7 @@
   pmenu.addEventListener("click", (e) => {
     const act = e.target.dataset.pm;
     if (act === "resume") togglePlayerMenu(false);
-    if (act === "restart") { pmenu.hidden = true; frame.src = `games/${playing}/index.html`; }
+    if (act === "restart") { pmenu.hidden = true; frame.src = frame.src; }
     if (act === "leave") leaveGame();
     if (e.target === pmenu) togglePlayerMenu(false);
   });
@@ -888,7 +966,7 @@
     if (t.id === "meCard") return go("avatar");
     if (d.page) return go(d.page);
     if (d.open) return openGame(d.open);
-    if (d.play) return play(d.play);
+    if (d.play) return d.server ? play(d.play, d.server) : quickPlay(d.play);
     if (d.close !== undefined) return closeModal();
     if (d.launch) return launch(d.launch);
     if (d.power) return power(d.power);
@@ -912,6 +990,7 @@
       return render();
     }
     if (d.dm) return openMessages(d.dm);
+    if (d.newServer) return newServer(d.newServer);
     if (d.frDecline) { Friends.clearRequest(d.frDecline); lobby.send({ t: "fr", to: d.frDecline, kind: "decline" }); return render(); }
     if (d.frRemove) {
       const f = Friends.list()[d.frRemove];
@@ -988,6 +1067,9 @@
   ping();
   setInterval(ping, 15000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ping(); });
+  try {
+    if (OFFICIAL && !serverAddress() && localStorage.getItem("blockos.offline") !== "1") localStorage.setItem("blockos.server", OFFICIAL);
+  } catch (_) {}
   updateOnlinePill();
   lobbyConnect();
   loadOnlineInfo().then(watchInternet);

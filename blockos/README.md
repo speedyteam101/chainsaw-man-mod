@@ -141,8 +141,14 @@ Open **Play Online** in BlockOS.
   20 MB, the first time only) and shows an address like `wss://happy-blocks-123.trycloudflare.com`.
   Friends type it under **Join a server**. Keep BlockOS open while people play. The address
   changes each time, and Cloudflare's free tunnels have no uptime guarantee.
-- **Your own always-on server:** run the game server on a computer or cloud server with a public
-  address. See [`multiplayer/README.md`](multiplayer/README.md).
+- **Always-on servers for everyone, like Roblox:** put the game server on a cloud host and set its
+  address as `officialServer` in `shell/config.js`. Every copy of BlockOS then goes online there by
+  itself. See [`multiplayer/README.md`](multiplayer/README.md).
+
+**Servers:** like Roblox, each online game has numbered servers with up to 12 players each. A
+game's page lists them, with player counts and which friends are on each, and **Join** buttons.
+**Play** puts you on the busiest server that still has room, and **New server** starts an empty one.
+Game tiles show how many people are playing right now.
 
 **Chat:** in an online game press `/` (or tap **Chat**), type, and press Enter. Messages show in the
 chat log and as bubbles over heads in 3D games.

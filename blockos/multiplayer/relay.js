@@ -10,16 +10,22 @@
 // (chatfilter.js) that hides swear words and personal details such as phone numbers,
 // email addresses and links. Names and avatars are cleaned up before they're passed on.
 //
+// Servers: like Roblox, each game has numbered servers ("s1", "s2", ...). A game's room names end
+// in the server, e.g. "main-s2" or "mossy-crypt-s2", and all rooms of one server share its player
+// limit (MAX_PER_SERVER). "list" returns how many people are on each server of a game, and
+// "stats" how many are playing each game, for the server list and the "playing" counts.
+//
 // Friends: each BlockOS install has a random friend code (8 letters/digits). A client
 // can ask which of a list of codes are online and what they're playing ("who"), and
 // send a friend request / accept / decline to a code ("fr"). The BlockOS desktop keeps
 // one connection in the "lobby" game for this while you're online.
 "use strict";
 
+const http = require("http");
 const { WebSocketServer } = require("ws");
 const { filterText } = require("./chatfilter.js");
 
-const MAX_PER_ROOM = 24;
+const MAX_PER_SERVER = 12;      // players on one server of one game
 const MAX_MESSAGE = 4096;        // bytes
 const MAX_RATE = 40;             // messages per second per player
 const QUICK_CHAT_COUNT = 64;     // indexes into Kit.QUICK_CHAT
@@ -43,8 +49,17 @@ function cleanAvatar(a) {
   return out;
 }
 
+// "main-s2" -> "s2"; rooms without a server suffix count as server "s1".
+const serverOf = (room) => (room.match(/-(s\d{1,3})$/) || [])[1] || "s1";
+
 function start(port, host) {
-  const wss = new WebSocketServer({ port, host: host || "0.0.0.0", maxPayload: MAX_MESSAGE });
+  // Plain web requests get a short answer, so hosting services' health checks see the server is up.
+  const web = http.createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    res.end("BlockOS game server\n");
+  });
+  const wss = new WebSocketServer({ server: web, maxPayload: MAX_MESSAGE });
+  web.listen(port, host || "0.0.0.0");
   const rooms = new Map();   // "game:room" -> Map(id -> client)
   const byCode = new Map();  // friend code -> Set of clients
   let nextId = 1;
@@ -54,6 +69,33 @@ function start(port, host) {
     const data = JSON.stringify(msg);
     for (const c of room.values()) if (c !== except && c.ws.readyState === 1) c.ws.send(data);
   };
+  // Players on one server of one game, across all its rooms.
+  function serverCount(game, server) {
+    let n = 0;
+    for (const [key, members] of rooms) {
+      const [g, room] = key.split(":");
+      if (g === game && serverOf(room) === server) n += members.size;
+    }
+    return n;
+  }
+  function serverList(game) {
+    const counts = {};
+    for (const [key, members] of rooms) {
+      const [g, room] = key.split(":");
+      if (g !== game || members.size === 0) continue;
+      const s = serverOf(room);
+      counts[s] = (counts[s] || 0) + members.size;
+    }
+    return counts;
+  }
+  function gameStats() {
+    const counts = {};
+    for (const [key, members] of rooms) {
+      const g = key.split(":")[0];
+      if (g !== "lobby" && members.size) counts[g] = (counts[g] || 0) + members.size;
+    }
+    return counts;
+  }
   const info = (c) => ({ id: c.id, name: c.name, avatar: c.avatar, uid: c.uid, s: c.s });
 
   // What a friend code is doing right now: the game they're in, or "lobby" if they're
@@ -63,7 +105,7 @@ function start(port, host) {
     if (!set || set.size === 0) return null;
     let best = null;
     for (const c of set) if (!best || (best.game === "lobby" && c.game !== "lobby")) best = c;
-    return { game: best.game, room: best.room, name: best.name, avatar: best.avatar };
+    return { game: best.game, room: best.room, server: serverOf(best.room), name: best.name, avatar: best.avatar };
   }
 
   wss.on("connection", (ws) => {
@@ -89,7 +131,7 @@ function start(port, host) {
         const room = m.room || "main";
         const key = m.game + ":" + room;
         const members = rooms.get(key) || new Map();
-        if (m.game !== "lobby" && members.size >= MAX_PER_ROOM) {
+        if (m.game !== "lobby" && serverCount(m.game, serverOf(room)) >= MAX_PER_SERVER) {
           send(ws, { t: "err", m: "This server is full." });
           return ws.close();
         }
@@ -114,6 +156,8 @@ function start(port, host) {
         return;
       }
 
+      if (m.t === "list" && WORD.test(m.game)) return send(ws, { t: "list", game: m.game, servers: serverList(m.game), max: MAX_PER_SERVER });
+      if (m.t === "stats") return send(ws, { t: "stats", games: gameStats() });
       if (m.t === "who" && Array.isArray(m.ids)) {
         const s = {};
         for (const code of m.ids.slice(0, MAX_WHO)) if (CODE.test(code)) s[code] = presence(code);
@@ -174,9 +218,9 @@ function start(port, host) {
   });
 
   return {
-    close: () => new Promise((resolve) => { for (const c of wss.clients) c.terminate(); wss.close(() => resolve()); }),
+    close: () => new Promise((resolve) => { for (const c of wss.clients) c.terminate(); wss.close(() => web.close(() => resolve())); }),
     players: () => [...rooms.values()].reduce((n, r) => n + r.size, 0),
-    ready: new Promise((resolve, reject) => { wss.once("listening", resolve); wss.once("error", reject); }),
+    ready: new Promise((resolve, reject) => { web.once("listening", resolve); web.once("error", reject); }),
   };
 }
 

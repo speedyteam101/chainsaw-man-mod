@@ -22,7 +22,7 @@ ids = json.loads(subprocess.check_output(
 if OUT.exists():
     shutil.rmtree(OUT)
 (OUT / "games").mkdir(parents=True)
-for name in ("style.css", "app.js", "avatar.js"):
+for name in ("style.css", "app.js", "avatar.js", "config.js"):
     shutil.copy2(SHELL / name, OUT / name)
 shutil.copytree(SHELL / "assets", OUT / "assets")
 for name in ("catalog.js", "kit.js", "kit.css", "kit3d.js", "touch.js"):
