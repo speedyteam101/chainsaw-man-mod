@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 270">
+  <defs><pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse"><rect x="9" y="9" width="4" height="4" fill="#ffffff" fill-opacity=".05"/></pattern></defs>
+  <rect width="480" height="270" fill="#1b2433"/><rect width="480" height="270" fill="url(#dots)"/>
+  <!-- the cell -->
+  <rect x="40" y="26" width="400" height="218" rx="70" fill="#fde2d4"/>
+  <rect x="40" y="26" width="400" height="218" rx="70" fill="none" stroke="#fcd34d" stroke-width="10"/>
+  <rect x="35" y="21" width="410" height="228" rx="75" fill="none" stroke="#d97706" stroke-width="3" stroke-dasharray="5 4"/>
+  <!-- doors -->
+  <g><rect x="140" y="14" width="16" height="22" rx="4" fill="#22c55e"/><rect x="162" y="14" width="16" height="22" rx="4" fill="#22c55e"/>
+  <rect x="300" y="14" width="34" height="22" rx="4" fill="#ef4444"/><rect x="315" y="14" width="4" height="22" fill="#7f1d1d"/>
+  <rect x="140" y="234" width="16" height="22" rx="4" fill="#22c55e"/><rect x="162" y="234" width="16" height="22" rx="4" fill="#22c55e"/></g>
+  <!-- virus blocked at the closed door -->
+  <g transform="translate(317 2)"><g stroke="#fca5a5" stroke-width="3"><line x1="-15" y1="0" x2="15" y2="0"/><line x1="-8" y1="-13" x2="8" y2="13"/><line x1="8" y1="-13" x2="-8" y2="13"/></g>
+  <polygon points="0,-10 9,-5 9,5 0,10 -9,5 -9,-5" fill="#dc2626"/><rect x="-3" y="-3" width="6" height="6" fill="#7f1d1d"/></g>
+  <!-- nucleus -->
+  <rect x="170" y="85" width="104" height="104" rx="36" fill="#6d28d9"/><rect x="178" y="93" width="88" height="88" rx="30" fill="#a78bfa"/>
+  <path d="M190 118l6-6 6 6 6-6 6 6 6-6" stroke="#4c1d95" stroke-width="4" fill="none"/><path d="M192 160l6-6 6 6 6-6 6 6" stroke="#4c1d95" stroke-width="4" fill="none"/>
+  <rect x="226" y="134" width="26" height="26" rx="7" fill="#4c1d95"/>
+  <!-- rough ER -->
+  <g fill="none" stroke="#60a5fa" stroke-width="7" stroke-linecap="round"><path d="M282 86 Q 312 137 282 188"/><path d="M296 76 Q 332 137 296 198"/></g>
+  <g fill="#1e3a8a"><rect x="292" y="100" width="4" height="4"/><rect x="298" y="122" width="4" height="4"/><rect x="298" y="148" width="4" height="4"/><rect x="292" y="170" width="4" height="4"/><rect x="312" y="96" width="4" height="4"/><rect x="318" y="134" width="4" height="4"/><rect x="312" y="174" width="4" height="4"/></g>
+  <!-- golgi -->
+  <g fill="none" stroke-width="7" stroke-linecap="round"><path d="M350 82 Q 375 66 400 82" stroke="#ec4899"/><path d="M350 94 Q 375 78 400 94" stroke="#f472b6"/><path d="M350 106 Q 375 90 400 106" stroke="#ec4899"/></g>
+  <!-- mitochondria -->
+  <g transform="translate(100 82)"><rect x="-36" y="-20" width="72" height="40" rx="18" fill="#f97316" stroke="#9a3412" stroke-width="3"/><rect x="-30" y="-14" width="60" height="28" rx="13" fill="#fdba74"/><path d="M-24 10 l6 -20 6 20 6 -20 6 20 6 -20 6 20 6 -20" stroke="#c2410c" stroke-width="3" fill="none"/></g>
+  <g transform="translate(372 196)"><rect x="-36" y="-20" width="72" height="40" rx="18" fill="#f97316" stroke="#9a3412" stroke-width="3"/><rect x="-30" y="-14" width="60" height="28" rx="13" fill="#fdba74"/><path d="M-24 10 l6 -20 6 20 6 -20 6 20 6 -20 6 20 6 -20" stroke="#c2410c" stroke-width="3" fill="none"/></g>
+  <!-- chloroplast and lysosome -->
+  <g transform="translate(105 190)"><rect x="-34" y="-19" width="68" height="38" rx="17" fill="#16a34a" stroke="#14532d" stroke-width="3"/><rect x="-28" y="-13" width="56" height="26" rx="11" fill="#4ade80"/>
+  <g fill="#166534"><rect x="-22" y="-9" width="9" height="4"/><rect x="-9" y="-9" width="9" height="4"/><rect x="4" y="-9" width="9" height="4"/><rect x="-22" y="-2" width="9" height="4"/><rect x="-9" y="-2" width="9" height="4"/><rect x="4" y="-2" width="9" height="4"/><rect x="-22" y="5" width="9" height="4"/><rect x="-9" y="5" width="9" height="4"/><rect x="4" y="5" width="9" height="4"/></g></g>
+  <circle cx="250" cy="216" r="11" fill="#c084fc" stroke="#6b21a8" stroke-width="3"/>
+  <!-- cargo -->
+  <circle cx="412" cy="140" r="11" fill="#bae6fd" fill-opacity=".8" stroke="#e0f2fe" stroke-width="2"/><rect x="405" y="137" width="5" height="5" fill="#2563eb"/><rect x="411" y="140" width="5" height="5" fill="#2563eb"/>
+  <polygon points="150,140 157,136 164,140 164,148 157,152 150,148" fill="#facc15"/>
+  <rect x="300" y="226" width="7" height="7" fill="#4ade80"/><rect x="307" y="229" width="6" height="6" fill="#16a34a"/>
+  <rect x="120" y="128" width="6" height="6" fill="#f87171"/><rect x="128" y="128" width="6" height="6" fill="#f87171"/>
+  <!-- the mayor -->
+  <g transform="translate(456 262)"><rect x="-6" y="-26" width="12" height="26" fill="#22c55e"/><rect x="-7" y="-50" width="14" height="24" fill="#3b82f6"/><rect x="-7" y="-64" width="14" height="14" rx="3" fill="#f5cd30"/><rect x="2" y="-60" width="2" height="3" fill="#111"/></g>
+</svg>

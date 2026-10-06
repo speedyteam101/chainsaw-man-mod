@@ -1,0 +1,640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Velocity Lab</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script src="physics.js"></script>
+<script src="levels.js"></script>
+<script>
+"use strict";
+const ID = "velocity-lab";
+const { canvas, ctx, W, H } = Kit.stage(1000, 620);
+const PH = window.VelocityPhysics, LEVELS = window.VL_LEVELS, targetAt = window.VL_targetAt;
+const FONT = '"Noto Sans", "DejaVu Sans", sans-serif';
+const ME = Kit.player();
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+
+// ------------------------------------------------------------------ layout
+const SCENE_H = 330, ROAD_Y = 266, GROUND_Y = 316;   // road top, wheel bottom
+const PX = 12;              // pixels per metre on the road
+const CAR_SX = 330;         // screen x of the front bumper
+const BRAKE = { x: 10, y: 340, w: 100, h: 270 };
+const GAS = { x: 890, y: 340, w: 100, h: 270 };
+const PANEL = { x: 118, y: 340, w: 268, h: 270 };
+const GRAPH = { x: 394, y: 340, w: 488, h: 270 };
+const BTN_LEVELS = { x: 10, y: 10, w: 76, h: 30 }, BTN_RETRY = { x: 92, y: 10, w: 70, h: 30 };
+const TAB_V = { x: GRAPH.x + 10, y: GRAPH.y + 8, w: 104, h: 26 }, TAB_D = { x: GRAPH.x + 118, y: GRAPH.y + 8, w: 104, h: 26 };
+const SUB = 1 / 240;        // physics step (s)
+
+// ------------------------------------------------------------------ save
+const SAVE_KEY = "blockos.velocity-lab.v1";
+let save = { stars: {} };
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && typeof s === "object" && s.stars && typeof s.stars === "object") save = s; } catch (_) {}
+const writeSave = () => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} };
+const starsOf = (i) => Math.max(0, Math.min(3, Number(save.stars[i]) || 0));
+const totalStars = () => LEVELS.reduce((a, _, i) => a + starsOf(i), 0);
+const unlocked = (i) => i === 0 || starsOf(i) > 0 || starsOf(i - 1) > 0;
+
+// ------------------------------------------------------------------ state
+let mode = "menu";        // "menu" | "drive" | "quiz"
+let lv = 0, L = null, veh = PH.VEHICLES.car;
+let s = null, m = {}, samples = [], countdown = 0, result = null, tab = "v";
+let ghost = null;          // reference car curve for the truck level
+let quiz = { tries: 0, wrong: new Set(), done: false };
+let overlayOpen = false;
+let acc = 0, sampleT = 0, aShow = 0;
+const pointers = new Map();   // pointerId -> "gas" | "brake" | null
+let hoverPos = null;
+
+function updateHud() {
+  const where = mode === "menu" ? "Velocity Lab" : `Level ${lv + 1} of ${LEVELS.length}`;
+  Kit.hud(`${esc(where)}<small>${esc(ME.name)} - ${totalStars()} / ${LEVELS.length * 3} stars</small>`);
+}
+async function showOverlay(t, txt, b) { overlayOpen = true; await Kit.overlay(t, txt, b); overlayOpen = false; }
+
+const surfaceAt = (x) => (L && L.surface && L.surface.some(([a, b]) => x >= a && x < b) ? "ice" : "road");
+
+// ------------------------------------------------------------------ levels
+async function startLevel(i, intro) {
+  lv = i; L = LEVELS[i];
+  mode = L.type === "quiz" ? "quiz" : "drive";
+  veh = PH.VEHICLES[L.vehicle || "car"];
+  tab = "v";
+  quiz = { tries: 0, wrong: new Set(), done: false };
+  resetRun();
+  countdown = 99;   // wait for the intro
+  updateHud();
+  if (intro !== false) {
+    if (mode === "quiz") await showOverlay(`Level ${i + 1}: ${L.title}`, "Lab quiz time! Pick the right answer.\nFewer tries = more stars.", "Show me");
+    else await showOverlay(`Level ${i + 1}: ${L.title}`, "Lab notes:\n" + L.intro + "\n\nGoal: " + L.goal, "Drive!");
+  }
+  if (lv === i) countdown = 1.6;
+}
+function resetRun() {
+  s = { x: 0, v: L.startV || 0, t: 0, p: 0, a: 0, gas: false, brake: false };
+  m = {}; result = null; acc = 0; sampleT = 0; aShow = 0;
+  samples = [[0, s.v, 0, 0]];
+  countdown = 1.6;
+  ghost = null;
+  if (L.ghost) {
+    const g = { x: 0, v: 0, t: 0, p: 0 };
+    ghost = [[0, 0]];
+    while (g.t < L.graph.t) { PH.step(g, { gas: g.v < 10 }, PH.VEHICLES.car, "road", 0.05); ghost.push([g.t, g.v]); }
+  }
+}
+
+function endRun(res) {
+  result = res;
+  const prev = starsOf(lv);
+  if (res.stars > prev) { save.stars[lv] = res.stars; writeSave(); }
+  const total = totalStars();
+  Kit.finish(ID, total);
+  updateHud();
+  if (res.stars > 0) {
+    Kit.sfx("win");
+    awardBadges(res);
+  } else Kit.sfx("lose");
+  const at = lv;
+  setTimeout(async () => {
+    if (lv !== at || mode !== "drive") return;
+    if (res.stars > 0) {
+      await showOverlay(`${res.stars} star${res.stars > 1 ? "s" : ""}!`, res.msg + "\n\nLab notes:\n" + L.done, at < LEVELS.length - 1 ? "Next level" : "Finish");
+      nextLevel(at);
+    } else {
+      await showOverlay("Try again", res.msg, "Retry");
+      if (lv === at) resetRun();
+    }
+  }, 900);
+}
+async function nextLevel(at) {
+  if (lv !== at) return;
+  if (at < LEVELS.length - 1) startLevel(at + 1);
+  else {
+    await showOverlay("Lab complete!", `You finished every level of Velocity Lab with ${totalStars()} of ${LEVELS.length * 3} stars.\nReplay any level to collect more stars.`, "Back to levels");
+    mode = "menu"; updateHud();
+  }
+}
+const idx = (title) => LEVELS.findIndex((l) => l.title === title);
+function awardBadges(res) {
+  if (res.badge === "smooth") badge("smooth-operator", "Smooth Operator", "Hold a perfectly steady speed: acceleration zero.");
+  if (L.lineX && res.gap !== undefined && res.gap <= 0.5) badge("perfect-stop", "Perfect Stop", "Stop within half a metre of the line.");
+  if (starsOf(idx("Graph Match: Up, Flat, Down")) === 3 && starsOf(idx("Graph Match: Two Hills")) === 3) badge("graph-master", "Graph Master", "Get 3 stars on both graph-matching levels.");
+  if (starsOf(idx("Area = Distance")) === 3 && starsOf(idx("Quiz: Area")) === 3) badge("area-expert", "Area Expert", "Show that the area under a v-t graph is the distance.");
+  if (L.vehicle === "truck") badge("heavy-hauler", "Heavy Hauler", "Drive the heavy truck: same force, more mass, less acceleration.");
+  if (starsOf(idx("Ice Rink")) > 0 && starsOf(idx("Black Ice")) > 0) badge("ice-driver", "Ice Driver", "Stop safely on ice, where friction is tiny.");
+  if (res.badge === "licensed") badge("licensed", "Licensed", "Pass the Physics Driving Test.");
+}
+
+// ------------------------------------------------------------------ quiz
+function quizOptions() {
+  const hasGraph = !!L.graph;
+  const x = hasGraph ? 560 : 200, w = hasGraph ? 400 : 600;
+  return L.options.map((o, i) => ({ i, x, y: 200 + i * 96, w, h: 80 }));
+}
+async function answer(i) {
+  if (quiz.done || quiz.wrong.has(i) || overlayOpen) return;
+  quiz.tries++;
+  if (i === L.answer) {
+    quiz.done = true;
+    const stars = Math.max(1, 4 - quiz.tries);
+    Kit.sfx("coin");
+    const at = lv;
+    if (stars > starsOf(lv)) { save.stars[lv] = stars; writeSave(); }
+    Kit.finish(ID, totalStars()); updateHud();
+    awardBadges({ stars });
+    await new Promise((r) => setTimeout(r, 500));
+    await showOverlay(quiz.tries === 1 ? "Correct! 3 stars" : `Correct! ${stars} star${stars > 1 ? "s" : ""}`, L.explain, at < LEVELS.length - 1 ? "Next level" : "Finish");
+    nextLevel(at);
+  } else {
+    quiz.wrong.add(i);
+    Kit.sfx("hit");
+  }
+}
+
+// ------------------------------------------------------------------ input
+const GAS_KEYS = ["ArrowUp", "KeyW", "ArrowRight", "KeyD"];
+const BRAKE_KEYS = ["ArrowDown", "KeyS", "ArrowLeft", "KeyA", "Space"];
+const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+function pedalInput() {
+  let gas = GAS_KEYS.some(Kit.key), brake = BRAKE_KEYS.some(Kit.key);
+  for (const v of pointers.values()) { if (v === "gas") gas = true; if (v === "brake") brake = true; }
+  return { gas, brake };
+}
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  if (overlayOpen) return;
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  canvas.focus();
+  const p = Kit.pointer(canvas, e);
+  hoverPos = p;
+  if (mode === "menu") { menuClick(p); return; }
+  if (inRect(p, BTN_LEVELS)) { Kit.sfx("click"); mode = "menu"; pointers.clear(); updateHud(); return; }
+  if (mode === "quiz") { for (const o of quizOptions()) if (inRect(p, o)) answer(o.i); return; }
+  if (inRect(p, BTN_RETRY)) { Kit.sfx("click"); resetRun(); return; }
+  if (inRect(p, TAB_V)) { tab = "v"; Kit.sfx("click"); return; }
+  if (inRect(p, TAB_D)) { tab = "d"; Kit.sfx("click"); return; }
+  let what = null;
+  if (inRect(p, GAS) || (p.y < SCENE_H && p.x >= 500)) what = "gas";
+  else if (inRect(p, BRAKE) || (p.y < SCENE_H && p.x < 500)) what = "brake";
+  pointers.set(e.pointerId, what);
+});
+const release = (e) => pointers.delete(e.pointerId);
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", release);
+canvas.addEventListener("lostpointercapture", release);
+canvas.addEventListener("pointermove", (e) => { hoverPos = Kit.pointer(canvas, e); });
+addEventListener("blur", () => pointers.clear());
+Kit.onKey((code) => {
+  if (overlayOpen) return;
+  if (mode === "drive" && code === "KeyR") resetRun();
+  if (mode === "drive" && code === "KeyG") tab = tab === "v" ? "d" : "v";
+  if (mode === "quiz") { const n = { Digit1: 0, Digit2: 1, Digit3: 2 }[code]; if (n !== undefined) answer(n); }
+});
+
+function menuTiles() {
+  const cols = 5, tw = 176, th = 84, gap = 12;
+  const x0 = (W - (cols * tw + (cols - 1) * gap)) / 2;
+  return LEVELS.map((_, i) => ({ i, x: x0 + (i % cols) * (tw + gap), y: 140 + Math.floor(i / cols) * (th + gap), w: tw, h: th }));
+}
+function menuClick(p) {
+  for (const t of menuTiles()) if (inRect(p, t)) {
+    if (!unlocked(t.i)) { Kit.sfx("hit"); return; }
+    Kit.sfx("click"); startLevel(t.i); return;
+  }
+}
+
+// ------------------------------------------------------------------ update
+function update(dt) {
+  if (mode !== "drive" || overlayOpen || !s) return;
+  if (countdown > 0) { countdown -= dt; return; }
+  if (result) return;
+  const inp = pedalInput();
+  s.gas = inp.gas; s.brake = inp.brake;
+  acc += dt;
+  while (acc >= SUB && !result) {
+    acc -= SUB;
+    PH.step(s, inp, veh, surfaceAt(s.x), SUB);
+    sampleT += SUB;
+    if (sampleT >= 0.05) { sampleT = 0; samples.push([s.t, s.v, s.x, s.a]); }
+    const r = L.tick(s, m, SUB);
+    if (r) { samples.push([s.t, s.v, s.x, s.a]); endRun(r); }
+    else if (L.tMax && s.t >= L.tMax + 0.5) endRun({ stars: 0, msg: "Time's up! Try again." });
+  }
+  aShow += (s.a - aShow) * Math.min(1, dt * 12);
+}
+
+// ------------------------------------------------------------------ drawing helpers
+function text(str, x, y, size, color, align, weight) {
+  ctx.font = `${weight || "bold"} ${size}px ${FONT}`;
+  ctx.fillStyle = color || "#f2f4f5";
+  ctx.textAlign = align || "left";
+  ctx.fillText(str, x, y);
+}
+function wrap(str, maxW, size, weight) {
+  ctx.font = `${weight || "bold"} ${size}px ${FONT}`;
+  const out = [];
+  for (const para of String(str).split("\n")) {
+    let line = "";
+    for (const w of para.split(" ")) {
+      const t = line ? line + " " + w : w;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function rrect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+function star(cx, cy, r, filled) {
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  ctx.closePath();
+  ctx.fillStyle = filled ? "#facc15" : "rgba(255,255,255,.15)";
+  ctx.fill();
+}
+const hash = (n) => { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); };
+const sx = (wx) => CAR_SX + (wx - s.x) * PX;
+
+// ------------------------------------------------------------------ scene
+function drawScene() {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, 0, W, SCENE_H); ctx.clip();
+  const g = ctx.createLinearGradient(0, 0, 0, ROAD_Y);
+  g.addColorStop(0, "#60a5fa"); g.addColorStop(1, "#dbeafe");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, ROAD_Y);
+  // sun
+  ctx.fillStyle = "#fde68a"; ctx.fillRect(820, 46, 44, 44);
+  // far hills (slow parallax)
+  const off1 = s.x * PX * 0.15;
+  ctx.fillStyle = "#86c58f";
+  for (let i = Math.floor(off1 / 90) - 1; i < off1 / 90 + 13; i++) {
+    const h = 30 + hash(i) * 50;
+    ctx.fillRect(i * 90 - off1, ROAD_Y - 30 - h, 92, h + 30);
+  }
+  // town blocks (medium parallax)
+  const off2 = s.x * PX * 0.45;
+  for (let i = Math.floor(off2 / 70) - 1; i < off2 / 70 + 16; i++) {
+    if (hash(i + 7) < 0.25) continue;
+    const h = 40 + hash(i + 3) * 70, w = 50 + hash(i + 5) * 14;
+    const col = ["#f87171", "#fbbf24", "#a78bfa", "#60a5fa", "#34d399", "#f472b6"][Math.floor(hash(i + 9) * 6)];
+    const x = i * 70 - off2;
+    Kit.brick(ctx, x, ROAD_Y - 8 - h, w, h + 8, col, 4);
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    for (let wy = ROAD_Y - h; wy < ROAD_Y - 20; wy += 18) for (let wx = x + 8; wx < x + w - 12; wx += 16) ctx.fillRect(wx, wy, 8, 9);
+  }
+  // grass and road
+  ctx.fillStyle = "#4ade80"; ctx.fillRect(0, ROAD_Y - 8, W, 8);
+  ctx.fillStyle = "#475569"; ctx.fillRect(0, ROAD_Y, W, SCENE_H - ROAD_Y);
+  // ice patches
+  if (L.surface) for (const [a, b] of L.surface) {
+    const x1 = Math.max(0, sx(a)), x2 = Math.min(W, sx(b));
+    if (x2 > x1) {
+      ctx.fillStyle = "#bae6fd"; ctx.fillRect(x1, ROAD_Y, x2 - x1, SCENE_H - ROAD_Y);
+      ctx.fillStyle = "rgba(255,255,255,.7)";
+      for (let k = Math.floor(a / 3); k * 3 < b; k++) { const px = sx(k * 3); if (px > x1 && px < x2) ctx.fillRect(px, ROAD_Y + 8 + hash(k) * 40, 10, 2); }
+    }
+  }
+  // zones
+  for (const mk of L.markers || []) {
+    if (mk.to === undefined) continue;
+    const x1 = Math.max(0, sx(mk.x)), x2 = Math.min(W, sx(mk.to));
+    if (x2 > x1) { ctx.fillStyle = mk.kind === "school" ? "rgba(250,204,21,.28)" : "rgba(34,197,94,.28)"; ctx.fillRect(x1, ROAD_Y, x2 - x1, SCENE_H - ROAD_Y); }
+  }
+  // lane dashes
+  ctx.fillStyle = "rgba(255,255,255,.75)";
+  const dashOff = (s.x * PX) % 60;
+  for (let x = -dashOff; x < W; x += 60) ctx.fillRect(x, ROAD_Y + 26, 30, 4);
+  // distance posts every 10 m
+  const first = Math.floor((s.x - CAR_SX / PX) / 10) * 10;
+  for (let d = Math.max(0, first); d < s.x + (W - CAR_SX) / PX + 10; d += 10) {
+    const x = sx(d);
+    ctx.fillStyle = "#e2e8f0"; ctx.fillRect(x - 1, ROAD_Y - 22, 3, 22);
+    rrect(x - 17, ROAD_Y - 38, 34, 17, 4, "#1e293b");
+    text(d + " m", x, ROAD_Y - 25, 11, "#fff", "center");
+  }
+  // markers
+  for (const mk of L.markers || []) drawMarker(mk);
+  drawVehicle();
+  // fade the top for text
+  ctx.restore();
+}
+
+function sign(x, label, bg, fg) {
+  ctx.fillStyle = "#94a3b8"; ctx.fillRect(x - 2, ROAD_Y - 70, 4, 70);
+  ctx.font = `bold 12px ${FONT}`;
+  const w = ctx.measureText(label).width + 14;
+  rrect(x - w / 2, ROAD_Y - 92, w, 24, 5, bg, "#fff", 2);
+  text(label, x, ROAD_Y - 75, 12, fg, "center");
+}
+function drawMarker(mk) {
+  const x = sx(mk.x);
+  if (x < -80 || x > W + 80) return;
+  if (mk.kind === "line") {
+    for (let k = 0; k < 6; k++) { ctx.fillStyle = k % 2 ? "#fff" : "#ef4444"; ctx.fillRect(x - 3, ROAD_Y + k * 10, 6, 10); }
+    sign(x, "STOP", "#ef4444", "#fff");
+  } else if (mk.kind === "camera") {
+    ctx.fillStyle = "#64748b"; ctx.fillRect(x - 3, ROAD_Y - 96, 6, 96);
+    Kit.brick(ctx, x - 22, ROAD_Y - 112, 30, 22, "#facc15", 4);
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(x - 18, ROAD_Y - 101, 6, 0, 7); ctx.fill();
+    ctx.fillStyle = "rgba(250,204,21,.5)"; ctx.fillRect(x - 1, ROAD_Y, 2, SCENE_H - ROAD_Y);
+  } else if (mk.kind === "barrier") {
+    for (let k = 0; k < 4; k++) Kit.brick(ctx, x, ROAD_Y - 14 + k * 18, 22, 16, k % 2 ? "#fff" : "#ef4444", 3);
+  } else if (mk.kind === "flag") {
+    ctx.fillStyle = "#e2e8f0"; ctx.fillRect(x - 2, ROAD_Y - 70, 4, 70 + 50);
+    ctx.fillStyle = "#22c55e"; ctx.beginPath(); ctx.moveTo(x + 2, ROAD_Y - 70); ctx.lineTo(x + 34, ROAD_Y - 60); ctx.lineTo(x + 2, ROAD_Y - 50); ctx.fill();
+    text("60 m", x + 6, ROAD_Y - 38, 12, "#14532d");
+  } else if (mk.kind === "icesign") {
+    sign(x, "ICE AHEAD", "#0ea5e9", "#fff");
+  } else if (mk.kind === "zone") {
+    sign(x, "STEADY " + mk.label, "#16a34a", "#fff");
+    const x2 = sx(mk.to); if (x2 > -50 && x2 < W + 50) sign(x2, "END", "#16a34a", "#fff");
+  } else if (mk.kind === "school") {
+    sign(x, "SCHOOL " + mk.label, "#facc15", "#111");
+    const x2 = sx(mk.to); if (x2 > -50 && x2 < W + 50) sign(x2, "END", "#facc15", "#111");
+  }
+}
+
+function wheel(x, y, r) {
+  ctx.fillStyle = "#111827"; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+  ctx.fillStyle = "#9ca3af"; ctx.beginPath(); ctx.arc(x, y, r * 0.5, 0, 7); ctx.fill();
+  const ang = (s.x * PX) / r;
+  ctx.strokeStyle = "#374151"; ctx.lineWidth = 3;
+  ctx.beginPath();
+  for (let k = 0; k < 2; k++) { const a = ang + k * Math.PI / 2; ctx.moveTo(x - Math.cos(a) * r * 0.5, y - Math.sin(a) * r * 0.5); ctx.lineTo(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5); }
+  ctx.stroke();
+}
+function drawVehicle() {
+  const f = CAR_SX, gy = GROUND_Y;
+  const truck = L.vehicle === "truck";
+  if (!truck) {
+    // cabin frame, driver, glass, then body over the driver's legs
+    Kit.brick(ctx, f - 96, gy - 94, 66, 52, "#1d4ed8", 8);
+    ctx.fillStyle = "#bfdbfe"; ctx.fillRect(f - 90, gy - 88, 54, 42);
+    Kit.drawAvatar(ctx, f - 62, gy - 22, 68, { facing: 1 });
+    ctx.fillStyle = "rgba(191,219,254,.3)"; ctx.fillRect(f - 90, gy - 88, 54, 42);
+    ctx.fillStyle = "#1d4ed8"; ctx.fillRect(f - 64, gy - 88, 4, 42);
+    Kit.brick(ctx, f - 128, gy - 50, 128, 34, "#2563eb", 8);
+    ctx.fillStyle = "#fde68a"; ctx.fillRect(f - 6, gy - 44, 6, 8);
+    ctx.fillStyle = "#ef4444"; ctx.fillRect(f - 128, gy - 44, 5, 8);
+    wheel(f - 26, gy - 13, 13); wheel(f - 98, gy - 13, 13);
+  } else {
+    Kit.brick(ctx, f - 196, gy - 104, 128, 82, "#f97316", 6);
+    ctx.fillStyle = "rgba(255,255,255,.25)"; ctx.fillRect(f - 186, gy - 92, 108, 8);
+    Kit.brick(ctx, f - 66, gy - 92, 64, 50, "#16a34a", 8);
+    ctx.fillStyle = "#bbf7d0"; ctx.fillRect(f - 44, gy - 86, 36, 28);
+    Kit.drawAvatar(ctx, f - 26, gy - 26, 54, { facing: 1 });
+    ctx.fillStyle = "rgba(187,247,208,.35)"; ctx.fillRect(f - 44, gy - 86, 36, 28);
+    Kit.brick(ctx, f - 70, gy - 52, 70, 32, "#15803d", 6);
+    ctx.fillStyle = "#374151"; ctx.fillRect(f - 196, gy - 24, 196, 8);
+    wheel(f - 26, gy - 14, 14); wheel(f - 110, gy - 14, 14); wheel(f - 170, gy - 14, 14);
+  }
+  // brake lights / exhaust hints
+  if (s.brake && s.v > 0) { ctx.fillStyle = "rgba(239,68,68,.6)"; ctx.beginPath(); ctx.arc(f - (truck ? 196 : 124), gy - 40, 10, 0, 7); ctx.fill(); }
+  // speed lines
+  if (s.v > 8) {
+    ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 2;
+    for (let k = 0; k < 3; k++) { const y = gy - 30 - k * 16, len = s.v * 2; ctx.beginPath(); ctx.moveTo(f - (truck ? 205 : 132) - 6, y); ctx.lineTo(f - (truck ? 205 : 132) - 6 - len, y); ctx.stroke(); }
+  }
+}
+
+function drawTopBar() {
+  const btn = (b, label, color) => { Kit.brick(ctx, b.x, b.y, b.w, b.h, color, 7); text(label, b.x + b.w / 2, b.y + 20, 13, "#fff", "center"); };
+  btn(BTN_LEVELS, "Levels", "#12b76a");
+  if (mode === "drive") btn(BTN_RETRY, "Retry", "#f59e0b");
+  rrect(176, 8, 648, 56, 10, "rgba(15,23,42,.72)");
+  text(`Level ${lv + 1}: ${L.title}`, 500, 30, 17, "#facc15", "center");
+  const lines = wrap(L.type === "quiz" ? "Pick the right answer." : "Goal: " + L.goal, 620, 13, "600");
+  lines.slice(0, 2).forEach((l, i) => text(l, 500, 48 + i * 15, 13, "#e2e8f0", "center", "600"));
+  // mini map of the course
+  if (mode === "drive" && L.length) {
+    const mx = 260, mw = 480, my = 76;
+    rrect(mx - 6, my - 6, mw + 12, 14, 7, "rgba(15,23,42,.6)");
+    ctx.fillStyle = "#64748b"; ctx.fillRect(mx, my, mw, 2);
+    if (L.surface) for (const [a, b] of L.surface) { ctx.fillStyle = "#7dd3fc"; ctx.fillRect(mx + Math.max(0, a) / L.length * mw, my - 1, (Math.min(L.length, b) - Math.max(0, a)) / L.length * mw, 4); }
+    for (const mk of L.markers || []) {
+      ctx.fillStyle = mk.kind === "line" ? "#ef4444" : mk.kind === "school" ? "#facc15" : mk.kind === "zone" ? "#22c55e" : "#e2e8f0";
+      if (mk.to !== undefined) ctx.fillRect(mx + mk.x / L.length * mw, my - 1, (mk.to - mk.x) / L.length * mw, 4);
+      else ctx.fillRect(mx + mk.x / L.length * mw - 1, my - 4, 3, 10);
+    }
+    ctx.fillStyle = "#3b82f6"; ctx.beginPath(); ctx.arc(mx + Math.min(1, s.x / L.length) * mw, my + 1, 5, 0, 7); ctx.fill();
+  }
+}
+
+// ------------------------------------------------------------------ dashboard
+function pedal(r, label, color, on) {
+  rrect(r.x, r.y, r.w, r.h, 14, on ? color : "#22252a", on ? "#fff" : "#3a3f46", 2);
+  ctx.save(); ctx.globalAlpha = on ? 1 : 0.75;
+  Kit.brick(ctx, r.x + 18, r.y + 70 + (on ? 8 : 0), r.w - 36, 120, on ? "#e5e7eb" : color, 10);
+  ctx.fillStyle = "rgba(0,0,0,.25)";
+  for (let k = 0; k < 4; k++) ctx.fillRect(r.x + 28, r.y + 92 + k * 24 + (on ? 8 : 0), r.w - 56, 6);
+  ctx.restore();
+  text(label, r.x + r.w / 2, r.y + 40, 18, "#fff", "center", "900");
+  text(label === "GAS" ? "Up / W" : "Down / S", r.x + r.w / 2, r.y + r.h - 20, 12, "#a7adb4", "center", "600");
+}
+function aLabel() {
+  if (s.v === 0 && Math.abs(s.a) < 0.01) return ["stopped", "#a7adb4"];
+  if (Math.abs(aShow) < 0.1) return ["constant speed", "#facc15"];
+  return aShow > 0 ? ["speeding up", "#4ade80"] : ["slowing down (deceleration)", "#f87171"];
+}
+function drawPanel() {
+  const p = PANEL;
+  rrect(p.x, p.y, p.w, p.h, 12, "#22252a");
+  text("SPEED", p.x + 14, p.y + 22, 12, "#a7adb4");
+  text(s.v.toFixed(1), p.x + 14, p.y + 62, 40, "#fff", "left", "900");
+  ctx.font = `900 40px ${FONT}`; const w = ctx.measureText(s.v.toFixed(1)).width;
+  text("m/s", p.x + 20 + w, p.y + 62, 16, "#cbd5e1");
+  text(`= ${(s.v * 3.6).toFixed(0)} km/h`, p.x + p.w - 14, p.y + 62, 14, "#93c5fd", "right");
+  text("ACCELERATION", p.x + 14, p.y + 90, 12, "#a7adb4");
+  const a = Math.abs(aShow) < 0.05 ? 0 : aShow;
+  text(`${a > 0 ? "+" : a < 0 ? "-" : ""}${Math.abs(a).toFixed(1)} m/s^2`, p.x + 14, p.y + 116, 22, "#fff", "left", "900");
+  const [lab, col] = aLabel();
+  text(lab, p.x + 14, p.y + 136, 13, col);
+  text("DISTANCE", p.x + 14, p.y + 162, 12, "#a7adb4");
+  text(`${s.x.toFixed(1)} m`, p.x + 14, p.y + 184, 18, "#fff");
+  text("TIME", p.x + 150, p.y + 162, 12, "#a7adb4");
+  text(`${s.t.toFixed(1)} s`, p.x + 150, p.y + 184, 18, "#fff");
+  // extra lines
+  let y = p.y + 208;
+  const surf = surfaceAt(s.x);
+  if (L.showStop) {
+    const b = PH.brakeDecel(veh, surf);
+    const d = PH.brakingDistance(s.v, b);
+    text(`Braking distance v^2/(2a):`, p.x + 14, y, 12, "#a7adb4", "left", "600");
+    text(`${s.v.toFixed(1)}^2 / (2 x ${b.toFixed(b < 1 ? 2 : 0)}) = ${d.toFixed(1)} m`, p.x + 14, y + 17, 14, "#fde68a");
+    const gap = L.lineX - s.x;
+    text(gap >= 0 ? `Line in ${gap.toFixed(1)} m` : `Past the line by ${(-gap).toFixed(1)} m`, p.x + 14, y + 37, 14, gap >= 0 ? (d > gap ? "#f87171" : "#86efac") : "#f87171");
+    if (surf === "ice") text("ICE", p.x + p.w - 14, y + 37, 14, "#7dd3fc", "right");
+  } else if (L.status) {
+    wrap(L.status(s, m), p.w - 28, 13, "bold").slice(0, 2).forEach((l, i) => text(l, p.x + 14, y + 6 + i * 17, 13, "#fde68a"));
+  } else if (veh !== PH.VEHICLES.car || surf === "ice") {
+    text(`${veh.name}: ${veh.mass} kg on ${surf}`, p.x + 14, y + 6, 13, "#fde68a");
+  } else {
+    text(`Car: ${veh.mass} kg, engine force ${veh.force} N`, p.x + 14, y + 6, 12, "#a7adb4", "left", "600");
+  }
+  if (L.status && L.showStop) wrap(L.status(s, m), p.w - 28, 12, "bold").slice(0, 1).forEach((l) => text(l, p.x + 14, p.y + p.h - 8, 12, "#c4b5fd"));
+}
+
+function drawGraphBox(r, opts) {
+  // opts: { tMax, yMax, yLabel, series: [{ pts:[[t,y]], color, dash, width }], band: {pts, w} | {lo, hi}, area: pts }
+  const gx = r.x + 46, gy = r.y + 12, gw = r.w - 60, gh = r.h - 46;
+  const X = (t) => gx + (t / opts.tMax) * gw, Y = (v) => gy + gh - (v / opts.yMax) * gh;
+  rrect(gx, gy, gw, gh, 4, "#0f172a");
+  // grid
+  const yStep = niceStep(opts.yMax, 5), tStep = niceStep(opts.tMax, 8);
+  ctx.strokeStyle = "rgba(148,163,184,.18)"; ctx.lineWidth = 1;
+  for (let v = 0; v <= opts.yMax + 1e-9; v += yStep) { ctx.beginPath(); ctx.moveTo(gx, Y(v)); ctx.lineTo(gx + gw, Y(v)); ctx.stroke(); text(fmtTick(v), gx - 6, Y(v) + 4, 11, "#94a3b8", "right", "600"); }
+  for (let t = 0; t <= opts.tMax + 1e-9; t += tStep) { ctx.beginPath(); ctx.moveTo(X(t), gy); ctx.lineTo(X(t), gy + gh); ctx.stroke(); text(fmtTick(t), X(t), gy + gh + 15, 11, "#94a3b8", "center", "600"); }
+  text(opts.xLabel || "time t (s)", gx + gw / 2, gy + gh + 32, 12, "#cbd5e1", "center");
+  ctx.save(); ctx.translate(r.x + 12, gy + gh / 2); ctx.rotate(-Math.PI / 2); text(opts.yLabel, 0, 0, 12, "#cbd5e1", "center"); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(gx, gy, gw, gh); ctx.clip();
+  if (opts.band && opts.band.pts) {
+    const b = opts.band, pts = b.pts;
+    ctx.fillStyle = "rgba(34,197,94,.25)";
+    ctx.beginPath();
+    const T = pts[pts.length - 1][0];
+    for (let t = 0; t <= T + 1e-9; t += 0.1) ctx.lineTo(X(t), Y(targetAt(pts, t) + b.w));
+    for (let t = T; t >= -1e-9; t -= 0.1) ctx.lineTo(X(t), Y(Math.max(0, targetAt(pts, t) - b.w)));
+    ctx.closePath(); ctx.fill();
+    ctx.setLineDash([6, 5]); ctx.strokeStyle = "#22c55e"; ctx.lineWidth = 2;
+    ctx.beginPath(); pts.forEach(([t, v], i) => (i ? ctx.lineTo(X(t), Y(v)) : ctx.moveTo(X(t), Y(v)))); ctx.stroke(); ctx.setLineDash([]);
+  } else if (opts.band) {
+    ctx.fillStyle = "rgba(34,197,94,.25)"; ctx.fillRect(gx, Y(opts.band.hi), gw, Y(opts.band.lo) - Y(opts.band.hi));
+  }
+  if (opts.area && opts.area.length > 1) {
+    ctx.fillStyle = "rgba(59,130,246,.35)";
+    ctx.beginPath(); ctx.moveTo(X(opts.area[0][0]), Y(0));
+    for (const [t, v] of opts.area) ctx.lineTo(X(t), Y(v));
+    ctx.lineTo(X(opts.area[opts.area.length - 1][0]), Y(0)); ctx.closePath(); ctx.fill();
+  }
+  for (const se of opts.series) {
+    if (se.pts.length < 2) continue;
+    ctx.strokeStyle = se.color; ctx.lineWidth = se.width || 3; ctx.lineJoin = "round";
+    ctx.setLineDash(se.dash || []);
+    ctx.beginPath(); se.pts.forEach(([t, v], i) => (i ? ctx.lineTo(X(t), Y(v)) : ctx.moveTo(X(t), Y(v)))); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+  return { X, Y, gx, gy, gw, gh };
+}
+function niceStep(max, n) { const raw = max / n; const p = Math.pow(10, Math.floor(Math.log10(raw))); for (const k of [1, 2, 2.5, 5, 10]) if (raw <= k * p) return k * p; return 10 * p; }
+const fmtTick = (v) => (Math.abs(v - Math.round(v)) < 1e-6 ? String(Math.round(v)) : v.toFixed(1));
+
+function drawGraph() {
+  const r = GRAPH;
+  rrect(r.x, r.y, r.w, r.h, 12, "#22252a");
+  const tabBtn = (b, label, on) => { rrect(b.x, b.y, b.w, b.h, 7, on ? "#3b82f6" : "#2b2f35"); text(label, b.x + b.w / 2, b.y + 18, 13, on ? "#fff" : "#a7adb4", "center"); };
+  tabBtn(TAB_V, "v-t graph", tab === "v"); tabBtn(TAB_D, "d-t graph", tab === "d");
+  const tMax = Math.max(L.graph.t, s.t > L.graph.t ? Math.ceil(s.t / 5) * 5 : 0);
+  const inner = { x: r.x, y: r.y + 36, w: r.w, h: r.h - 36 };
+  if (tab === "v") {
+    const vMax = Math.max(L.graph.v, Math.ceil(Math.max(...samples.map((q) => q[1])) / 5) * 5);
+    const series = [];
+    if (ghost) series.push({ pts: ghost, color: "#94a3b8", dash: [5, 5], width: 2 });
+    series.push({ pts: samples.map((q) => [q[0], q[1]]), color: "#facc15" });
+    const g = drawGraphBox(inner, { tMax, yMax: vMax, yLabel: "velocity v (m/s)", series,
+      band: L.target ? { pts: L.target, w: L.tband } : L.band ? { lo: L.band[0], hi: L.band[1] } : null,
+      area: L.area ? samples.map((q) => [q[0], q[1]]) : null });
+    if (L.area) text(`shaded area = distance = ${s.x.toFixed(1)} m`, g.gx + 8, g.gy + 18, 13, "#93c5fd");
+    if (ghost) text("grey: car, same engine force", g.gx + 8, g.gy + 18, 12, "#cbd5e1");
+    // slope hint
+    const [lab, col] = aLabel();
+    text(lab === "constant speed" ? "flat line" : lab === "speeding up" ? "slope up" : lab === "stopped" ? "" : "slope down", g.gx + g.gw - 8, g.gy + 18, 12, col, "right");
+  } else {
+    const dMax = Math.max(20, Math.ceil(Math.max(s.x, L.lineX || 0, 1) / 20) * 20);
+    const g = drawGraphBox(inner, { tMax, yMax: dMax, yLabel: "distance d (m)", series: [{ pts: samples.map((q) => [q[0], q[2]]), color: "#4ade80" }] });
+    text("steeper line = faster speed", g.gx + 8, g.gy + 18, 12, "#cbd5e1");
+  }
+}
+
+// ------------------------------------------------------------------ screens
+function drawDrive() {
+  drawScene();
+  drawTopBar();
+  const inp = pedalInput();
+  pedal(BRAKE, "BRAKE", "#dc2626", inp.brake && !result && countdown <= 0);
+  pedal(GAS, "GAS", "#16a34a", inp.gas && !inp.brake && !result && countdown <= 0);
+  drawPanel();
+  drawGraph();
+  if (countdown > 0 && countdown < 50 && !overlayOpen) {
+    const n = countdown > 0.8 ? "Ready..." : "GO!";
+    text(n, 500, 170, 48, "#fff", "center", "900");
+  }
+}
+
+function drawQuiz() {
+  ctx.fillStyle = "#16181b"; ctx.fillRect(0, 0, W, H);
+  const btn = (b, label, color) => { Kit.brick(ctx, b.x, b.y, b.w, b.h, color, 7); text(label, b.x + b.w / 2, b.y + 20, 13, "#fff", "center"); };
+  btn(BTN_LEVELS, "Levels", "#12b76a");
+  text(`Level ${lv + 1}: ${L.title}`, 500, 34, 20, "#facc15", "center");
+  wrap(L.q, 860, 20, "bold").forEach((l, i) => text(l, 500, 90 + i * 28, 20, "#fff", "center"));
+  if (L.graph) {
+    rrect(40, 180, 490, 300, 12, "#22252a");
+    drawGraphBox({ x: 46, y: 186, w: 478, h: 290 }, { tMax: L.graph.t, yMax: L.graph.v, yLabel: "velocity v (m/s)", series: [{ pts: L.graph.pts, color: "#facc15" }], area: L.graph.area ? L.graph.pts : null });
+  }
+  for (const o of quizOptions()) {
+    const wrong = quiz.wrong.has(o.i), right = quiz.done && o.i === L.answer;
+    const hot = hoverPos && inRect(hoverPos, o) && !wrong && !quiz.done;
+    Kit.brick(ctx, o.x, o.y, o.w, o.h, right ? "#16a34a" : wrong ? "#7f1d1d" : hot ? "#2563eb" : "#1d4ed8", 12);
+    text(String(o.i + 1), o.x + 30, o.y + 50, 26, "rgba(255,255,255,.6)", "center", "900");
+    text(L.options[o.i], o.x + 60 + (o.w - 70) / 2, o.y + 49, 22, wrong ? "#fca5a5" : "#fff", "center");
+    if (wrong) text("not quite - try again", o.x + o.w - 12, o.y + o.h - 8, 11, "#fca5a5", "right");
+  }
+  text(quiz.tries === 0 ? "First try = 3 stars" : `${quiz.tries} tr${quiz.tries > 1 ? "ies" : "y"} so far`, 500, 590, 14, "#a7adb4", "center", "600");
+}
+
+function drawMenu() {
+  ctx.fillStyle = "#16181b"; ctx.fillRect(0, 0, W, H);
+  // little road banner
+  ctx.fillStyle = "#475569"; ctx.fillRect(0, 96, W, 22);
+  ctx.fillStyle = "rgba(255,255,255,.7)"; for (let x = 0; x < W; x += 50) ctx.fillRect(x + ((performance.now() / 8) % 50), 106, 25, 3);
+  text("Velocity Lab", W / 2, 58, 40, "#38bdf8", "center", "900");
+  text(`Speed, velocity, acceleration and deceleration  -  ${totalStars()} / ${LEVELS.length * 3} stars`, W / 2, 86, 15, "#cbd5e1", "center", "600");
+  for (const t of menuTiles()) {
+    const L2 = LEVELS[t.i], ok = unlocked(t.i), st = starsOf(t.i);
+    const hot = hoverPos && inRect(hoverPos, t) && ok;
+    Kit.brick(ctx, t.x, t.y, t.w, t.h, !ok ? "#2b2f35" : L2.type === "quiz" ? (hot ? "#9333ea" : "#7e22ce") : hot ? "#0284c7" : "#0369a1", 10);
+    text(String(t.i + 1), t.x + 12, t.y + 26, 20, ok ? "#fff" : "#6b7280");
+    if (!ok) text("Locked", t.x + t.w - 10, t.y + 22, 12, "#6b7280", "right");
+    else for (let k = 0; k < 3; k++) star(t.x + t.w - 54 + k * 20, t.y + 18, 8, k < st);
+    wrap(L2.title, t.w - 22, 13, "bold").slice(0, 2).forEach((l, i) => text(l, t.x + 12, t.y + 50 + i * 16, 13, ok ? "#e5e7eb" : "#6b7280"));
+  }
+  text("Hold GAS (Up / W) to speed up, BRAKE (Down / S) to slow down. On a touch screen, hold the pedals.", W / 2, 600, 13, "#a7adb4", "center", "600");
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b"; ctx.fillRect(0, 0, W, H);
+  if (mode === "menu") drawMenu();
+  else if (mode === "quiz") drawQuiz();
+  else drawDrive();
+}
+
+// ------------------------------------------------------------------ boot
+const loop = Kit.loop(update, draw);
+updateHud();
+loop.start();
+showOverlay("Velocity Lab", "Drive a blocky car in a physics lab!\nLearn about speed, velocity, acceleration and deceleration, read v-t graphs and find out why fast cars need so long to stop.\n\nGAS: Up / W (or hold the right pedal)\nBRAKE: Down / S (or hold the left pedal)", "Play");
+
+window.game = {
+  get mode() { return mode; }, get level() { return lv; }, get s() { return s; }, get m() { return m; }, get result() { return result; },
+  get samples() { return samples; }, get save() { return save; }, get countdown() { return countdown; },
+  startLevel, resetRun, answer, physics: PH, levels: LEVELS,
+  setTab: (t) => { tab = t; }, menu: () => { mode = "menu"; },
+  // test helper: hold pointers / keys through a fake pointer map
+  hold: (what) => { pointers.set(-1, what); }, release: () => pointers.delete(-1),
+};
+</script>
+</body>
+</html>

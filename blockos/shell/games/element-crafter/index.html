@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Element Crafter</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  /* The HUD sits over the top of the canvas on short screens: let taps through and keep it to one line. */
+  .kit-hud { pointer-events: none; }
+  @media (max-height: 500px) { .kit-hud { font-size: 14px; top: 8px; } .kit-hud small { display: none; } }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script src="data.js"></script>
+<script>
+"use strict";
+const ID = "element-crafter";
+const D = window.EC_DATA;
+const { ELEMENTS, ELEMENT_ORDER, RECIPES, RARITY, KIND_TEXT } = D;
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player().name;
+const FONT = '"Noto Sans", "DejaVu Sans", sans-serif';
+const SAVE_KEY = "blockos.element-crafter.v1";
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const byKey = {};
+for (const r of RECIPES) byKey[r.key] = r;
+
+// ------------------------------------------------------------------ save
+
+let save = { found: {}, hints: {}, mixes: 0 };
+try {
+  const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+  if (s && typeof s === "object") save = Object.assign(save, s, { found: s.found || {}, hints: s.hints || {} });
+} catch (_) {}
+for (const id in save.found) if (!RECIPES.some((r) => r.id === id)) delete save.found[id];
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} }
+
+const foundCount = () => Object.keys(save.found).length;
+const compoundCount = () => RECIPES.filter((r) => save.found[r.id] && r.kind !== "element").length;
+const isUnlocked = (sym) => ELEMENTS[sym].unlock <= foundCount();
+const recipeReady = (r) => Object.keys(r.counts).every(isUnlocked);
+
+// ------------------------------------------------------------------ layout
+
+const TRAY = { x: 10, y: 52, w: 216, h: 478 };
+const BOARD = { x: 236, y: 52, w: 468, h: 382 };
+const SIDE = { x: 714, y: 52, w: 236, h: 478 };
+const TILE = 64;
+function tileRect(i) { return { x: TRAY.x + 8 + (i % 3) * 70, y: TRAY.y + 34 + Math.floor(i / 3) * 72, w: TILE, h: TILE }; }
+const inRect = (p, r) => p.x >= r.x && p.y >= r.y && p.x <= r.x + r.w && p.y <= r.y + r.h;
+
+// ------------------------------------------------------------------ state
+
+let screen = "lab";            // lab | book | card | table | help
+let board = [];                // atoms on the reaction board: { el, x, y, born }
+let drag = null;
+let msg = null;                // { text, t, color }
+let anim = null;               // crafting animation
+let card = null;               // { recipe, isNew }
+let bookPage = 0;
+let tableSel = "H";
+let buttons = [];
+let pressed = null;
+let time = 0;
+let poofs = [];
+
+// ------------------------------------------------------------------ drawing helpers
+
+function txt(s, x, y, size, color, align, weight) {
+  ctx.font = `${weight || "bold"} ${size}px ${FONT}`;
+  ctx.fillStyle = color || "#f2f4f5";
+  ctx.textAlign = align || "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(s, x, y);
+}
+function wrap(s, maxW, size, weight) {
+  ctx.font = `${weight || "normal"} ${size}px ${FONT}`;
+  const out = [];
+  for (const para of String(s).split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const t = line ? line + " " + word : word;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = word; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function para(s, x, y, maxW, size, lh, color, weight) {
+  for (const line of wrap(s, maxW, size, weight)) { txt(line, x, y, size, color, "left", weight || "normal"); y += lh; }
+  return y;
+}
+function panel(x, y, w, h, fill, stroke) {
+  ctx.fillStyle = fill || "#1d2026";
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 12); ctx.fill();
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 2; ctx.stroke(); }
+}
+function button(label, x, y, w, h, color, fn, size) {
+  const down = pressed && pressed.label === label && pressed.x === x;
+  Kit.brick(ctx, x, y + (down ? 2 : 0), w, h, color, 8);
+  txt(label, x + w / 2, y + h / 2 + (size || 17) * 0.36 + (down ? 2 : 0), size || 17, "#fff", "center");
+  buttons.push({ label, x, y, w, h, fn });
+}
+// Chemical formula with subscript numbers: "C6H12O6", "Ca3(PO4)2".
+function formulaParts(f) { return f.match(/[A-Z][a-z]?|\d+|[()]/g) || []; }
+function formulaWidth(f, size) {
+  let w = 0;
+  for (const p of formulaParts(f)) {
+    ctx.font = `bold ${/\d/.test(p) ? Math.round(size * 0.62) : size}px ${FONT}`;
+    w += ctx.measureText(p).width;
+  }
+  return w;
+}
+function drawFormula(f, x, y, size, color, align) {
+  let cx = x;
+  const w = formulaWidth(f, size);
+  if (align === "center") cx -= w / 2; else if (align === "right") cx -= w;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = color || "#fff";
+  for (const p of formulaParts(f)) {
+    const sub = /\d/.test(p);
+    ctx.font = `bold ${sub ? Math.round(size * 0.62) : size}px ${FONT}`;
+    ctx.fillText(p, cx, y + (sub ? size * 0.28 : 0));
+    cx += ctx.measureText(p).width;
+  }
+  return w;
+}
+const SUP = { "1": "\u00b9", "2": "\u00b2", "3": "\u00b3", "+": "\u207a", "-": "\u207b" };
+function ionText(sym) {
+  const E = ELEMENTS[sym];
+  const t = E.chargeText || chargeText(E.charge).replace("\u2212", "-");
+  return t.split("/").map((c) => sym + c.replace(/^1/, "").split("").map((ch) => SUP[ch] || ch).join("")).join(" or ");
+}
+function chargeText(q) { return (Math.abs(q) > 1 ? Math.abs(q) : "") + (q > 0 ? "+" : "−"); }
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (c) => Math.max(0, Math.min(255, Math.round(c + amt * 255)));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+}
+
+// One atom as a block. s = half the block size in px. opts: { stubs, badge, q, alpha }
+function drawAtom(el, x, y, s, opts) {
+  const o = opts || {};
+  const E = ELEMENTS[el];
+  ctx.save();
+  if (o.alpha !== undefined) ctx.globalAlpha = o.alpha;
+  if (o.stubs) {
+    // bond stubs: how many bonds this atom usually makes
+    const k = E.bonds || 0;
+    const start = k === 3 ? -90 : k === 1 ? 0 : k === 2 ? 0 : -90;
+    for (let i = 0; i < k; i++) {
+      const a = ((start + (360 / k) * i) * Math.PI) / 180;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(a);
+      ctx.fillStyle = "#9ca3af";
+      ctx.fillRect(s * 0.7, -s * 0.17, s * 0.75, s * 0.34);
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fillRect(s * 1.3, -s * 0.22, s * 0.22, s * 0.44);
+      ctx.restore();
+    }
+    if (E.noble) {
+      ctx.strokeStyle = "rgba(103,232,249,.8)";
+      ctx.lineWidth = Math.max(2, s * 0.12);
+      ctx.setLineDash([s * 0.3, s * 0.2]);
+      ctx.beginPath(); ctx.arc(x, y, s * 1.45, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  Kit.brick(ctx, x - s, y - s, s * 2, s * 2, E.color, Math.max(3, s * 0.35));
+  ctx.strokeStyle = "rgba(0,0,0,.35)";
+  ctx.lineWidth = Math.max(1, s * 0.07);
+  ctx.beginPath(); ctx.roundRect(x - s, y - s, s * 2, s * 2, Math.max(3, s * 0.35)); ctx.stroke();
+  const fs = Math.round(s * (el.length > 1 ? 0.95 : 1.15));
+  txt(el, x, y + fs * 0.36, fs, E.ink, "center");
+  const badge = o.badge ? (E.chargeText || chargeText(E.charge)) : o.q ? chargeText(o.q) : null;
+  if (badge) {
+    const pos = (o.badge ? E.charge : o.q) > 0;
+    const bf = Math.round(Math.max(7, s * 0.6));
+    ctx.font = `bold ${bf}px ${FONT}`;
+    const bw = Math.max(s * 0.8, ctx.measureText(badge).width + bf * 0.6);
+    const bh = Math.max(9, s * 0.75);
+    ctx.fillStyle = pos ? "#fde047" : "#93c5fd";
+    ctx.beginPath(); ctx.roundRect(x + s * 0.45, y - s * 1.3, bw, bh, bh / 2); ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,.4)"; ctx.lineWidth = 1; ctx.stroke();
+    txt(badge, x + s * 0.45 + bw / 2, y - s * 1.3 + bh / 2 + bf * 0.36, bf, "#111", "center");
+  }
+  ctx.restore();
+}
+
+const ATOM_K = 0.8;   // atom block size compared with the bond length
+// Fit a recipe's structure into a box: returns screen points and the scale.
+function layoutMol(r, box, maxScale) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const a of r.atoms) {
+    const s = a.el ? ELEMENTS[a.el].size * ATOM_K * (a.q && ELEMENTS[a.el].charge ? 1.1 : 1) : 0;
+    x0 = Math.min(x0, a.x - s); x1 = Math.max(x1, a.x + s);
+    y0 = Math.min(y0, a.y - s - (a.q ? 0.3 : 0)); y1 = Math.max(y1, a.y + s);
+  }
+  const sc = Math.min(maxScale || 90, box.w / (x1 - x0 + 0.5), box.h / (y1 - y0 + 0.5));
+  const cx = box.x + box.w / 2 - ((x0 + x1) / 2) * sc;
+  const cy = box.y + box.h / 2 - ((y0 + y1) / 2) * sc;
+  return { sc, pts: r.atoms.map((a) => ({ x: cx + a.x * sc, y: cy + a.y * sc })) };
+}
+function drawMol(r, L, opts) {
+  const o = opts || {};
+  const pts = o.pts || L.pts;
+  const sw = Math.max(3, L.sc * 0.1);
+  ctx.save();
+  ctx.globalAlpha = o.bondAlpha === undefined ? 1 : o.bondAlpha;
+  for (const [i, j, order] of r.bonds) {
+    const a = pts[i], b = pts[j];
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    const n = order || 1;
+    for (let k = 0; k < n; k++) {
+      const off = (k - (n - 1) / 2) * sw * 1.5;
+      ctx.lineCap = "butt";
+      if (!order) ctx.setLineDash([sw * 1.2, sw]);
+      ctx.strokeStyle = "#8b929b";
+      ctx.lineWidth = sw;
+      ctx.beginPath(); ctx.moveTo(a.x + nx * off, a.y + ny * off); ctx.lineTo(b.x + nx * off, b.y + ny * off); ctx.stroke();
+      if (order) {
+        ctx.strokeStyle = "rgba(255,255,255,.35)";
+        ctx.lineWidth = Math.max(1, sw * 0.3);
+        ctx.beginPath(); ctx.moveTo(a.x + nx * (off - sw * 0.2), a.y + ny * (off - sw * 0.2)); ctx.lineTo(b.x + nx * (off - sw * 0.2), b.y + ny * (off - sw * 0.2)); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+  }
+  ctx.restore();
+  r.atoms.forEach((a, i) => {
+    if (!a.el) return;
+    const E = ELEMENTS[a.el];
+    const s = E.size * ATOM_K * L.sc * (a.q && E.charge ? 1.1 : 1);
+    drawAtom(a.el, pts[i].x, pts[i].y, s, { q: a.q, alpha: o.alphas ? o.alphas[i] : 1 });
+  });
+}
+
+// ------------------------------------------------------------------ the board
+
+function boardCounts() {
+  const c = {};
+  for (const a of board) c[a.el] = (c[a.el] || 0) + 1;
+  return c;
+}
+// Hill order: C, then H, then the rest A-Z (no C: everything A-Z).
+function hillFormula(c) {
+  const syms = Object.keys(c).sort();
+  const order = c.C ? ["C", ...(c.H ? ["H"] : []), ...syms.filter((s) => s !== "C" && s !== "H")] : syms;
+  return order.map((s) => s + (c[s] > 1 ? c[s] : "")).join("");
+}
+const BOARD_PAD = 30;
+function addAtom(el, x, y) {
+  if (anim) return;
+  if (board.length >= 30) { say("The board is full! Mix or clear it first.", "#fb923c"); return; }
+  if (x === undefined) {
+    let best = null, bestD = -1;
+    for (let i = 0; i < 40; i++) {
+      const px = BOARD.x + BOARD_PAD + Math.random() * (BOARD.w - BOARD_PAD * 2);
+      const py = BOARD.y + BOARD_PAD + 10 + Math.random() * (BOARD.h - BOARD_PAD * 2 - 50);
+      const d = board.reduce((m, a) => Math.min(m, Math.hypot(a.x - px, a.y - py)), 999);
+      if (d > bestD) { bestD = d; best = { x: px, y: py }; }
+    }
+    x = best.x; y = best.y;
+  }
+  board.push({ el, x: Kit.clamp(x, BOARD.x + BOARD_PAD + 6, BOARD.x + BOARD.w - BOARD_PAD - 6), y: Kit.clamp(y, BOARD.y + BOARD_PAD + 8, BOARD.y + BOARD.h - BOARD_PAD), born: time });
+  Kit.sfx("click");
+}
+function removeAtom(a) {
+  board = board.filter((b) => b !== a);
+  poofs.push({ x: a.x, y: a.y, t: 0, color: ELEMENTS[a.el].color });
+}
+function say(text, color) { msg = { text, t: 0, color: color || "#facc15" }; }
+
+function mix() {
+  if (anim) return;
+  if (!board.length) { say("Drag some atoms onto the board first, then press Mix!"); Kit.sfx("hit"); return; }
+  save.mixes++;
+  const counts = boardCounts();
+  const r = byKey[D.countKey(counts)];
+  if (r) {
+    // Fly the board atoms into the molecule's shape.
+    const L = layoutMol(r, { x: BOARD.x + 30, y: BOARD.y + 40, w: BOARD.w - 60, h: BOARD.h - 70 }, 70);
+    const pool = board.slice();
+    const starts = r.atoms.map((a, i) => {
+      const k = pool.findIndex((b) => b.el === a.el);
+      if (k < 0) return null;
+      const b = pool.splice(k, 1)[0];
+      return { x: b.x, y: b.y };
+    });
+    anim = { r, L, starts, t: 0 };
+    board = [];
+    Kit.sfx("jump");
+    return;
+  }
+  Kit.sfx("hit");
+  say(mismatchHint(counts), "#fb923c");
+  persist();
+}
+
+function mismatchHint(c) {
+  const els = Object.keys(c);
+  const n = board.length;
+  if (c.He && els.length > 1) return "Helium is a noble gas. Its outer shell is already full, so it won't bond with other atoms.";
+  if (c.He) return "Helium atoms don't bond, not even to each other. Try just one helium atom.";
+  if (n === 1) return `A single ${ELEMENTS[els[0]].name.toLowerCase()} atom isn't a molecule. Add some partners!`;
+  // Close to a recipe with the same elements?
+  let near = null, nearD = 99;
+  for (const r of RECIPES) {
+    if (!recipeReady(r)) continue;
+    const re = Object.keys(r.counts);
+    if (re.length !== els.length || !re.every((s) => c[s])) continue;
+    const d = re.reduce((m, s) => m + Math.abs(r.counts[s] - c[s]), 0);
+    if (d < nearD) { nearD = d; near = r; }
+  }
+  if (near && nearD <= 2) {
+    let sym = null, diff = 0;
+    for (const s in near.counts) if (Math.abs(near.counts[s] - c[s]) > Math.abs(diff)) { sym = s; diff = near.counts[s] - c[s]; }
+    return `So close! Try ${diff > 0 ? "adding" : "taking off"} ${Math.abs(diff) === 1 ? "one" : Math.abs(diff)} ${ELEMENTS[sym].name.toLowerCase()} atom${Math.abs(diff) === 1 ? "" : "s"}.`;
+  }
+  const metals = els.filter((s) => ELEMENTS[s].charge);
+  if (metals.length === els.length) return "Metals mixed together make alloys, which are mixtures, not compounds. Add some nonmetal atoms, like O or Cl.";
+  if (metals.length) {
+    const others = els.filter((s) => !ELEMENTS[s].charge);
+    const simple = metals.length === 1 && !["Fe", "Cu"].includes(metals[0]) && others.every((s) => ["O", "Cl", "F"].includes(s));
+    if (simple) {
+      const plus = ELEMENTS[metals[0]].charge * c[metals[0]];
+      const minus = others.reduce((m, s) => m + (s === "O" ? 2 : 1) * c[s], 0);
+      if (plus !== minus) return `The charges don't balance: the metal ions add up to ${plus}+ but the other ions add up to ${minus}−. In an ionic compound they must match.`;
+    }
+    return "Metals give electrons away and become + ions; nonmetals take them and become − ions. That mix isn't a compound in the book. Try another!";
+  }
+  if (!c.S && !c.P) {
+    const stubs = els.reduce((m, s) => m + ELEMENTS[s].bonds * c[s], 0);
+    if (stubs % 2) return `That's ${stubs} bond stubs: an odd number, so one stub would have no partner. That won't make a stable molecule.`;
+    if (stubs < 2 * (n - 1)) return "There aren't enough bond stubs to join all of these atoms into one molecule.";
+  }
+  return "The bond stubs could pair up, but that's not a molecule in the Discovery Book. Try something else!";
+}
+
+function discover(r) {
+  const isNew = !save.found[r.id];
+  const before = ELEMENT_ORDER.filter(isUnlocked);
+  if (isNew) {
+    save.found[r.id] = Date.now();
+    Kit.sfx("win");
+    const now = ELEMENT_ORDER.filter(isUnlocked);
+    for (const s of now) if (!before.includes(s)) {
+      setTimeout(() => Kit.toast("New element unlocked!", `${ELEMENTS[s].name} (${s}) is now in your atom tray.`, ELEMENTS[s].color), 600);
+    }
+    const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+    badge("first", "First Reaction", "Craft your very first discovery.");
+    if (r.id === "H2O") badge("water", "Water Maker", "Craft water, H2O.");
+    if (r.id === "NaCl") badge("salt", "Salt Chemist", "Craft table salt, NaCl.");
+    if (r.id === "C6H12O6") badge("sugar", "Sugar Rush", "Craft glucose, C6H12O6.");
+    if (r.rarity === 4) badge("legendary", "Legendary Find", "Craft a Legendary discovery.");
+    if (compoundCount() >= 10) badge("compounds-10", "Lab Assistant", "Discover 10 compounds.");
+    if (compoundCount() >= 25) badge("compounds-25", "Master Chemist", "Discover 25 compounds.");
+    if (ELEMENT_ORDER.every(isUnlocked)) badge("all-elements", "Element Collector", "Unlock every element in the atom tray.");
+    Kit.finish(ID, foundCount());
+  } else {
+    Kit.sfx("coin");
+  }
+  persist();
+  updateHud();
+  card = { recipe: r, isNew, from: "lab" };
+  screen = "card";
+}
+
+function updateHud() {
+  Kit.hud(`Found ${foundCount()} / ${RECIPES.length}<small>${esc(ME)} · ${compoundCount()} compounds</small>`);
+}
+
+// ------------------------------------------------------------------ input
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  const p = Kit.pointer(canvas, e);
+  pressed = buttons.find((b) => inRect(p, b)) || null;
+  if (pressed || anim) return;
+  if (screen === "lab") labDown(p);
+  else if (screen === "book") bookDown(p);
+  else if (screen === "table") tableDown(p);
+});
+canvas.addEventListener("pointermove", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (drag) {
+    drag.x = p.x; drag.y = p.y;
+    if (Math.hypot(p.x - drag.sx, p.y - drag.sy) > 8) drag.moved = true;
+    if (drag.atom && drag.moved) { drag.atom.x = p.x - drag.ox; drag.atom.y = p.y - drag.oy; }
+  }
+});
+canvas.addEventListener("pointerup", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (pressed) {
+    const b = pressed;
+    pressed = null;
+    if (inRect(p, b)) { Kit.sfx("click"); b.fn(); }
+    return;
+  }
+  if (drag) dropDrag(p);
+});
+canvas.addEventListener("pointercancel", () => {
+  pressed = null;
+  if (drag && drag.atom) { drag.atom.x = drag.ax; drag.atom.y = drag.ay; }
+  drag = null;
+});
+
+function labDown(p) {
+  for (let i = 0; i < ELEMENT_ORDER.length; i++) {
+    const sym = ELEMENT_ORDER[i];
+    if (!inRect(p, tileRect(i))) continue;
+    if (!isUnlocked(sym)) {
+      const need = ELEMENTS[sym].unlock - foundCount();
+      say(`${ELEMENTS[sym].name} unlocks after ${need} more discover${need === 1 ? "y" : "ies"}.`, "#94a3b8");
+      return;
+    }
+    drag = { el: sym, x: p.x, y: p.y, sx: p.x, sy: p.y, moved: false };
+    return;
+  }
+  for (let i = board.length - 1; i >= 0; i--) {
+    const a = board[i];
+    if (Math.abs(p.x - a.x) < 24 && Math.abs(p.y - a.y) < 24) {
+      board.splice(i, 1); board.push(a);   // bring to front
+      drag = { atom: a, ox: p.x - a.x, oy: p.y - a.y, ax: a.x, ay: a.y, sx: p.x, sy: p.y, x: p.x, y: p.y, moved: false };
+      return;
+    }
+  }
+}
+function dropDrag(p) {
+  const d = drag;
+  drag = null;
+  if (d.el) {
+    if (!d.moved) addAtom(d.el);
+    else if (inRect(p, BOARD)) addAtom(d.el, p.x, p.y);
+  } else if (d.atom) {
+    if (!d.moved) removeAtom(d.atom);                       // tap = take it off
+    else if (!inRect(p, BOARD)) { removeAtom(d.atom); Kit.sfx("click"); }
+    else {
+      d.atom.x = Kit.clamp(d.atom.x, BOARD.x + BOARD_PAD + 6, BOARD.x + BOARD.w - BOARD_PAD - 6);
+      d.atom.y = Kit.clamp(d.atom.y, BOARD.y + BOARD_PAD + 8, BOARD.y + BOARD.h - BOARD_PAD);
+    }
+  }
+}
+
+// ------------------------------------------------------------------ lab screen
+
+function drawLab() {
+  // top bar
+  txt("Element Crafter", 14, 34, 24, "#fff");
+  ctx.font = `bold 24px ${FONT}`;
+  const tw = ctx.measureText("Element Crafter").width;
+  txt(`${foundCount()} / ${RECIPES.length} discovered`, 26 + tw, 33, 15, "#a7adb4");
+  button(`Book`, 560, 8, 120, 36, "#a855f7", () => { screen = "book"; });
+  button("Table", 690, 8, 120, 36, "#3b82f6", () => { screen = "table"; });
+  button("Help", 820, 8, 126, 36, "#6b7280", () => { screen = "help"; });
+
+  // tray
+  panel(TRAY.x, TRAY.y, TRAY.w, TRAY.h, "#1d2026");
+  txt("Atom tray", TRAY.x + 12, TRAY.y + 24, 16, "#fff");
+  txt("drag or tap", TRAY.x + TRAY.w - 12, TRAY.y + 24, 12, "#a7adb4", "right", "normal");
+  ELEMENT_ORDER.forEach((sym, i) => {
+    const r = tileRect(i);
+    const E = ELEMENTS[sym];
+    if (isUnlocked(sym)) {
+      ctx.fillStyle = "#2b2f35";
+      ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+      drawAtom(sym, r.x + r.w / 2, r.y + 27, 13, { stubs: true, badge: !!E.charge });
+      txt(E.name, r.x + r.w / 2, r.y + r.h - 6, E.name.length > 8 ? 10 : 11, "#cbd5e1", "center", "normal");
+    } else {
+      ctx.fillStyle = "#16181b";
+      ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill();
+      ctx.strokeStyle = "#2b2f35"; ctx.lineWidth = 2; ctx.stroke();
+      txt("?", r.x + r.w / 2, r.y + 34, 24, "#3a3f46", "center");
+      txt(`Find ${E.unlock}`, r.x + r.w / 2, r.y + r.h - 8, 11, "#6b7280", "center", "normal");
+    }
+  });
+
+  // board
+  ctx.fillStyle = "#13202b";
+  ctx.beginPath(); ctx.roundRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h, 12); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.05)";
+  for (let y = BOARD.y + 16; y < BOARD.y + BOARD.h; y += 28)
+    for (let x = BOARD.x + 16; x < BOARD.x + BOARD.w; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+  txt("Reaction board", BOARD.x + 12, BOARD.y + 24, 16, "#7dd3fc");
+  if (!board.length && !anim) {
+    txt("Drop atoms here", BOARD.x + BOARD.w / 2, BOARD.y + BOARD.h / 2 - 6, 22, "rgba(255,255,255,.25)", "center");
+    txt("Tap an atom on the board to take it off", BOARD.x + BOARD.w / 2, BOARD.y + BOARD.h / 2 + 22, 14, "rgba(255,255,255,.2)", "center", "normal");
+  }
+  for (const a of board) {
+    const grow = Math.min(1, (time - a.born) * 6);
+    drawAtom(a.el, a.x, a.y, 19 * (0.6 + 0.4 * grow), { stubs: true, badge: !!ELEMENTS[a.el].charge });
+  }
+  for (const p of poofs) {
+    ctx.globalAlpha = 1 - p.t / 0.35;
+    ctx.fillStyle = p.color;
+    for (let k = 0; k < 6; k++) { const ang = k * 1.047; const d = 10 + p.t * 90; ctx.fillRect(p.x + Math.cos(ang) * d - 3, p.y + Math.sin(ang) * d - 3, 6, 6); }
+    ctx.globalAlpha = 1;
+  }
+  if (anim) drawAnim();
+
+  // message banner
+  if (msg) {
+    const a = Math.min(1, (5 - msg.t) * 2);
+    ctx.globalAlpha = Math.max(0, a);
+    const lines = wrap(msg.text, BOARD.w - 40, 15, "bold");
+    const bh = 14 + lines.length * 20;
+    panel(BOARD.x + 10, BOARD.y + BOARD.h - bh - 10, BOARD.w - 20, bh, "rgba(20,22,25,.94)", msg.color);
+    lines.forEach((l, i) => txt(l, BOARD.x + BOARD.w / 2, BOARD.y + BOARD.h - bh + 13 + i * 20, 15, msg.color, "center"));
+    ctx.globalAlpha = 1;
+  }
+
+  // readout + buttons
+  const c = boardCounts();
+  panel(BOARD.x, BOARD.y + BOARD.h + 6, BOARD.w, 40, "#1d2026");
+  if (board.length) {
+    txt("On the board:", BOARD.x + 12, BOARD.y + BOARD.h + 32, 14, "#a7adb4", "left", "normal");
+    drawFormula(hillFormula(c), BOARD.x + 116, BOARD.y + BOARD.h + 33, 20, "#fff");
+    const nonmetal = Object.keys(c).every((s) => !ELEMENTS[s].charge);
+    let info = `${board.length} atom${board.length === 1 ? "" : "s"}`;
+    if (nonmetal && !c.S && !c.P && !c.He) info += ` · ${Object.keys(c).reduce((m, s) => m + ELEMENTS[s].bonds * c[s], 0)} bond stubs`;
+    txt(info, BOARD.x + BOARD.w - 12, BOARD.y + BOARD.h + 32, 14, "#a7adb4", "right", "normal");
+  } else {
+    txt("On the board: nothing yet", BOARD.x + 12, BOARD.y + BOARD.h + 32, 14, "#a7adb4", "left", "normal");
+  }
+  button("Mix!", BOARD.x, 486, 300, 44, board.length ? "#12b76a" : "#3a3f46", mix, 22);
+  button("Clear", BOARD.x + 312, 486, BOARD.w - 312, 44, "#ef4444", () => { for (const a of board.slice()) removeAtom(a); });
+
+  drawQuests();
+  if (drag && drag.el && drag.moved) drawAtom(drag.el, drag.x, drag.y, 19, { stubs: true, badge: !!ELEMENTS[drag.el].charge, alpha: 0.85 });
+}
+
+function drawQuests() {
+  panel(SIDE.x, SIDE.y, SIDE.w, SIDE.h, "#1d2026");
+  txt("Lab quests", SIDE.x + 12, SIDE.y + 24, 16, "#fff");
+  const FEATURED = ["H2O", "NaCl", "CO2"];
+  const rank = (r) => (FEATURED.includes(r.id) ? FEATURED.indexOf(r.id) - 10 : r.total);
+  const list = RECIPES.filter((r) => !save.found[r.id] && recipeReady(r)).sort((a, b) => rank(a) - rank(b)).slice(0, 3);
+  let y = SIDE.y + 36;
+  if (!list.length) {
+    para(foundCount() === RECIPES.length ? "You discovered everything! You are a true chemist." : "Discover more to unlock new elements!", SIDE.x + 12, y + 20, SIDE.w - 24, 15, 20, "#facc15", "bold");
+  }
+  for (const r of list) {
+    const rar = RARITY[r.rarity];
+    const h = 112;
+    ctx.fillStyle = "#2b2f35";
+    ctx.beginPath(); ctx.roundRect(SIDE.x + 8, y, SIDE.w - 16, h, 10); ctx.fill();
+    ctx.fillStyle = rar.color;
+    ctx.fillRect(SIDE.x + 8, y + 8, 5, h - 16);
+    txt(r.name.split(" (")[0], SIDE.x + 22, y + 22, 15, "#fff");
+    txt(`${rar.name} · ${r.total} atom${r.total === 1 ? "" : "s"}`, SIDE.x + 22, y + 40, 12, rar.color, "left", "normal");
+    const wl = wrap(r.where, SIDE.w - 44, 12, "normal");
+    wl.slice(0, 2).forEach((l, i) => txt(i === 1 && wl.length > 2 ? l.replace(/\W*\w*$/, "...") : l, SIDE.x + 22, y + 57 + i * 15, 12, "#a7adb4", "left", "normal"));
+    if (save.hints[r.id]) {
+      const parts = Object.keys(r.counts).map((s) => `${r.counts[s]} ${s}`).join(" + ");
+      drawFormula(r.formula, SIDE.x + 22, y + h - 12, 18, "#facc15");
+      txt(parts, SIDE.x + SIDE.w - 18, y + h - 12, 12, "#cbd5e1", "right", "normal");
+    } else {
+      button("Show recipe", SIDE.x + 22, y + h - 32, 120, 26, "#3a3f46", () => { save.hints[r.id] = 1; persist(); }, 13);
+    }
+    y += h + 8;
+  }
+  // stub legend
+  const ly = SIDE.y + SIDE.h - 70;
+  ctx.fillStyle = "#16181b";
+  ctx.beginPath(); ctx.roundRect(SIDE.x + 8, ly, SIDE.w - 16, 62, 10); ctx.fill();
+  drawAtom("O", SIDE.x + 34, ly + 22, 10, { stubs: true });
+  txt("stubs = bonds it makes", SIDE.x + 58, ly + 27, 12, "#cbd5e1", "left", "normal");
+  drawAtom("Na", SIDE.x + 34, ly + 48, 9, { badge: true });
+  txt("+ = metal, gives electrons", SIDE.x + 58, ly + 53, 12, "#cbd5e1", "left", "normal");
+}
+
+function drawAnim() {
+  const { r, L, starts } = anim;
+  const t = Math.min(1, anim.t / 0.9);
+  const e = 1 - Math.pow(1 - t, 3);
+  const pts = L.pts.map((p, i) => (starts[i] ? { x: starts[i].x + (p.x - starts[i].x) * e, y: starts[i].y + (p.y - starts[i].y) * e } : p));
+  const alphas = r.atoms.map((a, i) => (starts[i] ? 1 : t));
+  drawMol(r, L, { pts, bondAlpha: Math.max(0, (t - 0.6) / 0.4), alphas });
+  if (t >= 1) {
+    const g = Math.min(1, (anim.t - 0.9) * 3);
+    ctx.globalAlpha = g;
+    txt("Crafted!", BOARD.x + BOARD.w / 2, BOARD.y + 56, 30, "#facc15", "center");
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ------------------------------------------------------------------ card screen
+
+function drawCard() {
+  const r = card.recipe;
+  const rar = RARITY[r.rarity];
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  // molecule panel
+  panel(14, 14, 456, 460, "#13202b", rar.color);
+  const box = { x: 34, y: 54, w: 416, h: 340 };
+  drawMol(r, layoutMol(r, box, 90));
+  if (card.isNew) {
+    const pulse = 1 + Math.sin(time * 6) * 0.04;
+    ctx.save(); ctx.translate(242, 40); ctx.scale(pulse, pulse);
+    txt("NEW DISCOVERY!", 0, 0, 22, "#facc15", "center");
+    ctx.restore();
+  }
+  // legend of atoms
+  let lx = 30;
+  for (const s of Object.keys(r.counts)) {
+    drawAtom(s, lx + 10, 430, 10, {});
+    txt(`${r.counts[s]} ${ELEMENTS[s].name.toLowerCase()}`, lx + 26, 435, 14, "#cbd5e1", "left", "normal");
+    ctx.font = `normal 14px ${FONT}`;
+    lx += 40 + ctx.measureText(`${r.counts[s]} ${ELEMENTS[s].name.toLowerCase()}`).width;
+  }
+  txt(`${r.total} atom${r.total === 1 ? "" : "s"} in the formula`, 30, 462, 13, "#6b7280", "left", "normal");
+
+  // info
+  const x = 492, w = 452;
+  drawFormula(r.formula, x, 64, 46, "#fff");
+  let y = para(r.name, x, 100, w, 24, 28, "#fff", "bold");
+  ctx.fillStyle = rar.color;
+  ctx.beginPath(); ctx.roundRect(x, y - 12, 96, 24, 12); ctx.fill();
+  txt(rar.name, x + 48, y + 5, 13, "#111", "center");
+  txt(KIND_TEXT[r.kind].split(":")[0], x + 108, y + 5, 14, "#7dd3fc");
+  y += 24;
+  y = para(KIND_TEXT[r.kind].split(": ")[1], x, y + 4, w, 13, 17, "#a7adb4");
+  txt("Fun fact", x, y + 14, 15, "#facc15"); y = para(r.fact, x, y + 34, w, 16, 21, "#e5e7eb");
+  txt("Where you find it", x, y + 10, 15, "#4ade80"); y = para(r.where, x, y + 30, w, 16, 21, "#e5e7eb");
+  if (r.note) { txt("Look closer", x, y + 10, 15, "#7dd3fc"); para(r.note, x, y + 30, w, 15, 19, "#cbd5e1"); }
+
+  // buttons
+  if (card.from === "book") {
+    const found = RECIPES.filter((q) => save.found[q.id]);
+    const i = found.indexOf(r);
+    button("< Prev", 14, 488, 140, 40, "#3a3f46", () => { card = { recipe: found[(i - 1 + found.length) % found.length], from: "book" }; });
+    button("Next >", 164, 488, 140, 40, "#3a3f46", () => { card = { recipe: found[(i + 1) % found.length], from: "book" }; });
+    button("Back to book", 314, 488, 156, 40, "#a855f7", () => { screen = "book"; });
+    button("Lab", 806, 488, 140, 40, "#12b76a", () => { screen = "lab"; });
+  } else {
+    button("Back to lab", 14, 488, 200, 40, "#12b76a", () => { screen = "lab"; });
+    button("Open book", 224, 488, 160, 40, "#a855f7", () => { bookPage = Math.floor(RECIPES.indexOf(r) / 18); screen = "book"; });
+  }
+}
+
+// ------------------------------------------------------------------ book screen
+
+const PER_PAGE = 18;
+function bookCell(i) { return { x: 16 + (i % 6) * 156, y: 58 + Math.floor(i / 6) * 144, w: 148, h: 136 }; }
+let bookNote = "";
+function drawBook() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  const pages = Math.ceil(RECIPES.length / PER_PAGE);
+  txt("Discovery Book", 16, 36, 26, "#fff");
+  txt(`${foundCount()} / ${RECIPES.length} found · page ${bookPage + 1} of ${pages}`, 252, 34, 15, "#a7adb4", "left", "normal");
+  let rx = 590;
+  for (const t of RARITY) {
+    ctx.fillStyle = t.color; ctx.fillRect(rx, 22, 12, 12);
+    txt(t.name, rx + 16, 33, 12, "#cbd5e1", "left", "normal");
+    ctx.font = `normal 12px ${FONT}`;
+    rx += 26 + ctx.measureText(t.name).width;
+  }
+  for (let k = 0; k < PER_PAGE; k++) {
+    const r = RECIPES[bookPage * PER_PAGE + k];
+    if (!r) break;
+    const c = bookCell(k);
+    const rar = RARITY[r.rarity];
+    const got = !!save.found[r.id];
+    ctx.fillStyle = got ? "#1d2026" : "#121417";
+    ctx.beginPath(); ctx.roundRect(c.x, c.y, c.w, c.h, 10); ctx.fill();
+    ctx.strokeStyle = got ? rar.color : "#2b2f35"; ctx.lineWidth = 3; ctx.stroke();
+    txt(`#${bookPage * PER_PAGE + k + 1}`, c.x + 8, c.y + 16, 11, "#6b7280", "left", "normal");
+    if (got) {
+      drawMol(r, layoutMol(r, { x: c.x + 8, y: c.y + 14, w: c.w - 16, h: 66 }, 34));
+      drawFormula(r.formula, c.x + c.w / 2, c.y + 102, 18, "#fff", "center");
+      const nm = wrap(r.name, c.w - 10, 12, "normal")[0];
+      txt(nm + (wrap(r.name, c.w - 10, 12, "normal").length > 1 ? "..." : ""), c.x + c.w / 2, c.y + 124, 12, "#a7adb4", "center", "normal");
+    } else {
+      const ready = recipeReady(r);
+      txt("?", c.x + c.w / 2, c.y + 72, 44, ready ? rar.color : "#2b2f35", "center");
+      txt(ready ? `${r.total} atom${r.total === 1 ? "" : "s"}` : "Locked", c.x + c.w / 2, c.y + 104, 13, "#6b7280", "center", "normal");
+      txt(rar.name, c.x + c.w / 2, c.y + 124, 12, ready ? rar.color : "#3a3f46", "center", "normal");
+    }
+  }
+  if (bookNote) txt(bookNote, W / 2, 478, 14, "#facc15", "center");
+  button("< Page", 16, 488, 140, 40, "#3a3f46", () => { bookPage = (bookPage - 1 + pages) % pages; bookNote = ""; });
+  button("Page >", 166, 488, 140, 40, "#3a3f46", () => { bookPage = (bookPage + 1) % pages; bookNote = ""; });
+  button("Back to lab", 786, 488, 160, 40, "#12b76a", () => { screen = "lab"; bookNote = ""; });
+}
+function bookDown(p) {
+  for (let k = 0; k < PER_PAGE; k++) {
+    const r = RECIPES[bookPage * PER_PAGE + k];
+    if (!r || !inRect(p, bookCell(k))) continue;
+    if (save.found[r.id]) { card = { recipe: r, from: "book" }; screen = "card"; Kit.sfx("click"); }
+    else if (!recipeReady(r)) {
+      const need = Object.keys(r.counts).filter((s) => !isUnlocked(s)).map((s) => ELEMENTS[s].name);
+      bookNote = `Locked: you need ${need.join(" and ")} first.`;
+    } else bookNote = `Still a mystery! It has ${r.total} atom${r.total === 1 ? "" : "s"}. Check your lab quests.`;
+  }
+}
+
+// ------------------------------------------------------------------ periodic table screen
+
+const CW = 50, CH = 58;
+function cellRect(row, col) { return { x: 12 + (col - 1) * 52, y: 56 + (row - 1) * 60, w: CW, h: CH }; }
+function drawTable() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  txt("Periodic Table", 16, 36, 26, "#fff");
+  txt("The first four rows. Lit-up elements are in your tray.", 236, 34, 15, "#a7adb4", "left", "normal");
+  for (const [row, col, sym] of D.TABLE) {
+    const r = cellRect(row, col);
+    const E = ELEMENTS[sym];
+    const lit = E && isUnlocked(sym);
+    ctx.fillStyle = lit ? E.color : E ? "#2b2f35" : "#1b1d21";
+    ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 6); ctx.fill();
+    if (lit) { ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.fillRect(r.x + 3, r.y + 2, r.w - 6, 5); }
+    if (tableSel === sym) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(r.x - 1, r.y - 1, r.w + 2, r.h + 2, 7); ctx.stroke(); }
+    const ink = lit ? E.ink : E ? "#6b7280" : "#3a3f46";
+    txt(String(D.TABLE_NUMBERS[sym]), r.x + 5, r.y + 14, 10, ink, "left", "normal");
+    txt(sym, r.x + r.w / 2, r.y + 40, 20, ink, "center");
+    if (E && !lit) { ctx.fillStyle = "#6b7280"; ctx.fillRect(r.x + r.w - 13, r.y + 7, 8, 6); ctx.strokeStyle = "#6b7280"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(r.x + r.w - 9, r.y + 7, 3, Math.PI, 0); ctx.stroke(); }
+  }
+  txt("Noble gases", cellRect(1, 18).x + CW, cellRect(1, 18).y - 6, 11, "#67e8f9", "right", "normal");
+
+  // info panel
+  const E = ELEMENTS[tableSel];
+  panel(12, 300, 936, 180, "#1d2026");
+  if (E) {
+    const lit = isUnlocked(tableSel);
+    drawAtom(tableSel, 82, 390, 40, { stubs: lit });
+    txt(`${E.name}`, 160, 340, 26, "#fff");
+    txt(`Symbol ${tableSel} · Atomic number ${E.n} (${E.n} proton${E.n === 1 ? "" : "s"})`, 160, 366, 15, "#a7adb4", "left", "normal");
+    let y = para(E.fact, 160, 394, 600, 16, 21, "#e5e7eb");
+    const bondText = E.noble ? "Makes no bonds (noble gas)." : E.charge ? `Metal: gives electrons away to form ${ionText(tableSel)} ions.` : `Usually makes ${E.bonds} bond${E.bonds === 1 ? "" : "s"}${E.flex ? ` (can make ${E.flex})` : ""}.`;
+    txt(bondText, 160, y + 6, 15, "#7dd3fc");
+    if (lit) button("Add to board", 780, 420, 156, 44, "#12b76a", () => { addAtom(tableSel); screen = "lab"; });
+    else txt(`Unlocks at ${E.unlock} discoveries`, 930, 448, 15, "#fb923c", "right");
+  } else {
+    txt(tableSel, 82, 400, 40, "#6b7280", "center");
+    txt(`Element number ${D.TABLE_NUMBERS[tableSel]}`, 160, 360, 22, "#fff");
+    para("This element isn't in the Element Crafter lab, but it's a real element! The table has 118 elements in all.", 160, 392, 600, 16, 21, "#a7adb4");
+  }
+  button("Back to lab", 786, 488, 160, 40, "#12b76a", () => { screen = "lab"; });
+}
+function tableDown(p) {
+  for (const [row, col, sym] of D.TABLE) if (inRect(p, cellRect(row, col))) { tableSel = sym; Kit.sfx("click"); }
+}
+
+// ------------------------------------------------------------------ help screen
+
+function drawHelp() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  txt("How to craft", 16, 40, 26, "#fff");
+  let y = 76;
+  const lines = [
+    "1. Drag atoms from the tray onto the reaction board (or just tap them).",
+    "2. Build the right number of each atom, then press Mix!",
+    "3. Right recipe? It crafts a molecule and goes into your Discovery Book.",
+    "4. New discoveries unlock new elements. Lab quests give you ideas.",
+    "Tap an atom on the board to take it off. Clear empties the board.",
+  ];
+  for (const l of lines) y = para(l, 30, y, 560, 17, 23, "#e5e7eb") + 6;
+  txt("Bond stubs", 30, y + 18, 19, "#facc15");
+  y = para("Atoms join by sharing electrons in bonds. The little stubs show how many bonds an atom usually makes. In a stable molecule every stub pairs up with another atom's stub.", 30, y + 42, 560, 16, 21, "#cbd5e1");
+  const demo = [["H", "1 bond"], ["O", "2 bonds"], ["N", "3 bonds"], ["C", "4 bonds"]];
+  demo.forEach(([s, t], i) => { drawAtom(s, 70 + i * 130, y + 34, 16, { stubs: true }); txt(t, 70 + i * 130, y + 76, 14, "#cbd5e1", "center", "normal"); });
+  txt("Metals and ions", 640, 94, 19, "#facc15");
+  let y2 = para("Metals like sodium (Na) don't share. They give electrons away and become + ions. Nonmetals like chlorine take electrons and become − ions. Opposite charges stick together to make ionic compounds like salt. The + and − charges always balance.", 640, 118, 300, 15, 20, "#cbd5e1");
+  drawAtom("Na", 690, y2 + 30, 18, { q: 1 });
+  drawAtom("Cl", 770, y2 + 30, 22, { q: -1 });
+  txt("Na+ and Cl− make NaCl", 730, y2 + 76, 14, "#cbd5e1", "center", "normal");
+  txt("Rule-breakers", 640, y2 + 112, 19, "#facc15");
+  para("A few molecules, like ozone and carbon monoxide, bend the usual stub rules. Their cards explain how.", 640, y2 + 136, 300, 15, 20, "#cbd5e1");
+  button("Back to lab", 786, 488, 160, 40, "#12b76a", () => { screen = "lab"; });
+}
+
+// ------------------------------------------------------------------ loop
+
+function update(dt) {
+  time += dt;
+  if (msg) { msg.t += dt; if (msg.t > 5) msg = null; }
+  poofs.forEach((p) => (p.t += dt));
+  poofs = poofs.filter((p) => p.t < 0.35);
+  if (anim) {
+    anim.t += dt;
+    if (anim.t > 1.7) { const r = anim.r; anim = null; discover(r); }
+  }
+}
+function draw() {
+  buttons = [];
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (screen === "lab") drawLab();
+  else if (screen === "card") drawCard();
+  else if (screen === "book") drawBook();
+  else if (screen === "table") drawTable();
+  else if (screen === "help") drawHelp();
+}
+
+const mainLoop = Kit.loop(update, draw);
+updateHud();
+draw();
+Kit.overlay("Element Crafter",
+  "Build real molecules from atoms!\nDrag atoms onto the board (or tap them), then press Mix.\nThe stubs on each atom show how many bonds it makes.\n\nFill your Discovery Book and unlock new elements.",
+  foundCount() ? "Back to the lab" : "Start crafting").then(() => mainLoop.start());
+
+// For testing and curious players.
+window.game = {
+  get save() { return save; }, get board() { return board; }, get screen() { return screen; }, set screen(s) { screen = s; },
+  get msg() { return msg && msg.text; }, recipes: RECIPES, elements: ELEMENTS,
+  add: addAtom, mix, clear() { board = []; }, unlocked: () => ELEMENT_ORDER.filter(isUnlocked),
+  // place the atoms for a formula and mix
+  craft(formula) {
+    board = [];
+    const r = RECIPES.find((q) => q.formula === formula);
+    const counts = r ? r.counts : D.parseFormula(formula);
+    for (const s in counts) for (let i = 0; i < counts[s]; i++) addAtom(s);
+    mix();
+  },
+  openCard(formula) { card = { recipe: RECIPES.find((q) => q.formula === formula), from: "book" }; screen = "card"; },
+  setPage(p) { bookPage = p; },
+  select(sym) { tableSel = sym; },
+};
+</script>
+</body>
+</html>

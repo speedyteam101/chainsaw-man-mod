@@ -1,0 +1,1260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cell City</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  /* The HUD sits over the top of the canvas on short screens: let taps through and keep it to one line. */
+  .kit-hud { pointer-events: none; }
+  @media (max-height: 500px) { .kit-hud { font-size: 14px; top: 8px; } .kit-hud small { display: none; } }
+</style>
+</head>
+<body>
+<script src="../kit.js"></script>
+<script src="facts.js"></script>
+<script>
+"use strict";
+const ID = "cell-city";
+const { GUIDE, POPUPS, UPGRADES } = window.CC_FACTS;
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+const ME = Kit.player().name;
+const FONT = '"Noto Sans", "DejaVu Sans", sans-serif';
+const SAVE_KEY = "blockos.cell-city.v1";
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const inRect = (p, r) => p.x >= r.x && p.y >= r.y && p.x <= r.x + r.w && p.y <= r.y + r.h;
+
+// What the player has seen before (kept between games).
+let saved = { seen: {}, read: {}, bestDay: 0 };
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s) saved = Object.assign(saved, s, { seen: s.seen || {}, read: s.read || {} }); } catch (_) {}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(saved)); } catch (_) {} }
+
+// ------------------------------------------------------------------ city layout
+
+const CELL = { x: 60, y: 50, w: 580, h: 450 };
+const DOORS = [
+  { x: 230, y: 50, side: "top" }, { x: 470, y: 50, side: "top" },
+  { x: 230, y: 500, side: "bottom" }, { x: 470, y: 500, side: "bottom" },
+  { x: 60, y: 275, side: "left" }, { x: 640, y: 275, side: "right" },
+];
+const OUT = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
+const LAYOUT = {
+  animal: {
+    nucleus: { x: 290, y: 265, r: 68 }, rer: { x: 385, y: 265 }, golgi: { x: 510, y: 180 }, exit: { x: 626, y: 190 },
+    mitos: [{ x: 150, y: 130 }, { x: 160, y: 410 }, { x: 500, y: 420 }, { x: 572, y: 330 }],
+    lysos: [{ x: 300, y: 440 }, { x: 400, y: 425 }, { x: 140, y: 330 }],
+    vacuole: { x: 240, y: 112, r: 26 },
+    chloros: [],
+  },
+  plant: {
+    nucleus: { x: 515, y: 150, r: 56 }, rer: { x: 528, y: 258 }, golgi: { x: 560, y: 372 }, exit: { x: 626, y: 400 },
+    mitos: [{ x: 120, y: 112 }, { x: 120, y: 440 }, { x: 330, y: 450 }, { x: 590, y: 462 }],
+    lysos: [],
+    vacuole: { x: 300, y: 302, w: 250, h: 170 },
+    chloros: [{ x: 240, y: 115 }, { x: 370, y: 115 }, { x: 125, y: 335 }, { x: 305, y: 180 }],
+  },
+};
+
+// ------------------------------------------------------------------ days
+
+const ORDER_TEXT = {
+  energy: "Make energy in mitochondria", food: "Let food in through doors", protein: "Ship proteins out",
+  block: "Block viruses at closed doors", clean: "Clean up waste", photo: "Photosynthesize", defend: "Stop viruses",
+};
+function dayConfig(d) {
+  const mode = d <= 4 ? "animal" : d <= 6 ? "plant" : d % 2 ? "animal" : "plant";
+  const k = Math.max(0, Math.floor((d - 5) / 2));
+  let orders;
+  if (d === 1) orders = { energy: 3, food: 6 };
+  else if (d === 2) orders = { protein: 2, energy: 3 };
+  else if (d === 3) orders = { protein: 2, block: 2, clean: 2 };
+  else if (d === 4) orders = { protein: 3, block: 3, clean: 3, energy: 4 };
+  else if (d === 5) orders = { photo: 3, energy: 2, protein: 1 };
+  else if (d === 6) orders = { photo: 4, protein: 2, defend: 2 };
+  else if (mode === "animal") orders = { protein: 3 + k, block: 3 + k, clean: 2 + k, energy: 4 + k };
+  else orders = { photo: 4 + k, protein: 2 + k, defend: 2 + k, clean: 2 + k };
+  return {
+    mode, orders,
+    length: 120,
+    virusEvery: mode === "animal" ? (d < 3 ? 0 : Math.max(5, 15 - d)) : (d < 6 ? 0 : Math.max(12, 26 - d)),
+    wasteEvery: d < 3 ? 22 : Math.max(5, 14 - d * 0.6),
+    drain: 0.55 + 0.07 * d,
+  };
+}
+const DAY_INTRO = {
+  1: "Welcome, Mayor! Your cell needs energy.\nTap protein DOORS on the membrane to open or close them. Open doors let glucose in.\nTap a MITOCHONDRION to turn glucose + oxygen into energy.",
+  2: "Time to make proteins!\nTap the NUCLEUS to send instructions (mRNA) to the ribosomes on the rough ER. They need amino acids from outside.\nThe Golgi packs each protein and ships it out.",
+  3: "Viruses are coming!\nA red ! shows which door a virus is heading for. Close that door to block it.\nIf one gets in, tap it to send a lysosome. Tap brown waste to clean it up too.",
+  4: "A busy day! Keep your energy up, block viruses and ship proteins.\nUpgrade your cell between days.",
+  5: "Plant cell day!\nPlant cells have a stiff CELL WALL, a big central VACUOLE full of water, and green CHLOROPLASTS.\nTap a chloroplast in the light to make glucose. Doors now let in water and amino acids.",
+  6: "Watch out for insect bites! Insects can damage the cell wall and let viruses in.\nTap a virus inside the cell to fight it.",
+};
+
+// ------------------------------------------------------------------ game state
+
+let S;            // the whole run
+let D;            // the current day
+let screen = "title";   // play | shop | guide | dayend
+let paused = false;
+let buttons = [], pressed = null, time = 0;
+let guideSel = "nucleus";
+let guideReturn = "play";
+let popup = null;
+
+function newRun() {
+  S = {
+    day: 1, score: 0, points: 0, health: 100,
+    up: { mito: 0, ribo: 0, golgi: 0, lyso: 0, doors: 0, auto: 0, chloro: 0 },
+    totals: { runs: 0, shipped: 0, defended: 0, cleaned: 0 },
+  };
+}
+function startDay() {
+  const cfg = dayConfig(S.day);
+  const L = LAYOUT[cfg.mode];
+  D = {
+    cfg, mode: cfg.mode, L, t: 0,
+    energy: 60, glucose: 2, oxygen: 12, amino: 3, water: cfg.mode === "plant" ? 12 : 0, co2: cfg.mode === "plant" ? 12 : 0, stored: 0,
+    progress: {}, orderDone: false, virusIn: 0, startScore: S.score,
+    doors: DOORS.map((d) => Object.assign({ open: true, warn: 0 }, d)),
+    mitos: L.mitos.slice(0, 2 + S.up.mito).map((p) => ({ x: p.x, y: p.y, busy: 0 })),
+    chloros: L.chloros.slice(0, 2 + S.up.chloro).map((p) => ({ x: p.x, y: p.y, busy: 0 })),
+    cleaners: (cfg.mode === "animal" ? L.lysos.slice(0, 1 + S.up.lyso) : [{ x: L.vacuole.x - 40, y: L.vacuole.y - 50 }, { x: L.vacuole.x + 60, y: L.vacuole.y + 40 }])
+      .map((p) => ({ hx: p.x, hy: p.y, x: p.x, y: p.y, state: "home", target: null, t: 0 })),
+    rer: { queue: 0, busy: 0, needT: 0 }, golgi: { queue: 0, busy: 0 }, cleanQueue: [],
+    outside: [], movers: [], waste: [], viruses: [], floats: [], cracks: [], bugs: [],
+    nextFood: 1, nextVirus: cfg.virusEvery ? 8 : Infinity, nextWaste: cfg.wasteEvery, nextBite: cfg.virusEvery ? 10 : Infinity,
+    o2Acc: 0, co2Acc: 0, hijacked: 0,
+  };
+  for (const k in cfg.orders) D.progress[k] = 0;
+  screen = "play";
+  paused = false;
+  updateHud();
+}
+const light = () => D.mode === "plant" && (D.t % 40) < 30;
+
+// ------------------------------------------------------------------ helpers
+
+function float(text, x, y, color) { D.floats.push({ text, x, y, t: 0, color: color || "#fff" }); }
+function pop(id) {
+  if (saved.seen[id]) return;
+  saved.seen[id] = 1;
+  persist();
+  popup = { text: POPUPS[id], t: 0 };
+}
+function addScore(n) { S.score += n; S.points += n; updateHud(); }
+function progress(kind, n) {
+  if (D.progress[kind] === undefined) return;
+  D.progress[kind] = Math.min(D.cfg.orders[kind], D.progress[kind] + (n || 1));
+  if (!D.orderDone && Object.keys(D.cfg.orders).every((k) => D.progress[k] >= D.cfg.orders[k])) {
+    D.orderDone = true;
+    setTimeout(() => endDay(true), 900);
+  }
+}
+function updateHud() {
+  Kit.hud(`Score ${S ? S.score : 0}<small>Mayor ${esc(ME)} · Day ${S ? S.day : 1} · Best ${Kit.best(ID) ?? 0}</small>`);
+}
+
+// Movers travel in a straight-ish line and call done() when they arrive.
+function move(kind, from, to, secs, done, extra) {
+  D.movers.push(Object.assign({ kind, x: from.x, y: from.y, sx: from.x, sy: from.y, tx: to.x, ty: to.y, t: 0, secs, done, wob: Math.random() * 6 }, extra || {}));
+}
+function doorIn(d) { const o = OUT[d.side]; return { x: d.x - o[0] * 26, y: d.y - o[1] * 26 }; }
+function doorOut(d) { const o = OUT[d.side]; return { x: d.x + o[0] * 26, y: d.y + o[1] * 26 }; }
+
+// ------------------------------------------------------------------ actions
+
+function tapMito(m, auto) {
+  if (m.busy) return;
+  if (D.glucose < 1) { if (!auto) float("Needs glucose", m.x, m.y - 30, "#facc15"); return; }
+  if (D.oxygen < 6) { if (!auto) float("Needs 6 oxygen", m.x, m.y - 30, "#f87171"); return; }
+  D.glucose -= 1; D.oxygen -= 6;
+  m.busy = 2;
+  for (let i = 0; i < 3; i++) move(i ? "o2" : "glucose", { x: m.x + Kit.rand(-60, 60), y: m.y + Kit.rand(-50, 50) }, m, 0.5);
+  pop("mito");
+  Kit.sfx("click");
+}
+function finishMito(m) {
+  D.energy = Math.min(100, D.energy + 18);
+  S.totals.runs++;
+  progress("energy");
+  addScore(10);
+  float("+ATP", m.x, m.y - 26, "#fde047");
+  Kit.sfx("coin");
+  if (S.totals.runs >= 25) badge("powerhouse", "Powerhouse", "Run your mitochondria 25 times in one game.");
+  // carbon dioxide and water are left over; CO2 leaves the cell (or feeds the chloroplasts)
+  if (D.mode === "plant") D.co2 = Math.min(30, D.co2 + 6);
+  const d = Kit.pick(D.doors);
+  move("co2", m, { x: d.x + OUT[d.side][0] * 40, y: d.y + OUT[d.side][1] * 40 }, 1.6, null);
+}
+function tapChloro(c) {
+  if (c.busy) return;
+  if (!light()) { float("No light at night", c.x, c.y - 30, "#93c5fd"); pop("night"); return; }
+  if (D.water < 6) { float("Needs 6 water", c.x, c.y - 30, "#60a5fa"); return; }
+  if (D.co2 < 6) { float("Needs 6 CO2", c.x, c.y - 30, "#cbd5e1"); return; }
+  D.water -= 6; D.co2 -= 6;
+  c.busy = 2.5;
+  pop("chloro");
+  Kit.sfx("click");
+}
+function finishChloro(c) {
+  D.glucose = Math.min(12, D.glucose + 1);
+  D.oxygen = Math.min(36, D.oxygen + 6);
+  progress("photo");
+  addScore(20);
+  float("+glucose +O2", c.x, c.y - 26, "#bef264");
+  Kit.sfx("coin");
+}
+function tapNucleus() {
+  const N = D.L.nucleus;
+  if (D.energy < 3) { float("Needs energy", N.x, N.y - N.r - 10, "#fde047"); return; }
+  if (D.rer.queue + D.movers.filter((m) => m.kind === "mrna").length >= 3) { float("Ribosomes are busy", N.x, N.y - N.r - 10, "#cbd5e1"); return; }
+  D.energy -= 3;
+  pop("nucleus");
+  Kit.sfx("click");
+  move("mrna", { x: N.x + N.r * 0.7, y: N.y - 10 }, D.L.rer, 1, () => { D.rer.queue++; });
+}
+function tapDoor(d) {
+  d.open = !d.open;
+  Kit.sfx(d.open ? "click" : "hit");
+  pop("door");
+}
+function sendCleaner(target) {
+  if (D.cleaners.some((c) => c.target === target)) return true;
+  const free = D.cleaners.filter((c) => c.state === "home" || c.state === "back");
+  if (!free.length) {
+    if (!D.cleanQueue.includes(target)) { D.cleanQueue.push(target); target.claimed = true; float("Next in line", target.x, target.y - 20, "#c084fc"); }
+    return false;
+  }
+  free.sort((a, b) => dist(a, target) - dist(b, target));
+  const c = free[0];
+  c.state = "go"; c.target = target; target.claimed = true;
+  Kit.sfx("jump");
+  return true;
+}
+function tapVirus(v) {
+  if (D.mode === "plant") {
+    if (v.silence) return;
+    if (D.energy < 2) { float("Needs energy", v.x, v.y - 20, "#fde047"); return; }
+    D.energy -= 2;
+    v.silence = 1.2;
+    Kit.sfx("jump");
+  } else sendCleaner(v);
+}
+function tapVacuole() {
+  if (D.mode === "plant") { pop("bigvac"); float(`${Math.floor(D.water)} water stored`, D.L.vacuole.x, D.L.vacuole.y, "#93c5fd"); return; }
+  if (D.stored > 0 && D.glucose < 12) {
+    const n = Math.min(D.stored, 12 - D.glucose);
+    D.stored -= n; D.glucose += n;
+    float(`+${n} glucose`, D.L.vacuole.x, D.L.vacuole.y - 30, "#facc15");
+    Kit.sfx("coin");
+  } else {
+    pop("vacuole");
+    float(D.stored ? "Glucose is full" : "Empty: stores extra glucose", D.L.vacuole.x, D.L.vacuole.y - 30, "#cbd5e1");
+  }
+}
+
+// ------------------------------------------------------------------ spawning
+
+function spawnFood() {
+  const d = Kit.pick(D.doors);
+  const o = OUT[d.side];
+  const kind = D.mode === "plant" ? (Math.random() < 0.65 ? "water" : "amino") : Math.random() < 0.55 ? "glucose" : "amino";
+  const along = Kit.rand(-110, 110);
+  const sx = o[0] ? d.x + o[0] * 60 : d.x + along;
+  const sy = o[1] ? d.y + o[1] * 60 : d.y + along * 0.6;
+  D.outside.push({ kind, door: d, x: sx, y: sy, state: "in", t: 0 });
+}
+function spawnVirus() {
+  const d = Kit.pick(D.doors);
+  const o = OUT[d.side];
+  const along = Kit.rand(-140, 140);
+  D.outside.push({ kind: "virus", door: d, x: o[0] ? d.x + o[0] * 70 : d.x + along, y: o[1] ? d.y + o[1] * 70 : d.y + along * 0.6, state: "in", t: 0, spin: Math.random() * 6 });
+}
+function spawnBite() {
+  // An insect lands on the outside of the cell wall, bites through it, and a virus gets in.
+  const side = Kit.pick(["top", "bottom", "left", "right"]);
+  let x, y;
+  if (side === "top" || side === "bottom") { x = Kit.pick([Kit.rand(120, 200), Kit.rand(280, 430), Kit.rand(510, 590)]); y = side === "top" ? CELL.y : CELL.y + CELL.h; }
+  else { x = side === "left" ? CELL.x : CELL.x + CELL.w; y = Kit.pick([Kit.rand(110, 230), Kit.rand(320, 450)]); }
+  D.bugs.push({ x, y, side, t: 0 });
+}
+function spawnWaste(x, y) {
+  if (D.waste.length >= 10) return;
+  if (x === undefined) {
+    for (let i = 0; i < 20; i++) {
+      x = Kit.rand(CELL.x + 50, CELL.x + CELL.w - 50); y = Kit.rand(CELL.y + 50, CELL.y + CELL.h - 50);
+      if (!hitOrganelle({ x, y })) break;
+    }
+  }
+  D.waste.push({ x, y, t: 0, seed: Math.random() * 10 });
+}
+
+// ------------------------------------------------------------------ update
+
+let speed = 1;   // test hook: run the simulation faster
+function update(dt) {
+  dt *= speed;
+  time += dt;
+  if (popup) popup.t += dt;
+  if (screen !== "play" || paused || popup || !D) return;
+  D.t += dt;
+  const cfg = D.cfg;
+
+  // energy upkeep
+  D.energy = Math.max(0, D.energy - cfg.drain * dt);
+  if (D.energy <= 0) hurt(3 * dt);
+  if (D.waste.length > 5) hurt(1 * dt);
+
+  // oxygen (and carbon dioxide in plants) diffuse straight through the membrane
+  D.o2Acc += dt * (D.mode === "plant" ? 0.6 : 1.6);
+  while (D.o2Acc >= 1) { D.o2Acc--; if (D.oxygen < 36) { D.oxygen++; if (Math.random() < 0.5) diffuseVisual("o2"); } }
+  if (D.mode === "plant") {
+    D.co2Acc += dt * 1.1;
+    while (D.co2Acc >= 1) { D.co2Acc--; if (D.co2 < 30) { D.co2++; if (Math.random() < 0.5) diffuseVisual("co2in"); } }
+  }
+
+  // food floats toward the doors
+  D.nextFood -= dt;
+  if (D.nextFood <= 0) { spawnFood(); D.nextFood = 1.3 / (1 + 0.4 * S.up.doors); }
+  for (const p of D.outside) updateOutside(p, dt);
+  D.outside = D.outside.filter((p) => !p.gone);
+
+  // viruses and waste
+  if (D.mode === "animal") {
+    D.nextVirus -= dt;
+    if (D.nextVirus <= 0) { spawnVirus(); D.nextVirus = cfg.virusEvery * Kit.rand(0.8, 1.2); }
+  } else {
+    D.nextBite -= dt;
+    if (D.nextBite <= 0) { spawnBite(); D.nextBite = cfg.virusEvery * Kit.rand(0.8, 1.2); }
+  }
+  D.nextWaste -= dt;
+  if (D.nextWaste <= 0) { spawnWaste(); D.nextWaste = cfg.wasteEvery * Kit.rand(0.8, 1.2); }
+
+  for (const b of D.bugs) {
+    b.t += dt;
+    if (b.t > 2.2 && !b.done) {
+      b.done = true;
+      D.cracks.push({ x: b.x, y: b.y, t: 0 });
+      const o = OUT[b.side];
+      D.viruses.push({ x: b.x - o[0] * 24, y: b.y - o[1] * 24, t: 0, state: "move", spin: 0 });
+      D.virusIn++;
+      pop("bite");
+      Kit.sfx("hit");
+    }
+  }
+  D.bugs = D.bugs.filter((b) => b.t < 3.2);
+  D.cracks.forEach((c) => (c.t += dt));
+  D.cracks = D.cracks.filter((c) => c.t < 12);
+
+  // organelles at work
+  for (const m of D.mitos) if (m.busy) { m.busy -= dt; if (m.busy <= 0) { m.busy = 0; finishMito(m); } }
+  if (S.up.auto && D.energy < 50) for (const m of D.mitos) if (!m.busy) tapMito(m, true);
+  for (const c of D.chloros) if (c.busy) { c.busy -= dt; if (c.busy <= 0) { c.busy = 0; finishChloro(c); } }
+  updateRer(dt);
+  updateGolgi(dt);
+
+  // movers
+  for (const m of D.movers) {
+    m.t += dt / m.secs;
+    const e = Math.min(1, m.t);
+    m.x = m.sx + (m.tx - m.sx) * e + Math.sin(e * Math.PI) * Math.sin(m.wob) * 14;
+    m.y = m.sy + (m.ty - m.sy) * e + Math.sin(e * Math.PI) * Math.cos(m.wob) * 14;
+    if (m.t >= 1 && !m.gone) { m.gone = true; if (m.done) m.done(m); }
+  }
+  D.movers = D.movers.filter((m) => !m.gone);
+
+  updateViruses(dt);
+  updateCleaners(dt);
+  D.waste.forEach((w) => (w.t += dt));
+  for (const f of D.floats) { f.t += dt; f.y -= dt * 22; }
+  D.floats = D.floats.filter((f) => f.t < 1.6);
+  for (const d of D.doors) d.warn = 0;
+  for (const p of D.outside) if (p.kind === "virus" && p.state !== "leave") p.door.warn = 1;
+
+  if (D.t >= cfg.length && !D.ended) endDay(false);
+}
+
+function hurt(n) {
+  S.health = Math.max(0, S.health - n);
+  if (S.health <= 0 && screen === "play") gameOver();
+}
+
+function diffuseVisual(kind) {
+  // a little molecule crossing the membrane anywhere
+  const side = Kit.pick(["top", "bottom", "left", "right"]);
+  let x, y;
+  if (side === "top" || side === "bottom") { x = Kit.rand(140, 560); y = side === "top" ? CELL.y : CELL.y + CELL.h; }
+  else { x = side === "left" ? CELL.x : CELL.x + CELL.w; y = Kit.rand(130, 420); }
+  const o = OUT[side];
+  move(kind === "co2in" ? "co2" : "o2", { x: x + o[0] * 30, y: y + o[1] * 30 }, { x: x - o[0] * 40, y: y - o[1] * 40 }, 1.2, null, { fade: true });
+}
+
+function updateOutside(p, dt) {
+  p.t += dt;
+  const target = doorOut(p.door);
+  if (p.state === "in") {
+    const sp = p.kind === "virus" ? 34 : 55;
+    const dd = dist(p, target);
+    if (dd < 3) { p.state = "wait"; p.t = 0; }
+    else { p.x += ((target.x - p.x) / dd) * Math.min(dd, sp * dt); p.y += ((target.y - p.y) / dd) * Math.min(dd, sp * dt); }
+  } else if (p.state === "wait") {
+    if (p.door.open) {
+      p.gone = true;
+      const inside = doorIn(p.door);
+      if (p.kind === "virus") {
+        D.viruses.push({ x: inside.x, y: inside.y, t: 0, state: "move", spin: p.spin });
+        D.virusIn++;
+        pop("virus");
+        Kit.sfx("hit");
+      } else {
+        move(p.kind, p, inside, 0.45, () => {
+          if (p.kind === "glucose") {
+            if (D.glucose < 12) D.glucose++;
+            else if (D.stored < 6) { D.stored++; move("glucose", inside, D.L.vacuole, 0.8, null); pop("vacuole"); }
+          } else if (p.kind === "amino") D.amino = Math.min(20, D.amino + 1);
+          else if (p.kind === "water") D.water = Math.min(30, D.water + 2);
+          progress("food");
+        });
+      }
+    } else if (p.t > (p.kind === "virus" ? 3 : 2.2)) {
+      p.state = "leave"; p.t = 0;
+      if (p.kind === "virus") {
+        progress("block"); progress("defend");
+        S.totals.defended++;
+        addScore(30);
+        float("Blocked!", p.door.x, p.door.y + OUT[p.door.side][1] * 30 - 14, "#4ade80");
+        pop("blocked");
+        Kit.sfx("score");
+        checkDefender();
+      }
+    }
+  } else if (p.state === "leave") {
+    const o = OUT[p.door.side];
+    p.x += (o[0] * 60 + (o[1] ? 30 : 0)) * dt;
+    p.y += (o[1] * 60 + (o[0] ? 30 : 0)) * dt;
+    if (p.t > 1.5) p.gone = true;
+  }
+}
+function checkDefender() { if (S.totals.defended >= 10) badge("defender", "Defender", "Stop 10 viruses in one game."); }
+
+function updateRer(dt) {
+  const R = D.rer;
+  if (R.busy) {
+    R.busy -= dt;
+    if (R.busy <= 0) {
+      R.busy = 0;
+      pop("rer");
+      move("vesicle", D.L.rer, D.L.golgi, 1.2, () => { D.golgi.queue++; });
+      if (Math.random() < 0.5) spawnWaste(D.L.rer.x + Kit.rand(-40, 40), D.L.rer.y + Kit.rand(60, 90) * Kit.pick([-1, 1]));
+    }
+  } else if (R.queue > 0 && !D.hijacked) {
+    if (D.amino >= 3 && D.energy >= 4) {
+      D.amino -= 3; D.energy -= 4; R.queue--;
+      R.busy = 3 / (1 + 0.45 * S.up.ribo);
+      for (let i = 0; i < 3; i++) move("amino", { x: D.L.rer.x + Kit.rand(-70, 70), y: D.L.rer.y + Kit.rand(-80, 80) }, D.L.rer, 0.5);
+    } else {
+      R.needT -= dt;
+      if (R.needT <= 0) { R.needT = 3; float(D.amino < 3 ? "Needs 3 amino acids" : "Needs energy", D.L.rer.x, D.L.rer.y - 70, D.amino < 3 ? "#4ade80" : "#fde047"); }
+    }
+  }
+}
+function updateGolgi(dt) {
+  const G = D.golgi;
+  if (G.busy) {
+    G.busy -= dt;
+    if (G.busy <= 0) {
+      G.busy = 0;
+      pop("golgi");
+      move("vesicle", D.L.golgi, D.L.exit, 1.2, () => {
+        progress("protein");
+        S.totals.shipped++;
+        addScore(50);
+        float("Protein shipped!", D.L.exit.x - 40, D.L.exit.y - 16, "#93c5fd");
+        Kit.sfx("score");
+        pop("shipped");
+        if (S.totals.shipped >= 10) badge("protein-factory", "Protein Factory", "Ship 10 proteins in one game.");
+      });
+    }
+  } else if (G.queue > 0) {
+    G.queue--;
+    G.busy = 2.4 / (1 + 0.5 * S.up.golgi);
+  }
+}
+
+function updateViruses(dt) {
+  const R = D.L.rer;
+  let hij = 0;
+  for (const v of D.viruses) {
+    v.t += dt;
+    v.spin += dt * 2;
+    if (v.silence) {
+      v.silence -= dt;
+      if (v.silence <= 0) killVirus(v, "silence");
+      continue;
+    }
+    if (v.state === "move") {
+      const dd = dist(v, R);
+      if (dd < 30) { v.state = "hijack"; v.t = 0; Kit.sfx("hit"); }
+      else { v.x += ((R.x - v.x) / dd) * 26 * dt; v.y += ((R.y - v.y) / dd) * 26 * dt; }
+    } else if (v.state === "hijack") {
+      hij++;
+      D.energy = Math.max(0, D.energy - 2 * dt);
+      if (v.t > 6) {
+        v.dead = true;
+        pop("hijack");
+        hurt(15);
+        float("Virus copies burst out!", R.x, R.y - 50, "#f87171");
+        Kit.sfx("lose");
+        if (D.mode === "animal") { spawnVirus(); spawnVirus(); }
+      }
+    }
+  }
+  D.hijacked = hij;
+  D.viruses = D.viruses.filter((v) => !v.dead);
+}
+function killVirus(v, how) {
+  v.dead = true;
+  progress("defend");
+  S.totals.defended++;
+  addScore(40);
+  float("Virus destroyed!", v.x, v.y - 20, "#4ade80");
+  pop(how === "silence" ? "silence" : "lysovirus");
+  Kit.sfx("score");
+  checkDefender();
+}
+
+function updateCleaners(dt) {
+  D.cleanQueue = D.cleanQueue.filter((t) => !t.dead && !t.gone && (D.waste.includes(t) || D.viruses.includes(t)));
+  for (const c of D.cleaners) {
+    if ((c.state === "home" || c.state === "back") && D.cleanQueue.length) { c.target = D.cleanQueue.shift(); c.state = "go"; }
+    if (c.state === "go") {
+      const t = c.target;
+      if (!t || t.dead || t.gone) { c.state = "back"; c.target = null; continue; }
+      const dd = dist(c, t);
+      if (dd < 8) { c.state = "eat"; c.t = 0; }
+      else { c.x += ((t.x - c.x) / dd) * Math.min(dd, 170 * dt); c.y += ((t.y - c.y) / dd) * Math.min(dd, 170 * dt); }
+    } else if (c.state === "eat") {
+      c.t += dt;
+      const t = c.target;
+      if (t && !t.dead) { c.x = t.x; c.y = t.y; }
+      if (c.t > 0.9) {
+        if (t && D.viruses.includes(t) && !t.dead) killVirus(t, "lyso");
+        else if (t && D.waste.includes(t)) {
+          D.waste = D.waste.filter((w) => w !== t);
+          D.amino = Math.min(20, D.amino + 1);
+          progress("clean");
+          S.totals.cleaned++;
+          addScore(15);
+          float("Recycled! +1 amino acid", t.x, t.y - 16, "#c084fc");
+          pop(D.mode === "animal" ? "lysosome" : "bigvac");
+          Kit.sfx("coin");
+          if (S.totals.cleaned >= 20) badge("clean-machine", "Clean Machine", "Clean up 20 pieces of waste in one game.");
+        }
+        c.state = "back"; c.target = null;
+      }
+    } else if (c.state === "back") {
+      const home = { x: c.hx, y: c.hy };
+      const dd = dist(c, home);
+      if (dd < 4) { c.state = "home"; c.x = c.hx; c.y = c.hy; }
+      else { c.x += ((home.x - c.x) / dd) * Math.min(dd, 150 * dt); c.y += ((home.y - c.y) / dd) * Math.min(dd, 150 * dt); }
+    }
+  }
+}
+
+// ------------------------------------------------------------------ day end, shop, game over
+
+async function endDay(complete) {
+  if (!D || D.ended || screen !== "play") return;
+  D.ended = true;
+  screen = "dayend";
+  const perfect = complete && D.cfg.virusEvery > 0 && D.virusIn === 0 && S.health >= 50;
+  let bonus = 0;
+  if (complete) bonus += 100 + Math.round(Math.max(0, D.cfg.length - D.t));
+  if (perfect) bonus += 200;
+  addScore(bonus);
+  if (complete) Kit.sfx("win");
+  if (perfect) badge("perfect-day", "Perfect Day", "Finish a day's orders without letting a single virus in.");
+  if (complete && D.mode === "plant") badge("plant-cell", "Plant Cell", "Complete a day running a plant cell.");
+  if (S.day >= 10) badge("veteran", "Cell Veteran", "Reach day 10.");
+  saved.bestDay = Math.max(saved.bestDay, S.day);
+  persist();
+  Kit.finish(ID, S.score);
+  const lines = Object.keys(D.cfg.orders).map((k) => `${ORDER_TEXT[k]}: ${D.progress[k]} / ${D.cfg.orders[k]}`).join("\n");
+  await Kit.overlay(complete ? `Day ${S.day} complete!` : `Day ${S.day} is over`,
+    `${lines}\n\n${complete ? `Orders bonus: +${bonus - (perfect ? 200 : 0)}` : "Not every order was finished, but your cell lives on!"}${perfect ? "\nPerfect day: +200" : ""}\nScore: ${S.score}`,
+    "Upgrade shop");
+  S.day++;
+  S.health = Math.min(100, S.health + 30);
+  screen = "shop";
+  updateHud();
+}
+async function gameOver() {
+  screen = "dayend";
+  Kit.sfx("lose");
+  const best = Kit.finish(ID, S.score);
+  saved.bestDay = Math.max(saved.bestDay, S.day);
+  persist();
+  await Kit.overlay("Your cell needs a rest", `The cell ran out of health on day ${S.day}.\nKeep energy up, clean waste and stop viruses!\n\nScore: ${S.score}\nBest: ${best}`, "Play again");
+  newRun();
+  await dayIntro();
+  startDay();
+}
+async function dayIntro() {
+  const cfg = dayConfig(S.day);
+  const orders = Object.keys(cfg.orders).map((k) => `${ORDER_TEXT[k]}: ${cfg.orders[k]}`).join("\n");
+  const intro = DAY_INTRO[S.day] || (cfg.mode === "plant" ? "Plant cell day. Keep the chloroplasts working while the sun shines!" : "Animal cell day. Viruses are getting sneakier!");
+  screen = "intro";
+  await Kit.overlay(`Day ${S.day}: ${cfg.mode === "plant" ? "Plant cell" : "Animal cell"}`, `${intro}\n\nToday's orders:\n${orders}`, "Start day");
+}
+function upgradeAvailable(u) {
+  if (u.plant) return S.day >= 5;
+  return true;
+}
+
+// ------------------------------------------------------------------ input
+
+function hitOrganelle(p) {
+  if (!D) return null;
+  const L = D.L;
+  for (const v of D.viruses) if (dist(p, v) < 24) return { kind: "virus", o: v };
+  for (const w of D.waste) if (dist(p, w) < 22) return { kind: "waste", o: w };
+  for (const d of D.doors) if (Math.abs(p.x - d.x) < 32 && Math.abs(p.y - d.y) < 32) return { kind: "door", o: d };
+  for (const m of D.mitos) if (Math.abs(p.x - m.x) < 46 && Math.abs(p.y - m.y) < 30) return { kind: "mito", o: m };
+  for (const c of D.chloros) if (Math.abs(p.x - c.x) < 44 && Math.abs(p.y - c.y) < 28) return { kind: "chloro", o: c };
+  if (dist(p, L.nucleus) < L.nucleus.r + 6) return { kind: "nucleus" };
+  if (Math.abs(p.x - L.rer.x) < 50 && Math.abs(p.y - L.rer.y) < 95) return { kind: "rer" };
+  if (Math.abs(p.x - L.golgi.x) < 48 && Math.abs(p.y - L.golgi.y) < 38) return { kind: "golgi" };
+  const V = L.vacuole;
+  if (V.r ? dist(p, V) < V.r + 8 : Math.abs(p.x - V.x) < V.w / 2 && Math.abs(p.y - V.y) < V.h / 2) return { kind: "vacuole" };
+  for (const c of D.cleaners) if (dist(p, c) < 18) return { kind: "lyso" };
+  if (inRect(p, CELL)) return { kind: "cytoplasm" };
+  return null;
+}
+
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  const p = Kit.pointer(canvas, e);
+  pressed = buttons.find((b) => inRect(p, b)) || null;
+  if (pressed) return;
+  if (screen === "guide") { guideDown(p); return; }
+  if (screen !== "play" || paused) return;
+  if (popup) { if (popup.t > 0.4) { popup = null; Kit.sfx("click"); } return; }
+  const h = hitOrganelle(p);
+  if (!h) return;
+  if (h.kind === "virus") tapVirus(h.o);
+  else if (h.kind === "waste") sendCleaner(h.o);
+  else if (h.kind === "door") tapDoor(h.o);
+  else if (h.kind === "mito") tapMito(h.o);
+  else if (h.kind === "chloro") tapChloro(h.o);
+  else if (h.kind === "nucleus") tapNucleus();
+  else if (h.kind === "vacuole") tapVacuole();
+  else if (h.kind === "rer") { float(D.rer.queue ? `${D.rer.queue} message${D.rer.queue > 1 ? "s" : ""} waiting` : "Tap the nucleus to send instructions", D.L.rer.x, D.L.rer.y - 80, "#93c5fd"); }
+  else if (h.kind === "golgi") float("Golgi: packs and ships proteins", D.L.golgi.x, D.L.golgi.y - 40, "#f9a8d4");
+  else if (h.kind === "lyso") float("Lysosome: tap waste or a virus to send it", p.x, p.y - 20, "#c084fc");
+  else if (h.kind === "cytoplasm") { if (D.mode === "plant" && !saved.seen.wall) pop("wall"); else pop("cytoplasm"); }
+});
+canvas.addEventListener("pointerup", (e) => {
+  const p = Kit.pointer(canvas, e);
+  if (pressed) { const b = pressed; pressed = null; if (inRect(p, b)) { Kit.sfx("click"); b.fn(); } }
+});
+canvas.addEventListener("pointercancel", () => { pressed = null; });
+Kit.onKey((code) => {
+  if (popup && (code === "Enter" || code === "Space") && popup.t > 0.4) { popup = null; return; }
+  if (code === "KeyP" && screen === "play") paused = !paused;
+  if (code === "KeyG" && (screen === "play" || screen === "shop")) openGuide();
+});
+function openGuide() { guideReturn = screen; screen = "guide"; }
+
+// ------------------------------------------------------------------ drawing helpers
+
+function txt(s, x, y, size, color, align, weight) {
+  ctx.font = `${weight || "bold"} ${size}px ${FONT}`;
+  ctx.fillStyle = color || "#f2f4f5";
+  ctx.textAlign = align || "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(s, x, y);
+}
+function wrap(s, maxW, size, weight) {
+  ctx.font = `${weight || "normal"} ${size}px ${FONT}`;
+  const out = [];
+  for (const para of String(s).split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const t = line ? line + " " + word : word;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = word; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function para(s, x, y, maxW, size, lh, color, weight) {
+  for (const line of wrap(s, maxW, size, weight)) { txt(line, x, y, size, color, "left", weight || "normal"); y += lh; }
+  return y;
+}
+function rrect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+function button(label, x, y, w, h, color, fn, size) {
+  const down = pressed && pressed.label === label && pressed.x === x;
+  Kit.brick(ctx, x, y + (down ? 2 : 0), w, h, color, 8);
+  txt(label, x + w / 2, y + h / 2 + (size || 16) * 0.36 + (down ? 2 : 0), size || 16, "#fff", "center");
+  buttons.push({ label, x, y, w, h, fn });
+}
+function bar(x, y, w, h, frac, color, label) {
+  rrect(x, y, w, h, 6, "#111316");
+  if (frac > 0) rrect(x + 2, y + 2, Math.max(4, (w - 4) * Math.min(1, frac)), h - 4, 4, color);
+  if (label) txt(label, x + 8, y + h - 6, 13, "#fff");
+}
+
+// ------------------------------------------------------------------ drawing the cell
+
+function drawIcon(kind, x, y, s) {
+  s = s || 1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  switch (kind) {
+    case "glucose": // a six-sided ring, drawn blocky
+      ctx.fillStyle = "#facc15"; ctx.beginPath();
+      for (let i = 0; i < 6; i++) { const a = (i * Math.PI) / 3; ctx.lineTo(Math.cos(a) * 7, Math.sin(a) * 7); }
+      ctx.fill(); ctx.fillStyle = "#a16207"; ctx.fillRect(-2, -2, 4, 4); break;
+    case "amino":
+      ctx.fillStyle = "#4ade80"; ctx.fillRect(-6, -4, 7, 7); ctx.fillStyle = "#16a34a"; ctx.fillRect(1, -2, 6, 6); break;
+    case "o2":
+      ctx.fillStyle = "#f87171"; ctx.fillRect(-7, -3, 6, 6); ctx.fillRect(1, -3, 6, 6); break;
+    case "co2":
+      ctx.fillStyle = "#f87171"; ctx.fillRect(-9, -2, 5, 5); ctx.fillRect(4, -2, 5, 5); ctx.fillStyle = "#4b5563"; ctx.fillRect(-3, -3, 6, 6); break;
+    case "water":
+      ctx.fillStyle = "#60a5fa"; ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 2); ctx.arc(0, 2, 6, 0, Math.PI); ctx.closePath(); ctx.fill(); break;
+    case "mrna":
+      ctx.strokeStyle = "#fb923c"; ctx.lineWidth = 3; ctx.beginPath();
+      for (let i = 0; i <= 6; i++) ctx.lineTo(-12 + i * 4, i % 2 ? -3 : 3);
+      ctx.stroke(); break;
+    case "vesicle":
+      ctx.fillStyle = "rgba(186,230,253,.55)"; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = "#2563eb"; ctx.fillRect(-6, -2, 4, 4); ctx.fillRect(-2, 1, 4, 4); ctx.fillRect(2, -3, 4, 4); break;
+  }
+  ctx.restore();
+}
+function drawVirus(x, y, spin, s) {
+  s = s || 1;
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s); ctx.rotate(spin * 0.3);
+  ctx.strokeStyle = "#fca5a5"; ctx.lineWidth = 3;
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI) / 3;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * 9, Math.sin(a) * 9); ctx.lineTo(Math.cos(a) * 15, Math.sin(a) * 15); ctx.stroke();
+    ctx.fillStyle = "#fecaca"; ctx.fillRect(Math.cos(a) * 15 - 2, Math.sin(a) * 15 - 2, 4, 4);
+  }
+  ctx.fillStyle = "#dc2626"; ctx.beginPath();
+  for (let i = 0; i < 6; i++) { const a = (i * Math.PI) / 3 + Math.PI / 6; ctx.lineTo(Math.cos(a) * 11, Math.sin(a) * 11); }
+  ctx.fill();
+  ctx.fillStyle = "#7f1d1d"; ctx.fillRect(-4, -4, 8, 8);
+  ctx.restore();
+}
+function drawMito(m, busy) {
+  ctx.save();
+  ctx.translate(m.x, m.y);
+  const glow = busy ? 0.5 + Math.sin(time * 12) * 0.5 : 0;
+  if (busy) { ctx.shadowColor = "#fde047"; ctx.shadowBlur = 12 + glow * 10; }
+  rrect(-40, -22, 80, 44, 20, "#f97316", "#9a3412", 3);
+  ctx.shadowBlur = 0;
+  rrect(-34, -16, 68, 32, 15, "#fdba74");
+  ctx.strokeStyle = "#c2410c"; ctx.lineWidth = 3; ctx.beginPath();
+  for (let i = 0; i <= 8; i++) ctx.lineTo(-28 + i * 7, i % 2 ? -11 : 11);
+  ctx.stroke();
+  if (busy) { ctx.fillStyle = `rgba(253,224,71,${0.3 + glow * 0.4})`; ctx.fillRect(-40, -22, 80 * (1 - m.busy / 2), 4); }
+  ctx.restore();
+}
+function drawChloro(c) {
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  if (c.busy) { ctx.shadowColor = "#bef264"; ctx.shadowBlur = 16; }
+  rrect(-40, -22, 80, 44, 20, "#16a34a", "#14532d", 3);
+  ctx.shadowBlur = 0;
+  rrect(-34, -16, 68, 32, 14, "#4ade80");
+  ctx.fillStyle = "#166534";
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) ctx.fillRect(-26 + i * 15, -11 + j * 7, 10, 5);
+  if (!light()) { ctx.fillStyle = "rgba(15,23,42,.45)"; ctx.beginPath(); ctx.roundRect(-40, -22, 80, 44, 20); ctx.fill(); }
+  ctx.restore();
+}
+function drawNucleus(N) {
+  ctx.save();
+  ctx.fillStyle = "#6d28d9";
+  ctx.beginPath(); ctx.roundRect(N.x - N.r, N.y - N.r, N.r * 2, N.r * 2, N.r * 0.7); ctx.fill();
+  ctx.fillStyle = "#a78bfa";
+  ctx.beginPath(); ctx.roundRect(N.x - N.r + 7, N.y - N.r + 7, N.r * 2 - 14, N.r * 2 - 14, N.r * 0.6); ctx.fill();
+  // nuclear pores
+  ctx.fillStyle = "#ede9fe";
+  for (let i = 0; i < 8; i++) { const a = (i * Math.PI) / 4 + 0.3; ctx.fillRect(N.x + Math.cos(a) * (N.r - 4) - 3, N.y + Math.sin(a) * (N.r - 4) - 3, 6, 6); }
+  // DNA (chromatin) and nucleolus
+  ctx.strokeStyle = "#4c1d95"; ctx.lineWidth = 3;
+  for (let k = 0; k < 4; k++) {
+    ctx.beginPath();
+    const ox = N.x - N.r * 0.55 + (k % 2) * N.r * 0.5, oy = N.y - N.r * 0.45 + Math.floor(k / 2) * N.r * 0.75;
+    for (let i = 0; i <= 6; i++) ctx.lineTo(ox + i * N.r * 0.08, oy + (i % 2 ? -5 : 5));
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#4c1d95";
+  ctx.beginPath(); ctx.roundRect(N.x + N.r * 0.05, N.y - N.r * 0.05, N.r * 0.42, N.r * 0.42, 8); ctx.fill();
+  ctx.restore();
+}
+function drawRer() {
+  const R = D.L.rer;
+  ctx.save();
+  if (D.mode === "animal") {
+    const N = D.L.nucleus;
+    for (let k = 0; k < 3; k++) {
+      const r = N.r + 16 + k * 16;
+      ctx.strokeStyle = D.hijacked ? "#f87171" : "#60a5fa"; ctx.lineWidth = 8; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.arc(N.x, N.y, r, -1.15, 1.15); ctx.stroke();
+      ctx.fillStyle = "#1e3a8a";
+      for (let a = -1.1; a <= 1.1; a += 0.22) ctx.fillRect(N.x + Math.cos(a) * (r + 6) - 2, N.y + Math.sin(a) * (r + 6) - 2, 4, 4);
+    }
+  } else {
+    for (let k = 0; k < 3; k++) {
+      const y = R.y - 22 + k * 22;
+      ctx.strokeStyle = D.hijacked ? "#f87171" : "#60a5fa"; ctx.lineWidth = 8; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(R.x - 58, y); ctx.bezierCurveTo(R.x - 20, y - 12, R.x + 20, y + 12, R.x + 58, y); ctx.stroke();
+      ctx.fillStyle = "#1e3a8a";
+      for (let i = 0; i < 9; i++) ctx.fillRect(R.x - 54 + i * 13, y - 9 + Math.sin(i) * 2, 4, 4);
+    }
+  }
+  if (D.rer.busy) {
+    const by = R.y + (D.mode === "animal" ? -112 : 62);
+    rrect(R.x - 44, by - 13, 88, 18, 6, "rgba(30,58,138,.9)");
+    txt("building protein", R.x, by + 1, 11, "#dbeafe", "center");
+  }
+  if (D.rer.queue) {
+    for (let i = 0; i < D.rer.queue; i++) drawIcon("mrna", R.x - 16 + i * 16, R.y - (D.mode === "animal" ? 100 : 44), 0.7);
+  }
+  ctx.restore();
+}
+function drawGolgi() {
+  const G = D.L.golgi;
+  ctx.save();
+  for (let k = 0; k < 4; k++) {
+    ctx.strokeStyle = k % 2 ? "#f472b6" : "#ec4899"; ctx.lineWidth = 8; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(G.x, G.y + 60 - k * 12, 50 - k * 2, -2.3, -0.84); ctx.stroke();
+  }
+  ctx.fillStyle = "#fbcfe8";
+  ctx.beginPath(); ctx.arc(G.x - 38, G.y + 26, 5, 0, Math.PI * 2); ctx.arc(G.x + 40, G.y + 22, 6, 0, Math.PI * 2); ctx.fill();
+  if (D.golgi.busy) {
+    const a = 1 - D.golgi.busy / (2.4 / (1 + 0.5 * S.up.golgi));
+    rrect(G.x - 30, G.y + 30, 60, 6, 3, "#111316"); rrect(G.x - 30, G.y + 30, 60 * a, 6, 3, "#f9a8d4");
+  }
+  ctx.restore();
+}
+function drawMembraneAndGround() {
+  const plant = D.mode === "plant";
+  const R = plant ? 18 : 92;
+  // outside world
+  ctx.fillStyle = plant ? (light() ? "#1f3b2a" : "#0f1d16") : "#1b2433";
+  ctx.fillRect(0, 0, 700, H);
+  ctx.fillStyle = "rgba(255,255,255,.04)";
+  for (let y = 12; y < H; y += 26) for (let x = 12; x < 700; x += 26) ctx.fillRect(x, y, 4, 4);
+  if (plant) {
+    // cell wall
+    rrect(CELL.x - 16, CELL.y - 16, CELL.w + 32, CELL.h + 32, R + 8, "#65a30d", "#365314", 3);
+    ctx.fillStyle = "rgba(54,83,20,.5)";
+    for (let x = CELL.x - 8; x < CELL.x + CELL.w + 8; x += 22) { ctx.fillRect(x, CELL.y - 13, 12, 5); ctx.fillRect(x + 6, CELL.y + CELL.h + 8, 12, 5); }
+    for (let y = CELL.y - 8; y < CELL.y + CELL.h + 8; y += 22) { ctx.fillRect(CELL.x - 13, y, 5, 12); ctx.fillRect(CELL.x + CELL.w + 8, y + 6, 5, 12); }
+  }
+  // cytoplasm
+  rrect(CELL.x, CELL.y, CELL.w, CELL.h, R, plant ? "#d9f99d" : "#fde2d4");
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(CELL.x, CELL.y, CELL.w, CELL.h, R); ctx.clip();
+  ctx.fillStyle = plant ? "rgba(101,163,13,.12)" : "rgba(251,146,60,.12)";
+  for (let y = CELL.y + 14; y < CELL.y + CELL.h; y += 28) for (let x = CELL.x + 14; x < CELL.x + CELL.w; x += 28) { ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  // membrane: two rows of "heads" with tails between
+  ctx.save();
+  ctx.strokeStyle = "#fcd34d"; ctx.lineWidth = 12;
+  ctx.beginPath(); ctx.roundRect(CELL.x, CELL.y, CELL.w, CELL.h, R); ctx.stroke();
+  ctx.strokeStyle = "#d97706"; ctx.lineWidth = 4; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); ctx.roundRect(CELL.x - 4, CELL.y - 4, CELL.w + 8, CELL.h + 8, R + 4); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(CELL.x + 4, CELL.y + 4, CELL.w - 8, CELL.h - 8, Math.max(4, R - 4)); ctx.stroke();
+  ctx.restore();
+  // insect-bite cracks
+  for (const c of D.cracks) {
+    ctx.strokeStyle = `rgba(63,32,10,${1 - c.t / 12})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(c.x - 10, c.y - 8); ctx.lineTo(c.x - 2, c.y + 2); ctx.lineTo(c.x + 4, c.y - 6); ctx.lineTo(c.x + 10, c.y + 9); ctx.stroke();
+  }
+}
+function drawDoor(d) {
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  if (d.side === "left" || d.side === "right") ctx.rotate(Math.PI / 2);
+  const warn = d.warn && d.open;
+  if (warn) { ctx.shadowColor = "#ef4444"; ctx.shadowBlur = 14 + Math.sin(time * 10) * 6; }
+  // two protein blocks with a channel between them
+  const gap = d.open ? 12 : 0;
+  Kit.brick(ctx, -24 - gap / 2, -15, 24, 30, d.open ? "#22c55e" : "#ef4444", 6);
+  Kit.brick(ctx, gap / 2, -15, 24, 30, d.open ? "#22c55e" : "#ef4444", 6);
+  ctx.shadowBlur = 0;
+  if (!d.open) { ctx.fillStyle = "#7f1d1d"; ctx.fillRect(-3, -15, 6, 30); }
+  ctx.restore();
+  if (d.warn) {
+    const o = OUT[d.side];
+    const wx = d.x + (o[1] ? 44 : 0), wy = d.y + (o[0] ? -44 : 0);
+    rrect(wx - 10, wy - 12, 20, 24, 6, d.open ? "#ef4444" : "#6b7280");
+    txt("!", wx, wy + 7, 18, "#fff", "center");
+  }
+}
+function drawWaste(w) {
+  ctx.save();
+  ctx.translate(w.x, w.y);
+  ctx.fillStyle = "#78350f";
+  ctx.fillRect(-10, -7, 12, 12); ctx.fillRect(-2, -10, 11, 11); ctx.fillRect(-6, 0, 14, 9);
+  ctx.fillStyle = "#a16207";
+  ctx.fillRect(-7, -5, 4, 4); ctx.fillRect(2, -7, 3, 3);
+  if (w.claimed) { ctx.strokeStyle = "#c084fc"; ctx.lineWidth = 2; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}
+function drawCleaner(c, asLysosome) {
+  const plant = !asLysosome && D && D.mode === "plant";
+  ctx.beginPath(); ctx.arc(c.x, c.y, 11, 0, Math.PI * 2);
+  ctx.fillStyle = plant ? "#7dd3fc" : "#c084fc"; ctx.fill();
+  ctx.strokeStyle = plant ? "#0369a1" : "#6b21a8"; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = plant ? "#0369a1" : "#6b21a8";
+  ctx.fillRect(c.x - 5, c.y - 3, 3, 3); ctx.fillRect(c.x + 2, c.y - 4, 3, 3); ctx.fillRect(c.x - 1, c.y + 3, 3, 3);
+  if (c.state === "eat") { ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(c.x, c.y, 14 + Math.sin(time * 20) * 3, 0, Math.PI * 2); ctx.stroke(); }
+}
+function drawBug(b) {
+  // a little blocky aphid on the outside of the wall
+  const o = OUT[b.side];
+  const x = b.x + o[0] * 30, y = b.y + o[1] * 30;
+  const bob = Math.sin(b.t * 18) * 2;
+  ctx.fillStyle = "#4d7c0f"; ctx.fillRect(x - 9, y - 6 + bob, 18, 12);
+  ctx.fillStyle = "#84cc16"; ctx.fillRect(x - 6, y - 4 + bob, 12, 8);
+  ctx.fillStyle = "#111"; ctx.fillRect(x - 2, y - 2 + bob, 3, 3);
+  ctx.strokeStyle = "#365314"; ctx.lineWidth = 2;
+  for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x - 6, y + s * 5); ctx.lineTo(x - 11, y + s * 10); ctx.moveTo(x + 6, y + s * 5); ctx.lineTo(x + 11, y + s * 10); ctx.stroke(); }
+}
+
+function drawCity() {
+  const L = D.L;
+  drawMembraneAndGround();
+  // vacuole
+  const V = L.vacuole;
+  if (V.r) {
+    ctx.beginPath(); ctx.arc(V.x, V.y, V.r, 0, Math.PI * 2); ctx.fillStyle = "#bae6fd"; ctx.fill();
+    ctx.strokeStyle = "#0284c7"; ctx.lineWidth = 3; ctx.stroke();
+    for (let i = 0; i < D.stored; i++) drawIcon("glucose", V.x - 12 + (i % 3) * 12, V.y - 6 + Math.floor(i / 3) * 12, 0.6);
+  } else {
+    const fill = 0.35 + 0.65 * (D.water / 30);
+    rrect(V.x - V.w / 2, V.y - V.h / 2, V.w, V.h, 40, "#e0f2fe", "#0284c7", 4);
+    ctx.save(); ctx.beginPath(); ctx.roundRect(V.x - V.w / 2 + 4, V.y - V.h / 2 + 4, V.w - 8, V.h - 8, 36); ctx.clip();
+    ctx.fillStyle = "#7dd3fc"; ctx.fillRect(V.x - V.w / 2, V.y + V.h / 2 - V.h * fill, V.w, V.h * fill);
+    ctx.restore();
+    txt("central vacuole", V.x, V.y + 6, 14, "#075985", "center");
+  }
+  // free ribosomes
+  ctx.fillStyle = "#1e3a8a";
+  for (const [x, y] of [[200, 200], [210, 330], [430, 380], [380, 150], [470, 250], [160, 260]]) if (D.mode === "animal") ctx.fillRect(x, y, 4, 4);
+  drawRer();
+  drawNucleus(L.nucleus);
+  drawGolgi();
+  for (const m of D.mitos) drawMito(m, m.busy > 0);
+  for (const c of D.chloros) drawChloro(c);
+  for (const c of D.cleaners) if (c.state === "home") drawCleaner(c);
+  // name tags
+  const tag = (t, x, y) => {
+    ctx.font = `bold 12px ${FONT}`;
+    const w = ctx.measureText(t).width;
+    rrect(x - w / 2 - 5, y - 11, w + 10, 16, 5, "rgba(17,19,22,.55)");
+    txt(t, x, y + 1, 12, "#fff", "center");
+  };
+  tag("nucleus", L.nucleus.x, L.nucleus.y + L.nucleus.r + 14);
+  tag("rough ER", D.mode === "animal" ? L.rer.x + 30 : L.rer.x, D.mode === "animal" ? L.rer.y + 118 : L.rer.y + 44);
+  tag("Golgi", L.golgi.x, L.golgi.y + 50);
+  for (const m of D.mitos) tag("mitochondrion", m.x, m.y + 38);
+  for (const c of D.chloros) tag("chloroplast", c.x, c.y + 38);
+  if (D.mode === "animal") { tag("vacuole", L.vacuole.x, L.vacuole.y + L.vacuole.r + 14); for (const c of D.cleaners) if (c.state === "home") tag("lysosome", c.hx, c.hy + 26); }
+  else tag("cell wall", CELL.x + 90, CELL.y - 22);
+  // stock floating in the cytoplasm (a few, so you can see what you have)
+  const show = (kind, n, seed) => {
+    for (let i = 0; i < Math.min(n, 8); i++) {
+      const a = seed + i * 2.4 + time * 0.15;
+      const x = 330 + Math.cos(a * 1.3) * 230, y = 270 + Math.sin(a) * 175;
+      if (!inRect({ x, y }, CELL) || hitOrganelle({ x, y })?.kind !== "cytoplasm") continue;
+      drawIcon(kind, x, y, 1.1);
+    }
+  };
+  show("glucose", D.glucose, 0); show("amino", D.amino, 1.1); show("o2", Math.floor(D.oxygen / 4), 2.3);
+  for (const w of D.waste) drawWaste(w);
+  for (const d of D.doors) drawDoor(d);
+  for (const p of D.outside) {
+    ctx.globalAlpha = p.state === "leave" ? Math.max(0, 1 - p.t / 1.5) : 1;
+    if (p.kind === "virus") drawVirus(p.x, p.y, p.spin + time, 1.1); else drawIcon(p.kind, p.x, p.y, 1.5);
+    ctx.globalAlpha = 1;
+  }
+  for (const m of D.movers) {
+    if (m.fade) ctx.globalAlpha = Math.max(0, Math.sin(Math.min(1, m.t) * Math.PI));
+    drawIcon(m.kind, m.x, m.y, 1.3);
+    ctx.globalAlpha = 1;
+  }
+  for (const v of D.viruses) {
+    const s = v.silence ? v.silence / 1.2 : 1;
+    drawVirus(v.x, v.y, v.spin, s);
+    if (v.state === "hijack" && !v.silence) { rrect(v.x - 18, v.y - 26, 36, 5, 2, "#111316"); rrect(v.x - 18, v.y - 26, 36 * Math.min(1, v.t / 6), 5, 2, "#ef4444"); }
+  }
+  for (const c of D.cleaners) if (c.state !== "home") drawCleaner(c);
+  for (const b of D.bugs) drawBug(b);
+  if (D.mode === "plant") {
+    // the sun (or moon) in the corner
+    if (light()) { ctx.fillStyle = "#fde047"; ctx.fillRect(14, 10, 26, 26); ctx.fillStyle = "#fef08a"; ctx.fillRect(18, 14, 18, 18); }
+    else { ctx.fillStyle = "#e2e8f0"; ctx.beginPath(); ctx.arc(26, 22, 12, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#0f1d16"; ctx.beginPath(); ctx.arc(32, 18, 11, 0, Math.PI * 2); ctx.fill(); }
+  }
+  for (const f of D.floats) {
+    ctx.globalAlpha = Math.max(0, 1 - f.t / 1.6);
+    ctx.font = `bold 15px ${FONT}`;
+    const w = ctx.measureText(f.text).width;
+    const fx = Kit.clamp(f.x, w / 2 + 6, 694 - w / 2);
+    rrect(fx - w / 2 - 6, f.y - 16, w + 12, 22, 6, "rgba(17,19,22,.8)");
+    txt(f.text, fx, f.y, 15, f.color, "center");
+    ctx.globalAlpha = 1;
+  }
+  // first-time fact pop-up: the game waits until you tap
+  if (popup && screen === "play") {
+    ctx.fillStyle = "rgba(10,11,13,.35)"; ctx.fillRect(0, 0, 700, H);
+    const lines = wrap(popup.text, 440, 17, "normal");
+    const h = 74 + lines.length * 24;
+    const py = 270 - h / 2;
+    rrect(120, py, 460, h, 14, "rgba(17,19,22,.95)", "#facc15", 3);
+    txt("Cell fact", 140, py + 30, 18, "#facc15");
+    lines.forEach((l, i) => txt(l, 140, py + 58 + i * 24, 17, "#fef9c3", "left", "normal"));
+    txt("Tap to keep going", 350, py + h - 14, 13, "#a7adb4", "center", "normal");
+  }
+  // hints: pulse what can be tapped right now
+  if (S.day <= 2 && !paused) {
+    const pulse = 0.5 + Math.sin(time * 5) * 0.5;
+    ctx.strokeStyle = `rgba(250,204,21,${0.4 + pulse * 0.5})`; ctx.lineWidth = 3;
+    if (D.glucose >= 1 && D.oxygen >= 6) for (const m of D.mitos) if (!m.busy) { ctx.beginPath(); ctx.roundRect(m.x - 46, m.y - 28, 92, 56, 24); ctx.stroke(); }
+    if (D.progress.protein !== undefined && D.progress.protein < D.cfg.orders.protein && D.rer.queue === 0 && !D.movers.some((m) => m.kind === "mrna")) {
+      const N = L.nucleus; ctx.beginPath(); ctx.arc(N.x, N.y, N.r + 8, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+}
+
+function drawPanel() {
+  const x = 712, w = 240;
+  rrect(x - 6, 0, w + 14, H, 0, "#16181b");
+  const night = D.mode === "plant" && !light();
+  txt(`Day ${S.day}`, x + 4, 30, 24, "#fff");
+  txt(D.mode === "plant" ? (night ? "Plant cell · night" : "Plant cell · day") : "Animal cell", x + w - 4, 28, 14, D.mode === "plant" ? "#a3e635" : "#fdba74", "right");
+  bar(x, 40, w, 12, 1 - D.t / D.cfg.length, "#64748b");
+  bar(x, 60, w, 24, D.energy / 100, D.energy < 25 ? "#ef4444" : "#facc15", `Energy (ATP) ${Math.round(D.energy)}`);
+  bar(x, 90, w, 24, S.health / 100, S.health < 35 ? "#ef4444" : "#22c55e", `Cell health ${Math.round(S.health)}`);
+  // stock
+  rrect(x, 122, w, D.mode === "plant" ? 84 : 62, 10, "#1d2026");
+  const items = D.mode === "plant"
+    ? [["glucose", "Glucose", D.glucose], ["o2", "Oxygen", D.oxygen], ["amino", "Amino acids", D.amino], ["water", "Water", Math.floor(D.water)], ["co2", "CO2", D.co2]]
+    : [["glucose", "Glucose", D.glucose + (D.stored ? ` (+${D.stored})` : "")], ["o2", "Oxygen", D.oxygen], ["amino", "Amino acids", D.amino]];
+  items.forEach(([k, label, n], i) => {
+    const cx = x + 14 + (i % 2) * 118, cy = 140 + Math.floor(i / 2) * 22;
+    drawIcon(k, cx, cy - 4, 1);
+    txt(`${label} ${n}`, cx + 14, cy + 1, 13, "#e5e7eb", "left", "normal");
+  });
+  // orders
+  let y = D.mode === "plant" ? 216 : 196;
+  txt("Orders", x + 4, y + 14, 17, "#facc15");
+  y += 22;
+  for (const k of Object.keys(D.cfg.orders)) {
+    const done = D.progress[k] >= D.cfg.orders[k];
+    rrect(x, y, w, 34, 8, done ? "#14532d" : "#1d2026");
+    txt(ORDER_TEXT[k], x + 8, y + 15, 12, done ? "#bbf7d0" : "#e5e7eb", "left", "normal");
+    bar(x + 8, y + 20, w - 70, 9, D.progress[k] / D.cfg.orders[k], done ? "#4ade80" : "#3b82f6");
+    txt(`${D.progress[k]}/${D.cfg.orders[k]}`, x + w - 8, y + 29, 14, "#fff", "right");
+    y += 38;
+  }
+  // buttons
+  const by = Math.max(y + 6, 400);
+  button("Guide", x, by, 116, 38, "#3b82f6", openGuide);
+  button(paused ? "Resume" : "Pause", x + 124, by, 116, 38, paused ? "#12b76a" : "#6b7280", () => { paused = !paused; });
+  // mayor
+  const ay = Math.min(H - 8, by + 120);
+  rrect(x, by + 46, w, ay - by - 46, 10, "#1d2026");
+  Kit.drawAvatar(ctx, x + 34, ay - 10, Math.min(62, ay - by - 66), { facing: 1, walk: Math.sin(time * 2) * 0.3 });
+  txt(`Mayor ${ME}`.slice(0, 22), x + 68, by + 72, 14, "#fff");
+  const tip = D.energy < 25 ? "Energy is low! Tap a mitochondrion." : D.waste.length > 4 ? "Too much waste! Tap it to clean up." : D.viruses.length ? "A virus is inside! Tap it." : D.outside.some((p) => p.kind === "virus") ? "Close the door with the red !" : "Tap organelles to put them to work.";
+  para(tip, x + 68, by + 92, w - 76, 12, 15, "#a7adb4");
+}
+
+function draw() {
+  buttons = [];
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (screen === "shop") return drawShop();
+  if (screen === "guide") return drawGuide();
+  if (!D) { drawTitle(); return; }
+  drawCity();
+  drawPanel();
+  if (paused) {
+    ctx.fillStyle = "rgba(10,11,13,.55)"; ctx.fillRect(0, 0, 700, H);
+    txt("Paused", 350, 250, 40, "#fff", "center");
+    txt("Tap Resume (or press P) to keep going", 350, 284, 16, "#cbd5e1", "center", "normal");
+  }
+}
+
+function drawTitle() {
+  ctx.fillStyle = "#1b2433"; ctx.fillRect(0, 0, W, H);
+  rrect(250, 110, 460, 320, 120, "#fde2d4", "#fcd34d", 12);
+  drawNucleus({ x: 480, y: 270, r: 70 });
+  drawMito({ x: 340, y: 190, busy: 0 }, false);
+  drawMito({ x: 620, y: 350, busy: 0 }, false);
+}
+
+// ------------------------------------------------------------------ shop
+
+function drawShop() {
+  ctx.fillStyle = "#16181b"; ctx.fillRect(0, 0, W, H);
+  txt("Upgrade your cell", 20, 40, 28, "#fff");
+  txt(`Cell points: ${S.points}`, 940, 38, 20, "#facc15", "right");
+  txt(`Next: day ${S.day} (${dayConfig(S.day).mode} cell) · Health ${Math.round(S.health)}`, 20, 66, 15, "#a7adb4", "left", "normal");
+  const list = UPGRADES.filter(upgradeAvailable);
+  list.forEach((u, i) => {
+    const cx = 20 + (i % 4) * 233, cy = 84 + Math.floor(i / 4) * 196;
+    const lvl = S.up[u.id];
+    const maxed = lvl >= u.max;
+    const cost = maxed ? 0 : u.cost[lvl];
+    rrect(cx, cy, 222, 186, 12, "#1d2026", maxed ? "#22c55e" : "#3a3f46", 2);
+    txt(u.name, cx + 12, cy + 26, 16, "#fff");
+    for (let k = 0; k < u.max; k++) rrect(cx + 12 + k * 22, cy + 36, 18, 10, 3, k < lvl ? "#22c55e" : "#3a3f46");
+    para(u.text, cx + 12, cy + 66, 198, 13, 17, "#cbd5e1");
+    if (maxed) txt("Maxed out!", cx + 111, cy + 168, 15, "#4ade80", "center");
+    else button(`Buy ${cost}`, cx + 12, cy + 140, 198, 36, S.points >= cost ? "#12b76a" : "#3a3f46", () => {
+      if (S.points < cost) { Kit.sfx("hit"); return; }
+      S.points -= cost; S.up[u.id]++; Kit.sfx("coin");
+    });
+  });
+  button("Guide", 20, 482, 150, 44, "#3b82f6", openGuide);
+  button(`Start day ${S.day}`, 700, 482, 240, 44, "#a855f7", async () => { screen = "intro"; await dayIntro(); startDay(); }, 18);
+}
+
+// ------------------------------------------------------------------ guide
+
+function guideEntries() { return GUIDE; }
+function guideRect(i) { return { x: 16, y: 70 + i * 35, w: 230, h: 31 }; }
+function guideDown(p) {
+  guideEntries().forEach((g, i) => { if (inRect(p, guideRect(i))) { guideSel = g.id; Kit.sfx("click"); markRead(g.id); } });
+}
+function markRead(id) {
+  saved.read[id] = 1; persist();
+  if (GUIDE.every((g) => saved.read[g.id])) badge("scholar", "Cell Scholar", "Read every page of the organelle guide.");
+}
+function drawGuide() {
+  ctx.fillStyle = "#16181b"; ctx.fillRect(0, 0, W, H);
+  txt("Organelle guide", 16, 40, 26, "#fff");
+  txt("The game is paused. Tap a name to learn about it.", 260, 38, 14, "#a7adb4", "left", "normal");
+  markRead(guideSel);
+  guideEntries().forEach((g, i) => {
+    const r = guideRect(i);
+    const sel = g.id === guideSel;
+    rrect(r.x, r.y, r.w, r.h, 8, sel ? "#3b82f6" : "#1d2026");
+    txt(g.name, r.x + 10, r.y + 21, 14, "#fff");
+    if (g.plant) txt("plant", r.x + r.w - 8, r.y + 20, 11, "#a3e635", "right", "normal");
+    if (g.animal) txt("animal", r.x + r.w - 8, r.y + 20, 11, "#fdba74", "right", "normal");
+    if (!saved.read[g.id]) { ctx.fillStyle = "#facc15"; ctx.fillRect(r.x + r.w - (g.plant || g.animal ? 54 : 14), r.y + 12, 6, 6); }
+  });
+  const g = GUIDE.find((q) => q.id === guideSel);
+  rrect(262, 60, 682, 410, 12, "#1d2026");
+  // picture
+  rrect(278, 76, 250, 200, 10, g.id === "wall" || g.id === "chloro" || g.id === "bigvac" ? "#d9f99d" : "#fde2d4");
+  ctx.save(); ctx.beginPath(); ctx.roundRect(278, 76, 250, 200, 10); ctx.clip();
+  drawGuidePicture(g.id, 403, 176);
+  ctx.restore();
+  txt(g.name, 548, 108, 26, "#fff");
+  txt(g.job, 548, 136, 17, "#facc15");
+  if (g.plant) txt("Plant cells only", 548, 162, 14, "#a3e635", "left", "normal");
+  if (g.animal) txt("Mainly animal cells (in plant cells, the vacuole does this job)", 548, 162, 13, "#fdba74", "left", "normal");
+  para(g.text, 282, 306, 640, 17, 24, "#e5e7eb");
+  button("Back", 794, 482, 150, 44, "#12b76a", () => { screen = guideReturn === "guide" ? "play" : guideReturn; });
+}
+function drawGuidePicture(id, x, y) {
+  switch (id) {
+    case "nucleus": drawNucleus({ x, y, r: 70 }); break;
+    case "ribosome":
+      ctx.fillStyle = "#1e3a8a";
+      for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(x - 70 + i * 35, y - 20, 9, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(x - 70 + i * 35, y - 8, 12, 0, Math.PI * 2); ctx.fill(); }
+      drawIcon("mrna", x - 30, y + 30, 1.6); drawIcon("mrna", x + 20, y + 30, 1.6);
+      for (let i = 0; i < 5; i++) drawIcon("amino", x - 60 + i * 30, y + 70, 1.3);
+      break;
+    case "rer": {
+      const keep = D;
+      D = { mode: "animal", L: LAYOUT.animal, rer: { busy: 0, queue: 0 }, hijacked: 0 };
+      ctx.save(); ctx.translate(x - 330, y - 265); drawRer(); drawNucleus({ x: 290, y: 265, r: 68 }); ctx.restore();
+      D = keep; break;
+    }
+    case "golgi":
+      for (let k = 0; k < 5; k++) { ctx.strokeStyle = k % 2 ? "#f472b6" : "#ec4899"; ctx.lineWidth = 12; ctx.lineCap = "round"; ctx.beginPath(); ctx.arc(x, y + 110 - k * 18, 90 - k * 4, -2.3, -0.84); ctx.stroke(); }
+      drawIcon("vesicle", x - 80, y + 40, 1.5); drawIcon("vesicle", x + 85, y + 30, 1.5);
+      break;
+    case "mito": ctx.save(); ctx.translate(x, y); ctx.scale(1.8, 1.8); ctx.translate(-x, -y); drawMito({ x, y, busy: 0 }, false); ctx.restore(); break;
+    case "membrane":
+      ctx.fillStyle = "#1b2433"; ctx.fillRect(x - 125, y - 100, 250, 70);
+      ctx.fillStyle = "#fcd34d"; ctx.fillRect(x - 125, y - 30, 250, 30);
+      ctx.fillStyle = "#d97706"; for (let i = 0; i < 25; i++) { ctx.fillRect(x - 125 + i * 10, y - 34, 7, 7); ctx.fillRect(x - 125 + i * 10, y - 3, 7, 7); }
+      drawDoor({ x, y: y - 15, side: "top", open: true });
+      drawIcon("glucose", x, y - 60, 1.5); drawIcon("o2", x - 70, y - 15, 1.5); drawIcon("o2", x + 70, y + 30, 1.5);
+      break;
+    case "lysosome": ctx.save(); ctx.translate(x, y); ctx.scale(3, 3); ctx.translate(-x, -y); drawCleaner({ x, y, state: "home" }, true); ctx.restore(); drawWaste({ x: x + 70, y: y + 50 }); break;
+    case "vacuole": ctx.beginPath(); ctx.arc(x, y, 60, 0, Math.PI * 2); ctx.fillStyle = "#bae6fd"; ctx.fill(); ctx.strokeStyle = "#0284c7"; ctx.lineWidth = 4; ctx.stroke(); drawIcon("water", x - 20, y, 2); drawIcon("glucose", x + 20, y + 10, 2); break;
+    case "cytoplasm":
+      ctx.fillStyle = "rgba(251,146,60,.2)";
+      for (let i = 0; i < 9; i++) for (let j = 0; j < 7; j++) { ctx.beginPath(); ctx.arc(x - 120 + i * 30, y - 90 + j * 30, 6, 0, Math.PI * 2); ctx.fill(); }
+      drawIcon("glucose", x - 40, y - 20, 1.5); drawIcon("amino", x + 30, y + 30, 1.5); drawIcon("o2", x + 50, y - 40, 1.5); break;
+    case "virus": drawVirus(x, y, 0, 3); break;
+    case "wall":
+      ctx.fillStyle = "#65a30d"; ctx.fillRect(x - 125, y - 100, 40, 200); ctx.fillStyle = "#365314";
+      for (let j = 0; j < 9; j++) ctx.fillRect(x - 118 + (j % 2) * 10, y - 95 + j * 22, 20, 8);
+      ctx.fillStyle = "#fcd34d"; ctx.fillRect(x - 85, y - 100, 14, 200);
+      drawChloroStatic(x + 30, y);
+      break;
+    case "chloro": ctx.save(); ctx.translate(x, y); ctx.scale(2.2, 2.2); ctx.translate(-x, -y); drawChloroStatic(x, y); ctx.restore(); break;
+    case "bigvac": rrect(x - 100, y - 70, 200, 140, 40, "#7dd3fc", "#0284c7", 5); drawIcon("water", x - 30, y, 2); drawIcon("water", x + 30, y - 10, 2); break;
+  }
+}
+function drawChloroStatic(x, y) {
+  ctx.save(); ctx.translate(x, y);
+  rrect(-40, -22, 80, 44, 20, "#16a34a", "#14532d", 3);
+  rrect(-34, -16, 68, 32, 14, "#4ade80");
+  ctx.fillStyle = "#166534";
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) ctx.fillRect(-26 + i * 15, -11 + j * 7, 10, 5);
+  ctx.restore();
+}
+
+// ------------------------------------------------------------------ start
+
+const mainLoop = Kit.loop(update, draw);
+newRun();
+updateHud();
+mainLoop.start();
+(async () => {
+  await Kit.overlay("Cell City",
+    "You are the mayor of a living cell!\nEvery part of the cell has a job, just like a city.\nPower it up, build and ship proteins, and keep viruses out.\n\nTap or click the organelles to put them to work.",
+    "Play");
+  await dayIntro();
+  startDay();
+})();
+
+// For testing.
+window.game = {
+  get S() { return S; }, get D() { return D; }, get screen() { return screen; }, set screen(v) { screen = v; },
+  get paused() { return paused; }, set speed(v) { speed = v; }, get popup() { return popup && popup.text; }, dismiss() { popup = null; },
+  startDay(n, mode) { if (!S) newRun(); S.day = n || S.day; startDay(); },
+  tapNucleus: () => tapNucleus(), tapMito: (i) => tapMito(D.mitos[i || 0]), tapChloro: (i) => tapChloro(D.chloros[i || 0]),
+  toggleDoor: (i) => tapDoor(D.doors[i]), spawnVirus: () => spawnVirus(), spawnBite: () => spawnBite(), spawnWaste: () => spawnWaste(),
+  endDay: (c) => endDay(c), guide: (id) => { if (id) guideSel = id; openGuide(); },
+  hit: (x, y) => hitOrganelle({ x, y }),
+};
+</script>
+</body>
+</html>

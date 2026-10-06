@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Rocket Lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .panel { position: fixed; z-index: 15; background: rgba(18, 20, 24, .86); border: 2px solid #3a3f46; border-radius: 12px;
+    padding: 10px 12px; overflow: auto; font-size: 13px; }
+  .panel h2 { margin: 0 0 6px; font-size: 15px; font-weight: 800; letter-spacing: .3px; }
+  .panel h2 small { color: #a7adb4; font-weight: 700; font-size: 12px; margin-left: 6px; }
+  #lab { left: 12px; top: 60px; width: 268px; max-height: calc(100vh - 72px); }
+  #shop { right: 12px; top: 60px; width: 236px; max-height: calc(100vh - 72px); }
+  .stats { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin-bottom: 6px; }
+  .stats span { color: #a7adb4; font-weight: 700; }
+  .stats b { text-align: right; font-weight: 800; }
+  .good { color: #4ade80; } .ok { color: #facc15; } .bad { color: #f87171; }
+  .tip { background: rgba(59, 130, 246, .16); border-left: 4px solid #3b82f6; border-radius: 6px; padding: 6px 8px; margin: 6px 0;
+    color: #dbeafe; font-weight: 600; line-height: 1.35; }
+  .tip.warn { background: rgba(239, 68, 68, .16); border-color: #ef4444; color: #fee2e2; }
+  .stage { border: 2px solid #2b2f35; border-radius: 9px; padding: 5px 6px; margin: 5px 0; cursor: pointer; }
+  .stage.sel { border-color: #facc15; background: rgba(250, 204, 21, .06); }
+  .stage .head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 12px; color: #cbd5e1; margin-bottom: 3px; }
+  .stage .head i { font-style: normal; color: #a7adb4; font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { border: 0; border-radius: 6px; padding: 3px 7px; font: inherit; font-size: 12px; font-weight: 700; color: #fff; background: #3a3f46; cursor: pointer; }
+  .chip:hover { background: #ef4444; }
+  .chip.fixed { cursor: default; background: #2b2f35; color: #cbd5e1; }
+  .chip.fixed:hover { background: #2b2f35; }
+  .xbtn { border: 0; background: #3a3f46; color: #fff; border-radius: 6px; font: inherit; font-weight: 800; font-size: 11px; padding: 1px 6px; cursor: pointer; }
+  .btnrow { display: flex; gap: 6px; margin-top: 8px; }
+  .btnrow .kit-btn { margin-top: 0; padding: 9px 12px; font-size: 15px; flex: 1; }
+  .kit-btn.blue { background: #3b82f6; box-shadow: 0 4px 0 #1d4ed8; }
+  .kit-btn.orange { background: #f97316; box-shadow: 0 4px 0 #c2410c; }
+  .kit-btn:disabled { filter: grayscale(.8); opacity: .6; cursor: default; }
+  .card { display: grid; grid-template-columns: 30px 1fr auto; gap: 2px 8px; align-items: center; padding: 6px; border-radius: 9px;
+    background: #22252a; margin-bottom: 5px; border: 2px solid transparent; }
+  .card.locked { opacity: .55; }
+  .card .ic { width: 30px; height: 30px; border-radius: 6px; grid-row: span 2; }
+  .card b { font-size: 13px; }
+  .card small { color: #a7adb4; font-size: 11px; line-height: 1.25; grid-column: 2; }
+  .card button { grid-row: span 2; border: 0; border-radius: 7px; padding: 6px 8px; font: inherit; font-weight: 800; font-size: 12px; color: #fff;
+    background: #12b76a; cursor: pointer; min-width: 52px; }
+  .card button.buy { background: #f59e0b; }
+  .card button.on { background: #3b82f6; }
+  .card button:disabled { background: #3a3f46; color: #a7adb4; cursor: default; }
+  .card:hover { border-color: #3a3f46; }
+  #fhud { left: 12px; top: 60px; width: 238px; display: none; pointer-events: none; }
+  #fhud .big { font-size: 26px; font-weight: 900; line-height: 1.05; }
+  #fhud .big small { font-size: 13px; color: #a7adb4; font-weight: 700; }
+  #fhud .row { display: flex; justify-content: space-between; color: #cbd5e1; font-weight: 700; margin-top: 2px; }
+  #fhud .row b { color: #fff; }
+  .bar { height: 10px; background: #2b2f35; border-radius: 5px; overflow: hidden; margin: 3px 0 4px; }
+  .bar i { display: block; height: 100%; background: #22c55e; width: 50%; }
+  .bar.side i { background: #3b82f6; }
+  #ladder { position: fixed; right: 12px; top: 50%; transform: translateY(-40%); z-index: 14; display: none; pointer-events: none; }
+  #gaugeWrap { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 14; display: none; text-align: center; pointer-events: none; }
+  #gaugeWrap div { font-size: 12px; font-weight: 800; color: #e2e8f0; text-shadow: 0 1px 2px #000; }
+  #gaugeWrap .key b { color: #facc15; } #gaugeWrap .key em { color: #4ade80; font-style: normal; }
+  #fact { position: fixed; left: 50%; top: 58px; transform: translateX(-50%); z-index: 25; width: min(560px, calc(100vw - 560px)); min-width: 300px;
+    background: rgba(15, 23, 42, .93); border: 2px solid #38bdf8; border-radius: 14px; padding: 9px 14px; display: none; pointer-events: none;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .45); }
+  #fact h3 { margin: 0 0 3px; font-size: 15px; color: #7dd3fc; }
+  #fact p { margin: 0; font-size: 14px; line-height: 1.4; color: #e2e8f0; font-weight: 600; }
+  #banner { position: fixed; left: 50%; top: 34%; transform: translate(-50%, -50%); z-index: 24; font-size: 44px; font-weight: 900; text-align: center;
+    color: #fff; text-shadow: 0 3px 0 #000, 0 0 24px rgba(0, 0, 0, .6); display: none; pointer-events: none; white-space: nowrap; }
+  #banner small { display: block; font-size: 18px; color: #fde68a; }
+  #hint { position: fixed; left: 12px; bottom: 12px; z-index: 14; font-size: 13px; font-weight: 700; color: #e2e8f0; text-shadow: 0 1px 2px #000; display: none;
+    background: rgba(18, 20, 24, .6); padding: 6px 10px; border-radius: 8px; max-width: 330px; }
+  #hint b { color: #facc15; }
+  #count { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 30; pointer-events: none;
+    font-size: 140px; font-weight: 900; color: #fff; text-shadow: 0 6px 0 #000; }
+  #count small { display: block; font-size: 24px; text-align: center; color: #fde68a; }
+  #transfer { position: fixed; inset: 0; z-index: 28; display: none; background: #02030a; }
+  #transfer canvas { width: 100%; height: 100%; display: block; }
+  #msg { position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%); z-index: 26; background: rgba(239, 68, 68, .92); color: #fff;
+    font-weight: 800; padding: 8px 14px; border-radius: 10px; display: none; pointer-events: none; max-width: 80vw; text-align: center; }
+  .online .lab-top { top: 150px; }
+  @media (max-height: 560px) {
+    .panel { font-size: 11px; padding: 6px 8px; }
+    #lab { width: 214px; top: 40px; max-height: calc(100vh - 48px); }
+    #shop { width: 196px; top: 40px; max-height: calc(100vh - 48px); }
+    .card { padding: 3px 4px; grid-template-columns: 22px 1fr auto; }
+    .card .ic { width: 22px; height: 22px; }
+    .card small { display: none; }
+    .card button { padding: 4px 6px; min-width: 44px; }
+    #fhud { top: 40px; width: 196px; }
+    #fhud .big { font-size: 19px; }
+    #fact { top: 40px; width: calc(100vw - 440px); min-width: 240px; padding: 6px 10px; }
+    #fact p { font-size: 12px; }
+    #banner { font-size: 30px; }
+    #count { font-size: 90px; }
+    .tip { padding: 4px 6px; }
+  }
+</style>
+</head>
+<body>
+<div id="lab" class="panel"></div>
+<div id="shop" class="panel"></div>
+<div id="fhud" class="panel"></div>
+<canvas id="ladder" width="96" height="330"></canvas>
+<div id="gaugeWrap"><canvas id="gauge" width="150" height="104"></canvas><div class="key" id="gaugeText"></div></div>
+<div id="fact"><h3></h3><p></p></div>
+<div id="banner"></div>
+<div id="hint"></div>
+<div id="count"></div>
+<div id="msg"></div>
+<div id="transfer"><canvas id="tcanvas"></canvas></div>
+<script src="../kit.js"></script>
+<script type="module">
+import "../kit3d.js";
+import "./main.js";
+</script>
+</body></html>

@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Circuit Builder</title>
+<link rel="stylesheet" href="../kit.css">
+</head>
+<body>
+<script src="../kit.js"></script>
+<script src="solver.js"></script>
+<script src="levels.js"></script>
+<script>
+"use strict";
+const ID = "circuit-builder";
+const W0 = 1000, H0 = 620;
+const { canvas, ctx, W, H } = Kit.stage(W0, H0);
+const LEVELS = window.CB_LEVELS, TOWN = window.CB_TOWN, SP = CircuitSolver.P;
+const FONT = '"Noto Sans", "DejaVu Sans", sans-serif';
+const ME = Kit.player().name;
+const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// ------------------------------------------------------------------ board geometry
+const COLS = 11, ROWS = 7, S = 60, X0 = 162, Y0 = 116;
+const BOARD = { x: 136, y: 80, w: 652, h: 424 };
+const PAL = { x: 10, y: 80, w: 116, bh: 34, gap: 4 };
+const INFO = { x: 798, y: 80, w: 192, h: 532 };
+const STATUS = { x: 136, y: 512, w: 652, h: 100 };
+
+const nodeId = (x, y) => y * COLS + x;
+function keyInfo(key) {
+  const h = key[0] === "h";
+  const [x, y] = key.slice(1).split(",").map(Number);
+  const x2 = h ? x + 1 : x, y2 = h ? y : y + 1;
+  return { h, x, y, x2, y2, a: nodeId(x, y), b: nodeId(x2, y2),
+    px1: X0 + x * S, py1: Y0 + y * S, px2: X0 + x2 * S, py2: Y0 + y2 * S,
+    cx: X0 + (x + x2) / 2 * S, cy: Y0 + (y + y2) / 2 * S };
+}
+const validKey = (k) => { const i = keyInfo(k); return i.x >= 0 && i.y >= 0 && i.x2 < COLS && i.y2 < ROWS; };
+
+// ------------------------------------------------------------------ parts & tools
+const NAMES = { wire: "Wire", cell: "Cell", bulb: "Bulb", switch: "Switch", resistor: "Resistor", led: "LED",
+  buzzer: "Buzzer", motor: "Motor", fuse: "Fuse", house: "House", hand: "Hand", meter: "Meter", eraser: "Eraser" };
+const PART_TYPES = ["wire", "cell", "bulb", "switch", "resistor", "led", "buzzer", "motor", "fuse", "house"];
+const TOOL_ORDER = ["hand", "meter", "wire", "eraser", "cell", "bulb", "switch", "resistor", "led", "buzzer", "motor", "fuse", "house"];
+const RES_VALUES = [10, 47, 100];
+const TIPS = {
+  hand: "Tap a switch to open or close it. Tap a cell or LED to turn it round. Tap a resistor to change it. Tap a broken part to fit a new one.",
+  meter: "Tap or point at any part to measure the voltage across it and the current through it.",
+  wire: "Drag from dot to dot to lay wires (or tap a gap between two dots).",
+  eraser: "Tap or drag over parts to remove them.",
+  cell: "Tap a gap to place a 1.5 V cell. Tap it again to turn it round.",
+  bulb: "Tap a gap to place a bulb (5 ohm).",
+  switch: "Tap a gap to place a switch. Tap it to open or close it.",
+  resistor: "Tap a gap to place a resistor. Tap it again to change its value.",
+  led: "Tap a gap to place an LED. Current can only go the way its arrow points.",
+  buzzer: "Tap a gap to place a buzzer (30 ohm).",
+  motor: "Tap a gap to place a motor (4 ohm).",
+  fuse: "Tap a gap to place a fuse. It melts if more than 2 A flows.",
+  house: "Tap a gap to place a house. Its light is like a 5 ohm bulb.",
+};
+
+function newPart(type, opts) {
+  const o = opts || {};
+  return { type, dir: o.dir || 1, on: !!o.on, val: o.val || (level && level.resVal) || 10, color: o.color || "red",
+    lock: !!o.lock, broken: false };
+}
+
+// ------------------------------------------------------------------ state
+let mode = "menu";      // "menu" | "level" | "sandbox"
+let lv = 0, level = null;
+let parts = new Map();  // key -> part
+let inv = {};           // counts left (Infinity in sandbox)
+let tool = "wire";
+let mem = {};
+let sim = null, view = null;
+let completing = false;
+let hoverKey = null, probeKey = null, hoverPos = null;
+let message = "", messageColor = "#f2f4f5", messageTime = 0;
+let time = 0;
+const phase = new Map();   // key -> current dot phase
+const spin = new Map();    // key -> motor angle
+let buzzTimer = 0, shortWarned = false;
+let overlayOpen = false;
+
+// ------------------------------------------------------------------ saving
+const SAVE_KEY = "blockos.circuit-builder.v1";
+let save = { done: {}, sandbox: null };
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && typeof s === "object") save = Object.assign(save, s); } catch (_) {}
+if (!save.done || typeof save.done !== "object") save.done = {};
+function writeSave() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (_) {} }
+const doneCount = () => LEVELS.filter((_, i) => save.done[i]).length;
+
+function serialize() {
+  const out = {};
+  for (const [k, p] of parts) out[k] = [p.type, p.dir, p.on ? 1 : 0, p.val, p.color, p.broken ? 1 : 0];
+  return out;
+}
+function deserialize(obj) {
+  parts = new Map();
+  if (!obj || typeof obj !== "object") return;
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (!/^[hv]\d+,\d+$/.test(k) || !validKey(k) || !Array.isArray(v) || !PART_TYPES.includes(v[0])) continue;
+    const p = newPart(v[0], { dir: v[1] === -1 ? -1 : 1, on: !!v[2], val: RES_VALUES.includes(v[3]) ? v[3] : 10, color: v[4] === "green" ? "green" : "red" });
+    p.broken = !!v[5];
+    parts.set(k, p);
+  }
+}
+
+function updateHud() {
+  const where = mode === "level" ? `Level ${lv + 1} of ${LEVELS.length}` : mode === "sandbox" ? "Sandbox" : "Circuit Builder";
+  Kit.hud(`${esc(where)}<small>${esc(ME)} - ${doneCount()} / ${LEVELS.length} levels done</small>`);
+}
+
+const badge = (id, name, desc) => Kit.badge(ID, id, name, desc);
+
+// ------------------------------------------------------------------ simulation
+function resim() {
+  const keys = [...parts.keys()].sort();
+  const list = keys.map((k) => { const p = parts.get(k); const i = keyInfo(k); p.a = i.a; p.b = i.b; return p; });
+  sim = CircuitSolver.simulate(COLS * ROWS, list);
+  view = { all: [], short: sim.short, events: sim.events };
+  keys.forEach((k, i) => {
+    const p = list[i];
+    const st = CircuitSolver.status(p, sim.V[i], sim.I[i], sim.Pw[i]);
+    view.all.push({ key: k, part: p, V: sim.V[i], I: sim.I[i], P: sim.Pw[i], on: st.on, level: st.level });
+  });
+  view.byKey = new Map(view.all.map((x) => [x.key, x]));
+  view.of = (t) => view.all.filter((x) => x.part.type === t);
+  // events: things that just broke
+  for (const e of sim.events) {
+    const k = keys[e.index];
+    if (e.type === "fuse") {
+      if (e.current > SP.shortI) {
+        say("Short circuit! A huge current rushed through, far more than the fuse's 2 A limit, so its thin wire melted. The loop is broken now, which keeps everything safe.", "#fb923c");
+        badge("short-circuit", "Short Circuit", "Blow a fuse with a short circuit (safely, in the game!).");
+      } else {
+        say("The fuse melted! About " + e.current.toFixed(1) + " A tried to flow - more than its 2 A limit. Too many parts in parallel take too much current.", "#fb923c");
+      }
+      Kit.sfx("hit");
+      sparks(k);
+    } else if (e.type === "led") {
+      say("Pop! The LED burnt out: " + (e.current).toFixed(2) + " A is far more than its 0.03 A (30 mA) limit.", "#fb923c");
+      Kit.sfx("hit"); sparks(k);
+    } else if (e.type === "bulb") {
+      say("Pop! The bulb blew: " + e.power.toFixed(1) + " W is too much power for it. Use fewer cells, then tap it with the Hand to fit a new one.", "#fb923c");
+      Kit.sfx("hit"); sparks(k);
+    }
+  }
+  if (view.short && !shortWarned) { Kit.sfx("lose"); shortWarned = true; }
+  if (!view.short) shortWarned = false;
+
+  if (mode === "sandbox") {
+    const kinds = new Set(view.all.filter((x) => x.on && ["bulb", "house", "led", "buzzer", "motor"].includes(x.part.type)).map((x) => x.part.type === "house" ? "bulb" : x.part.type));
+    if (kinds.size >= 3) badge("sandbox-engineer", "Sandbox Engineer", "In Sandbox, run a circuit with 3 different kinds of working parts.");
+    save.sandbox = serialize();
+    writeSave();
+  }
+  if (mode === "level" && !completing && level.check(view, mem)) completeLevel();
+}
+
+// ------------------------------------------------------------------ messages & effects
+function say(text, color) { message = text; messageColor = color || "#f2f4f5"; messageTime = time; }
+const fx = [];
+function sparks(key) {
+  const i = keyInfo(key);
+  for (let n = 0; n < 18; n++) fx.push({ x: i.cx, y: i.cy, vx: Kit.rand(-120, 120), vy: Kit.rand(-160, 40), life: Kit.rand(0.4, 0.9), c: Kit.pick(["#facc15", "#fb923c", "#fff"]) });
+}
+
+// ------------------------------------------------------------------ levels
+function placeSpec(spec) {
+  const [k, type, opts] = spec;
+  parts.set(k, newPart(type, opts));
+}
+
+async function startLevel(i, showIntro) {
+  mode = "level"; lv = i; level = LEVELS[i];
+  parts = new Map(); mem = {}; completing = false; probeKey = null;
+  level.parts.forEach(placeSpec);
+  inv = Object.assign({}, level.inv);
+  tool = inv.wire ? "wire" : "hand";
+  if (!inv.wire && Object.keys(inv).length) tool = Object.keys(inv)[0];
+  message = "";
+  phase.clear(); spin.clear(); fx.length = 0;
+  resim();
+  updateHud();
+  if (showIntro !== false) await showOverlay(`Level ${i + 1}: ${level.title}`, level.intro + "\n\nGoal: " + level.goal, "Build!");
+}
+
+function startSandbox() {
+  mode = "sandbox"; level = null; completing = false; probeKey = null; mem = {};
+  deserialize(save.sandbox);
+  inv = {}; PART_TYPES.forEach((t) => (inv[t] = Infinity));
+  tool = "wire";
+  message = "";
+  phase.clear(); spin.clear(); fx.length = 0;
+  resim();
+  updateHud();
+}
+
+async function showOverlay(title, text, btn) {
+  overlayOpen = true;
+  await Kit.overlay(title, text, btn);
+  overlayOpen = false;
+}
+
+async function completeLevel() {
+  completing = true;
+  save.done[lv] = true;
+  writeSave();
+  Kit.finish(ID, doneCount());
+  Kit.sfx("win");
+  if (lv === 0) badge("first-light", "First Light", "Light your first bulb with a complete circuit.");
+  if (lv === 2) badge("switch-on", "Switch On", "Turn a bulb on and off with a switch.");
+  if (level.badge && (level.badge[0] !== "led-master" || save.done[10])) badge(...level.badge);
+  if (save.done[10] && save.done[11]) badge("led-master", "LED Master", "Light an LED safely and make current choose the right way.");
+  if (TOWN.every((t) => save.done[t])) badge("town-powered", "Town Powered", "Power every house in Brick Town.");
+  if (doneCount() === LEVELS.length) badge("chief-electrician", "Chief Electrician", "Finish all " + LEVELS.length + " levels.");
+  updateHud();
+  const at = lv;
+  say("Level complete!", "#22c55e");
+  await new Promise((r) => setTimeout(r, 1300));
+  if (mode !== "level" || lv !== at) return;
+  const last = at === LEVELS.length - 1;
+  await showOverlay("Level complete!", "Lab notes:\n" + level.done, last ? "Finish" : "Next level");
+  if (mode !== "level" || lv !== at) return;
+  if (last) {
+    await showOverlay("Brick Town is powered!", `You finished all ${LEVELS.length} levels.\nNow invent your own circuits in the Sandbox.\n\nRemember: these are toy 1.5 V cells. Never play with mains electricity (wall sockets).`, "Back to levels");
+    mode = "menu"; updateHud();
+  } else startLevel(at + 1);
+}
+
+// ------------------------------------------------------------------ editing
+function canUse(type) { return inv[type] > 0; }
+function take(type) { if (inv[type] !== Infinity) inv[type]--; }
+function giveBack(type) { if (inv[type] !== Infinity) inv[type] = (inv[type] || 0) + 1; }
+
+// Tap a part with the Hand (or the same part tool): flip, toggle, cycle, repair.
+function interact(key, p) {
+  if (p.broken) {
+    p.broken = false;
+    say(`New ${NAMES[p.type].toLowerCase()} fitted.`, "#22c55e");
+    Kit.sfx("click");
+    return true;
+  }
+  if (p.type === "switch") { p.on = !p.on; Kit.sfx("click"); say(p.on ? "Switch closed: the loop is complete." : "Switch open: there's a gap in the loop.", "#f2f4f5"); return true; }
+  if (p.type === "cell") { p.dir = -p.dir; Kit.sfx("click"); say("Cell turned round.", "#f2f4f5"); return true; }
+  if (p.type === "led") { p.dir = -p.dir; Kit.sfx("click"); say("LED turned round.", "#f2f4f5"); return true; }
+  if (p.type === "resistor") { p.val = RES_VALUES[(RES_VALUES.indexOf(p.val) + 1) % RES_VALUES.length]; Kit.sfx("click"); say(`Resistor set to ${p.val} ohm.`, "#f2f4f5"); return true; }
+  probeKey = key;
+  return false;
+}
+
+function tapEdge(key) {
+  if (!key) return;
+  const p = parts.get(key);
+  if (p) {
+    if (tool === "meter") { probeKey = key; Kit.sfx("click"); return; }
+    if (tool === "eraser") {
+      if (p.lock) { say("That part is fixed in place for this level.", "#facc15"); Kit.sfx("hit"); return; }
+      parts.delete(key); giveBack(p.type); Kit.sfx("click"); probeKey = null; resim(); return;
+    }
+    if (tool === "hand" || tool === p.type) { probeKey = key; if (interact(key, p)) resim(); return; }
+    if (tool === "wire") { probeKey = key; say("There's already a part here. Use the Eraser to remove it.", "#facc15"); return; }
+    // a different part tool: replace
+    if (p.lock) { say("That part is fixed in place for this level.", "#facc15"); Kit.sfx("hit"); return; }
+    if (!canUse(tool)) { say(`No ${NAMES[tool]} parts left.`, "#facc15"); Kit.sfx("hit"); return; }
+    giveBack(p.type); take(tool);
+    parts.set(key, newPart(tool));
+    Kit.sfx("click"); probeKey = key; resim();
+    return;
+  }
+  if (tool === "hand" || tool === "meter" || tool === "eraser") { probeKey = null; return; }
+  if (!canUse(tool)) { say(`No ${NAMES[tool]} parts left${mode === "level" ? " in this level" : ""}.`, "#facc15"); Kit.sfx("hit"); return; }
+  take(tool);
+  parts.set(key, newPart(tool));
+  Kit.sfx("click");
+  if (tool !== "wire") probeKey = key;
+  resim();
+}
+
+// ------------------------------------------------------------------ input
+function edgeAt(mx, my) {
+  let best = null, bestD = 24;
+  const gx = (mx - X0) / S, gy = (my - Y0) / S;
+  const cand = [];
+  const hx = Math.floor(gx), hy = Math.round(gy);
+  cand.push("h" + hx + "," + hy);
+  const vx = Math.round(gx), vy = Math.floor(gy);
+  cand.push("v" + vx + "," + vy);
+  for (const k of cand) {
+    if (!validKey(k)) continue;
+    const i = keyInfo(k);
+    const t = Kit.clamp(i.h ? (mx - i.px1) / S : (my - i.py1) / S, 0, 1);
+    const px = i.px1 + (i.px2 - i.px1) * t, py = i.py1 + (i.py2 - i.py1) * t;
+    const d = Math.hypot(mx - px, my - py);
+    if (d < bestD) { bestD = d; best = k; }
+  }
+  return best;
+}
+function dotAt(mx, my, r) {
+  const x = Math.round((mx - X0) / S), y = Math.round((my - Y0) / S);
+  if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return null;
+  if (Math.hypot(mx - (X0 + x * S), my - (Y0 + y * S)) > (r || 22)) return null;
+  return { x, y };
+}
+function edgeBetween(d1, d2) {
+  if (d1.y === d2.y && Math.abs(d1.x - d2.x) === 1) return "h" + Math.min(d1.x, d2.x) + "," + d1.y;
+  if (d1.x === d2.x && Math.abs(d1.y - d2.y) === 1) return "v" + d1.x + "," + Math.min(d1.y, d2.y);
+  return null;
+}
+const inRect = (m, r) => m.x >= r.x && m.x <= r.x + r.w && m.y >= r.y && m.y <= r.y + r.h;
+
+let drag = null;  // { dot, moved, startKey }
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("pointerdown", (e) => {
+  if (overlayOpen) return;
+  e.preventDefault();
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+  canvas.focus();
+  const m = Kit.pointer(canvas, e);
+  hoverPos = m;
+  if (mode === "menu") { menuClick(m); return; }
+  for (const b of uiButtons()) if (inRect(m, b)) { b.act(); Kit.sfx("click"); return; }
+  for (const t of paletteTools()) if (inRect(m, t.r)) { selectTool(t.tool); return; }
+  if (!inRect(m, BOARD)) return;
+  drag = { dot: dotAt(m.x, m.y, 26), moved: false, startKey: edgeAt(m.x, m.y), placed: false };
+  hoverKey = drag.startKey;
+});
+canvas.addEventListener("pointermove", (e) => {
+  const m = Kit.pointer(canvas, e);
+  hoverPos = m;
+  if (mode === "menu") return;
+  hoverKey = inRect(m, BOARD) ? edgeAt(m.x, m.y) : null;
+  if (!drag || overlayOpen) return;
+  if (tool === "wire") {
+    const d = dotAt(m.x, m.y, 20);
+    if (!d) return;
+    if (!drag.dot) { drag.dot = d; return; }
+    if (d.x === drag.dot.x && d.y === drag.dot.y) return;
+    const k = edgeBetween(drag.dot, d);
+    if (k) {
+      drag.moved = true;
+      if (!parts.has(k)) {
+        if (canUse("wire")) { take("wire"); parts.set(k, newPart("wire")); drag.placed = true; Kit.sfx("click"); resim(); }
+        else say("No wires left in this level.", "#facc15");
+      }
+    }
+    drag.dot = d;
+  } else if (tool === "eraser") {
+    const k = edgeAt(m.x, m.y);
+    if (k && k !== drag.startKey) drag.moved = true;
+    if (k && drag.moved) { const p = parts.get(k); if (p && !p.lock) { parts.delete(k); giveBack(p.type); Kit.sfx("click"); resim(); } }
+  }
+});
+function endDrag(e) {
+  if (!drag) return;
+  const d = drag;
+  drag = null;
+  if (overlayOpen) return;
+  if (!d.moved) tapEdge(d.startKey);
+}
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("pointercancel", () => { drag = null; });
+canvas.addEventListener("pointerleave", () => { if (!drag) { hoverKey = null; hoverPos = null; } });
+
+function selectTool(t) {
+  if (!availableTools().includes(t)) return;
+  tool = t; Kit.sfx("click");
+}
+Kit.onKey((code) => {
+  if (overlayOpen || mode === "menu") return;
+  const m = code.match(/^Digit(\d)$/);
+  if (m) { const tools = availableTools(); const i = (Number(m[1]) + 9) % 10; if (tools[i]) selectTool(tools[i]); }
+  if (code === "KeyR") resetBoard();
+  if (code === "KeyH") showHint();
+});
+
+function availableTools() {
+  return TOOL_ORDER.filter((t) => t === "hand" || t === "meter" || t === "eraser" || mode === "sandbox" || (level && t in level.inv && level.inv[t] > 0) || (t === "wire" && level && level.inv.wire));
+}
+function paletteTools() {
+  return availableTools().map((t, i) => ({ tool: t, r: { x: PAL.x, y: PAL.y + i * (PAL.bh + PAL.gap), w: PAL.w, h: PAL.bh } }));
+}
+function uiButtons() {
+  const bx = INFO.x + 8, bw = (INFO.w - 24) / 2, bh = 34, by = INFO.y + INFO.h - 2 * bh - 14;
+  const list = [];
+  if (mode === "level") {
+    list.push({ label: "Hint", x: bx, y: by, w: bw, h: bh, act: showHint, color: "#3b82f6" });
+    list.push({ label: "Notes", x: bx + bw + 8, y: by, w: bw, h: bh, act: () => showOverlay(`Level ${lv + 1}: ${level.title}`, level.intro + "\n\nGoal: " + level.goal, "Back to building"), color: "#a855f7" });
+  } else {
+    list.push({ label: "Clear all", x: bx, y: by, w: INFO.w - 16, h: bh, act: resetBoard, color: "#ef4444" });
+  }
+  list.push({ label: mode === "level" ? "Restart" : "Fix all", x: bx, y: by + bh + 6, w: bw, h: bh, act: mode === "level" ? resetBoard : repairAll, color: "#f59e0b" });
+  list.push({ label: "Levels", x: bx + bw + 8, y: by + bh + 6, w: bw, h: bh, act: () => { mode = "menu"; updateHud(); }, color: "#12b76a" });
+  return list;
+}
+function showHint() { if (mode === "level") say("Hint: " + level.hint, "#93c5fd"); }
+function resetBoard() {
+  if (mode === "level") startLevel(lv, false);
+  else if (mode === "sandbox") { parts = new Map(); probeKey = null; resim(); say("Board cleared.", "#f2f4f5"); }
+}
+function repairAll() { for (const p of parts.values()) p.broken = false; resim(); say("All broken parts replaced.", "#22c55e"); }
+
+// ------------------------------------------------------------------ menu
+function menuTiles() {
+  const tw = 140, th = 84, gap = 12, cols = 6;
+  const x0 = (W - (cols * tw + (cols - 1) * gap)) / 2, y0 = 140;
+  return LEVELS.map((L, i) => ({ i, x: x0 + (i % cols) * (tw + gap), y: y0 + Math.floor(i / cols) * (th + gap), w: tw, h: th }));
+}
+const SANDBOX_BTN = { x: 350, y: 440, w: 300, h: 60 };
+const unlocked = (i) => i === 0 || save.done[i] || save.done[i - 1];
+function menuClick(m) {
+  for (const t of menuTiles()) {
+    if (inRect(m, t)) {
+      if (!unlocked(t.i)) { Kit.sfx("hit"); return; }
+      Kit.sfx("click"); startLevel(t.i); return;
+    }
+  }
+  if (inRect(m, SANDBOX_BTN)) { Kit.sfx("click"); startSandbox(); }
+}
+
+// ------------------------------------------------------------------ update
+function update(dt) {
+  time += dt;
+  if (view) {
+    let buzzing = false;
+    for (const x of view.all) {
+      const sp = currentSpeed(x);
+      phase.set(x.key, ((phase.get(x.key) || 0) + sp * dt) % 1e6);
+      if (x.part.type === "motor") spin.set(x.key, (spin.get(x.key) || 0) + (x.on ? Math.sign(x.I) * Math.min(1.6, Math.abs(x.level)) * 14 * dt : 0));
+      if (x.part.type === "buzzer" && x.on) buzzing = true;
+    }
+    buzzTimer -= dt;
+    if (buzzing && buzzTimer <= 0 && !overlayOpen && mode !== "menu") { Kit.sfx("click"); buzzTimer = 0.32; }
+  }
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const f = fx[i];
+    f.life -= dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vy += 400 * dt;
+    if (f.life <= 0) fx.splice(i, 1);
+  }
+}
+function currentSpeed(x) {
+  const a = Math.abs(x.I);
+  if (a < 0.001 || x.part.broken) return 0;
+  return Kit.clamp((a / 0.3) * 60, 6, 240);
+}
+
+// ------------------------------------------------------------------ drawing helpers
+function text(str, x, y, size, color, align, weight) {
+  ctx.font = `${weight || "bold"} ${size}px ${FONT}`;
+  ctx.fillStyle = color || "#f2f4f5";
+  ctx.textAlign = align || "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText(str, x, y);
+}
+function wrap(str, maxW, size, weight) {
+  ctx.font = `${weight || "bold"} ${size}px ${FONT}`;
+  const lines = [];
+  for (const para of String(str).split("\n")) {
+    let line = "";
+    for (const word of para.split(" ")) {
+      const t = line ? line + " " + word : word;
+      if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = word; } else line = t;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+function para(str, x, y, maxW, size, color, lh, weight, maxLines) {
+  let lines = wrap(str, maxW, size, weight);
+  if (maxLines && lines.length > maxLines) { lines = lines.slice(0, maxLines); lines[maxLines - 1] += "..."; }
+  lines.forEach((l, i) => text(l, x, y + i * (lh || size * 1.3), size, color, "left", weight));
+  return lines.length;
+}
+function rrect(x, y, w, h, r, fill, stroke, lw) {
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 2; ctx.stroke(); }
+}
+function button(b, label, color, disabled) {
+  Kit.brick(ctx, b.x, b.y, b.w, b.h, disabled ? "#3a3f46" : color, 8);
+  text(label, b.x + b.w / 2, b.y + b.h / 2 + 5, 15, disabled ? "#8a9097" : "#fff", "center");
+}
+
+// ------------------------------------------------------------------ part drawings
+// Local frame: the edge runs along x from -30 to +30 (rotated for vertical edges).
+function drawLeads(len) {
+  ctx.strokeStyle = "#9ca3af"; ctx.lineWidth = 3; ctx.lineCap = "round";
+  ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(-len, 0); ctx.moveTo(len, 0); ctx.lineTo(30, 0); ctx.stroke();
+}
+function drawWire(info, broken) {
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "#4a2410"; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(info.px1, info.py1); ctx.lineTo(info.px2, info.py2); ctx.stroke();
+  ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(info.px1, info.py1); ctx.lineTo(info.px2, info.py2); ctx.stroke();
+}
+
+function drawPartBody(p, x, cx, cy, horiz, scale, key) {
+  const s = scale || 1;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  if (!horiz) ctx.rotate(Math.PI / 2);
+  const on = x && x.on;
+  const level = x ? x.level : 0;
+  switch (p.type) {
+    case "cell": {
+      drawLeads(22);
+      const hot = x && Math.abs(x.I) > SP.shortI;
+      const plus = p.dir === -1 ? -1 : 1;  // + end along local x
+      ctx.save(); ctx.scale(plus, 1);
+      Kit.brick(ctx, -22, -12, 40, 24, hot ? (Math.floor(time * 8) % 2 ? "#ef4444" : "#7f1d1d") : "#1f2937", 5);
+      ctx.fillStyle = hot ? "#fca5a5" : "#f59e0b"; ctx.fillRect(4, -12, 14, 24);
+      ctx.fillStyle = "#d1d5db"; ctx.fillRect(18, -5, 5, 10);  // the + bump
+      ctx.restore();
+      break;
+    }
+    case "bulb": {
+      drawLeads(10);
+      break;
+    }
+    case "switch": {
+      drawLeads(16);
+      Kit.brick(ctx, -20, -2, 40, 12, "#4b5563", 3);
+      ctx.fillStyle = "#e5e7eb";
+      ctx.beginPath(); ctx.arc(-14, 0, 4, 0, 7); ctx.arc(14, 0, 4, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-14, 0);
+      const ang = p.on ? 0 : -0.6;
+      ctx.lineTo(-14 + Math.cos(ang) * 29, Math.sin(ang) * 29); ctx.stroke();
+      break;
+    }
+    case "resistor": {
+      drawLeads(17);
+      Kit.brick(ctx, -18, -8, 36, 16, "#e7c9a0", 6);
+      const bands = { 10: ["#7c4a1e", "#111", "#111"], 47: ["#facc15", "#8b5cf6", "#111"], 100: ["#7c4a1e", "#111", "#7c4a1e"] }[p.val] || ["#111", "#111", "#111"];
+      bands.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(-11 + i * 6, -8, 4, 16); });
+      ctx.fillStyle = "#d4a017"; ctx.fillRect(10, -8, 3, 16);
+      break;
+    }
+    case "led": {
+      drawLeads(12);
+      const col = p.color === "green" ? ["#22c55e", "#14532d", "#bbf7d0"] : ["#ef4444", "#7f1d1d", "#fecaca"];
+      if (on && !p.broken) {
+        const g = ctx.createRadialGradient(0, 0, 4, 0, 0, 34);
+        g.addColorStop(0, col[2]); g.addColorStop(0.4, col[0] + "aa"); g.addColorStop(1, col[0] + "00");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 34, 0, 7); ctx.fill();
+      }
+      ctx.fillStyle = p.broken ? "#374151" : on ? col[0] : col[1];
+      ctx.beginPath(); ctx.arc(0, 0, 13, 0, 7); ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 2; ctx.stroke();
+      // diode arrow: points the way current is allowed to flow
+      ctx.save(); ctx.scale(p.dir === -1 ? -1 : 1, 1);
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.moveTo(-6, -7); ctx.lineTo(5, 0); ctx.lineTo(-6, 7); ctx.closePath(); ctx.fill();
+      ctx.fillRect(5, -7, 3, 14);
+      ctx.restore();
+      if (p.broken) { ctx.strokeStyle = "#111"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-9, -9); ctx.lineTo(9, 9); ctx.moveTo(9, -9); ctx.lineTo(-9, 9); ctx.stroke(); }
+      break;
+    }
+    case "buzzer": {
+      drawLeads(14);
+      ctx.fillStyle = "#111827"; ctx.beginPath(); ctx.arc(0, 0, 15, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#6b7280"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = on ? "#facc15" : "#374151"; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+      break;
+    }
+    case "motor": {
+      drawLeads(16);
+      Kit.brick(ctx, -17, -13, 34, 26, "#9ca3af", 6);
+      ctx.fillStyle = "#6b7280"; ctx.fillRect(-17, -4, 34, 8);
+      break;
+    }
+    case "fuse": {
+      drawLeads(18);
+      ctx.fillStyle = "#cbd5e1"; ctx.fillRect(-20, -8, 7, 16); ctx.fillRect(13, -8, 7, 16);
+      ctx.fillStyle = "rgba(186,230,253,.35)"; ctx.fillRect(-13, -7, 26, 14);
+      ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 1; ctx.strokeRect(-13, -7, 26, 14);
+      ctx.strokeStyle = p.broken ? "#111" : "#e5e7eb"; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (p.broken) { ctx.moveTo(-13, 0); ctx.lineTo(-4, 1); ctx.moveTo(4, -1); ctx.lineTo(13, 0); }
+      else { ctx.moveTo(-13, 0); ctx.lineTo(13, 0); }
+      ctx.stroke();
+      if (p.broken) { ctx.fillStyle = "rgba(0,0,0,.45)"; ctx.beginPath(); ctx.arc(0, 0, 6, 0, 7); ctx.fill(); }
+      break;
+    }
+    case "house": {
+      drawLeads(16);
+      break;
+    }
+  }
+  ctx.restore();
+  // Upright extras (drawn without rotation)
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  if (p.type === "bulb") {
+    const lv = p.broken ? 0 : on ? Math.sqrt(Math.max(0, level)) : 0;
+    if (lv > 0) {
+      const R = 16 + 22 * Math.min(1.8, lv);
+      const g = ctx.createRadialGradient(0, -4, 4, 0, -4, R);
+      g.addColorStop(0, `rgba(255,248,200,${Math.min(1, 0.35 + lv * 0.6)})`);
+      g.addColorStop(0.5, `rgba(250,204,21,${Math.min(0.7, lv * 0.45)})`);
+      g.addColorStop(1, "rgba(250,204,21,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -4, R, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = "#9ca3af"; ctx.fillRect(-7, 6, 14, 9);
+    ctx.fillStyle = "#6b7280"; ctx.fillRect(-7, 9, 14, 2); ctx.fillRect(-7, 13, 14, 2);
+    ctx.fillStyle = lv > 0 ? `rgba(255,${230 + Math.min(25, lv * 20)},${120 + Math.min(120, lv * 100)},1)` : "rgba(226,232,240,.35)";
+    ctx.beginPath(); ctx.arc(0, -4, 13, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = p.broken ? "#111" : lv > 0 ? "#b45309" : "#78716c"; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (p.broken) { ctx.moveTo(-5, 6); ctx.lineTo(-3, -6); ctx.moveTo(5, 6); ctx.lineTo(3, -4); }
+    else { ctx.moveTo(-5, 6); ctx.lineTo(-4, -6); ctx.lineTo(-1, -9); ctx.lineTo(1, -5); ctx.lineTo(4, -9); ctx.lineTo(5, 6); }
+    ctx.stroke();
+  } else if (p.type === "house") {
+    const lv = p.broken ? 0 : on ? Math.sqrt(Math.max(0, level)) : 0;
+    if (lv > 0) {
+      const g = ctx.createRadialGradient(0, -2, 6, 0, -2, 46);
+      g.addColorStop(0, `rgba(250,204,21,${Math.min(0.55, lv * 0.4)})`); g.addColorStop(1, "rgba(250,204,21,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -2, 46, 0, 7); ctx.fill();
+    }
+    Kit.brick(ctx, -17, -10, 34, 26, "#e2e8f0", 3);
+    ctx.fillStyle = "#dc2626";
+    ctx.beginPath(); ctx.moveTo(-22, -9); ctx.lineTo(0, -27); ctx.lineTo(22, -9); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#991b1b"; ctx.fillRect(-22, -11, 44, 3);
+    const win = p.broken ? "#1f2937" : lv > 0 ? `rgba(253,224,71,${Math.min(1, 0.45 + lv * 0.55)})` : "#334155";
+    ctx.fillStyle = win; ctx.fillRect(-13, -5, 9, 8); ctx.fillRect(4, -5, 9, 8);
+    ctx.fillStyle = "#92400e"; ctx.fillRect(-4, 5, 8, 11);
+  } else if (p.type === "motor") {
+    // fan on top of the motor
+    const a = spin.get(key) || 0;
+    ctx.fillStyle = "#374151"; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      ctx.save(); ctx.rotate(a + i * 2.094);
+      ctx.fillStyle = on ? "#38bdf8" : "#64748b";
+      ctx.beginPath(); ctx.ellipse(0, -11, 4.5, 10, 0, 0, 7); ctx.fill();
+      ctx.restore();
+    }
+  } else if (p.type === "buzzer" && on) {
+    ctx.strokeStyle = "rgba(250,204,21,.8)"; ctx.lineWidth = 2;
+    const k = (time * 3) % 1;
+    for (let i = 0; i < 2; i++) {
+      const r = 18 + (k + i * 0.5) % 1 * 12;
+      ctx.globalAlpha = 1 - ((k + i * 0.5) % 1);
+      ctx.beginPath(); ctx.arc(0, 0, r, -0.6, 0.6); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r, Math.PI - 0.6, Math.PI + 0.6); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else if (p.type === "cell") {
+    // + on the coloured band at the + end, - on the dark end (drawn upright)
+    const ps = p.dir === -1 ? -1 : 1;
+    const ax = horiz ? 1 : 0, ay = horiz ? 0 : 1;
+    text("+", ax * ps * 11, ay * ps * 11 + 6, 17, "#111", "center", "900");
+    ctx.fillStyle = "#e5e7eb";
+    ctx.fillRect(-ax * ps * 12 - 4, -ay * ps * 12 - 1.5, 8, 3);
+  } else if (p.type === "resistor" && s === 1) {
+    text(p.val + " ohm", horiz ? 0 : 28, horiz ? -14 : 4, 11, "#fde68a", horiz ? "center" : "left");
+  }
+  ctx.restore();
+}
+
+// Tool icons for the palette
+function drawIcon(t, x, y) {
+  ctx.save();
+  if (t === "wire") {
+    ctx.strokeStyle = "#4a2410"; ctx.lineWidth = 7; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(x - 12, y + 6); ctx.lineTo(x + 12, y - 6); ctx.stroke();
+    ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4; ctx.stroke();
+  } else if (t === "hand") {
+    ctx.fillStyle = "#fde68a";
+    ctx.fillRect(x - 7, y - 2, 14, 12); ctx.fillRect(x - 3, y - 12, 5, 12);
+    ctx.fillStyle = "#f59e0b"; ctx.fillRect(x - 7, y + 7, 14, 3);
+  } else if (t === "meter") {
+    Kit.brick(ctx, x - 10, y - 12, 20, 24, "#facc15", 4);
+    ctx.fillStyle = "#1f2937"; ctx.fillRect(x - 7, y - 9, 14, 8);
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(x, y + 6, 3, 0, 7); ctx.fill();
+  } else if (t === "eraser") {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-0.5);
+    Kit.brick(ctx, -12, -7, 24, 14, "#f472b6", 3);
+    ctx.fillStyle = "#e5e7eb"; ctx.fillRect(4, -7, 8, 14);
+    ctx.restore();
+  } else {
+    const fake = newPart(t);
+    if (t === "switch") fake.on = false;
+    drawPartBody(fake, { on: t === "bulb" || t === "led" || t === "house", level: 1, I: 0 }, x, y, true, 0.55);
+  }
+  ctx.restore();
+}
+
+// ------------------------------------------------------------------ main draw
+function drawBoardBackground() {
+  // town baseplate
+  rrect(BOARD.x, BOARD.y, BOARD.w, BOARD.h, 12, "#2f7d3b");
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(BOARD.x, BOARD.y, BOARD.w, BOARD.h, 12); ctx.clip();
+  ctx.fillStyle = "rgba(255,255,255,.06)";
+  for (let y = BOARD.y + 10; y < BOARD.y + BOARD.h; y += 20) for (let x = BOARD.x + 10; x < BOARD.x + BOARD.w; x += 20) { ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.fill(); }
+  // pavement under the grid
+  rrect(X0 - 18, Y0 - 18, (COLS - 1) * S + 36, (ROWS - 1) * S + 36, 10, "rgba(203,213,225,.12)");
+  // road along the bottom
+  ctx.fillStyle = "#374151"; ctx.fillRect(BOARD.x, BOARD.y + BOARD.h - 20, BOARD.w, 20);
+  ctx.fillStyle = "#facc15";
+  for (let x = BOARD.x + 10; x < BOARD.x + BOARD.w; x += 40) ctx.fillRect(x, BOARD.y + BOARD.h - 11, 20, 3);
+  // trees in the corners
+  for (const [tx, ty] of [[BOARD.x + 12, BOARD.y + 16], [BOARD.x + BOARD.w - 12, BOARD.y + 16], [BOARD.x + 12, BOARD.y + BOARD.h - 40], [BOARD.x + BOARD.w - 12, BOARD.y + BOARD.h - 40]]) {
+    ctx.fillStyle = "#7c4a1e"; ctx.fillRect(tx - 2, ty + 2, 4, 10);
+    Kit.brick(ctx, tx - 9, ty - 12, 18, 16, "#166534", 4);
+  }
+  ctx.restore();
+}
+
+function draw() {
+  ctx.fillStyle = "#16181b";
+  ctx.fillRect(0, 0, W, H);
+  if (mode === "menu") { drawMenu(); return; }
+
+  // top bar
+  rrect(10, 8, W - 20, 64, 10, "#22252a");
+  if (mode === "level") {
+    text(`Level ${lv + 1}: ${level.title}`, 24, 34, 20, save.done[lv] ? "#86efac" : "#facc15");
+    para("Goal: " + level.goal, 24, 58, W - 60, 14, "#e5e7eb", 17, "600", 1);
+  } else {
+    text("Sandbox: build anything!", 24, 34, 20, "#facc15");
+    text("Every part is unlimited. Your board is saved automatically.", 24, 58, 14, "#e5e7eb", "left", "600");
+  }
+
+  // palette
+  for (const t of paletteTools()) {
+    const sel = t.tool === tool;
+    const count = inv[t.tool];
+    const isPart = PART_TYPES.includes(t.tool);
+    const empty = isPart && !(count > 0);
+    rrect(t.r.x, t.r.y, t.r.w, t.r.h, 8, sel ? "#3b82f6" : "#2b2f35", sel ? "#93c5fd" : "#3a3f46", 2);
+    ctx.globalAlpha = empty ? 0.4 : 1;
+    drawIcon(t.tool, t.r.x + 20, t.r.y + t.r.h / 2);
+    text(NAMES[t.tool], t.r.x + 36, t.r.y + 22, 12, "#fff");
+    if (isPart && count !== Infinity) text(String(count), t.r.x + t.r.w - 6, t.r.y + 22, 12, empty ? "#9ca3af" : "#facc15", "right");
+    ctx.globalAlpha = 1;
+  }
+
+  drawBoardBackground();
+
+  // dots (nodes)
+  const degree = new Map();
+  for (const k of parts.keys()) { const i = keyInfo(k); degree.set(i.a, (degree.get(i.a) || 0) + 1); degree.set(i.b, (degree.get(i.b) || 0) + 1); }
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const d = degree.get(nodeId(x, y)) || 0;
+    ctx.fillStyle = d >= 3 ? "#f59e0b" : "rgba(255,255,255,.45)";
+    ctx.beginPath(); ctx.arc(X0 + x * S, Y0 + y * S, d >= 3 ? 6 : 3.5, 0, 7); ctx.fill();
+  }
+
+  // placement preview
+  if (hoverKey && !drag && !parts.has(hoverKey) && PART_TYPES.includes(tool) && canUse(tool)) {
+    const i = keyInfo(hoverKey);
+    ctx.globalAlpha = 0.35;
+    if (tool === "wire") drawWire(i); else drawPartBody(newPart(tool), null, i.cx, i.cy, i.h, 1, hoverKey);
+    ctx.globalAlpha = 1;
+  }
+
+  // wires
+  for (const [k, p] of parts) if (p.type === "wire") drawWire(keyInfo(k));
+  // switches / fuses as wire-ish leads drawn in their bodies
+  // current dots
+  for (const x of (view ? view.all : [])) {
+    const sp = currentSpeed(x);
+    if (!sp) continue;
+    const i = keyInfo(x.key);
+    const ph = (phase.get(x.key) || 0) % 15;
+    const dir = x.I > 0 ? 1 : -1;
+    ctx.fillStyle = view.short ? "#fb7185" : "#fde047";
+    for (let d = ph; d < S; d += 15) {
+      const t = dir > 0 ? d / S : 1 - d / S;
+      ctx.beginPath(); ctx.arc(i.px1 + (i.px2 - i.px1) * t, i.py1 + (i.py2 - i.py1) * t, 3, 0, 7); ctx.fill();
+    }
+  }
+  // parts
+  for (const [k, p] of parts) {
+    if (p.type === "wire") continue;
+    const i = keyInfo(k);
+    const x = view && view.byKey.get(k);
+    drawPartBody(p, x, i.cx, i.cy, i.h, 1, k);
+  }
+  // highlight
+  const showKey = hoverKey && parts.has(hoverKey) ? hoverKey : probeKey;
+  if (showKey && parts.has(showKey)) {
+    const i = keyInfo(showKey);
+    ctx.strokeStyle = tool === "eraser" && hoverKey === showKey ? "#f472b6" : "#93c5fd"; ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+    ctx.strokeRect(i.cx - (i.h ? 32 : 22), i.cy - (i.h ? 26 : 32), i.h ? 64 : 44, i.h ? 46 : 64);
+    ctx.setLineDash([]);
+  }
+  // sparks
+  for (const f of fx) { ctx.globalAlpha = Math.max(0, f.life); ctx.fillStyle = f.c; ctx.fillRect(f.x - 2, f.y - 2, 4, 4); }
+  ctx.globalAlpha = 1;
+
+  drawStatus();
+  drawInfo(showKey);
+}
+
+function adviceText() {
+  if (!view || completing) return null;
+  if (view.short) return ["SHORT CIRCUIT! A path with almost no resistance joins + to -, so a huge current flows. Real wires and batteries would get dangerously hot. Remove the wire that skips the other parts (or add a fuse).", "#f87171"];
+  const fuse = view.all.find((x) => x.part.type === "fuse" && x.part.broken);
+  if (fuse) return ["A fuse has blown, so its loop is broken. First fix what made the current too big (a short circuit, or too many parts in parallel), then tap the fuse with the Hand to fit a new one.", "#fb923c"];
+  const led = view.all.find((x) => x.part.type === "led" && x.part.broken);
+  if (led) return ["An LED is burnt out. Its loop needs a big enough resistor to keep the current small (try a bigger one). Then tap the LED with the Hand to fit a new one.", "#fb923c"];
+  const blown = view.all.find((x) => (x.part.type === "bulb" || x.part.type === "house") && x.part.broken);
+  if (blown) return ["A bulb has blown from too much power. Use fewer cells, then tap it with the Hand to fit a new one.", "#fb923c"];
+  const back = view.all.find((x) => x.part.type === "led" && !x.on && (x.part.dir === -1 ? 1 : -1) * x.V > 0.5);
+  if (back) return ["This LED is the wrong way round, so no current can get through it. Tap it with the Hand to turn it round.", "#facc15"];
+  const low = view.all.find((x) => x.part.type === "led" && !x.on && (x.part.dir === -1 ? -1 : 1) * x.V > 0.5);
+  if (low) return ["This LED is the right way round but only has " + Math.abs(low.V).toFixed(2) + " V. It needs about 2 V to light.", "#facc15"];
+  const cells = view.of("cell");
+  if (cells.length && view.all.every((x) => Math.abs(x.I) < 0.001)) return ["No current is flowing. There's no complete loop from + round to - yet (or a switch is open).", "#cbd5e1"];
+  return null;
+}
+function drawStatus() {
+  rrect(STATUS.x, STATUS.y, STATUS.w, STATUS.h, 10, "#22252a");
+  let y = STATUS.y + 22;
+  const adv = adviceText();
+  const recent = message && time - messageTime < 7;
+  if (recent) y += para(message, STATUS.x + 12, y, STATUS.w - 24, 14, messageColor, 18, "bold", adv ? 2 : 3) * 18 + 2;
+  if (adv) para(adv[0], STATUS.x + 12, y, STATUS.w - 24, 14, adv[1], 18, "600", recent ? 2 : 4);
+  else if (!recent) para(TIPS[tool] || "", STATUS.x + 12, y, STATUS.w - 24, 14, "#a7adb4", 18, "600", 4);
+}
+
+function fmtI(i) { const a = Math.abs(i); if (a > SP.shortI) return "very large!"; return (a < 0.1 ? a.toFixed(3) : a.toFixed(2)) + " A"; }
+function fmtV(v) { return Math.abs(v).toFixed(2) + " V"; }
+function fmtP(p) { return (p < 0.1 ? p.toFixed(3) : p.toFixed(2)) + " W"; }
+function partTitle(p) {
+  switch (p.type) {
+    case "cell": return "Cell (1.5 V)";
+    case "bulb": return "Bulb (5 ohm)";
+    case "house": return "House light (5 ohm)";
+    case "resistor": return `Resistor (${p.val} ohm)`;
+    case "led": return `LED (${p.color})`;
+    case "buzzer": return "Buzzer (30 ohm)";
+    case "motor": return "Motor (4 ohm)";
+    case "fuse": return "Fuse (melts over 2 A)";
+    case "switch": return "Switch";
+    default: return "Wire";
+  }
+}
+function partState(x) {
+  const p = x.part;
+  if (p.broken) return { fuse: "Blown: the thin wire inside melted.", led: "Burnt out.", bulb: "Blown.", house: "Light blown." }[p.type] || "Broken.";
+  switch (p.type) {
+    case "bulb": case "house": return x.on ? (x.level > 1.6 ? "Very bright!" : x.level > 0.7 ? "Bright." : "Dim glow.") : "Off.";
+    case "led": return x.on ? "On." : (p.dir === -1 ? 1 : -1) * x.V > 0.5 ? "Off: wrong way round." : "Off.";
+    case "buzzer": return x.on ? "Buzzing!" : "Silent.";
+    case "motor": return x.on ? (x.I > 0 ? "Spinning one way." : "Spinning the other way.") : "Not spinning.";
+    case "switch": return p.on ? "Closed: current can flow." : "Open: a gap in the loop.";
+    case "cell": return Math.abs(x.I) > SP.shortI ? "SHORT CIRCUIT: getting hot!" : Math.abs(x.I) > 0.001 ? "Pushing current round the loop." : "Not in a complete loop.";
+    case "fuse": return "OK.";
+    default: return Math.abs(x.I) > 0.001 ? "Carrying current." : "No current.";
+  }
+}
+function drawInfo(showKey) {
+  rrect(INFO.x, INFO.y, INFO.w, INFO.h, 10, "#22252a");
+  // multimeter
+  const mx = INFO.x + 10, my = INFO.y + 10, mw = INFO.w - 20;
+  Kit.brick(ctx, mx, my, mw, 196, "#facc15", 12);
+  text("MULTIMETER", mx + mw / 2, my + 20, 12, "#713f12", "center");
+  rrect(mx + 10, my + 28, mw - 20, 96, 6, "#a3b18a");
+  const x = showKey && view && view.byKey.get(showKey);
+  if (x) {
+    const isCell = x.part.type === "cell";
+    text("V", mx + 18, my + 52, 14, "#1f2a1a");
+    text(fmtV(x.V), mx + mw - 18, my + 52, 18, "#1f2a1a", "right");
+    text("I", mx + 18, my + 80, 14, "#1f2a1a");
+    text(fmtI(x.I), mx + mw - 18, my + 80, 18, "#1f2a1a", "right");
+    text("P", mx + 18, my + 108, 14, "#1f2a1a");
+    const pw = isCell ? Math.abs(x.V * x.I) : x.P;
+    text(Math.abs(x.I) > SP.shortI ? "---" : fmtP(pw), mx + mw - 18, my + 108, 18, "#1f2a1a", "right");
+    text(partTitle(x.part), mx + mw / 2, my + 146, 14, "#422006", "center");
+    para(partState(x), mx + 10, my + 166, mw - 20, 12, "#422006", 14, "bold", 2);
+  } else {
+    text("Point at a part", mx + mw / 2, my + 70, 13, "#1f2a1a", "center");
+    text("to measure it", mx + mw / 2, my + 88, 13, "#1f2a1a", "center");
+    text("V = volts, I = amps", mx + mw / 2, my + 150, 12, "#422006", "center");
+    text("P = V x I (watts)", mx + mw / 2, my + 168, 12, "#422006", "center");
+  }
+  // key facts
+  let y = my + 222;
+  y += para("Yellow dots show current flowing from + round to -. Faster dots = bigger current.", INFO.x + 12, y, INFO.w - 24, 12, "#cbd5e1", 15, "600") * 15 + 6;
+  y += para("I = V / R", INFO.x + 12, y, INFO.w - 24, 13, "#fde68a", 16) * 16 + 8;
+  // safety note
+  const sy = y;
+  const lines = wrap("Safety: these are toy 1.5 V cells. Never play with mains electricity (wall sockets) - it can kill.", INFO.w - 36, 12, "bold");
+  rrect(INFO.x + 8, sy - 4, INFO.w - 16, lines.length * 15 + 12, 8, "rgba(239,68,68,.18)", "#ef4444", 1.5);
+  lines.forEach((l, i) => text(l, INFO.x + 16, sy + 12 + i * 15, 12, "#fecaca"));
+  for (const b of uiButtons()) button(b, b.label, b.color);
+}
+
+function drawMenu() {
+  // title
+  text("Circuit Builder", W / 2, 62, 40, "#facc15", "center", "900");
+  text("Build real circuits, light up Brick Town", W / 2, 96, 17, "#cbd5e1", "center", "600");
+  text(`${doneCount()} of ${LEVELS.length} levels done`, W / 2, 124, 14, "#86efac", "center");
+  const hover = hoverPos;
+  for (const t of menuTiles()) {
+    const ok = unlocked(t.i), done = save.done[t.i];
+    const hot = hover && inRect(hover, t) && ok;
+    Kit.brick(ctx, t.x, t.y, t.w, t.h, !ok ? "#2b2f35" : done ? "#15803d" : hot ? "#2563eb" : "#1d4ed8", 10);
+    text(String(t.i + 1), t.x + 12, t.y + 28, 22, ok ? "#fff" : "#6b7280");
+    if (done) text("Done", t.x + t.w - 10, t.y + 24, 12, "#bbf7d0", "right");
+    else if (!ok) text("Locked", t.x + t.w - 10, t.y + 24, 12, "#6b7280", "right");
+    para(LEVELS[t.i].title, t.x + 12, t.y + 52, t.w - 20, 13, ok ? "#e5e7eb" : "#6b7280", 15, "bold", 2);
+    if (TOWN.includes(t.i)) {
+      ctx.fillStyle = ok ? "#fca5a5" : "#4b5563";
+      ctx.beginPath(); ctx.moveTo(t.x + 44, t.y + 20); ctx.lineTo(t.x + 54, t.y + 11); ctx.lineTo(t.x + 64, t.y + 20); ctx.fill();
+      ctx.fillRect(t.x + 47, t.y + 20, 14, 9);
+    }
+  }
+  const sb = SANDBOX_BTN;
+  Kit.brick(ctx, sb.x, sb.y, sb.w, sb.h, hover && inRect(hover, sb) ? "#f59e0b" : "#d97706", 12);
+  text("Sandbox", sb.x + sb.w / 2, sb.y + 28, 22, "#fff", "center");
+  text("Free build: every part, no limits", sb.x + sb.w / 2, sb.y + 48, 12, "#fef3c7", "center", "600");
+  const lines = wrap("Safety: in this game you use toy 1.5 V cells. Never play with mains electricity (wall sockets or plugs) - it can kill. Never short-circuit real batteries.", 700, 14, "bold");
+  rrect(W / 2 - 370, 524, 740, lines.length * 19 + 18, 10, "rgba(239,68,68,.15)", "#ef4444", 2);
+  lines.forEach((l, i) => text(l, W / 2, 548 + i * 19, 14, "#fecaca", "center"));
+}
+
+// ------------------------------------------------------------------ boot
+const loop = Kit.loop(update, draw);
+updateHud();
+loop.start();
+showOverlay("Circuit Builder", "Build real working circuits with cells, wires, switches, bulbs, LEDs, motors and more, then power the houses of Brick Town.\n\nPick a part on the left, tap the board to place it, and drag to lay wires.\n\nSafety: these are toy 1.5 V cells. Never play with mains electricity (wall sockets).", "Play");
+
+window.game = {
+  get mode() { return mode; }, get level() { return lv; }, get parts() { return parts; }, get view() { return view; },
+  get tool() { return tool; }, get inv() { return inv; }, get save() { return save; }, get mem() { return mem; },
+  startLevel, startSandbox, solver: CircuitSolver, levels: LEVELS, keyInfo,
+  setTool: (t) => { tool = t; }, tap: tapEdge,
+  place(key, type, opts) { parts.set(key, newPart(type, opts)); resim(); },
+  remove(key) { parts.delete(key); resim(); },
+  wires(path) {
+    for (let i = 1; i < path.length; i++) {
+      let [x, y] = path[i - 1];
+      const [x2, y2] = path[i];
+      while (x !== x2 || y !== y2) {
+        const nx = x + Math.sign(x2 - x), ny = x === x2 ? y + Math.sign(y2 - y) : y;
+        const k = edgeBetween({ x, y }, { x: nx, y: ny });
+        if (k && !parts.has(k)) parts.set(k, newPart("wire"));
+        x = nx; y = ny;
+      }
+    }
+    resim();
+  },
+  toCanvas(x, y) { const r = canvas.getBoundingClientRect(); return { x: r.left + (X0 + x * S) * r.width / W, y: r.top + (Y0 + y * S) * r.height / H }; },
+  menu() { mode = "menu"; },
+};
+</script>
+</body>
+</html>
