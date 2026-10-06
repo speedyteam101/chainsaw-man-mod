@@ -1,4 +1,2 @@
 # Games still being written; gen-catalog.py leaves these out of the menu.
 rocket-lab
-circuit-builder
-velocity-lab

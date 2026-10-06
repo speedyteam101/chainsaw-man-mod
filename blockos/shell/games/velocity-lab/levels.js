@@ -60,7 +60,7 @@
       type: "drive", title: "Speed Camera",
       goal: "Pass the speed camera at 100 m going as close to 10 m/s as you can.",
       intro: "A speed camera measures how fast you are going as you pass it.\nWatch your speed on the dashboard and ease off the gas to hold about 10 m/s.\n\nTip: short taps on the gas give gentle pushes.",
-      done: "10 m/s is 36 km/h - about the speed of a fast bike ride.\nA camera works out speed = distance / time from two quick measurements.",
+      done: "10 m/s is 36 km/h - about as fast as a racing cyclist.\nA camera works out speed = distance / time from two quick measurements.",
       tMax: 60, graph: { t: 20, v: 20 }, markers: [{ x: 100, kind: "camera" }], length: 120,
       tick: (s) => {
         if (s.x < 100) return null;
@@ -206,7 +206,7 @@
         if (s.v === 0 && s.t > 0.5 && s.x > 1 && !m.reached) return { stars: 0, msg: "You need to reach 10 m/s before stopping." };
         return stopAt(110, [0.5, 1.5, 3])(s, m);
       },
-      status: (s, m) => (m.reached ? "10 m/s reached - now stop at the line!" : "Reach 10 m/s first"),
+      status: (s, m) => (m.reached ? "10 m/s reached: now stop!" : "Reach 10 m/s first"),
     },
     {
       type: "drive", title: "Ice Rink",
@@ -227,7 +227,7 @@
         if (s.v === 0 && s.t > 0.5 && s.x > 1 && !m.reached) return { stars: 0, msg: "You need to reach 12 m/s first." };
         return stopAt(160, [1, 3, 6])(s, m);
       },
-      status: (s, m) => (m.reached ? "12 m/s reached - now stop at the line!" : "Reach 12 m/s"),
+      status: (s, m) => (m.reached ? "12 m/s reached: now stop!" : "Reach 12 m/s"),
     },
     {
       type: "quiz", title: "Quiz: Velocity",

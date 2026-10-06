@@ -40,12 +40,13 @@
       // comes to rest inside this step: stops exactly after u^2 / (2|a|)
       s.x += (s.v * s.v) / (2 * -a);
       s.v = 0;
+      s.a = 0;   // at rest now: no more acceleration
     } else {
       s.x += s.v * dt + 0.5 * a * dt * dt;
       s.v += a * dt;
+      s.a = a;
     }
     s.t += dt;
-    s.a = a;
     return s;
   }
 

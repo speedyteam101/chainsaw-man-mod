@@ -214,7 +214,7 @@ function menuClick(p) {
 function update(dt) {
   if (mode !== "drive" || overlayOpen || !s) return;
   if (countdown > 0) { countdown -= dt; return; }
-  if (result) return;
+  if (result) { aShow += (s.a - aShow) * Math.min(1, dt * 12); return; }
   const inp = pedalInput();
   s.gas = inp.gas; s.brake = inp.brake;
   acc += dt;
@@ -229,6 +229,7 @@ function update(dt) {
   }
   aShow += (s.a - aShow) * Math.min(1, dt * 12);
 }
+
 
 // ------------------------------------------------------------------ drawing helpers
 function text(str, x, y, size, color, align, weight) {
@@ -311,7 +312,7 @@ function drawScene() {
   for (const mk of L.markers || []) {
     if (mk.to === undefined) continue;
     const x1 = Math.max(0, sx(mk.x)), x2 = Math.min(W, sx(mk.to));
-    if (x2 > x1) { ctx.fillStyle = mk.kind === "school" ? "rgba(250,204,21,.28)" : "rgba(34,197,94,.28)"; ctx.fillRect(x1, ROAD_Y, x2 - x1, SCENE_H - ROAD_Y); }
+    if (x2 > x1) { ctx.fillStyle = mk.kind === "school" ? "rgba(250,204,21,.2)" : "rgba(34,197,94,.28)"; ctx.fillRect(x1, ROAD_Y, x2 - x1, SCENE_H - ROAD_Y); }
   }
   // lane dashes
   ctx.fillStyle = "rgba(255,255,255,.75)";
@@ -385,7 +386,6 @@ function drawVehicle() {
     ctx.fillStyle = "#bfdbfe"; ctx.fillRect(f - 90, gy - 88, 54, 42);
     Kit.drawAvatar(ctx, f - 62, gy - 22, 68, { facing: 1 });
     ctx.fillStyle = "rgba(191,219,254,.3)"; ctx.fillRect(f - 90, gy - 88, 54, 42);
-    ctx.fillStyle = "#1d4ed8"; ctx.fillRect(f - 64, gy - 88, 4, 42);
     Kit.brick(ctx, f - 128, gy - 50, 128, 34, "#2563eb", 8);
     ctx.fillStyle = "#fde68a"; ctx.fillRect(f - 6, gy - 44, 6, 8);
     ctx.fillStyle = "#ef4444"; ctx.fillRect(f - 128, gy - 44, 5, 8);
@@ -414,13 +414,13 @@ function drawTopBar() {
   const btn = (b, label, color) => { Kit.brick(ctx, b.x, b.y, b.w, b.h, color, 7); text(label, b.x + b.w / 2, b.y + 20, 13, "#fff", "center"); };
   btn(BTN_LEVELS, "Levels", "#12b76a");
   if (mode === "drive") btn(BTN_RETRY, "Retry", "#f59e0b");
-  rrect(176, 8, 648, 56, 10, "rgba(15,23,42,.72)");
-  text(`Level ${lv + 1}: ${L.title}`, 500, 30, 17, "#facc15", "center");
+  rrect(176, 8, 648, 66, 10, "rgba(15,23,42,.72)");
+  text(`Level ${lv + 1}: ${L.title}`, 500, 29, 17, "#facc15", "center");
   const lines = wrap(L.type === "quiz" ? "Pick the right answer." : "Goal: " + L.goal, 620, 13, "600");
-  lines.slice(0, 2).forEach((l, i) => text(l, 500, 48 + i * 15, 13, "#e2e8f0", "center", "600"));
+  lines.slice(0, 2).forEach((l, i) => text(l, 500, 48 + i * 16, 13, "#e2e8f0", "center", "600"));
   // mini map of the course
   if (mode === "drive" && L.length) {
-    const mx = 260, mw = 480, my = 76;
+    const mx = 260, mw = 480, my = 88;
     rrect(mx - 6, my - 6, mw + 12, 14, 7, "rgba(15,23,42,.6)");
     ctx.fillStyle = "#64748b"; ctx.fillRect(mx, my, mw, 2);
     if (L.surface) for (const [a, b] of L.surface) { ctx.fillStyle = "#7dd3fc"; ctx.fillRect(mx + Math.max(0, a) / L.length * mw, my - 1, (Math.min(L.length, b) - Math.max(0, a)) / L.length * mw, 4); }
