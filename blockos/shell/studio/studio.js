@@ -71,7 +71,7 @@ window.BlockStudio = function (ctx) {
           <b>Run</b> to try it, then <b>Publish</b> it so other players can play it on the Community page.</p>
         <div class="btns"><button class="btn green" data-st="new">New game</button>
           <button class="btn" data-st="import">Open a file</button>
-          <button class="btn" data-st="help">Help guide</button></div>
+          ${hasHelp() ? '<button class="btn" data-st="help">Help guide</button>' : ""}</div>
         <input type="file" id="stFile" accept=".html,.htm,text/html" hidden>
       </div>
       ${list.length ? `<h2 class="sub-title">Your games</h2><div class="grid">${list.map((x) => `
@@ -154,7 +154,7 @@ window.BlockStudio = function (ctx) {
           <button class="btn" data-st="play" title="Play full screen">${icon("expand")}<span>Play</span></button>
           <button class="btn" data-st="settings" title="Title, description, genre and color">${icon("settings")}<span>Settings</span></button>
           <button class="btn" data-st="export" title="Save a copy to a file">${icon("download")}<span>Save file</span></button>
-          <button class="btn" data-st="help" title="Help guide">?<span>Help</span></button>
+          ${hasHelp() ? '<button class="btn" data-st="help" title="Help guide">?<span>Help</span></button>' : ""}
           <button class="btn st-publish" data-st="publish">${icon("upload")}<span>Publish</span></button>
         </div>
       </div>
@@ -424,6 +424,7 @@ window.BlockStudio = function (ctx) {
 
   // ---------------------------------------------------------------- help guide
 
+  const hasHelp = () => !!(window.STUDIO_DOCS && window.STUDIO_DOCS.length);
   function helpDialog(sectionId) {
     const docs = window.STUDIO_DOCS || [];
     if (!docs.length) return toast("The help guide isn't available.");

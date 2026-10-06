@@ -54,21 +54,21 @@ world.part({ size: [5, 1, 5], pos: [0, 2.5, -30], color: STAGE_COLORS[0] });
 checkpointPlatform(0, 3, -42, 1);
 
 // Stage 2: a bridge with kill bricks on it. Jump over the red ones!
-world.part({ size: [4, 1, 24], pos: [0, 2.5, -61], color: STAGE_COLORS[1] });
-world.part({ size: [4, 1, 2], pos: [0, 3.5, -56], color: "#ef4444", material: "neon", kill: true });
-world.part({ size: [4, 1, 2], pos: [0, 3.5, -66], color: "#ef4444", material: "neon", kill: true });
+world.part({ size: [4, 1, 30], pos: [0, 2.5, -64], color: STAGE_COLORS[1] });
+world.part({ size: [4, 1, 2], pos: [0, 3.5, -58], color: "#ef4444", material: "neon", kill: true });
+world.part({ size: [4, 1, 2], pos: [0, 3.5, -68], color: "#ef4444", material: "neon", kill: true });
 // A moving platform (moving: true lets you ride on it). It moves in the game loop below.
-const mover = world.part({ size: [6, 1, 6], pos: [0, 2.5, -80], color: "#facc15", moving: true });
-checkpointPlatform(0, 3, -92, 2);
+const mover = world.part({ size: [6, 1, 6], pos: [0, 2.5, -86], color: "#facc15", moving: true });
+checkpointPlatform(0, 3, -98, 2);
 
 // Stage 3: stairs up to the finish.
 for (let i = 0; i < 4; i++) {
-  world.part({ size: [4, 1, 4], pos: [0, 4 + i * 1.5, -102 - i * 6], color: STAGE_COLORS[2] });
+  world.part({ size: [4, 1, 6], pos: [0, 4 + i * 1.5, -109 - i * 9], color: STAGE_COLORS[2] });
 }
-world.part({ size: [12, 1, 12], pos: [0, 9.5, -132], color: "#64748b" });
+world.part({ size: [12, 1, 12], pos: [0, 9.5, -148], color: "#64748b" });
 // The finish pad: touching it wins the game.
-world.part({ size: [6, 0.4, 6], pos: [0, 10.2, -132], color: "#facc15", material: "neon", studs: false, onTouch: finish });
-world.label("FINISH", { pos: [0, 17, -132], height: 3 });
+world.part({ size: [6, 0.4, 6], pos: [0, 10.2, -148], color: "#facc15", material: "neon", studs: false, onTouch: finish });
+world.label("FINISH", { pos: [0, 17, -148], height: 3 });
 world.label("My 3D Obby", { pos: [0, 8, -10], height: 2.5 });
 
 // A platform with a glowing checkpoint pad on top. y = the top of the platform.

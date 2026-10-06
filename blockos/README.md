@@ -135,7 +135,7 @@ and please report the error.
 Open **Create** to make games with code, like Roblox Studio:
 
 - **New game** starts from a template (Clicker, Platformer, Dodge, 3D obby, Online hangout and
-  more) with comments that explain what to change. **Help** has a guide to the BlockOS game kit.
+  more) with comments that explain what to change.
 - **Run** (Ctrl+Enter) shows your game next to the code; mistakes appear under **Output** with
   the line number (click it to jump there). Your games save on this computer as you type.
 - **Save file** keeps a copy as an `.html` file, and **Open a file** loads one, so you can
