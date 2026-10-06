@@ -134,8 +134,9 @@ and please report the error.
 
 Open **Create** to make games with code, like Roblox Studio:
 
-- **New game** starts from a template (Easy 3D obby, Clicker, Platformer, Dodge, 3D obby, Online hangout and
-  more) with comments that explain what to change. **Help** has a guide to the BlockOS game kit.
+- **New game** starts from a template: seven Easy 3D ones (obby, escape room, coin hunt, tower climb,
+  survival, race, hangout world) and Blank, Clicker, Platformer, Dodge, 3D obby and Online hangout,
+  each with comments that explain what to change. **Help** has a guide to the BlockOS game kit.
 - **Easy 3D obby** is the simplest start: name your parts, then give them powers with 178 one-line
   commands like `part("part 1", 0, 2, -10)`, `color("part 1", "red")`, `killOnTouch("part 1")`,
   `checkpoint(...)`, `follow(...)`, `keyFor(...)`, `npc(...)` and `finish(...)`. They're all listed in

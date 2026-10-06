@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Survival Game</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY SURVIVAL =====
+// Zombie blocks are chasing you! Stay alive for 60 seconds to win.
+// You have 3 lives. Grab shields and hearts to help you.
+// x = left/right, y = up, z = forward (more negative = further ahead)
+
+sunset();
+baseplate("sand");
+lives(3);                   // 3 lives
+winAfter(60);               // survive 60 seconds to win
+countdown();                // 3, 2, 1, Go!
+
+// ----- The arena: walls all around -----
+part("wall back", 0, 2, -75, 90, 4, 1);
+part("wall front", 0, 2, 15, 90, 4, 1);
+part("wall left", -45, 2, -30, 1, 4, 90);
+part("wall right", 45, 2, -30, 1, 4, 90);
+color("wall", "brown");
+wood("wall");
+
+// Rocks and trees to run around
+rock(-15, 0, -20);
+rock(20, 0, -35);
+rock(-25, 0, -55);
+tree(12, 0, -12);
+tree(-30, 0, -35);
+tree(28, 0, -60);
+
+// ----- The zombies: they follow you! -----
+// follow("name", speed): you walk at 16, so you can outrun them
+part("zombie 1", -35, 1, -65, 2, 3, 2);
+part("zombie 2", 35, 1, -65, 2, 3, 2);
+part("zombie 3", -35, 1, 5, 2, 3, 2);
+part("zombie 4", 35, 1, 5, 2, 3, 2);
+color("zombie", "green");
+ghost("zombie");                     // zombies walk through walls and trees
+killOnTouch("zombie");
+follow("zombie 1", 6);
+follow("zombie 2", 7);
+follow("zombie 3", 8);
+follow("zombie 4", 9);
+label("zombie", "Zombie");
+
+// ----- Power-ups -----
+part("shield", 0, 1.5, -40, 2, 2, 2);
+color("shield", "cyan");
+glow("shield");
+spin("shield", 2);
+shieldOnTouch("shield", 6);          // zombies can't hurt you for 6 seconds
+
+part("heart", -30, 1.5, -10, 2, 2, 2);
+color("heart", "pink");
+glow("heart");
+bob("heart");
+ghost("heart");
+lifeOnTouch("heart");                // +1 life
+
+part("speed pad", 25, 0.1, -20, 4, 0.2, 4);
+color("speed pad", "yellow");
+glow("speed pad");
+speedBoost("speed pad", 35, 3);      // run super fast for 3 seconds
+
+// After you lose a life, you're safe for 3 seconds
+onDeath(function () {
+  wait(2, function () {
+    invincible(3);
+    message("Safe for 3 seconds!");
+  });
+});
+
+// ===== IDEAS TO TRY =====
+// A faster zombie:   follow("zombie 1", 12)          More time:   winAfter(90)
+// More zombies:      copy("zombie 1", "zombie 5", 0, 1, -70)   follow("zombie 5", 6)
+// A health bar:      health(100)  and  damage("zombie", 25)  instead of killOnTouch
+</script>
+</body>
+</html>

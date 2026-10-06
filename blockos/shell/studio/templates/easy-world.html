@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Hangout World</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY HANGOUT WORLD =====
+// A world to explore and hang out in with friends. There's no way to lose!
+// Press E to wave, and Space twice to double jump.
+// x = left/right, y = up, z = forward (more negative = further ahead)
+
+baseplate("green");
+dayNightCycle(90);              // day and night every 90 seconds
+stars(60);                      // you can see them at night
+doubleJump();                   // press Space again in the air
+
+// ----- Places to visit -----
+castle("castle", -45, 0, -45);
+house("home", 35, 0, -25);
+mountain(55, 0, -90, 30);
+island(-10, 12, -95);           // a floating island
+pond(0, 0, 0);                  // see the function at the bottom
+
+// A path with lamps
+part("path", 0, 0.05, -30, 6, 0.1, 50);
+color("path", "sand");
+smooth("path");
+lamp(-5, 0, -15);
+lamp(5, 0, -30);
+lamp(-5, 0, -45);
+fence("fence", 20, 0, 10, 30);
+scatter("flower", 30, 60);
+scatter("tree", 8, 70);
+
+// ----- People to talk to -----
+npc("Guide", 4, 0, -8);
+talk("Guide", "Welcome! Try the trampoline and the teleporter!");
+npc("Knight", -45, 0, -45);
+talk("Knight", "This is my castle. Nice, huh?");
+npc("Climber", 50, 0, -54);
+talk("Climber", "Bet you can't get to the top of the mountain!");
+
+// ----- Fun stuff -----
+part("trampoline", -15, 0.5, -20, 6, 1, 6);
+color("trampoline", "pink");
+bounce("trampoline", 120);
+
+part("teleporter", 15, 0.1, -10, 4, 0.2, 4);
+color("teleporter", "purple");
+glow("teleporter");
+part("lookout", 55, 30.5, -90, 6, 1, 6);    // on top of the mountain
+teleport("teleporter", "lookout");          // step on it to go up the mountain
+
+part("sky pad", -10, 4, -78, 6, 1, 6);      // bounce up to the floating island
+color("sky pad", "cyan");
+glow("sky pad");
+bounce("sky pad", 110);
+
+part("disco", 0, 0.1, -60, 10, 0.2, 10);
+rainbow("disco");                           // a dance floor
+label("disco", "Dance floor");
+
+part("pet", 8, 1, 6, 1.5, 1.5, 1.5);
+color("pet", "orange");
+wander("pet", 3);                           // your pet walks around
+label("pet", "Pet");
+
+onKey("E", function () {
+  say("Hi everyone!");
+  playSound("coin");
+});
+
+// A little pond: you can make your own commands with function!
+function pond(x, y, z) {
+  part("pond", x - 20, y + 0.05, z - 5, 12, 0.1, 10);
+  color("pond", "blue");
+  glass("pond");
+  smooth("pond");
+}
+
+// ===== IDEAS TO TRY =====
+// Fly instead:     fly()                    Your own NPC:   npc("Sam", 0, 0, -20)   talk("Sam", "Hi!")
+// More lamps:      lamp(5, 0, -60)          A secret:       onKey("Q", function () { teleportPlayer(0, 40, -95); })
+// Sounds you added with the Sounds button:  music("your song")
+</script>
+</body>
+</html>

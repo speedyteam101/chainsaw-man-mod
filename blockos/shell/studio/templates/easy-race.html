@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Race</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY RACE =====
+// Race to the finish as fast as you can! Speed pads make you faster,
+// mud slows you down, and the trampoline jumps the big gap.
+// x = left/right, y = up, z = forward (more negative = further ahead)
+
+sky("lightblue");
+lava();                         // fall off the track and you go back to your checkpoint
+countdown();                    // 3, 2, 1, Go!
+
+// ----- Part 1: speed pads and mud -----
+part("track 1", 0, -0.5, -48, 14, 1, 100);
+color("track 1", "darkgray");
+
+part("boost 1", 0, 0.1, -20, 6, 0.2, 4);
+part("boost 2", 0, 0.1, -60, 6, 0.2, 4);
+color("boost", "cyan");
+glow("boost");
+speedBoost("boost", 40, 3);           // super fast for 3 seconds
+
+part("mud", 0, 0.1, -40, 14, 0.2, 8);
+color("mud", "brown");
+slowOnTouch("mud", 8, 1.5);          // slow for 1.5 seconds: jump over it!
+
+part("pusher", 0, 1.5, -80, 4, 3, 1);
+color("pusher", "red");
+glow("pusher");
+moveSideToSide("pusher", 5, 2);
+killOnTouch("pusher");
+
+// ----- Part 2: the big jump -----
+part("trampoline", 0, 0, -101, 8, 1, 6);
+color("trampoline", "pink");
+bounce("trampoline", 100);            // bounces you over the gap
+sign("JUMP!", 0, 8, -101);
+
+part("checkpoint", 0, -0.5, -122, 14, 1, 10);
+checkpoint("checkpoint");
+
+// ----- Part 3: the conveyor and the zig-zag -----
+part("conveyor", 0, -0.5, -142, 8, 1, 30);
+color("conveyor", "yellow");
+conveyor("conveyor", 15);             // pushes you forward
+
+row("zig", 0, 0, -165, 4, 7);         // 4 blocks in a row...
+moveTo("zig 2", 5, 0, -172);          // ...moved into a zig-zag
+moveTo("zig 4", 5, 0, -186);
+color("zig", "green");
+
+// ----- The finish -----
+part("finish", 0, -0.5, -200, 14, 1, 12);
+color("finish", "gold");
+glow("finish");
+finish("finish");
+sign("FINISH", 0, 8, -200);
+
+// ===== IDEAS TO TRY =====
+// Faster boosts:   speedBoost("boost", 60, 3)      A second pusher:   copy("pusher", "pusher 2", 0, 1.5, -88)
+// Race the clock:  timer(30)                        Night race:        night()   stars(80)
+// Make the mud a kill part instead:   killOnTouch("mud")
+</script>
+</body>
+</html>
