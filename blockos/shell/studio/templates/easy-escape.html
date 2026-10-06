@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Escape Room</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY ESCAPE ROOM =====
+// You're locked in a house with 3 rooms. Find the key, find the secret button,
+// grab the coins and escape through the back door!
+// x = left/right, y = up, z = forward (more negative = further ahead)
+
+sky("lightblue");
+baseplate("green");
+
+// ----- The house: a floor and walls all around you -----
+// part("name", x, y, z, width, height, depth)
+part("floor", 0, 0, -22, 20, 0.1, 54);          // a thin wooden floor
+color("floor", "brown");
+wood("floor");
+part("wall start", 0, 6, 5, 22, 12, 1);         // behind you
+invisible("wall start");                        // invisible, so it doesn't block the camera
+part("wall left", -10.5, 6, -22, 1, 12, 54);
+part("wall right", 10.5, 6, -22, 1, 12, 54);
+
+// ----- Room 1: find the red key -----
+part("wall 1 left", -6.5, 6, -14, 7, 12, 1);
+part("wall 1 right", 6.5, 6, -14, 7, 12, 1);
+part("wall 1 top", 0, 10, -14, 6, 4, 1);
+part("red door", 0, 4, -14, 6, 8, 1);
+color("red door", "red");
+
+part("crate 1", 6, 1, -4, 3, 2, 3);             // climb the crates...
+part("crate 2", 6, 2, -8.5, 3, 4, 3);
+color("crate", "brown");
+wood("crate");
+
+part("red key", 6, 5.5, -8.5, 2, 0.6, 0.6);     // ...to reach the key
+color("red key", "red");
+glow("red key");
+spin("red key", 2);
+keyFor("red key", "red door");                  // touch the key: the red door opens
+sign("Find the red key!", 0, 14, -6);
+
+// ----- Room 2: Bob knows a secret -----
+part("wall 2 left", -6.5, 6, -30, 7, 12, 1);
+part("wall 2 right", 6.5, 6, -30, 7, 12, 1);
+part("wall 2 top", 0, 10, -30, 6, 4, 1);
+part("secret door", 0, 4, -30, 6, 8, 1);       // looks just like the wall!
+color("secret door", "lightblue");
+transparent("secret door", 0.6);
+
+npc("Bob", -4, 0, -20);
+talk("Bob", "Psst! The secret button is behind the plant.");
+bush(-7, 0, -25);                               // the plant
+
+part("secret button", -8, 0.1, -28, 2, 0.2, 2);
+color("secret button", "red");
+glow("secret button");
+hideOnTouch("secret button", "secret door");    // step on it: the secret door vanishes
+onTouch("secret button", function () {
+  message("Click! A secret door opened!");
+});
+
+part("fake button", 6, 0.1, -27, 2, 0.2, 2);    // a trick button
+color("fake button", "blue");
+messageOnTouch("fake button", "Nope! Not this one.");
+
+// ----- Room 3: cross the lava and grab 3 coins -----
+part("checkpoint", 0, 0.5, -32.5, 8, 1, 4);
+checkpoint("checkpoint");
+
+part("lava pit", 0, 0.1, -39.5, 20, 0.2, 10);
+color("lava pit", "lava");
+glow("lava pit");
+killOnTouch("lava pit");
+
+part("stone 1", -4, 0.5, -37.5, 3, 1, 3);
+part("stone 2", 3, 0.5, -40, 3, 1, 3);
+part("stone 3", -2, 0.5, -43, 3, 1, 3);
+color("stone", "gray");
+coin(-4, 2.5, -37.5);
+coin(3, 2.5, -40);
+coin(-2, 2.5, -43);
+
+part("wall 3 left", -6.5, 6, -48, 7, 12, 1);
+part("wall 3 right", 6.5, 6, -48, 7, 12, 1);
+part("wall 3 top", 0, 10, -48, 6, 4, 1);
+part("coin door", 0, 4, -48, 6, 8, 1);
+color("coin door", "gold");
+coinDoor("coin door", 3);                       // opens when you have 3 coins
+
+// Paint every part called "wall ..." at once, and make them see-through
+color("wall", "lightblue");
+transparent("wall", 0.6);
+
+// ----- Outside: you escaped! -----
+part("exit", 0, 0.5, -56, 8, 1, 8);
+color("exit", "green");
+glow("exit");
+finish("exit");
+sign("EXIT", 0, 6, -56);
+
+// ===== IDEAS TO TRY =====
+// Add a second key:   part("blue key", 0, 2, -22, 2, 0.6, 0.6)   keyFor("blue key", "secret door")
+// Make Bob walk:      wander("Bob", 2)
+// A button that switches a door on and off:   toggle("fake button", "coin door")
+// Race the clock:     timer(90)          Darker:  night()
+</script>
+</body>
+</html>
