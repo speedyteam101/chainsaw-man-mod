@@ -27,6 +27,7 @@
   .chip.fixed:hover { background: #2b2f35; }
   .xbtn { border: 0; background: #3a3f46; color: #fff; border-radius: 6px; font: inherit; font-weight: 800; font-size: 11px; padding: 1px 6px; cursor: pointer; }
   .btnrow { display: flex; gap: 6px; margin-top: 8px; }
+  .btnrow.sticky { position: sticky; bottom: -10px; background: rgba(18, 20, 24, .95); padding: 6px 0 8px; margin-bottom: -10px; }
   .btnrow .kit-btn { margin-top: 0; padding: 9px 12px; font-size: 15px; flex: 1; }
   .kit-btn.blue { background: #3b82f6; box-shadow: 0 4px 0 #1d4ed8; }
   .kit-btn.orange { background: #f97316; box-shadow: 0 4px 0 #c2410c; }
@@ -67,7 +68,7 @@
   #hint { position: fixed; left: 12px; bottom: 12px; z-index: 14; font-size: 13px; font-weight: 700; color: #e2e8f0; text-shadow: 0 1px 2px #000; display: none;
     background: rgba(18, 20, 24, .6); padding: 6px 10px; border-radius: 8px; max-width: 330px; }
   #hint b { color: #facc15; }
-  #count { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 30; pointer-events: none;
+  #count { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 30; pointer-events: none;
     font-size: 140px; font-weight: 900; color: #fff; text-shadow: 0 6px 0 #000; }
   #count small { display: block; font-size: 24px; text-align: center; color: #fde68a; }
   #transfer { position: fixed; inset: 0; z-index: 28; display: none; background: #02030a; }
@@ -90,7 +91,16 @@
     #banner { font-size: 30px; }
     #count { font-size: 90px; }
     .tip { padding: 4px 6px; }
+    .btnrow.sticky { bottom: -6px; margin-bottom: -6px; }
+    #ladder { top: 112px; transform: none; }
+    #gauge { width: 76px; height: 76px; }
+    #gaugeWrap div { font-size: 10px; }
+    #hint { font-size: 11px; max-width: 280px; }
   }
+  /* phones and tablets: leave the bottom corners for the on-screen buttons */
+  .touch #hint { left: 50%; transform: translateX(-50%); bottom: 4px; max-width: 40vw; text-align: center; }
+  .touch #gaugeWrap { left: 12px; bottom: 84px; transform: none; }
+  .touch #gaugeWrap div { display: none; }
 </style>
 </head>
 <body>

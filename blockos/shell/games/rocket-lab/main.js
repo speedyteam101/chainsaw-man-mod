@@ -2,9 +2,9 @@
 import { THREE } from "../kit3d.js";
 import {
   PARTS, LIMITS, Flight, stats, cleanDesign, emptyDesign, guideTilt, burnDv, thrustOf, air,
-  G0, R_EARTH, KARMAN, MOON_DIST, MOON_G, STUDS_PER_M,
+  G0, R_EARTH, KARMAN, MOON_DIST, MOON_G,
 } from "./physics.js";
-import { Scene3D, SLOT_X } from "./scene.js";
+import { Scene3D } from "./scene.js";
 
 const ID = "rocket-lab";
 const $ = (id) => document.getElementById(id);
@@ -58,7 +58,7 @@ const FACTS = {
   newton: ["Newton's third law", "The engine pushes hot gas down, hard and fast. The gas pushes the rocket up just as hard. Every push has an equal push back the other way!"],
   twr: ["Thrust vs. weight", "To lift off, the engines must push up harder than gravity pulls down. That's why thrust-to-weight has to be more than 1."],
   drag: ["Air pushes back", "Moving fast through thick air makes drag, like wind pushing on your hand out of a car window. A pointy nose cone lets the air slide around."],
-  clouds: ["Above the clouds!", "Low, puffy clouds are usually only 1 to 3 km up. Most clouds are in the lowest layer of air, below about 12 km."],
+  clouds: ["Above the clouds!", "Low, puffy clouds are often only 1 to 3 km up. Most clouds are in the lowest layer of air, below about 12 km."],
   halfair: ["Half the air is below you", "Gravity holds air close to Earth, so it gets thinner as you go up. Air pressure here is only about half what it is on the ground."],
   jets: ["Jet height", "Passenger jets fly about 10 to 12 km up. Above here there's too little air for people to breathe without help."],
   lighter: ["Lighter = faster", "Your rocket has burned a lot of fuel, so it weighs less. The same push on less mass gives more acceleration: a = F / m."],
@@ -291,17 +291,22 @@ function renderLab() {
   const km = (v) => (v / 1000).toFixed(v < 10000 ? 2 : 1);
   const stagesHtml = design.stages.map((st, i) => ({ st, i })).reverse().map(({ st, i }) => {
     const chips = [];
-    st.eng.forEach((k, j) => chips.push(`<button class="chip" data-rm="${i}:eng:${j}" title="Remove">${esc(PARTS[k].name)} x</button>`));
-    st.tanks.forEach((k, j) => chips.push(`<button class="chip" data-rm="${i}:tank:${j}" title="Remove">${esc(PARTS[k].name)} x</button>`));
-    if (st.fins) chips.push(`<button class="chip" data-rm="${i}:fins:0">Fins x</button>`);
-    if (st.boost) chips.push(`<button class="chip" data-rm="${i}:boost:0">Side boosters x</button>`);
+    const group = (list, kind) => {
+      const seen = new Map();
+      list.forEach((k, j) => { if (!seen.has(k)) seen.set(k, { n: 0, j }); const g = seen.get(k); g.n++; g.j = j; });
+      for (const [k, g] of seen) chips.push(`<button class="chip" data-rm="${i}:${kind}:${g.j}" title="Click to remove one">${g.n > 1 ? g.n + " × " : ""}${esc(PARTS[k].name)} −</button>`);
+    };
+    group(st.eng, "eng");
+    group(st.tanks, "tank");
+    if (st.fins) chips.push(`<button class="chip" data-rm="${i}:fins:0" title="Click to remove">Fins −</button>`);
+    if (st.boost) chips.push(`<button class="chip" data-rm="${i}:boost:0" title="Click to remove">Side boosters −</button>`);
     if (!chips.length) chips.push(`<span class="chip fixed">empty: add parts from the shop</span>`);
     const sd = s.stages[i] || { dv: 0, burn: 0 };
     return `<div class="stage ${i === selStage ? "sel" : ""}" data-sel="${i}">
       <div class="head"><span>Stage ${i + 1}${i === 0 ? " (fires first)" : ""}</span><i>${km(sd.dv)} km/s${design.stages.length > 1 ? ` <button class="xbtn" data-rm="${i}:stage:0" title="Remove stage">x</button>` : ""}</i></div>
       <div class="chips">${chips.join("")}</div></div>`;
   }).join("");
-  const topChips = `<span class="chip fixed">Capsule (you)</span>${design.nose ? `<button class="chip" data-rm="0:nose:0">Nose cone x</button>` : ""}`;
+  const topChips = `<span class="chip fixed">Capsule (you)</span>${design.nose ? `<button class="chip" data-rm="0:nose:0" title="Click to remove">Nose cone −</button>` : ""}`;
   const raceBtn = net.online && net.players.size > 0
     ? (net.isHost ? `<button class="kit-btn orange" id="raceBtn" ${race && race.counting ? "disabled" : ""}>Start race</button>` : "")
     : "";
@@ -319,7 +324,7 @@ function renderLab() {
     ${tips.map(([c, t]) => `<div class="tip ${c}">${esc(t)}</div>`).join("")}
     <div class="stage" style="cursor:default"><div class="head"><span>Top</span></div><div class="chips">${topChips}</div></div>
     ${stagesHtml}
-    <div class="btnrow"><button class="kit-btn" id="launchBtn" ${s.ok ? "" : "disabled"}>Launch!</button>
+    <div class="btnrow sticky"><button class="kit-btn" id="launchBtn" ${s.ok ? "" : "disabled"}>Launch!</button>
     <button class="kit-btn blue" id="clearBtn" title="Start over">Clear</button></div>
     ${raceBtn ? `<div class="btnrow">${raceBtn}</div>` : ""}`;
   placePanels();
@@ -347,6 +352,7 @@ function renderShop() {
 
 $("lab").addEventListener("click", (e) => {
   const t = e.target.closest("button, .stage");
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   if (!t) return;
   if (t.dataset.rm) { const [si, kind, idx] = t.dataset.rm.split(":"); removePart(+si, kind, +idx); return; }
   if (t.id === "launchBtn") return launch();
@@ -357,6 +363,7 @@ $("lab").addEventListener("click", (e) => {
 $("shop").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  b.blur();
   if (b.dataset.add) addPart(b.dataset.add);
   if (b.dataset.buy) buy(b.dataset.buy);
 });
@@ -475,7 +482,7 @@ function stepRace() {
 
 function computeWarp() {
   const f = flight, h = f.alt;
-  if (!f.lifted) return 1;
+  if (!f.lifted) return f.t > 3 ? 10 : 1;
   if (f.capsuleOnly) {
     if (f.chute) return h > 300 ? 40 : 4;
     return h > 30000 ? 10 : h > 8000 ? 5 : 2;
@@ -656,6 +663,8 @@ function stepFlight(dt) {
     milestones();
     if (mode !== "flight") return;
   }
+  // never lifted off and the fuel is gone: the flight is over
+  if (!f.lifted && f.t > 1 && f.thrustNow === 0) { endFlight(); return; }
   // auto-stage a few seconds after a stage runs dry
   if (F.emptySince) {
     const st = f.stage();
@@ -830,6 +839,7 @@ function arriveAtMoon() {
   burnDv(f, BRAKE_DV);
   view3d.setRocket(design, { from: f.s });
   landing = { h: 1500, v: -55, start: { s: f.s, fuel: f.stages.map((s) => s.fuel) }, done: false, t: 0 };
+  F.atMoon = true;
   mode = "landing";
   showBuildUI(false);
   fact("moonland", true);
@@ -1026,7 +1036,9 @@ function ladderY(h, top, bot) {
 }
 function drawLadder(myBest) {
   const cv = $("ladder"), g = cv.getContext("2d");
-  const W = cv.width, H = cv.height, top = 14, bot = H - 12, x = 30;
+  const small = innerHeight < 560;
+  if (cv.height !== (small ? 200 : 330)) { cv.height = small ? 200 : 330; cv.width = small ? 84 : 96; }
+  const W = cv.width, H = cv.height, top = 14, bot = H - 12, x = small ? 24 : 30;
   g.clearRect(0, 0, W, H);
   g.fillStyle = "rgba(18,20,24,.72)";
   g.beginPath(); g.roundRect(0, 0, W, H, 10); g.fill();
@@ -1107,7 +1119,10 @@ function frame(t) {
   }
   if (mode === "transfer") drawTransfer(dt);
   if (mode === "landing") stepLanding(dt);
-  if ((mode === "flight" || mode === "results" || mode === "transfer") && flight) {
+  if (mode === "results" && F && F.atMoon && landing) {
+    view = { alt: landing.h, x: 0, tilt: 0, moon: true };
+    view3d.world.cam.yaw += dt * 0.15;
+  } else if ((mode === "flight" || mode === "results" || mode === "transfer") && flight) {
     view = { alt: Math.max(0, flight.alt), x: flight.downrange, tilt: flight.tilt, phi: flight.phi, shake: F && F.shake ? F.shake : 0 };
     if (F && F.shake) F.shake = Math.max(0, F.shake - dt);
     if (flight.lifted && flight.alt < 200 && flight.thrustNow > 0) view.shake = Math.max(view.shake, 0.5 * (1 - flight.alt / 200));

@@ -38,6 +38,7 @@
     "math-blitz": { keyboard: true },
     "maze-escape": { pad: A },
     "mega-obby": { pad: "stick", buttons: [["Jump", "Space"], ["Reset", "KeyR"]] },
+    "rocket-lab": { pad: LR, buttons: [["Launch", "Space"], ["Rebuild", "KeyR"]] },
     "mining-sim": { pad: A, buttons: [["Surface", "KeyR"], ["Shop", "KeyE"]] },
     "ninja-run": { buttons: [["Slide", "ArrowDown", "left"], ["Jump", "Space"]] },
     "obby-run": { pad: A, buttons: [["Jump", "Space"]] },

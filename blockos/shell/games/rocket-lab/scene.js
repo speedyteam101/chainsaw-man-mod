@@ -5,7 +5,7 @@ import { PARTS, R_EARTH, STUDS_PER_M } from "./physics.js";
 
 const S = STUDS_PER_M;
 export const PAD_TOP = 3;                       // studs: the top of a launch pad
-export const SLOT_X = [0, 70, -70, 140, -140, 210, -210, 280, -280];
+export const SLOT_X = [0, 32, -32, 64, -64, 96, -96, 128, -128];
 
 // ------------------------------------------------------------------ small helpers
 
@@ -326,6 +326,55 @@ export function buildRocket(design, look, opts) {
   return { group: root, height, flames, stageGroups, boosterGroup, capsule: cap.group };
 }
 
+// Merges every static mesh under `root` into one mesh per material (far fewer draw calls).
+// Meshes marked userData.keep (and everything under such a group) are left alone.
+function mergeStatic(root) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map();
+  const victims = [];
+  const m = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3();
+  const walk = (o) => {
+    if (o.userData.keep) return;
+    for (const c of o.children) walk(c);
+    if (!o.isMesh) return;
+    const g = o.geometry;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    if (mats.some((x) => x.transparent)) return;
+    m.multiplyMatrices(inv, o.matrixWorld);
+    nm.getNormalMatrix(m);
+    const idx = g.index, pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+    const total = idx ? idx.count : pos.count;
+    const groups = g.groups.length && Array.isArray(o.material) ? g.groups : [{ start: 0, count: total, materialIndex: 0 }];
+    for (const gr of groups) {
+      const mat = mats[gr.materialIndex || 0];
+      const key = mat.uuid + (o.castShadow ? "s" : "n");
+      if (!buckets.has(key)) buckets.set(key, { mat, shadow: o.castShadow, p: [], n: [], u: [] });
+      const b = buckets.get(key);
+      for (let i = gr.start; i < Math.min(total, gr.start + gr.count); i++) {
+        const k = idx ? idx.getX(i) : i;
+        v.fromBufferAttribute(pos, k).applyMatrix4(m); b.p.push(v.x, v.y, v.z);
+        v.fromBufferAttribute(nor, k).applyMatrix3(nm).normalize(); b.n.push(v.x, v.y, v.z);
+        if (uv) b.u.push(uv.getX(k), uv.getY(k)); else b.u.push(0, 0);
+      }
+    }
+    victims.push(o);
+  };
+  walk(root);
+  for (const o of victims) o.parent.remove(o);
+  for (const b of buckets.values()) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(b.p, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(b.n, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(b.u, 2));
+    const mesh = new THREE.Mesh(geo, b.mat);
+    mesh.castShadow = b.shadow;
+    mesh.receiveShadow = true;
+    mesh.userData.keep = true;
+    root.add(mesh);
+  }
+}
+
 // ------------------------------------------------------------------ the 3D scene
 
 export class Scene3D {
@@ -354,6 +403,10 @@ export class Scene3D {
     this.time = 0;
     this.buildGround();
     this.buildMoonGround();
+    mergeStatic(this.clouds);
+    this.clouds.userData.keep = true;
+    mergeStatic(this.ground);
+    mergeStatic(this.moonGround);
     this.buildFar();
   }
 
@@ -376,6 +429,7 @@ export class Scene3D {
     };
     // land from 40 km west of the pad to 30 km east; sea all around it (no overlap, so no flicker)
     const land = plane(140000, 60000, 70, 30, "#4b9b3f");
+    land.userData.keep = true;
     land.position.set(-10000, 0, 0);
     G.add(land);
     const SEA = 1200000, sea = "#1e6fd0";
@@ -384,6 +438,7 @@ export class Scene3D {
       [140000, SEA, -10000, 30000 + SEA / 2], [140000, SEA, -10000, -30000 - SEA / 2]]) {
       const m = plane(w, d, Math.max(2, Math.round(w / 20000)), Math.max(2, Math.round(d / 20000)), sea);
       m.position.set(x, 0, z);
+      m.userData.keep = true;
       G.add(m);
     }
     add({ size: [900, 1, 300], pos: [0, 0.4, -40], color: "#9aa3ad" });   // concrete apron
@@ -433,19 +488,20 @@ export class Scene3D {
     const add = (o) => { const m = this.world.part(o); G.add(m); return m; };
     add({ size: [18, PAD_TOP, 18], pos: [x, PAD_TOP / 2, 0], color: "#6b7280" });
     add({ size: [6, 0.2, 6], pos: [x, PAD_TOP + 0.05, 0], color: "#facc15", material: "neon", studs: false, collide: false });
-    add({ size: [6, 0.4, 3], pos: [x, 0.2, -10.5], color: "#374151", studs: false });   // flame trench exit
-    // tower (lattice)
-    const tx = x + 12, H = 70;
-    for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) add({ size: [0.8, H, 0.8], pos: [tx + dx, H / 2, dz], color: "#dc2626", studs: false });
+    add({ size: [3, 0.4, 6], pos: [x + 10.5, 0.2, 0], color: "#374151", studs: false });   // flame trench exit
+    // tower (lattice), behind the pad
+    const tx = x, tz = -13, H = 70;
+    for (const [dx, dz] of [[-2, -2], [2, -2], [-2, 2], [2, 2]]) add({ size: [0.8, H, 0.8], pos: [tx + dx, H / 2, tz + dz], color: "#dc2626", studs: false });
     for (let y = 6; y < H; y += 7) {
-      add({ size: [4.8, 0.6, 0.6], pos: [tx, y, -2], color: "#ef4444", studs: false, shadow: false });
-      add({ size: [4.8, 0.6, 0.6], pos: [tx, y, 2], color: "#ef4444", studs: false, shadow: false });
-      add({ size: [0.6, 0.6, 4.8], pos: [tx - 2, y, 0], color: "#ef4444", studs: false, shadow: false });
-      add({ size: [0.6, 0.6, 4.8], pos: [tx + 2, y, 0], color: "#ef4444", studs: false, shadow: false });
+      add({ size: [4.8, 0.6, 0.6], pos: [tx, y, tz - 2], color: "#ef4444", studs: false, shadow: false });
+      add({ size: [4.8, 0.6, 0.6], pos: [tx, y, tz + 2], color: "#ef4444", studs: false, shadow: false });
+      add({ size: [0.6, 0.6, 4.8], pos: [tx - 2, y, tz], color: "#ef4444", studs: false, shadow: false });
+      add({ size: [0.6, 0.6, 4.8], pos: [tx + 2, y, tz], color: "#ef4444", studs: false, shadow: false });
     }
-    add({ size: [6, 1, 6], pos: [tx, H + 0.5, 0], color: "#9ca3af" });
-    add({ size: [0.3, 8, 0.3], pos: [tx, H + 5, 0], color: "#d1d5db", studs: false });
-    add({ size: [8, 1, 1.4], pos: [tx - 6, 18, 0], color: "#9ca3af", studs: false });   // service arm
+    add({ size: [6, 1, 6], pos: [tx, H + 0.5, tz], color: "#9ca3af" });
+    add({ size: [0.3, 8, 0.3], pos: [tx, H + 5, tz], color: "#d1d5db", studs: false });
+    add({ size: [1.4, 1, 7], pos: [tx, 18, tz + 5.5], color: "#9ca3af", studs: false });   // service arm
+    add({ size: [1.4, 1, 7], pos: [tx, 40, tz + 5.5], color: "#9ca3af", studs: false });
     const sign = this.world.label(`Pad ${i + 1}`, { height: 2.2, pos: [x - 6, PAD_TOP + 1.4, 9.3] });
     G.add(sign);
   }
@@ -457,6 +513,7 @@ export class Scene3D {
     geo.rotateX(-Math.PI / 2);
     const plain = new THREE.Mesh(geo, lam("#8f9196"));
     plain.receiveShadow = true;
+    plain.userData.keep = true;
     G.add(plain);
     add({ size: [300, 1, 300], pos: [0, -0.4, 0], color: "#a1a3a8" });
     let seed = 5;
@@ -479,6 +536,7 @@ export class Scene3D {
     this.flag.add(boxMesh(5, 3, 0.15, lam("#3b82f6"), 2.5, 7.4, 0));
     this.flag.add(boxMesh(1.6, 1.6, 0.2, lam("#facc15"), 2.5, 7.4, 0));
     this.flag.visible = false;
+    this.flag.userData.keep = true;
     G.add(this.flag);
   }
 
@@ -725,7 +783,8 @@ export class Scene3D {
     // camera
     const cam = this.world.cam;
     const dist = cam.dist * Math.max(1, (view.camScale || (L + 8) / 22));
-    const target = new THREE.Vector3(0, 0, 0);
+    // look a little below the rocket's middle so it sits a bit above the gauge
+    const target = new THREE.Vector3(0, -dist * 0.04, 0);
     const off = new THREE.Vector3(Math.sin(cam.yaw) * Math.cos(cam.pitch), Math.sin(cam.pitch), Math.cos(cam.yaw) * Math.cos(cam.pitch)).multiplyScalar(dist);
     if (view.shake) off.add(new THREE.Vector3((Math.random() - 0.5) * view.shake, (Math.random() - 0.5) * view.shake, 0));
     world.camera.position.copy(target).add(off);
