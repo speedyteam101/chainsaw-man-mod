@@ -57,15 +57,13 @@ glow("finish");
 finish("finish");
 sign("FINISH", 0, 18, -104);
 
-// ===== ALL THE COMMANDS =====
-// part(name, x, y, z, width, height, depth)   size(name, width, height, depth)   moveTo(name, x, y, z)
-// color(name, "red")  glow(name)  glass(name)  wood(name)  smooth(name)  ghost(name)
-// killOnTouch(name)   checkpoint(name)   finish(name)   bounce(name, power)   disappearOnTouch(name)
-// moveSideToSide(name, distance, speed)   moveUpAndDown(...)   moveForwardAndBack(...)   spin(name, speed)
-// coin(x, y, z)   sign("text", x, y, z)   hide(name)   show(name)
-// sky("blue")   lava()   spawn(x, y, z)   walkSpeed(16)   jumpPower(52)   message("Hi!")
+// ===== MORE COMMANDS =====
+// There are 100! Press Help, then "Easy 3D", to see them all. Some favorites:
+// stairs("stairs", 0, 0, -10, 8)   tree(10, 0, -5)   house("home", -20, 0, 0)   npc("Bob", 5, 0, -10)   talk("Bob", "Hi!")
+// follow("enemy", 6)   moveInCircle(name, 6, 1)   spin(name, 1)   fallOnTouch(name)   conveyor(name, 10)
+// teleport(name, 0, 10, -50)   speedBoost(name, 40, 3)   keyFor("key", "door")   coinDoor("door", 2)
+// rainbow(name)   blink(name, 1)   night()   doubleJump()   fly()   gravity(0.5)   timer(60)
 // onTouch(name, function () { message("You touched it!"); });
-// forever(function (dt) { ... });   runs again and again while you play
 </script>
 </body>
 </html>

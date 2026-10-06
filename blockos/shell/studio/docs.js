@@ -49,7 +49,7 @@ Go to that line in your code and look for things like:</p>
     id: "easy3d",
     title: "Easy 3D",
     html: `
-<p>The easiest way to make a 3D game. Start from the <b>Easy 3D obby</b> template, or put this in a new game:</p>
+<p>The easiest way to make a 3D game: <b>100 simple commands</b>. Start from the <b>Easy 3D obby</b> template, or put this in a new game:</p>
 <pre><code>&lt;!doctype html&gt;
 &lt;html&gt;
 &lt;head&gt;&lt;title&gt;My Obby&lt;/title&gt;&lt;link rel="stylesheet" href="kit.css"&gt;&lt;/head&gt;
@@ -66,44 +66,35 @@ killOnTouch("part 1");
 &lt;/html&gt;</code></pre>
 <h3>How it works</h3>
 <ul>
-  <li>Make a part and give it a name: <code>part("part 1", x, y, z)</code>. You can add a size too: <code>part("wall", 0, 3, -20, 10, 6, 1)</code> (width, height, depth).</li>
-  <li><b>x</b> is left and right, <b>y</b> is up, and <b>z</b> is forward: more negative means further ahead.</li>
-  <li>Then use the part's name to give it powers. Names can be anything, like <code>"part 1"</code> or <code>"Big Wall"</code>, but must match exactly.</li>
-  <li>You start on a yellow spawn pad at 0, 0, 0 (move it with <code>spawn(x, y, z)</code>). The game starts by itself.</li>
+  <li>Make a part and give it a name with <code>part("name", x, y, z)</code>. <b>x</b> is left and right, <b>y</b> is up, <b>z</b> is forward (more negative = further ahead).</li>
+  <li>Then use the name to give it powers. Names can be anything, like <code>"part 1"</code> or <code>"Big Wall"</code>.</li>
+  <li><b>Groups:</b> a name also means every part that starts with it. <code>color("stairs", "blue")</code> colors "stairs 1", "stairs 2" and so on.</li>
+  <li>You start on a yellow spawn pad at 0, 0, 0. The game starts by itself, with a timer, deaths and coins at the top.</li>
   <li>Capital letters in commands don't matter: <code>killOnTouch</code> and <code>killontouch</code> both work.</li>
+  <li>If you spell a name wrong, the Output panel tells you which part it couldn't find.</li>
 </ul>
-<h3>Looks</h3>
-<ul>
-  <li><code>color("part 1", "blue")</code>: red, orange, yellow, gold, lime, green, teal, cyan, lightblue, blue, darkblue, purple, pink, brown, white, gray, black, or a color code like <code>"#ff8800"</code>.</li>
-  <li><code>glow("part 1")</code>, <code>glass("part 1")</code>, <code>wood("part 1")</code>, <code>smooth("part 1")</code> (no studs).</li>
-  <li><code>size("part 1", width, height, depth)</code>, <code>moveTo("part 1", x, y, z)</code>.</li>
-  <li><code>sky("darkblue")</code>, <code>sign("Hello!", x, y, z)</code> for floating words.</li>
-</ul>
-<h3>Powers</h3>
-<ul>
-  <li><code>killOnTouch("part 1")</code>: touching it sends you back to your last checkpoint.</li>
-  <li><code>checkpoint("part 2")</code>: touching it saves your place (it turns green).</li>
-  <li><code>finish("end")</code>: touching it wins the game.</li>
-  <li><code>bounce("part 3", 100)</code>: a trampoline. Bigger numbers bounce higher.</li>
-  <li><code>disappearOnTouch("part 4")</code>: vanishes just after you touch it, then comes back.</li>
-  <li><code>ghost("part 5")</code>: you can walk through it.</li>
-  <li><code>moveSideToSide("part 6", 8, 1)</code>, <code>moveUpAndDown(...)</code>, <code>moveForwardAndBack(...)</code>: the numbers are how far and how fast. You can ride on moving parts.</li>
-  <li><code>spin("bar", 1)</code>: spins round. Spinning parts are ghosts, so add <code>killOnTouch</code> for a spinning kill bar.</li>
-  <li><code>coin(x, y, z)</code>: a coin to collect.</li>
-  <li><code>lava()</code>: lava far below, so falling sends you back.</li>
-  <li><code>walkSpeed(16)</code> and <code>jumpPower(52)</code> change how fast you walk and how high you jump.</li>
-  <li><code>hide("part 1")</code> and <code>show("part 1")</code>.</li>
-</ul>
-<h3>Your own code</h3>
-<pre><code>onTouch("button", function () {
+<h3>Building</h3>
+<table class="st-cmds"><tr><td><code>part("part 1", 0, 2, -10)</code></td><td>Make a part called "part 1" at x, y, z. Add a size: <code>part("wall", 0, 3, -20, 10, 6, 1)</code> (width, height, depth).</td></tr><tr><td><code>copy("part 1", "part 2", 0, 2, -20)</code></td><td>Copy a part (with all its powers) to a new place.</td></tr><tr><td><code>remove("part 1")</code></td><td>Delete a part.</td></tr><tr><td><code>floor("ground", 0, 0, -30, 20, 20)</code></td><td>A flat floor (width, depth).</td></tr><tr><td><code>wall("wall", 0, 0, -40, 12, 8)</code></td><td>A wall standing on y (width, height).</td></tr><tr><td><code>tower("tower", 10, 0, -40, 20)</code></td><td>A tall tower (height).</td></tr><tr><td><code>stairs("stairs", 0, 0, -10, 8)</code></td><td>Stairs going forward: "stairs 1" to "stairs 8".</td></tr><tr><td><code>row("hops", 0, 0, -10, 5, 9)</code></td><td>A row of jump blocks: "hops 1" to "hops 5", 9 apart.</td></tr><tr><td><code>tree(10, 0, -5)</code></td><td>A tree.</td></tr><tr><td><code>cloud(0, 40, -50)</code></td><td>A cloud in the sky.</td></tr><tr><td><code>house("home", -20, 0, 0)</code></td><td>A little house with a door gap.</td></tr><tr><td><code>baseplate()</code></td><td>A big green floor everywhere. <code>baseplate("sand")</code> for another color.</td></tr><tr><td><code>lava()</code></td><td>Lava far below: fall in and you go back to your checkpoint.</td></tr><tr><td><code>sign("Hello!", 0, 5, -10)</code></td><td>Floating words.</td></tr><tr><td><code>npc("Bob", 5, 0, -10)</code></td><td>A character who looks at you. Make them speak with <code>talk</code>.</td></tr></table>
+<h3>How parts look</h3>
+<table class="st-cmds"><tr><td><code>color("part 1", "blue")</code></td><td>red, orange, yellow, gold, lime, green, darkgreen, teal, cyan, lightblue, blue, darkblue, purple, pink, brown, sand, white, gray, black, or a code like <code>"#ff8800"</code>.</td></tr><tr><td><code>randomColor("part 1")</code></td><td>A random bright color.</td></tr><tr><td><code>rainbow("part 1")</code></td><td>Keeps changing color.</td></tr><tr><td><code>glow("part 1")</code></td><td>Glowing neon.</td></tr><tr><td><code>glass("part 1")</code></td><td>See-through glass.</td></tr><tr><td><code>wood("part 1")</code></td><td>Wood.</td></tr><tr><td><code>smooth("part 1")</code></td><td>No studs on top.</td></tr><tr><td><code>transparent("part 1", 0.5)</code></td><td>See-through: 0 = solid, 1 = gone.</td></tr><tr><td><code>invisible("part 1")</code></td><td>Can't be seen, but you can still stand on it.</td></tr><tr><td><code>ghost("part 1")</code></td><td>You can walk through it. <code>solid("part 1")</code> makes it solid again.</td></tr><tr><td><code>blink("part 1", 1)</code></td><td>Appears and disappears every 1 second.</td></tr><tr><td><code>size("part 1", 4, 1, 4)</code></td><td>Change its size.</td></tr><tr><td><code>scale("part 1", 2)</code></td><td>Make it 2 times bigger (0.5 = half).</td></tr><tr><td><code>rotate("part 1", 45)</code></td><td>Turn it round (degrees).</td></tr><tr><td><code>label("part 1", "Jump here!")</code></td><td>Words floating above the part.</td></tr><tr><td><code>hide("part 1")</code></td><td>Make it vanish. <code>show("part 1")</code> brings it back.</td></tr></table>
+<h3>Moving parts</h3>
+<table class="st-cmds"><tr><td><code>moveSideToSide("part 1", 8, 1)</code></td><td>Moves left and right (how far, how fast). You can ride it!</td></tr><tr><td><code>moveUpAndDown("part 1", 4, 1)</code></td><td>An elevator.</td></tr><tr><td><code>moveForwardAndBack("part 1", 8, 1)</code></td><td>Moves forward and back.</td></tr><tr><td><code>moveInCircle("part 1", 6, 1)</code></td><td>Goes round in a circle (size, speed).</td></tr><tr><td><code>spin("bar", 1)</code></td><td>Spins round. Spinning parts are ghosts: add <code>killOnTouch</code> for a spinning kill bar.</td></tr><tr><td><code>follow("enemy", 6)</code></td><td>Chases you! Add <code>killOnTouch("enemy")</code> to make it dangerous.</td></tr><tr><td><code>moveTo("part 1", 0, 5, -10)</code></td><td>Jump straight to a new place.</td></tr><tr><td><code>slideTo("part 1", 0, 5, -10, 2)</code></td><td>Slide smoothly to a new place in 2 seconds.</td></tr><tr><td><code>conveyor("belt", 10)</code></td><td>A conveyor belt that pushes you forward (negative pushes back).</td></tr><tr><td><code>fallOnTouch("part 1")</code></td><td>Shakes and falls when you step on it, then comes back.</td></tr><tr><td><code>stopMoving("part 1")</code></td><td>Stops it moving.</td></tr></table>
+<h3>Touch powers (something happens when you touch the part)</h3>
+<table class="st-cmds"><tr><td><code>killOnTouch("part 1")</code></td><td>Sends you back to your last checkpoint.</td></tr><tr><td><code>checkpoint("part 2")</code></td><td>Saves your place (turns green).</td></tr><tr><td><code>finish("end")</code></td><td>You win!</td></tr><tr><td><code>bounce("part 3", 100)</code></td><td>A trampoline. Bigger numbers bounce higher.</td></tr><tr><td><code>disappearOnTouch("part 4")</code></td><td>Vanishes just after you touch it, then comes back.</td></tr><tr><td><code>coin(0, 3, -20)</code></td><td>A coin to collect. <code>coin("part 1")</code> turns a part into a coin.</td></tr><tr><td><code>coinDoor("door", 5)</code></td><td>The door opens once you have 5 coins.</td></tr><tr><td><code>keyFor("gold key", "door")</code></td><td>Touch the key to open the door.</td></tr><tr><td><code>toggle("button", "bridge")</code></td><td>Touch the button to make the bridge appear or vanish.</td></tr><tr><td><code>teleport("pad", 0, 10, -50)</code></td><td>Teleports you to x, y, z. Or to another part: <code>teleport("pad", "island")</code>.</td></tr><tr><td><code>speedBoost("pad", 40, 3)</code></td><td>Run super fast for 3 seconds.</td></tr><tr><td><code>superJump("pad", 90, 5)</code></td><td>Jump super high for 5 seconds.</td></tr><tr><td><code>damage("spikes", 25)</code></td><td>Hurts you (a health bar appears). At 0 health you go back.</td></tr><tr><td><code>heal("medkit", 50)</code></td><td>Heals you.</td></tr><tr><td><code>pointsOnTouch("gem", 10)</code></td><td>Gives you points (once).</td></tr><tr><td><code>messageOnTouch("part 1", "Hi!")</code></td><td>Shows a message.</td></tr><tr><td><code>soundOnTouch("part 1", "win")</code></td><td>Plays a sound: "click", "score", "hit", "jump", "lose", "win" or "coin".</td></tr><tr><td><code>badgeOnTouch("secret", "Secret Finder")</code></td><td>Gives you a badge.</td></tr><tr><td><code>talk("Bob", "Hello!")</code></td><td>An npc says something when you walk up to them.</td></tr><tr><td><code>onTouch("part 1", function () { ... })</code></td><td>Runs your own code.</td></tr></table>
+<h3>You, the player</h3>
+<table class="st-cmds"><tr><td><code>spawn(0, 0, 0)</code></td><td>Where you start.</td></tr><tr><td><code>walkSpeed(30)</code></td><td>How fast you walk (normal is 16).</td></tr><tr><td><code>jumpPower(70)</code></td><td>How high you jump (normal is 52).</td></tr><tr><td><code>gravity(0.5)</code></td><td>Less gravity, like the moon (1 = normal, 2 = heavy).</td></tr><tr><td><code>fly()</code></td><td>Hold Space to fly up.</td></tr><tr><td><code>doubleJump()</code></td><td>Press Space again in the air for a second jump.</td></tr><tr><td><code>zoom(30)</code></td><td>How far away the camera is (4 to 60).</td></tr><tr><td><code>teleportPlayer(0, 10, -50)</code></td><td>Move yourself somewhere.</td></tr><tr><td><code>killPlayer()</code></td><td>Back to your checkpoint.</td></tr><tr><td><code>freeze()</code></td><td>Stop moving. <code>unfreeze()</code> to move again.</td></tr><tr><td><code>playerPosition()</code></td><td>Where you are: <code>playerPosition().y</code> is how high.</td></tr><tr><td><code>distanceTo("part 1")</code></td><td>How far you are from a part.</td></tr><tr><td><code>touching("part 1")</code></td><td>true while you touch the part.</td></tr></table>
+<h3>The game</h3>
+<table class="st-cmds"><tr><td><code>timer(60)</code></td><td>You have 60 seconds, or it's game over.</td></tr><tr><td><code>win()</code></td><td>You win!</td></tr><tr><td><code>lose("Oh no!")</code></td><td>Game over, with a message.</td></tr><tr><td><code>restart()</code></td><td>Start everything again.</td></tr><tr><td><code>addPoints(5)</code></td><td>Add points. <code>setPoints(0)</code>, <code>getPoints()</code>.</td></tr><tr><td><code>winAtPoints(100)</code></td><td>You win when you reach 100 points.</td></tr><tr><td><code>message("Hi!")</code></td><td>Show a message.</td></tr><tr><td><code>popup("Welcome", "Have fun!")</code></td><td>A big message with an OK button.</td></tr><tr><td><code>playSound("coin")</code></td><td>Play a sound.</td></tr><tr><td><code>random(1, 10)</code></td><td>A random whole number from 1 to 10.</td></tr><tr><td><code>forever(function (dt) { ... })</code></td><td>Runs again and again while you play.</td></tr><tr><td><code>every(2, function () { ... })</code></td><td>Runs every 2 seconds.</td></tr><tr><td><code>wait(3, function () { ... })</code></td><td>Runs once after 3 seconds.</td></tr><tr><td><code>onWin(function () { ... })</code></td><td>Runs when you win.</td></tr><tr><td><code>onDeath(function () { ... })</code></td><td>Runs when you fall or get killed.</td></tr></table>
+<h3>Sky and light</h3>
+<table class="st-cmds"><tr><td><code>sky("darkblue")</code></td><td>The sky color.</td></tr><tr><td><code>night()</code></td><td>Night time. <code>day()</code> for day.</td></tr><tr><td><code>sunset()</code></td><td>An orange sunset.</td></tr><tr><td><code>fog(5)</code></td><td>Foggy (0 = none, 10 = very foggy).</td></tr></table>
+<h3>Example: a secret door</h3>
+<pre><code>part("button", 5, 0, -10, 2, 1, 2);
+color("button", "red");
+part("secret door", 0, 3, -20, 6, 6, 1);
+onTouch("button", function () {
   message("You found the secret!");
   hide("secret door");
-});
-
-forever(function (dt) {
-  // runs again and again while you play
 });</code></pre>
-<p>If you spell a name wrong, the Output panel tells you which part it couldn't find.</p>
 `,
   },
   {

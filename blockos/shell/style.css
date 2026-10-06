@@ -574,3 +574,7 @@ select {
   .st-help nav button { white-space: nowrap; }
   .com-row img { width: 80px; }
 }
+.st-cmds { width: 100%; border-collapse: collapse; margin: 6px 0 14px; font-size: 14px; }
+.st-cmds td { padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.st-cmds td:first-child { width: 46%; }
+.st-cmds code { white-space: normal; word-break: break-word; }
