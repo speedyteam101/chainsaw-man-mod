@@ -180,7 +180,7 @@
     const plays = state.plays[g.id] || 0;
     return `<button class="tile" data-open="${g.id}">${thumb(g)}
       <div class="t-name">${esc(g.title)}</div>
-      <div class="t-meta"><span>${esc(g.genre)}</span><span>${plays ? plays + (plays === 1 ? " play" : " plays") : "New"}</span>${g.multiplayer ? (lobby.stats[g.id] ? `<span class="t-online">${lobby.stats[g.id]} playing</span>` : '<span class="t-online">Online</span>') : ""}${g.is3d ? '<span class="t-3d">3D</span>' : ""}</div></button>`;
+      <div class="t-meta"><span>${esc(g.genre)}</span><span>${plays ? plays + (plays === 1 ? " play" : " plays") : "New"}</span>${g.multiplayer ? (lobby.stats[g.id] ? `<span class="t-online">${Number(lobby.stats[g.id]) || 0} playing</span>` : '<span class="t-online">Online</span>') : ""}${g.is3d ? '<span class="t-3d">3D</span>' : ""}</div></button>`;
   }
   function row(title, games, seeAll) {
     if (!games.length) return "";
@@ -669,7 +669,9 @@
         if (view.page === "friends" || view.page === "community") render();
       }
       else if (m.t === "list") {
-        serverLists[m.game] = { servers: m.servers || {}, max: m.max || 12, time: Date.now() };
+        const servers = {};   // only well-formed entries: a server run by a stranger could send anything
+        for (const [k, v] of Object.entries(m.servers || {})) if (/^s\d{1,3}$/.test(k)) servers[k] = Number(v) || 0;
+        serverLists[m.game] = { servers, max: Number(m.max) || 12, time: Date.now() };
         renderServerList(m.game);
       } else if (m.t === "stats") {
         const changed = JSON.stringify(lobby.stats) !== JSON.stringify(m.games || {});

@@ -408,8 +408,8 @@ window.BlockStudio = function (ctx) {
     const w = publishWaiting;
     publishWaiting = null;
     if (!w) return;
-    if (m.error) {
-      toast(esc(m.error));
+    if (m.error || !/^[a-z0-9]{1,16}$/.test(String(m.id))) {
+      toast(esc(str(m.error, 200) || "Couldn't publish."));
       const btn = $('[data-st="publish-go"]');
       if (btn) { btn.disabled = false; btn.textContent = "Publish"; }
       return;
@@ -452,13 +452,28 @@ window.BlockStudio = function (ctx) {
   }
 
   const PAGES_THAT_SHOW_COMMUNITY = ["community"];
+  // Whatever a server sends is cleaned up first: a server run by a stranger could send anything.
+  const num = (x) => (Number.isFinite(Number(x)) ? Math.max(0, Number(x)) : 0);
+  const str = (x, max) => String(x === undefined || x === null ? "" : x).slice(0, max);
+  function cleanGame(g) {
+    if (!g || typeof g !== "object" || !/^[a-z0-9]{1,16}$/.test(String(g.id))) return null;
+    return {
+      id: String(g.id), title: str(g.title, 60) || "Untitled", desc: str(g.desc, 400), genre: str(g.genre, 20),
+      color: /^#[0-9a-f]{6}$/i.test(g.color) ? g.color : "#3b82f6", author: str(g.author, 30),
+      status: ["pending", "approved", "hidden"].includes(g.status) ? g.status : "pending",
+      plays: num(g.plays), likes: num(g.likes), liked: !!g.liked, mine: !!g.mine, updated: num(g.updated),
+      reports: Array.isArray(g.reports) ? g.reports.slice(0, 50).map((r) => ({ reason: str(r && r.reason, 20) })) : undefined,
+    };
+  }
+  const cleanList = (l) => (Array.isArray(l) ? l.map(cleanGame).filter(Boolean) : []);
+
   // Messages from the game server about community games. Returns true if it was one.
   function onLobby(m) {
     switch (m.t) {
       case "clist":
-        com.games = m.games || [];
-        com.mine = m.mine || [];
-        com.review = m.review || [];
+        com.games = cleanList(m.games);
+        com.mine = cleanList(m.mine);
+        com.review = cleanList(m.review);
         com.mod = !!m.mod;
         if (PAGES_THAT_SHOW_COMMUNITY.includes(ctx.view.page) && ctx.playerHidden()) rerender();
         return true;
@@ -485,10 +500,13 @@ window.BlockStudio = function (ctx) {
       case "cget": {
         const cb = com.gets[m.id];
         delete com.gets[m.id];
-        if (cb) m.error ? toast(esc(m.error)) : cb(m);
+        if (!cb) return true;
+        if (m.error || typeof m.code !== "string" || !cleanGame(m.game)) toast(esc(str(m.error, 200) || "Couldn't load that game."));
+        else cb({ code: m.code, game: cleanGame(m.game) });
         return true;
       }
       case "clike":
+        m.game = cleanGame(m.game);
         if (m.game) {
           for (const list of [com.games || [], com.mine, com.review]) {
             const x = list.find((y) => y.id === m.game.id);
@@ -501,7 +519,7 @@ window.BlockStudio = function (ctx) {
         toast(m.ok ? "Thanks for telling us. The server's owner will look at it." : "Couldn't send the report.");
         return true;
       case "cmod":
-        if (m.ok) toast(m.action === "approve" ? "Approved: everyone can see it now." : m.action === "hide" ? "Hidden from the Community page." : "Deleted.");
+        if (m.ok === true) toast(m.action === "approve" ? "Approved: everyone can see it now." : m.action === "hide" ? "Hidden from the Community page." : "Deleted.");
         requestList();
         return true;
     }
