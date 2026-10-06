@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My 3D Obby</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+
+<!-- Touch buttons (only shown on touch screens). Drag on the game to turn the camera. -->
+<div class="tc" id="touch" style="display: none">
+  <div class="tc-left">
+    <div class="tc-pad">
+      <button class="tc-btn tc-d-up" data-key="KeyW">^</button>
+      <button class="tc-btn tc-d-left" data-key="KeyA">&lt;</button>
+      <button class="tc-btn tc-d-right" data-key="KeyD">&gt;</button>
+      <button class="tc-btn tc-d-down" data-key="KeyS">v</button>
+    </div>
+  </div>
+  <div class="tc-right">
+    <button class="tc-btn" data-key="Space">Jump</button>
+  </div>
+</div>
+
+<script src="kit.js"></script>
+<!-- The 3D kit is a "module", so it is loaded with import instead of a script tag. -->
+<script type="module">
+import { World } from "./kit3d.js";
+
+// Your game's name for badges, best times and online play. Rename it!
+// Use only lowercase letters, numbers and dashes, up to 20 letters long.
+const GAME_ID = "my-3d-obby";
+
+// Make the 3D world. sky = the sky color.
+const world = new World({ sky: "#8fd3ff" });
+
+// ---------- Build the obby ----------
+// world.part makes a block. size = [width, height, depth], pos = [x, y, z] of its middle.
+// Going forward is toward -z (z gets more negative), and y is up.
+const LAVA = "#f97316";
+const STAGE_COLORS = ["#22c55e", "#3b82f6", "#a855f7"];   // Change these to recolor each stage
+
+// Lava far below: falling in it sends you back to your last checkpoint.
+world.part({ size: [300, 1, 400], pos: [0, -14, -60], color: LAVA, material: "neon", kill: true, studs: false });
+
+// Start: a floor and a spawn pad (the spawn pad is your first checkpoint).
+world.part({ size: [16, 1, 16], pos: [0, -1, 0], color: "#64748b" });
+world.spawnPad([0, 0, 0]);
+
+// Stage 1: jump across blocks, each one a bit higher.
+world.part({ size: [5, 1, 5], pos: [0, -0.5, -14], color: STAGE_COLORS[0] });
+world.part({ size: [5, 1, 5], pos: [0, 1, -22], color: STAGE_COLORS[0] });
+world.part({ size: [5, 1, 5], pos: [0, 2.5, -30], color: STAGE_COLORS[0] });
+checkpointPlatform(0, 3, -42, 1);
+
+// Stage 2: a bridge with kill bricks on it. Jump over the red ones!
+world.part({ size: [4, 1, 24], pos: [0, 2.5, -61], color: STAGE_COLORS[1] });
+world.part({ size: [4, 1, 2], pos: [0, 3.5, -56], color: "#ef4444", material: "neon", kill: true });
+world.part({ size: [4, 1, 2], pos: [0, 3.5, -66], color: "#ef4444", material: "neon", kill: true });
+// A moving platform (moving: true lets you ride on it). It moves in the game loop below.
+const mover = world.part({ size: [6, 1, 6], pos: [0, 2.5, -80], color: "#facc15", moving: true });
+checkpointPlatform(0, 3, -92, 2);
+
+// Stage 3: stairs up to the finish.
+for (let i = 0; i < 4; i++) {
+  world.part({ size: [4, 1, 4], pos: [0, 4 + i * 1.5, -102 - i * 6], color: STAGE_COLORS[2] });
+}
+world.part({ size: [12, 1, 12], pos: [0, 9.5, -132], color: "#64748b" });
+// The finish pad: touching it wins the game.
+world.part({ size: [6, 0.4, 6], pos: [0, 10.2, -132], color: "#facc15", material: "neon", studs: false, onTouch: finish });
+world.label("FINISH", { pos: [0, 17, -132], height: 3 });
+world.label("My 3D Obby", { pos: [0, 8, -10], height: 2.5 });
+
+// A platform with a glowing checkpoint pad on top. y = the top of the platform.
+function checkpointPlatform(x, y, z, number) {
+  world.part({ size: [10, 1, 10], pos: [x, y - 0.5, z], color: "#64748b" });
+  const pad = world.part({
+    size: [4, 0.2, 4], pos: [x, y + 0.1, z], color: "#94a3b8", material: "neon", studs: false, collide: false,
+    onTouch: () => {
+      if (stage > number) return;           // already got this one
+      stage = number + 1;
+      world.checkpoint([x, y + 0.5, z]);     // respawn here from now on
+      pad.material.forEach((m) => m.color.set("#22c55e"));   // turn the pad green
+      Kit.sfx("score");
+    },
+  });
+  // Give this pad its own paint, so turning it green doesn't recolor other parts too.
+  pad.material = pad.material.map((m) => m.clone());
+  world.label("Checkpoint " + number, { pos: [x, y + 5, z], height: 1.5 });
+}
+
+// ---------- The player ----------
+const me = world.spawnPlayer({ pos: [0, 1, 0] });
+let stage = 1, deaths = 0, time = 0, finished = false;
+world.onDeath(() => { deaths++; });
+
+async function finish() {
+  if (finished) return;
+  finished = true;
+  me.frozen = true;   // stop walking while the message shows
+  Kit.sfx("win");
+  Kit.badge(GAME_ID, "finished", "Obby Winner", "Reached the finish.");
+  if (deaths === 0) Kit.badge(GAME_ID, "no-deaths", "Lava Proof", "Finished without falling once.");
+  const best = Kit.finish(GAME_ID, Math.round(time * 10) / 10, true);   // true = a lower time is better
+  await Kit.overlay("You did it!", "Time: " + time.toFixed(1) + "s   Deaths: " + deaths + "\nBest time: " + best + "s", "Play again");
+  // Start over from the beginning.
+  world.checkpoint([0, 1, 0]);
+  world.respawn();
+  stage = 1; deaths = 0; time = 0; finished = false; me.frozen = false;
+}
+
+// ---------- Online play ----------
+// Shows other players in your game as avatars, with chat (press / to chat).
+// When BlockOS isn't online, you just play on your own.
+const net = Kit.net(GAME_ID);
+world.online(net);
+
+// ---------- Game loop: runs every frame ----------
+let clock = 0;
+world.start((dt) => {
+  clock += dt;
+  mover.position.x = Math.sin(clock * 1.2) * 7;   // slide left and right (7 = how far)
+  if (!finished) time += dt;
+  Kit.hud("Time " + time.toFixed(1) + "<small>Stage " + Math.min(stage, 3) + " of 3 - Deaths " + deaths + "</small>");
+});
+
+// ---------- Touch buttons ----------
+// Each button with data-key="..." holds that key down while a finger is on it.
+document.querySelectorAll("[data-key]").forEach((btn) => {
+  const send = (type) => document.body.dispatchEvent(new KeyboardEvent(type, { code: btn.dataset.key, bubbles: true }));
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add("on"); send("keydown"); });
+  const up = () => { if (btn.classList.contains("on")) { btn.classList.remove("on"); send("keyup"); } };
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("lostpointercapture", up);
+});
+if (navigator.maxTouchPoints > 0) document.getElementById("touch").style.display = "flex";
+</script>
+</body>
+</html>

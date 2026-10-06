@@ -68,6 +68,12 @@
     star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     online: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/>',
+    create: '<path d="m8 8-5 4 5 4M16 8l5 4-5 4M14 4l-4 16"/>',
+    community: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/>',
+    back: '<path d="M15 5l-7 7 7 7"/>',
+    expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+    download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+    upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
     badge: '<circle cx="12" cy="9" r="6"/><path d="m8.5 13.5-1.5 7.5 5-3 5 3-1.5-7.5"/>',
     friends: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.5a5 5 0 0 1 6 5"/>',
   };
@@ -206,6 +212,8 @@
   const NAV = [
     { id: "home", label: "Home" },
     { id: "discover", label: "Discover" },
+    { id: "community", label: "Community" },
+    { id: "create", label: "Create" },
     { id: "avatar", label: "Avatar" },
     { id: "online", label: "Play Online" },
     { id: "friends", label: "Friends" },
@@ -216,6 +224,8 @@
   const page = $("#page");
 
   function go(p, opts) {
+    if (view.page === "create" && (p !== "create" || !(opts && opts.studioGame))) Studio.leaving();
+    if (!opts || !("studioGame" in opts)) view.studioGame = null;
     Object.assign(view, opts || {}, { page: p });
     if (p !== "search") { view.query = ""; $("#search").value = ""; }
     render();
@@ -236,6 +246,9 @@
   }
 
   const PAGES = {
+    create() { Studio.createPage(page, view); },
+    community() { Studio.communityPage(page, view); },
+
     home() {
       const rec = recent().slice(0, 12);
       let html = `<div class="hello"><div class="headshot">${Avatar.draw(state.avatar, { headshot: true })}</div>
@@ -647,7 +660,14 @@
     ws.onmessage = (ev) => {
       let m;
       try { m = JSON.parse(ev.data); } catch (_) { return; }
-      if (m.t === "welcome") { lobby.connected = true; askWho(); lobby.send({ t: "stats" }); if (view.page === "friends") render(); }
+      if (!m || Studio.onLobby(m)) return;   // community games (studio/studio.js)
+      if (m.t === "welcome") {
+        lobby.connected = true;
+        askWho();
+        lobby.send({ t: "stats" });
+        Studio.onConnected();
+        if (view.page === "friends" || view.page === "community") render();
+      }
       else if (m.t === "list") {
         serverLists[m.game] = { servers: m.servers || {}, max: m.max || 12, time: Date.now() };
         renderServerList(m.game);
@@ -678,7 +698,9 @@
       else if (m.t === "fr-offline" && m.kind === "request") toast("That friend code isn't online right now. They need to be online on this server to get your request.");
     };
     ws.onclose = () => {
+      const was = lobby.connected;
       lobby.connected = false;
+      if (was && view.page === "community" && player.hidden) setTimeout(render);
       lobby.presence = {};
       lobby.stats = {};
       if (lobby.ws === ws) { lobby.ws = null; setTimeout(lobbyConnect, 4000); }
@@ -848,15 +870,36 @@
     $("#pmTitle").textContent = g.title;
     pmenu.hidden = true;
     player.hidden = false;
+    sandboxed = null;
+    frame.removeAttribute("sandbox");
+    frame.removeAttribute("srcdoc");
     frame.src = `games/${id}/index.html${server ? `?server=${server}` : ""}`;
     if (server) toast(`Joining ${esc(g.title)}, ${serverName(server)}`);
     frame.onload = () => frame.contentWindow && frame.contentWindow.focus();
   }
+  // A game a player made (Create, or Community): runs in the sandbox from studio/runner.js.
+  let sandboxed = null;   // { title, code, dataId, server }
+  function playSandboxed(game) {
+    closeModal();
+    closeMenu();
+    sandboxed = game;
+    playing = "u:" + game.dataId;
+    $("#pmTitle").textContent = game.title;
+    pmenu.hidden = true;
+    player.hidden = false;
+    loadSandboxed();
+    frame.onload = () => frame.contentWindow && frame.contentWindow.focus();
+  }
+  function loadSandboxed() {
+    StudioRunner.load(frame, sandboxed.code, { id: sandboxed.dataId, server: sandboxed.server, data: StudioRunner.loadData(sandboxed.dataId) });
+  }
   function leaveGame() {
     player.hidden = true;
     pmenu.hidden = true;
+    frame.removeAttribute("srcdoc");
     frame.src = "about:blank";
     playing = null;
+    sandboxed = null;
     render();
   }
   function togglePlayerMenu(show) {
@@ -868,7 +911,7 @@
   pmenu.addEventListener("click", (e) => {
     const act = e.target.dataset.pm;
     if (act === "resume") togglePlayerMenu(false);
-    if (act === "restart") { pmenu.hidden = true; frame.src = frame.src; }
+    if (act === "restart") { pmenu.hidden = true; if (sandboxed) loadSandboxed(); else frame.src = frame.src; }
     if (act === "leave") leaveGame();
     if (e.target === pmenu) togglePlayerMenu(false);
   });
@@ -877,6 +920,12 @@
   window.addEventListener("message", (e) => {
     if (e.source !== frame.contentWindow || !e.data || typeof e.data !== "object") return;
     if (e.data.type === "blockos:escape") return togglePlayerMenu();
+    if (sandboxed) {
+      // Made-by-players games keep their own saves, and don't earn Bricks (anyone could write a game that hands them out).
+      if (e.data.type === "blockos:studio-save") StudioRunner.onSave(sandboxed.dataId, e.data.data);
+      if (e.data.type === "blockos:badge") toast(`<b>Badge: ${esc(String(e.data.name || ""))}</b><br><small>Badges in community games don't give Bricks.</small>`);
+      return;
+    }
     if (e.data.type === "blockos:badge" && e.data.game === playing) {
       state.bricks += 10;
       save();
@@ -1055,6 +1104,14 @@
     $("#clock").textContent = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
 
+  // ---------------------------------------------------------------- Create & Community (studio/studio.js)
+
+  const Studio = window.BlockStudio({
+    $, $$, esc, icon, toast, openModal, closeModal, confirmDialog, fallbackThumb, state, lobby, view, go, render, webOnly, playSandboxed,
+    onlineInfo: () => onlineInfo,
+    playerHidden: () => player.hidden,
+  });
+
   // ---------------------------------------------------------------- start
 
   applyTheme();
@@ -1072,7 +1129,7 @@
   } catch (_) {}
   updateOnlinePill();
   lobbyConnect();
-  loadOnlineInfo().then(watchInternet);
+  loadOnlineInfo().then(() => { watchInternet(); if (lobby.connected) Studio.onConnected(); });
   loadSysInfo().then(() => render());
   setTimeout(() => $("#boot").classList.add("done"), 1300);
   setTimeout(() => $("#boot").remove(), 1900);

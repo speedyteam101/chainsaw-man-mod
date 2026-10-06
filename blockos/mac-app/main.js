@@ -28,12 +28,13 @@ function lanAddresses() {
 const tunnel = createTunnel({ dir: () => path.join(app.getPath("userData"), "bin"), fetch: (u) => net.fetch(u), port: GAME_PORT });
 
 function onlineInfo() {
-  return { hosting: !!gameServer, port: GAME_PORT, addresses: gameServer ? lanAddresses() : [], internet: tunnel.info() };
+  // modKey makes this BlockOS a moderator of the community games on its own server.
+  return { hosting: !!gameServer, port: GAME_PORT, addresses: gameServer ? lanAddresses() : [], internet: tunnel.info(), modKey: gameServer ? gameServer.modKey : null };
 }
 
 async function setHosting(on) {
   if (on && !gameServer) {
-    const server = relay.start(GAME_PORT);
+    const server = relay.start(GAME_PORT, undefined, { dataDir: path.join(app.getPath("userData"), "community") });
     await server.ready;   // throws if the port is busy
     gameServer = server;
   } else if (!on && gameServer) {
@@ -75,7 +76,7 @@ const NATIVE_APPS = IS_WINDOWS
     };
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "blockos", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: "blockos", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
 ]);
 
 const json = (status, body) =>
@@ -135,7 +136,14 @@ function serveFiles() {
 
     const file = path.normalize(path.join(SHELL_DIR, pathname === "/" ? "index.html" : pathname));
     if (!file.startsWith(SHELL_DIR + path.sep)) return new Response("forbidden", { status: 403 });
-    return net.fetch(pathToFileURL(file).toString());
+    if (!pathname.startsWith("/games/")) return net.fetch(pathToFileURL(file).toString());
+    // Games made by players run in a sandbox with no origin of their own (studio/runner.js);
+    // loading the 3D kit as a module from there needs this CORS header.
+    return net.fetch(pathToFileURL(file).toString()).then((res) => {
+      const headers = new Headers(res.headers);
+      headers.set("Access-Control-Allow-Origin", "*");
+      return new Response(res.body, { status: res.status, headers });
+    });
   });
 }
 

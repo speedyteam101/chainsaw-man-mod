@@ -19,7 +19,8 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| Desktop shell | `shell/` | The BlockOS desktop: Home, Discover, Avatar (with a shop), Apps, Settings, the Game Menu and the in-game menu. Plain HTML/CSS/JS, works offline. |
+| Desktop shell | `shell/` | The BlockOS desktop: Home, Discover, Community, Create, Avatar (with a shop), Apps, Settings, the Game Menu and the in-game menu. Plain HTML/CSS/JS, works offline. |
+| Create studio | `shell/studio/` | Write your own games in a code editor with templates and a help guide, test them, and publish them. Player-made games run in a locked sandbox (`studio/runner.js`). |
 | Games | `shell/games/` | 70 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
 | 3D kit | `shell/games/kit3d.js` | Roblox-style 3D worlds (bundled three.js): studded parts, your avatar as a 3D character, camera, physics, other online players. |
 | Game server | `multiplayer/relay.js` | Lets players play together online (Node.js). Hosted from the Play Online page, or on the internet. |
@@ -128,6 +129,25 @@ and please report the error.
   Switch between windows with Alt+Tab.
 - **Settings** has your display name, dark/light mode, accent color, game sounds, progress reset,
   system info, and Restart / Shut down. The power button in the top bar does the same.
+
+## Make your own games (Create and Community)
+
+Open **Create** to make games with code, like Roblox Studio:
+
+- **New game** starts from a template (Clicker, Platformer, Dodge, 3D obby, Online hangout and
+  more) with comments that explain what to change. **Help** has a guide to the BlockOS game kit.
+- **Run** (Ctrl+Enter) shows your game next to the code; mistakes appear under **Output** with
+  the line number (click it to jump there). Your games save on this computer as you type.
+- **Save file** keeps a copy as an `.html` file, and **Open a file** loads one, so you can
+  share a game by sending the file.
+- **Publish** puts your game on the server you're online on. The server's owner checks it first;
+  after that, everyone on that server finds it on the **Community** page, where they can play it,
+  like it, **Remix** it (copy it into Create to see how it works) or **Report** it.
+
+Community games run in a sandbox: they can't see your Bricks, friends or other games, can't open
+websites, and don't earn Bricks. If you host the server, you're its moderator: new games to
+check appear under **Community → Review**. Moderating a server you run elsewhere is explained in
+[`multiplayer/README.md`](multiplayer/README.md#community-games-made-by-players).
 
 ## Play online with friends
 

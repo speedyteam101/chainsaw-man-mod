@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Hangout</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+
+<!-- Touch buttons (only shown on touch screens). Tap the ground to walk there. -->
+<div class="tc" id="touch" style="display: none">
+  <div class="tc-left"></div>
+  <div class="tc-right">
+    <button class="tc-btn" data-key="Space">Jump</button>
+    <button class="tc-btn" data-key="KeyC">Confetti</button>
+  </div>
+</div>
+
+<script src="kit.js"></script>
+<script>
+// Your game's name for badges and online play. Rename it to something only you would pick!
+// Use only lowercase letters, numbers and dashes, up to 20 letters long.
+// Everyone whose game has the same name ends up in the same online world.
+const GAME_ID = "my-hangout";
+
+const { canvas, ctx, W, H } = Kit.stage(960, 540);
+
+// ---------- The world ----------
+// Add, move or remove things here. x, y = where they are on the screen.
+const GRASS = "#4ade80";
+const THINGS = [
+  { type: "pond", x: 720, y: 160 },
+  { type: "tree", x: 120, y: 140 }, { type: "tree", x: 220, y: 100 }, { type: "tree", x: 860, y: 440 },
+  { type: "tree", x: 90, y: 470 }, { type: "tree", x: 520, y: 90 },
+  { type: "bench", x: 420, y: 330 }, { type: "bench", x: 560, y: 330 },
+];
+
+// ---------- You ----------
+const me = { x: W / 2, y: 420, facing: 1, walk: 0, jump: 0, moving: false };
+const SPEED = 220;          // Change this to walk faster or slower
+let target = null;          // where you tapped (you walk there by yourself)
+const confetti = [];        // little colored pieces flying around
+const bubbles = {};         // chat bubbles: player id -> { text, time }
+
+// ---------- Online ----------
+// Kit.net connects to the BlockOS game server when BlockOS is online.
+// The chat box and People list (press / or click Chat) come with it.
+const net = Kit.net(GAME_ID, { room: "main" });
+const shown = {};           // where we draw each other player (it slides smoothly to their real spot)
+
+net.on("join", (p) => {
+  Kit.sfx("score");
+  Kit.badge(GAME_ID, "not-alone", "Party Time", "Hung out with another player.");
+});
+net.on("leave", (p) => { delete shown[p.id]; });
+net.on("chat", (p, text) => { bubbles[p.id] = { text, time: 5 }; });
+// Events are one-off messages: here, someone threw confetti.
+net.on("event", (p, data) => {
+  if (data.type === "confetti") throwConfetti(data.x, data.y);
+});
+
+Kit.badge(GAME_ID, "welcome", "Welcome!", "Visited the hangout.");
+
+// ---------- Controls ----------
+// Tap or click on the ground to walk there.
+canvas.addEventListener("pointerdown", (e) => { target = Kit.pointer(canvas, e); });
+Kit.onKey((code) => {
+  if (code === "Space" && me.jump <= 0) { me.jump = 0.5; Kit.sfx("jump"); }   // a little hop
+  if (code === "KeyC") {
+    throwConfetti(me.x, me.y - 60);
+    net.event({ type: "confetti", x: Math.round(me.x), y: Math.round(me.y - 60) });  // tell everyone else
+    Kit.badge(GAME_ID, "confetti", "Confetti!", "Threw confetti.");
+  }
+});
+
+function throwConfetti(x, y) {
+  Kit.sfx("coin");
+  for (let i = 0; i < 30; i++) {
+    confetti.push({ x, y, vx: Kit.rand(-150, 150), vy: Kit.rand(-300, -80), life: 1.5, color: Kit.pick(["#ef4444", "#facc15", "#3b82f6", "#22c55e", "#ec4899"]) });
+  }
+}
+
+// ---------- update(): moves everything ----------
+function update(dt) {
+  let dx = 0, dy = 0;
+  if (Kit.key("ArrowLeft") || Kit.key("KeyA")) dx = -1;
+  if (Kit.key("ArrowRight") || Kit.key("KeyD")) dx = 1;
+  if (Kit.key("ArrowUp") || Kit.key("KeyW")) dy = -1;
+  if (Kit.key("ArrowDown") || Kit.key("KeyS")) dy = 1;
+  if (dx || dy) target = null;                       // keys cancel tap-to-walk
+  else if (target) {
+    const tx = target.x - me.x, ty = target.y - me.y, dist = Math.hypot(tx, ty);
+    if (dist < 5) target = null; else { dx = tx / dist; dy = ty / dist; }
+  }
+  const len = Math.hypot(dx, dy) || 1;
+  me.x = Kit.clamp(me.x + (dx / len) * SPEED * dt, 20, W - 20);
+  me.y = Kit.clamp(me.y + (dy / len) * SPEED * dt, 80, H - 5);
+  me.moving = dx !== 0 || dy !== 0;
+  if (me.moving) me.walk += dt * 12;
+  if (dx !== 0) me.facing = dx > 0 ? 1 : -1;
+  me.jump = Math.max(0, me.jump - dt);
+
+  // Share where you are with the other players (Kit sends it up to 10 times a second).
+  net.state({ x: Math.round(me.x), y: Math.round(me.y), f: me.facing, m: me.moving, j: me.jump > 0 });
+
+  // Slide other players toward where they really are.
+  for (const p of net.players.values()) {
+    const s = p.state;
+    if (!s) continue;
+    const d = shown[p.id] || (shown[p.id] = { x: s.x, y: s.y, walk: 0 });
+    d.x += (s.x - d.x) * Math.min(1, dt * 10);
+    d.y += (s.y - d.y) * Math.min(1, dt * 10);
+    if (s.m) d.walk += dt * 12;
+  }
+  for (const c of confetti) { c.x += c.vx * dt; c.y += c.vy * dt; c.vy += 500 * dt; c.life -= dt; }
+  while (confetti.length && confetti[0].life <= 0) confetti.shift();
+  for (const id in bubbles) { bubbles[id].time -= dt; if (bubbles[id].time <= 0) delete bubbles[id]; }
+
+  Kit.hud(net.online ? "Online<small>" + (net.players.size + 1) + " people here</small>" : "Playing solo<small>Go online in BlockOS to meet people</small>");
+}
+
+// ---------- draw(): paints everything ----------
+function draw() {
+  ctx.fillStyle = GRASS;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = "#e7d7b1";                       // a sandy path
+  ctx.fillRect(0, 360, W, 60);
+
+  // People and trees are drawn from back to front (smaller y first), so nearer ones cover farther ones.
+  // (A pond is flat, so it always goes first.)
+  const list = THINGS.map((t) => ({ y: t.type === "pond" ? 0 : t.y, draw: () => drawThing(t) }));
+  list.push({ y: me.y, draw: () => drawPerson(me.x, me.y, me.facing, me.walk, me.jump > 0, null, net.me.id || "me", net.me.name) });
+  for (const p of net.players.values()) {
+    const d = shown[p.id];
+    if (d) list.push({ y: d.y, draw: () => drawPerson(d.x, d.y, p.state.f, d.walk, p.state.j, p.avatar, p.id, p.name) });
+  }
+  list.sort((a, b) => a.y - b.y).forEach((item) => item.draw());
+
+  for (const c of confetti) { ctx.fillStyle = c.color; ctx.fillRect(c.x, c.y, 6, 6); }
+}
+
+function drawPerson(x, y, facing, walk, jumping, look, id, name) {
+  const hop = jumping ? 18 : 0;
+  // look = their avatar. Leave it out (null) to draw your own.
+  Kit.drawAvatar(ctx, x, y - hop, 64, { look: look || undefined, facing, walk, air: jumping, name });
+  const b = bubbles[id];
+  if (b) {   // a white chat bubble above the head
+    ctx.font = "bold 15px sans-serif";
+    const w = ctx.measureText(b.text).width + 16;
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.roundRect(x - w / 2, y - hop - 118, w, 26, 8); ctx.fill();
+    ctx.fillStyle = "#111";
+    ctx.textAlign = "center";
+    ctx.fillText(b.text, x, y - hop - 100);
+  }
+}
+
+function drawThing(t) {
+  if (t.type === "tree") {
+    ctx.fillStyle = "#92400e"; ctx.fillRect(t.x - 8, t.y - 40, 16, 40);
+    ctx.fillStyle = "#15803d"; ctx.beginPath(); ctx.arc(t.x, t.y - 60, 38, 0, Math.PI * 2); ctx.fill();
+  } else if (t.type === "bench") {
+    Kit.brick(ctx, t.x - 40, t.y - 24, 80, 14, "#b45309", 4);
+    ctx.fillStyle = "#57534e"; ctx.fillRect(t.x - 34, t.y - 10, 8, 10); ctx.fillRect(t.x + 26, t.y - 10, 8, 10);
+  } else if (t.type === "pond") {
+    ctx.fillStyle = "#38bdf8"; ctx.beginPath(); ctx.ellipse(t.x, t.y, 120, 60, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+Kit.loop(update, draw).start();
+
+// ---------- Touch buttons ----------
+// Each button with data-key="..." holds that key down while a finger is on it.
+document.querySelectorAll("[data-key]").forEach((btn) => {
+  const send = (type) => document.body.dispatchEvent(new KeyboardEvent(type, { code: btn.dataset.key, bubbles: true }));
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add("on"); send("keydown"); });
+  const up = () => { if (btn.classList.contains("on")) { btn.classList.remove("on"); send("keyup"); } };
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("lostpointercapture", up);
+});
+if (navigator.maxTouchPoints > 0) document.getElementById("touch").style.display = "flex";
+</script>
+</body>
+</html>

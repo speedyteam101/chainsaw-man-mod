@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Brick Clicker</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script>
+// Your game's name for badges and saving. Rename it! (lowercase letters, numbers, dashes)
+const GAME_ID = "my-clicker";
+
+const { canvas, ctx, W, H } = Kit.stage(900, 520);
+
+// ---------- Upgrades ----------
+// Add your own! cost = price, perClick = extra points per click,
+// perSecond = points you get every second without clicking.
+const UPGRADES = [
+  { name: "Bigger Finger", cost: 15,   perClick: 1, perSecond: 0 },
+  { name: "Brick Robot",   cost: 50,   perClick: 0, perSecond: 1 },
+  { name: "Brick Factory", cost: 400,  perClick: 0, perSecond: 10 },
+  { name: "Golden Brick",  cost: 2500, perClick: 25, perSecond: 0 },
+];
+const PRICE_GROWTH = 1.5;     // each time you buy an upgrade, its price goes up this much
+const BRICK_COLOR = "#ef4444"; // Change this to color the big brick
+
+// ---------- Saved progress ----------
+// localStorage keeps things after the game closes. JSON turns objects into text and back.
+let points = 0;
+let owned = UPGRADES.map(() => 0);   // how many of each upgrade you have
+try {
+  const saved = JSON.parse(localStorage.getItem(GAME_ID + ".save"));
+  if (saved) { points = saved.points || 0; owned = UPGRADES.map((u, i) => saved.owned[i] || 0); }
+} catch (e) { console.log("No saved game yet"); }
+
+function save() {
+  localStorage.setItem(GAME_ID + ".save", JSON.stringify({ points, owned }));
+}
+
+// Work out the totals from the upgrades you own.
+function perClick() { return 1 + UPGRADES.reduce((sum, u, i) => sum + u.perClick * owned[i], 0); }
+function perSecond() { return UPGRADES.reduce((sum, u, i) => sum + u.perSecond * owned[i], 0); }
+function price(i) { return Math.round(UPGRADES[i].cost * Math.pow(PRICE_GROWTH, owned[i])); }
+
+// ---------- Where things are on the screen ----------
+const brick = { x: 90, y: 150, w: 300, h: 200 };
+const shop = { x: 520, y: 90, w: 340, h: 86 };   // first shop button; the others go below it
+function shopBox(i) { return { x: shop.x, y: shop.y + i * (shop.h + 10), w: shop.w, h: shop.h }; }
+const inside = (p, b) => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+
+let squish = 0;        // makes the brick bounce when clicked
+const popups = [];     // the "+1" numbers that float up
+
+function clickBrick(x, y) {
+  points += perClick();
+  squish = 1;
+  Kit.sfx("click");
+  popups.push({ x, y, text: "+" + perClick(), life: 1 });
+  if (points >= 100) Kit.badge(GAME_ID, "hundred", "Getting Started", "Got 100 points.");
+  if (points >= 10000) Kit.badge(GAME_ID, "ten-thousand", "Brick Tycoon", "Got 10,000 points.");
+}
+
+function buy(i) {
+  if (points < price(i)) { Kit.sfx("hit"); return; }   // not enough points
+  points -= price(i);
+  owned[i] += 1;
+  Kit.sfx("coin");
+  Kit.badge(GAME_ID, "first-upgrade", "Shopper", "Bought your first upgrade.");
+  save();
+}
+
+// ---------- Mouse and touch ----------
+canvas.addEventListener("pointerdown", (e) => {
+  const p = Kit.pointer(canvas, e);   // turns the click into game-screen pixels
+  if (inside(p, brick)) clickBrick(p.x, p.y);
+  UPGRADES.forEach((u, i) => { if (inside(p, shopBox(i))) buy(i); });
+});
+// The Space key clicks the brick too.
+Kit.onKey((code) => { if (code === "Space") clickBrick(brick.x + brick.w / 2, brick.y + 40); });
+
+// ---------- Game loop ----------
+let saveTimer = 0;
+function update(dt) {
+  points += perSecond() * dt;
+  squish = Math.max(0, squish - dt * 6);
+  for (const p of popups) { p.y -= 60 * dt; p.life -= dt; }
+  while (popups.length && popups[0].life <= 0) popups.shift();
+  saveTimer += dt;
+  if (saveTimer > 2) { saveTimer = 0; save(); }   // save every 2 seconds
+  Kit.hud("Points: " + Math.floor(points) + "<small>" + perSecond() + " per second</small>");
+}
+
+function draw() {
+  ctx.fillStyle = "#1e293b";
+  ctx.fillRect(0, 0, W, H);
+
+  // The big brick (it squishes a little when you click it).
+  const s = squish * 12;
+  Kit.brick(ctx, brick.x + s, brick.y + s, brick.w - s * 2, brick.h - s * 2, BRICK_COLOR, 18);
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 28px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Click me!", brick.x + brick.w / 2, brick.y + brick.h + 50);
+  ctx.font = "bold 40px sans-serif";
+  ctx.fillText("Brick Clicker", brick.x + brick.w / 2, 90);   // the game's title: rename it!
+
+  // The shop buttons: green when you can afford them.
+  ctx.textAlign = "left";
+  UPGRADES.forEach((u, i) => {
+    const b = shopBox(i);
+    Kit.brick(ctx, b.x, b.y, b.w, b.h, points >= price(i) ? "#16a34a" : "#475569", 10);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 20px sans-serif";
+    ctx.fillText(u.name + "  (you have " + owned[i] + ")", b.x + 14, b.y + 32);
+    ctx.font = "16px sans-serif";
+    const what = u.perClick ? "+" + u.perClick + " per click" : "+" + u.perSecond + " per second";
+    ctx.fillText("Costs " + price(i) + "   " + what, b.x + 14, b.y + 62);
+  });
+
+  // Floating "+1" numbers.
+  ctx.textAlign = "center";
+  ctx.font = "bold 26px sans-serif";
+  for (const p of popups) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = "#facc15";
+    ctx.fillText(p.text, p.x, p.y);
+  }
+  ctx.globalAlpha = 1;
+}
+
+Kit.loop(update, draw).start();
+</script>
+</body>
+</html>

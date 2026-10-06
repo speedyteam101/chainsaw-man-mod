@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Game</title>
+<!-- The BlockOS game kit: ready-made helpers for drawing, keys, sounds and badges. -->
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+
+<!-- Touch buttons for tablets and phones (they only show up on touch screens).
+     data-key says which keyboard key each button presses. -->
+<div class="tc" id="touch" style="display: none">
+  <div class="tc-left">
+    <div class="tc-pad">
+      <button class="tc-btn tc-d-up" data-key="ArrowUp">^</button>
+      <button class="tc-btn tc-d-left" data-key="ArrowLeft">&lt;</button>
+      <button class="tc-btn tc-d-right" data-key="ArrowRight">&gt;</button>
+      <button class="tc-btn tc-d-down" data-key="ArrowDown">v</button>
+    </div>
+  </div>
+</div>
+
+<script src="kit.js"></script>
+<script>
+// Your game's name for badges and best scores. Rename it! Use only
+// lowercase letters, numbers and dashes, like "super-coin-hunt".
+const GAME_ID = "my-first-game";
+
+// Make the game screen: 800 pixels wide, 500 pixels tall.
+const { canvas, ctx, W, H } = Kit.stage(800, 500);
+
+// ---------- The player ----------
+const player = {
+  x: 400,       // where the player is (x = left/right, y = up/down)
+  y: 300,
+  speed: 250,   // Change this number to make the player faster or slower
+  size: 60,     // how tall the avatar is
+  facing: 1,    // 1 = looking right, -1 = looking left
+  walk: 0,      // used to swing the arms and legs
+};
+
+// ---------- A coin to collect ----------
+const coin = { x: 200, y: 200 };
+let score = 0;
+
+function moveCoin() {
+  coin.x = Kit.rand(40, W - 40);   // a random spot on the screen
+  coin.y = Kit.rand(80, H - 40);
+}
+
+// ---------- update(): runs about 60 times a second ----------
+// dt is how many seconds passed since the last frame (about 0.016).
+function update(dt) {
+  let dx = 0, dy = 0;
+  if (Kit.key("ArrowLeft") || Kit.key("KeyA")) dx = -1;
+  if (Kit.key("ArrowRight") || Kit.key("KeyD")) dx = 1;
+  if (Kit.key("ArrowUp") || Kit.key("KeyW")) dy = -1;
+  if (Kit.key("ArrowDown") || Kit.key("KeyS")) dy = 1;
+
+  player.x += dx * player.speed * dt;
+  player.y += dy * player.speed * dt;
+  // Keep the player on the screen.
+  player.x = Kit.clamp(player.x, 20, W - 20);
+  player.y = Kit.clamp(player.y, player.size, H - 5);
+
+  if (dx !== 0) player.facing = dx;
+  if (dx !== 0 || dy !== 0) player.walk += dt * 12;   // swing arms and legs while walking
+
+  // Touching the coin? (Math.hypot measures the distance between two points.)
+  if (Math.hypot(player.x - coin.x, player.y - player.size / 2 - coin.y) < 40) {
+    score += 1;
+    Kit.sfx("coin");
+    moveCoin();
+    if (score === 10) Kit.badge(GAME_ID, "ten-coins", "Coin Collector", "Collected 10 coins.");
+  }
+  Kit.hud("Coins: " + score);
+}
+
+// ---------- draw(): paints the picture after every update ----------
+function draw() {
+  ctx.fillStyle = "#5cae4c";          // Change this color for a different background
+  ctx.fillRect(0, 0, W, H);
+
+  // The coin: a yellow circle.
+  ctx.fillStyle = "#facc15";
+  ctx.beginPath();
+  ctx.arc(coin.x, coin.y, 14, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Your own BlockOS avatar! (x, y is where its feet are.)
+  Kit.drawAvatar(ctx, player.x, player.y, player.size, { facing: player.facing, walk: player.walk });
+}
+
+// Start the game loop.
+moveCoin();
+Kit.loop(update, draw).start();
+
+// ---------- Touch buttons ----------
+// Each button with data-key="..." holds that key down while a finger is on it.
+document.querySelectorAll("[data-key]").forEach((btn) => {
+  const send = (type) => document.body.dispatchEvent(new KeyboardEvent(type, { code: btn.dataset.key, bubbles: true }));
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add("on"); send("keydown"); });
+  const up = () => { if (btn.classList.contains("on")) { btn.classList.remove("on"); send("keyup"); } };
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("lostpointercapture", up);
+});
+if (navigator.maxTouchPoints > 0) document.getElementById("touch").style.display = "flex";
+</script>
+</body>
+</html>

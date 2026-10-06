@@ -9,6 +9,29 @@ Every typed message goes through `chatfilter.js` first, which hides swear words 
 details (phone numbers, email addresses, links, street addresses, social-media names) with `#`.
 Add words to its `BLOCKED` list if you need to.
 
+## Community games (made by players)
+
+Players make games in BlockOS's **Create** page and press **Publish** to put them on the server
+they're online on (`community.js`). Every new or updated game waits for a **moderator** to check
+it; only then does it show on the **Community** page for everyone. If 3 different players report a
+game, it's hidden again until a moderator looks at it. Titles and descriptions go through the
+chat filter; the game code itself can't be filtered, which is why games are checked by a person.
+Community games run in a sandbox in BlockOS: they can't read anyone's saved data, open websites
+or download things, and they don't earn Bricks.
+
+- **Who's a moderator:** anyone who knows the server's moderator key. When you host from the
+  BlockOS app (or VM), your own BlockOS is a moderator of that server automatically. For a server
+  you run yourself, the key is in `<data folder>/moderator-key.txt` (made the first time the server
+  starts), or set your own with `--mod-key` / `BLOCKOS_MOD_KEY`. Type it in BlockOS under
+  **Community → Server owner?** to get a **Review** tab. Keep it secret.
+- **Where games are kept:** the data folder: `--data DIR` or `BLOCKOS_DATA` (default: `data/` next
+  to `relay.js`; `/data` in the Docker image, so mount a volume there; the Mac/Windows app uses its
+  own app-data folder, and the VM uses `~/.local/share/blockos/community`). Many hosting services
+  wipe a container's files when it restarts, so give it a persistent volume or disk.
+- **Skipping the check** (`--auto-approve` / `BLOCKOS_AUTO_APPROVE=1`) makes new games public
+  straight away. Only do that on a server for people you know.
+- Limits: 300,000 characters per game, 10 games per player per server, one publish every 20 seconds.
+
 ## Playing on the same Wi-Fi (easiest)
 
 One person opens **Play Online** in BlockOS and clicks **Start hosting**. Everyone else types the
@@ -50,10 +73,10 @@ Running it yourself on any computer with a public address works the same way:
 
 ```sh
 npm ci --omit=dev
-node relay.js --port 8790          # or: docker build -t blockos-server . && docker run -p 8790:8790 blockos-server
+node relay.js --port 8790 --data ./data   # or: docker build -t blockos-server . && docker run -p 8790:8790 -v blockos-data:/data blockos-server
 ```
 
 Only share the address with people you know. Chat is filtered, but nobody moderates it.
 
-Limits: 12 players per server of each game, 4 KB per message, 40 messages per second per player, one chat
+Limits: 12 players per server of each game, 4 KB per message (1 MB to publish a community game), 40 messages per second per player, one chat
 message every 0.7 seconds, 120 characters per chat message.

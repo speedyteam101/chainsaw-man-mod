@@ -1,0 +1,101 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Dodge the Blocks</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script>
+// Your game's name for badges and best scores. Rename it! (lowercase letters, numbers, dashes)
+const GAME_ID = "my-dodge-game";
+
+const { canvas, ctx, W, H } = Kit.stage(640, 560);
+
+// ---------- Settings you can change ----------
+const PLAYER_SPEED = 380;     // how fast you move left and right
+const START_FALL_SPEED = 180; // how fast blocks fall at the start
+const SPEED_UP = 12;          // blocks fall this much faster every second
+const SPAWN_TIME = 0.6;       // seconds between new blocks (smaller = more blocks)
+const BLOCK_COLORS = ["#ef4444", "#3b82f6", "#a855f7", "#f97316", "#ec4899"];
+
+const player = { x: W / 2, y: H - 10, w: 30, h: 50, facing: 1, walk: 0 };
+let blocks = [];
+let score = 0, fallSpeed = START_FALL_SPEED, spawnTimer = 0, playing = false;
+let pointerX = null;   // where your finger or mouse is while pressed (null = not pressed)
+
+function reset() {
+  blocks = [];
+  score = 0;
+  fallSpeed = START_FALL_SPEED;
+  player.x = W / 2;
+}
+
+// ---------- Mouse and touch: hold down and drag to move ----------
+canvas.addEventListener("pointerdown", (e) => { pointerX = Kit.pointer(canvas, e).x; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", (e) => { if (pointerX !== null) pointerX = Kit.pointer(canvas, e).x; });
+canvas.addEventListener("pointerup", () => { pointerX = null; });
+canvas.addEventListener("pointercancel", () => { pointerX = null; });
+
+function update(dt) {
+  if (!playing) return;
+  score += dt;                    // you get 1 point for every second you survive
+  fallSpeed += SPEED_UP * dt;     // and it keeps getting harder!
+
+  // Move with the keyboard...
+  let move = 0;
+  if (Kit.key("ArrowLeft") || Kit.key("KeyA")) move = -1;
+  if (Kit.key("ArrowRight") || Kit.key("KeyD")) move = 1;
+  // ...or toward your finger / mouse.
+  if (pointerX !== null && Math.abs(pointerX - player.x) > 6) move = pointerX < player.x ? -1 : 1;
+  player.x = Kit.clamp(player.x + move * PLAYER_SPEED * dt, player.w / 2, W - player.w / 2);
+  if (move !== 0) { player.facing = move; player.walk += dt * 14; }
+
+  // Make a new falling block every SPAWN_TIME seconds.
+  spawnTimer -= dt;
+  if (spawnTimer <= 0) {
+    spawnTimer = SPAWN_TIME;
+    const size = Kit.randInt(30, 70);
+    blocks.push({ x: Kit.rand(0, W - size), y: -size, size, color: Kit.pick(BLOCK_COLORS) });
+  }
+
+  // Move the blocks down and check if one hit you.
+  for (const b of blocks) {
+    b.y += fallSpeed * dt;
+    const hitX = player.x + player.w / 2 > b.x && player.x - player.w / 2 < b.x + b.size;
+    const hitY = player.y > b.y && player.y - player.h < b.y + b.size;
+    if (hitX && hitY) { gameOver(); return; }
+  }
+  blocks = blocks.filter((b) => b.y < H);   // forget blocks that fell off the bottom
+
+  // Badges for surviving a long time.
+  if (score >= 10) Kit.badge(GAME_ID, "ten-seconds", "Quick Feet", "Survived 10 seconds.");
+  if (score >= 30) Kit.badge(GAME_ID, "thirty-seconds", "Block Dodger", "Survived 30 seconds.");
+  if (score >= 60) Kit.badge(GAME_ID, "one-minute", "Untouchable", "Survived a whole minute!");
+}
+
+async function gameOver() {
+  playing = false;
+  Kit.sfx("lose");
+  // Kit.finish saves your best score and tells BlockOS about it.
+  const best = Kit.finish(GAME_ID, Math.floor(score));
+  await Kit.overlay("Ouch!", "You survived " + Math.floor(score) + " seconds.\nBest: " + best, "Try again");
+  reset();
+  playing = true;
+}
+
+function draw() {
+  ctx.fillStyle = "#0f172a";   // background color
+  ctx.fillRect(0, 0, W, H);
+  for (const b of blocks) Kit.brick(ctx, b.x, b.y, b.size, b.size, b.color);
+  Kit.drawAvatar(ctx, player.x, player.y, player.h, { facing: player.facing, walk: player.walk });
+  Kit.hud("Score: " + Math.floor(score) + "<small>Best: " + (Kit.best(GAME_ID) || 0) + "</small>");
+}
+
+Kit.loop(update, draw).start();
+Kit.overlay("Dodge the Blocks", "Move with the arrow keys,\nor hold and drag on the game.\nDon't get squished!", "Play")
+  .then(() => { reset(); playing = true; });
+</script>
+</body>
+</html>

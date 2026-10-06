@@ -55,6 +55,8 @@ MAC_APPS = {
 RELAY = os.path.join(os.path.dirname(SHELL_DIR), "multiplayer", "relay.js")
 GAME_PORT = 8790
 relay_proc = None
+# Community games published to this computer's server, and its moderator key.
+COMMUNITY_DIR = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"), "blockos", "community")
 
 POWER = {
     "poweroff": ["systemctl", "poweroff"],
@@ -139,7 +141,17 @@ def lan_addresses():
 
 def online_info():
     hosting = relay_proc is not None and relay_proc.poll() is None
-    return {"hosting": hosting, "port": GAME_PORT, "addresses": lan_addresses() if hosting else []}
+    # modKey makes this BlockOS a moderator of the community games on its own server.
+    return {"hosting": hosting, "port": GAME_PORT, "addresses": lan_addresses() if hosting else [],
+            "modKey": read_mod_key() if hosting else None}
+
+
+def read_mod_key():
+    try:
+        with open(os.path.join(COMMUNITY_DIR, "moderator-key.txt")) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 
 def set_hosting(on):
@@ -152,7 +164,7 @@ def set_hosting(on):
             env = dict(os.environ)
             # Debian's node-ws package lives here.
             env["NODE_PATH"] = ":".join(filter(None, ["/usr/share/nodejs", "/usr/lib/nodejs", env.get("NODE_PATH")]))
-            relay_proc = subprocess.Popen([node, RELAY, "--port", str(GAME_PORT)], env=env,
+            relay_proc = subprocess.Popen([node, RELAY, "--port", str(GAME_PORT), "--data", COMMUNITY_DIR], env=env,
                                           stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
             time.sleep(0.6)
             if relay_proc.poll() is not None:
@@ -191,6 +203,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")
+        # Games made by players run in a sandbox with no origin of their own (studio/runner.js);
+        # loading the 3D kit as a module from there needs this CORS header.
+        if self.path.startswith("/games/"):
+            self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
 
     def log_message(self, fmt, *args):

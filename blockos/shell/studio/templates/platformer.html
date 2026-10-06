@@ -1,0 +1,210 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Platformer</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+
+<!-- Touch buttons (only shown on touch screens). data-key = the key each one presses. -->
+<div class="tc" id="touch" style="display: none">
+  <div class="tc-left">
+    <div class="tc-pad lr">
+      <button class="tc-btn tc-d-left" data-key="ArrowLeft">&lt;</button>
+      <button class="tc-btn tc-d-right" data-key="ArrowRight">&gt;</button>
+    </div>
+  </div>
+  <div class="tc-right">
+    <button class="tc-btn" data-key="Space">Jump</button>
+  </div>
+</div>
+
+<script src="kit.js"></script>
+<script>
+// Your game's name for badges and best times. Rename it! (lowercase letters, numbers, dashes)
+const GAME_ID = "my-platformer";
+
+// ---------- The level ----------
+// Draw your level with letters! Every row must be the same length.
+//   #  ground        =  brick platform     o  coin
+//   ^  spikes        P  player start       F  goal flag
+//   (space) = empty air
+const LEVEL = [
+  "                                                                      ",
+  "                                                                      ",
+  "                                                                      ",
+  "                                                                      ",
+  "                             ooo                                      ",
+  "                            =====                                     ",
+  "                 oo    o o                                    o       ",
+  "                      =====                                      F    ",
+  "                ====                         oo             ######### ",
+  "           o                           o            o      ########## ",
+  " P                                ^^         ^^           ########### ",
+  "##########   #########################   ##########   ############### ",
+  "##########   #########################   ##########   ############### ",
+];
+
+// ---------- Settings you can change ----------
+const TILE = 40;          // size of one block in pixels
+const RUN_SPEED = 260;    // Change this to make the player run faster
+const JUMP_POWER = 700;   // Change this number to make the player jump higher
+const GRAVITY = 1700;     // how fast you fall
+const SKY = "#7dd3fc";    // background color
+const GROUND_COLOR = "#16a34a";
+const BRICK_COLOR = "#f97316";
+
+const { canvas, ctx, W, H } = Kit.stage(960, 520);
+const COLS = LEVEL[0].length, ROWS = LEVEL.length;
+
+// Find the player start and the coins in the level.
+let start = { x: 0, y: 0 }, coins = [];
+LEVEL.forEach((row, ty) => {
+  for (let tx = 0; tx < row.length; tx++) {
+    if (row[tx] === "P") start = { x: tx * TILE + TILE / 2, y: (ty + 1) * TILE };
+    if (row[tx] === "o") coins.push({ x: tx * TILE + TILE / 2, y: ty * TILE + TILE / 2, got: false });
+  }
+});
+const tileAt = (tx, ty) => (LEVEL[ty] && LEVEL[ty][tx]) || " ";
+const solid = (t) => t === "#" || t === "=";
+
+// The player. x, y is the middle of the feet. w, h is the size of the hit box.
+const player = { x: 0, y: 0, vx: 0, vy: 0, w: 26, h: 54, onGround: false, facing: 1, walk: 0 };
+let score = 0, deaths = 0, time = 0, won = false, camX = 0;
+
+// Pressing a jump key remembers it for a moment, so a jump pressed just before landing still works.
+let jumpTimer = 0;
+Kit.onKey((code) => {
+  if (code === "Space" || code === "ArrowUp" || code === "KeyW") jumpTimer = 0.15;
+});
+
+function restart() {
+  player.x = start.x; player.y = start.y; player.vx = 0; player.vy = 0;
+}
+
+// Is the player's box touching any tile that matches test()?
+function hits(test) {
+  const left = Math.floor((player.x - player.w / 2) / TILE), right = Math.floor((player.x + player.w / 2 - 1) / TILE);
+  const top = Math.floor((player.y - player.h) / TILE), bottom = Math.floor((player.y - 1) / TILE);
+  for (let ty = top; ty <= bottom; ty++) for (let tx = left; tx <= right; tx++) if (test(tileAt(tx, ty))) return true;
+  return false;
+}
+
+function update(dt) {
+  if (won) return;
+  time += dt;
+  // Left and right
+  player.vx = 0;
+  if (Kit.key("ArrowLeft") || Kit.key("KeyA")) { player.vx = -RUN_SPEED; player.facing = -1; }
+  if (Kit.key("ArrowRight") || Kit.key("KeyD")) { player.vx = RUN_SPEED; player.facing = 1; }
+  // Jump (only when standing on something)
+  jumpTimer -= dt;
+  if (jumpTimer > 0 && player.onGround) {
+    player.vy = -JUMP_POWER;
+    jumpTimer = 0;
+    Kit.sfx("jump");
+  }
+  player.vy = Math.min(player.vy + GRAVITY * dt, 1000);
+
+  // Move sideways, and step back out of walls.
+  player.x += player.vx * dt;
+  if (hits(solid)) {
+    player.x = player.vx > 0 ? Math.floor((player.x + player.w / 2) / TILE) * TILE - player.w / 2
+                             : Math.floor((player.x - player.w / 2) / TILE + 1) * TILE + player.w / 2;
+  }
+  // Move up or down, and land on floors.
+  const oldY = player.y;
+  player.y += player.vy * dt;
+  player.onGround = false;
+  if (hits(solid)) {
+    if (player.vy > 0) { player.y = Math.ceil((oldY - 1) / TILE) * TILE; player.onGround = true; }   // landed
+    else player.y = Math.floor((oldY - player.h) / TILE) * TILE + player.h;                    // bumped your head
+    player.vy = 0;
+  }
+  if (player.vx !== 0) player.walk += dt * 12;
+
+  // Spikes, or falling off the bottom: back to the start!
+  if (hits((t) => t === "^") || player.y > ROWS * TILE + 200) {
+    deaths++;
+    Kit.sfx("hit");
+    restart();
+  }
+  // Coins
+  for (const c of coins) {
+    if (!c.got && Math.abs(c.x - player.x) < 26 && Math.abs(c.y - (player.y - player.h / 2)) < 40) {
+      c.got = true; score++; Kit.sfx("coin");
+      if (coins.every((k) => k.got)) Kit.badge(GAME_ID, "all-coins", "Coin Master", "Collected every coin.");
+    }
+  }
+  // The goal flag
+  if (hits((t) => t === "F")) win();
+
+  // The camera follows the player.
+  camX = Kit.clamp(player.x - W / 2, 0, COLS * TILE - W);
+  Kit.hud("Coins " + score + "/" + coins.length + "<small>Time " + time.toFixed(1) + "s</small>");
+}
+
+async function win() {
+  won = true;
+  Kit.sfx("win");
+  Kit.badge(GAME_ID, "finished", "Flag Grabber", "Reached the goal flag.");
+  if (deaths === 0) Kit.badge(GAME_ID, "no-deaths", "Untouchable", "Finished without hitting any spikes.");
+  const best = Kit.finish(GAME_ID, Math.round(time * 10) / 10, true);   // true = a lower time is better
+  await Kit.overlay("You win!", "Time: " + time.toFixed(1) + "s\nCoins: " + score + "\nBest time: " + best + "s", "Play again");
+  coins.forEach((c) => (c.got = false));
+  score = 0; deaths = 0; time = 0; won = false;
+  restart();
+}
+
+function draw() {
+  ctx.fillStyle = SKY;
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.translate(-Math.round(camX), 0);   // scroll the world
+  LEVEL.forEach((row, ty) => {
+    for (let tx = 0; tx < row.length; tx++) {
+      const t = row[tx], x = tx * TILE, y = ty * TILE;
+      if (t === "#") Kit.brick(ctx, x, y, TILE, TILE, GROUND_COLOR, 4);
+      if (t === "=") Kit.brick(ctx, x, y, TILE, TILE, BRICK_COLOR, 4);
+      if (t === "^") {   // spikes: three gray triangles
+        ctx.fillStyle = "#cbd5e1";
+        for (let i = 0; i < 3; i++) {
+          ctx.beginPath(); ctx.moveTo(x + i * 13, y + TILE); ctx.lineTo(x + i * 13 + 7, y + 14); ctx.lineTo(x + i * 13 + 14, y + TILE); ctx.fill();
+        }
+      }
+      if (t === "F") {   // flag pole and flag
+        ctx.fillStyle = "#f1f5f9"; ctx.fillRect(x + 18, y - 80, 5, 120);
+        ctx.fillStyle = "#ef4444"; ctx.fillRect(x + 23, y - 80, 40, 26);
+      }
+    }
+  });
+  for (const c of coins) {
+    if (c.got) continue;
+    ctx.fillStyle = "#facc15";
+    ctx.beginPath(); ctx.arc(c.x, c.y, 11, 0, Math.PI * 2); ctx.fill();
+  }
+  // Your avatar (y = feet). air: true shows the jumping pose.
+  Kit.drawAvatar(ctx, player.x, player.y, 58, { facing: player.facing, walk: player.walk, air: !player.onGround });
+  ctx.restore();
+}
+
+// Show the start screen, then start the game loop when Play is pressed.
+restart();
+draw();
+Kit.overlay("My Platformer", "Arrow keys or A / D to run, Space or Up to jump.\nGrab the coins and reach the flag!", "Play")
+  .then(() => Kit.loop(update, draw).start());
+
+// ---------- Touch buttons ----------
+// Each button with data-key="..." holds that key down while a finger is on it.
+document.querySelectorAll("[data-key]").forEach((btn) => {
+  const send = (type) => document.body.dispatchEvent(new KeyboardEvent(type, { code: btn.dataset.key, bubbles: true }));
+  btn.addEventListener("pointerdown", (e) => { e.preventDefault(); btn.setPointerCapture(e.pointerId); btn.classList.add("on"); send("keydown"); });
+  const up = () => { if (btn.classList.contains("on")) { btn.classList.remove("on"); send("keyup"); } };
+  btn.addEventListener("pointerup", up);
+  btn.addEventListener("lostpointercapture", up);
+});
+if (navigator.maxTouchPoints > 0) document.getElementById("touch").style.display = "flex";
+</script>
+</body>
+</html>
