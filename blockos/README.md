@@ -20,7 +20,7 @@ into categories, plus favorites, recently played, apps, and the power buttons.
 | Part | Where | What it does |
 | --- | --- | --- |
 | Desktop shell | `shell/` | The BlockOS desktop: Home, Discover, Avatar (with a shop), Apps, Settings, the Game Menu and the in-game menu. Plain HTML/CSS/JS, works offline. |
-| Games | `shell/games/` | 65 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
+| Games | `shell/games/` | 67 original games (list below). Each one is a folder with `index.html` and `thumb.svg`. |
 | 3D kit | `shell/games/kit3d.js` | Roblox-style 3D worlds (bundled three.js): studded parts, your avatar as a 3D character, camera, physics, other online players. |
 | Game server | `multiplayer/relay.js` | Lets players play together online (Node.js). Hosted from the Play Online page, or on the internet. |
 | Shell server | `shell/server.py` | Serves the desktop on `127.0.0.1:8737` and lets it open real Linux apps (Terminal, Files, Web Browser, Text Editor, Task Manager, Calculator) and shut down or restart. Only allowlisted commands can run. |
@@ -170,7 +170,7 @@ play as your own avatar.
 
 ## Games
 
-65 original games, sorted by genre in the Game Menu. Every game awards badges.
+67 original games, sorted by genre in the Game Menu. Every game awards badges.
 
 | Genre | Games |
 | --- | --- |
@@ -183,6 +183,7 @@ play as your own avatar.
 | **Puzzle** | Block Drop, Brick 2048, Bubble Pop, Color Echo, Color Sort, Gem Bricks, Lights Out, Math Blitz, Memory Bricks, Mine Sweep, Pipe Connect, Pixel Logic, Slide Puzzle, Sudoku Blocks |
 | **RPG** | Brick Legends, Dungeon Quest (3D, online), Survival Island (3D, online) |
 | **Racing** | Kart Dash, Turbo Lanes, Typing Racer |
+| **Science** | Cell City, Element Crafter |
 | **Simulator** | Brick Plaza (3D, online), Brick Tycoon, Fishing Frenzy, Mining Sim, Pet Hatchery, Pizza Shop |
 | **Sports** | Air Hockey, Basket Toss, Block Bowling, Block Golf, Paddle Clash, Penalty Kick |
 | **Strategy** | Brick Defense |

@@ -43,11 +43,12 @@
   .card button.on { background: #3b82f6; }
   .card button:disabled { background: #3a3f46; color: #a7adb4; cursor: default; }
   .card:hover { border-color: #3a3f46; }
-  #fhud { left: 12px; top: 60px; width: 238px; display: none; pointer-events: none; }
+  #fhud { left: 12px; top: 60px; width: 262px; display: none; pointer-events: none; }
   #fhud .big { font-size: 26px; font-weight: 900; line-height: 1.05; }
   #fhud .big small { font-size: 13px; color: #a7adb4; font-weight: 700; }
   #fhud .row { display: flex; justify-content: space-between; color: #cbd5e1; font-weight: 700; margin-top: 2px; }
-  #fhud .row b { color: #fff; }
+  #fhud .row b { color: #fff; white-space: nowrap; margin-left: 8px; }
+  #fhud .row span { white-space: nowrap; }
   .bar { height: 10px; background: #2b2f35; border-radius: 5px; overflow: hidden; margin: 3px 0 4px; }
   .bar i { display: block; height: 100%; background: #22c55e; width: 50%; }
   .bar.side i { background: #3b82f6; }
@@ -82,7 +83,7 @@
     .card .ic { width: 22px; height: 22px; }
     .card small { display: none; }
     .card button { padding: 4px 6px; min-width: 44px; }
-    #fhud { top: 40px; width: 196px; }
+    #fhud { top: 40px; width: 214px; }
     #fhud .big { font-size: 19px; }
     #fact { top: 40px; width: calc(100vw - 440px); min-width: 240px; padding: 6px 10px; }
     #fact p { font-size: 12px; }

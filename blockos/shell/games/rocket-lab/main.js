@@ -641,6 +641,7 @@ function stepFlight(dt) {
     const target = guideTilt(f, F.orbit);
     steer = Math.max(-1, Math.min(1, (target - f.tilt) * 4 - f.omega * 2));
   }
+  if (autopilot && F.orbit && !f.engineOn && !F.transfer && !f.capsuleOnly) flightSpaceKey();
   if (steer && !autopilot) warp = Math.min(warp, 2);
   if (F.forceWarp) warp = F.forceWarp;
   F.warp = warp;
@@ -958,10 +959,10 @@ function updateFlightHud() {
   }
   if (f.alt > 20000 && !f.capsuleOnly) {
     const side = Math.max(0, f.vSide), need = Math.sqrt((G0 * R_EARTH * R_EARTH) / f.r);
-    html += `<div class="row"><span>Sideways for orbit</span><b>${(side / 1000).toFixed(2)} / ${(need / 1000).toFixed(1)} km/s</b></div>
+    html += `<div class="row"><span>Sideways / orbit</span><b>${(side / 1000).toFixed(2)} / ${(need / 1000).toFixed(1)} km/s</b></div>
       <div class="bar side"><i style="width:${Math.min(100, (side / need) * 100).toFixed(0)}%"></i></div>`;
-    html += `<div class="row"><span>Highest point of path</span><b>${o.escape ? "escape!" : fmtKm(o.apo)}</b></div>`;
-    if (F.orbit) html += `<div class="row"><span>Lowest point of path</span><b>${fmtKm(o.peri)}</b></div>`;
+    html += `<div class="row"><span>Path's highest point</span><b>${o.escape ? "escape!" : fmtKm(o.apo)}</b></div>`;
+    if (F.orbit) html += `<div class="row"><span>Path's lowest point</span><b>${fmtKm(o.peri)}</b></div>`;
   }
   if (F.orbit) html += `<div class="row"><span>Delta-v left</span><b>${(f.dvLeft() / 1000).toFixed(2)} km/s</b></div>`;
   $("fhud").innerHTML = html;
@@ -1012,7 +1013,7 @@ function drawGauge() {
   g.fillRect(-9, -18, 4, 8); g.fillRect(5, -18, 4, 8);
   g.restore();
   const deg = (r) => Math.round((r * 180) / Math.PI);
-  $("gaugeText").innerHTML = f.capsuleOnly ? "" : `Tilt ${deg(t)}° - <b>guide ${deg(guide)}°</b> - <em>flying ${deg(pro)}°</em>`;
+  $("gaugeText").innerHTML = f.capsuleOnly ? "" : `Tilt ${deg(t)}° - <b>orbit guide ${deg(guide)}°</b> - <em>flying ${deg(pro)}°</em>`;
 }
 
 // Height ladder with milestones and everyone's rockets. Scale: 0-10 km, 10-100 km, 100-1000 km, Moon.

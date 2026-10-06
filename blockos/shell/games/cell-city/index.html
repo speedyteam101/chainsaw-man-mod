@@ -506,7 +506,7 @@ function updateViruses(dt) {
         v.dead = true;
         pop("hijack");
         hurt(15);
-        float("Virus copies burst out!", R.x, R.y - 50, "#f87171");
+        float("Virus copies escaped!", R.x, R.y - 50, "#f87171");
         Kit.sfx("lose");
         if (D.mode === "animal") { spawnVirus(); spawnVirus(); }
       }

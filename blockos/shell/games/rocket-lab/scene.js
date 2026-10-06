@@ -77,9 +77,14 @@ function earthTexture() {
   g.fillRect(0, 0, W, 14); g.fillRect(0, H - 14, W, 14);
   blob(W * 0.5, 16, 200, 260, ["#f1f5f9", "#e2e8f0"]);
   blob(W * 0.5, H - 16, 200, 260, ["#f1f5f9", "#e2e8f0"]);
-  // clouds
-  g.globalAlpha = 0.7;
-  for (let i = 0; i < 70; i++) blob(r() * W, 30 + r() * (H - 60), 14, 10, ["#ffffff", "#f1f5f9"]);
+  // clouds: small specks (one pixel here is about 40 km), none right over the launch site
+  g.globalAlpha = 0.75;
+  g.fillStyle = "#ffffff";
+  for (let i = 0; i < 260; i++) {
+    const x = r() * W, y = 20 + r() * (H - 40);
+    if (Math.abs(x - W * 0.75) < 14 && Math.abs(y - H * 0.5) < 14) continue;
+    g.fillRect(x, y, 1 + r() * 3, 0.5 + r() * 1.5);
+  }
   g.globalAlpha = 1;
   }
   const t = new THREE.CanvasTexture(c);
