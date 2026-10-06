@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Coin Hunt</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY COIN HUNT =====
+// Coins are worth 1 point, diamonds are worth 5. Get 20 points before the time runs out!
+// x = left/right, y = up, z = forward (more negative = further ahead)
+
+baseplate("green");
+dayNightCycle(60);          // a full day and night every 60 seconds
+
+// ----- Decorations: scatter("thing", how many, how far) -----
+scatter("flower", 40, 50);
+scatter("rock", 10, 50);
+scatter("bush", 10, 50);
+tree(-15, 0, -5);
+tree(18, 0, -12);
+tree(-25, 0, -40);
+tree(10, 0, -55);
+tree(-8, 0, -70);
+
+// ----- Coins: worth 1 point each -----
+coin(6, 1.5, -10);
+coin(-10, 1.5, -18);
+coin(14, 1.5, -28);
+coin(-20, 1.5, -30);
+coin(0, 1.5, -40);
+coin(25, 1.5, -5);
+coin(-30, 1.5, -12);
+coin(30, 1.5, -48);
+coin(-12, 1.5, -55);
+coin(5, 7, -25);            // a high one: jump to get it!
+pointsOnTouch("coin", 1);   // every part called "coin ..." gives 1 point
+
+// ----- Diamonds: worth 5 points, in tricky places -----
+mountain(-40, 0, -65, 20);                     // climb to the top
+part("diamond 1", -40, 21.5, -65, 1.5, 1.5, 1.5);
+
+stairs("stairs", 25, 0, -18, 8);               // walk up the stairs to the lookout
+part("lookout", 25, 8, -38, 6, 1, 6);
+color("lookout", "brown");
+part("diamond 2", 25, 10, -38, 1.5, 1.5, 1.5);
+
+island(40, 20, -80);                           // a floating island...
+part("trampoline", 40, 0.5, -64, 6, 1, 6);     // ...bounce up to reach it
+color("trampoline", "pink");
+bounce("trampoline", 110);
+part("diamond 3", 36, 21.5, -80, 1.5, 1.5, 1.5);
+
+color("diamond", "cyan");
+glow("diamond");
+spin("diamond", 1.5);
+coin("diamond");                               // diamonds can be collected like coins
+pointsOnTouch("diamond", 5);
+
+// ----- The rules -----
+winAtPoints(20);            // win with 20 points
+timer(120);                 // 120 seconds to do it
+sign("Find the coins!", 0, 8, -12);
+
+// ===== IDEAS TO TRY =====
+// More coins (put it above pointsOnTouch):   scatter("coin", 10, 40)
+// Bigger reward:      pointsOnTouch("diamond", 10)        Sunset sky:   sunset()
+// A clock that adds time:   part("clock", 0, 1, -20)   addTimeOnTouch("clock", 15)
+// A diamond that runs away from you:   flee("diamond 2", 4)
+</script>
+</body>
+</html>

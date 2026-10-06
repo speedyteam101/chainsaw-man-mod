@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>My Tower Climb</title>
+<link rel="stylesheet" href="kit.css">
+</head>
+<body>
+<script src="kit.js"></script>
+<script type="module">
+import "./easy3d.js";
+
+// ===== EASY TOWER CLIMB =====
+// The lava is rising! Climb to the top of the tower before it catches you.
+// x = left/right, y = up, z = forward (more negative = further ahead)
+
+sky("darkblue");            // a dark sky, so the lava glows
+lava();                     // lava far below...
+rise("lava", 0.3);          // ...and it rises 0.3 studs every second!
+lives(5);                   // lose them all and you start again
+
+// ----- The ground and the tower -----
+part("ground", 0, -0.5, -18, 24, 1, 30);
+color("ground", "darkgray");
+tower("tower", 0, 0, -24, 44);              // a tower 44 studs tall
+color("tower", "gray");
+
+// ----- Stage 1: spiral stairs (watch out for the fireball!) -----
+spiralStairs("stairs", 0, 0, -24, 16);      // 16 steps around the tower
+color("stairs", "blue");
+
+part("fireball", 0, 9, -24, 2, 2, 2);
+color("fireball", "red");
+glow("fireball");
+ghost("fireball");
+killOnTouch("fireball");
+orbit("fireball", "tower", 7, 1.2);         // it flies around the tower
+
+part("checkpoint 1", -6, 17, -18, 6, 1, 6);
+checkpoint("checkpoint 1");
+
+// ----- Stage 2: jump around the tower -----
+part("jump 1", -9, 19, -24, 4, 1, 4);
+part("jump 2", -6, 21, -30, 4, 1, 4);
+part("slider", 0, 23, -33, 4, 1, 4);
+moveSideToSide("slider", 3, 1.2);           // it slides left and right
+part("jump 3", 6, 25, -30, 4, 1, 4);
+part("jump 4", 9, 27, -24, 4, 1, 4);
+fallOnTouch("jump 4");                      // this one falls! be quick
+part("jump 5", 6, 29, -18, 4, 1, 4);
+color("jump", "green");
+color("slider", "yellow");
+
+part("checkpoint 2", 0, 31, -15, 6, 1, 6);
+checkpoint("checkpoint 2");
+
+// ----- Stage 3: the spinner and the lift -----
+part("spin pad", -6, 33, -18, 6, 1, 6);
+part("spinner", -6, 34.25, -18, 6, 0.5, 0.6);
+color("spinner", "red");
+glow("spinner");
+spin("spinner", 2);                         // jump over it when it comes!
+killOnTouch("spinner");
+
+part("jump 6", -9, 35, -24, 4, 1, 4);
+color("jump 6", "green");
+part("lift", -6, 35, -30, 4, 1, 4);
+color("lift", "purple");
+elevator("lift", 8, 0.8);                   // goes up 8 studs and back down
+
+// ----- The top! -----
+part("finish", 0, 44.5, -24, 8, 1, 8);
+color("finish", "gold");
+glow("finish");
+finish("finish");
+sign("TOP", 0, 50, -24);
+
+// ===== IDEAS TO TRY =====
+// Faster lava:        rise("lava", 0.6)          No lava:  delete the rise line
+// Two fireballs:      copy("fireball", "fireball 2", 0, 25, -24)   orbit("fireball 2", "tower", 9, -1)
+// Make a step vanish: disappearOnTouch("stairs 8")     A higher tower:  tower("tower", 0, 0, -24, 60)
+</script>
+</body>
+</html>
