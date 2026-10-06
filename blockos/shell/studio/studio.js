@@ -124,13 +124,20 @@ window.BlockStudio = function (ctx) {
 
   function importFile(file) {
     if (!file) return;
-    if (file.size > MAX_CODE * 3) return toast("That file is too big for a BlockOS game.");
+    if (file.size > MAX_CODE * 3 + MAX_SOUND_TOTAL) return toast("That file is too big for a BlockOS game.");
     const r = new FileReader();
     r.onload = () => {
-      const code = String(r.result || "");
+      let code = String(r.result || "");
+      let sounds = {};
+      const block = code.match(/\n?<script type="application\/json" id="blockos-sounds">([\s\S]*?)<\/script>\n?/);
+      if (block) {
+        try { sounds = cleanSounds(JSON.parse(block[1])); } catch (_) {}
+        code = code.replace(block[0], "");
+      }
       if (code.length > MAX_CODE) return toast(`That file is too big (games can have up to ${MAX_CODE.toLocaleString()} characters).`);
       const title = titleFromHtml(code) || file.name.replace(/\.html?$/i, "").slice(0, 40) || "My game";
       const g = createGame({ title, code });
+      if (Object.keys(sounds).length) setSounds(g.id, sounds);
       toast(`Opened <b>${esc(title)}</b>.`);
       ctx.go("create", { studioGame: g.id });
     };
@@ -153,6 +160,7 @@ window.BlockStudio = function (ctx) {
           <button class="btn green" data-st="run" title="Run (Ctrl+Enter)">${icon("play")}<span>Run</span></button>
           <button class="btn" data-st="play" title="Play full screen">${icon("expand")}<span>Play</span></button>
           <button class="btn" data-st="settings" title="Title, description, genre and color">${icon("settings")}<span>Settings</span></button>
+          <button class="btn" data-st="sounds" title="Add your own sounds">${icon("sound")}<span>Sounds</span></button>
           <button class="btn" data-st="export" title="Save a copy to a file">${icon("download")}<span>Save file</span></button>
           ${hasHelp() ? '<button class="btn" data-st="help" title="Help guide">?<span>Help</span></button>' : ""}
           <button class="btn st-publish" data-st="publish">${icon("upload")}<span>Publish</span></button>
@@ -305,7 +313,7 @@ window.BlockStudio = function (ctx) {
     ed.errorLines.clear();
     paint();
     const data = StudioRunner.loadData("studio-" + ed.game.id);
-    StudioRunner.load(ed.preview, ed.ta.value, { id: "studio-" + ed.game.id, server: onlineServer(), data });
+    StudioRunner.load(ed.preview, ed.ta.value, { id: "studio-" + ed.game.id, server: onlineServer(), data, sounds: getSounds(ed.game.id) });
   }
   function addLog(level, text, line) {
     if (!ed) return;
@@ -352,6 +360,9 @@ window.BlockStudio = function (ctx) {
     const g = ed.game;
     let code = g.code;
     if (!/<title>/i.test(code)) code = code.replace(/<head>/i, `<head>\n  <title>${esc(g.title)}</title>`);
+    // The game's sounds go into the file too, so opening it again brings them back.
+    const sounds = getSounds(g.id);
+    if (Object.keys(sounds).length) code += `\n<script type="application/json" id="blockos-sounds">${JSON.stringify(sounds).replace(/</g, "\\u003c")}</script>\n`;
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([code], { type: "text/html" }));
     a.download = (g.title.replace(/[^\w -]+/g, "").trim().replace(/\s+/g, "-") || "my-game") + ".html";
@@ -359,6 +370,91 @@ window.BlockStudio = function (ctx) {
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     toast("Saved a copy. Open it again with <b>Open a file</b> on the Create page.");
+  }
+
+  // ---------------------------------------------------------------- your own sounds
+
+  // Sounds you import are kept per game (localStorage "blockos.studio.sounds.<id>") as data: URLs,
+  // passed into the game when it runs, and published and saved to files with it.
+  const MAX_SOUND_FILE = 300 * 1024, MAX_SOUNDS = 12, MAX_SOUND_TOTAL = 1500000;   // bytes, count, characters
+  const SOUND_NAME = /^[a-z0-9][a-z0-9 _-]{0,19}$/i;
+  const SOUND_URL = /^data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+=*$/;
+  const soundKey = (id) => "blockos.studio.sounds." + id;
+  function cleanSounds(input) {
+    const out = {};
+    if (!input || typeof input !== "object") return out;
+    for (const [n, u] of Object.entries(input).slice(0, MAX_SOUNDS)) if (SOUND_NAME.test(n) && typeof u === "string" && SOUND_URL.test(u)) out[n] = u;
+    return out;
+  }
+  function getSounds(id) {
+    try { return cleanSounds(JSON.parse(localStorage.getItem(soundKey(id)))); } catch (_) { return {}; }
+  }
+  function setSounds(id, sounds) {
+    try {
+      if (sounds && Object.keys(sounds).length) localStorage.setItem(soundKey(id), JSON.stringify(sounds));
+      else localStorage.removeItem(soundKey(id));
+      return true;
+    } catch (_) {
+      toast("Couldn't save the sound: BlockOS's storage on this computer is full. Delete some sounds or games.");
+      return false;
+    }
+  }
+  const soundsSize = (sounds) => Object.values(sounds).reduce((n, u) => n + u.length, 0);
+  let previewAudio = null;
+
+  function soundsDialog() {
+    const g = ed.game;
+    const sounds = getSounds(g.id);
+    const names = Object.keys(sounds);
+    const used = Math.round((soundsSize(sounds) / MAX_SOUND_TOTAL) * 100);
+    openModal(`<button class="icon-btn modal-close" data-close>${icon("close")}</button>
+      <div class="st-dialog"><h2>Sounds</h2>
+      <p class="hint">Add your own sound files (MP3, WAV, OGG or M4A, up to 300 KB each, so short sounds work best). Then play them in your game by name.</p>
+      ${names.length ? `<div class="st-sounds">${names.map((n) => `
+        <div class="st-sound-row"><button class="btn small" data-st-sound-play="${esc(n)}" title="Listen">${icon("play")}</button>
+          <b>${esc(n)}</b><small>${Math.ceil((sounds[n].length * 0.75) / 1024)} KB</small>
+          <code>sound("${esc(n)}")</code>
+          <button class="btn small" data-st-sound-del="${esc(n)}">Delete</button></div>`).join("")}</div>
+        <p class="hint">Space used: ${used}% (${names.length} of ${MAX_SOUNDS} sounds).</p>`
+        : `<div class="empty">No sounds yet.</div>`}
+      <div class="st-sound-help"><b>How to use them</b>
+        <p>In an Easy 3D game: <code>sound("name")</code>, <code>music("name")</code> (plays over and over), <code>stopMusic()</code>,
+          <code>soundOnTouch("part 1", "name")</code>, <code>musicOnTouch("part 1", "name")</code>.</p>
+        <p>In any other game: <code>Kit.sound("name")</code>, <code>Kit.music("name")</code>, <code>Kit.stopMusic()</code>.</p>
+        <p class="hint">Only use sounds you made yourself or are allowed to use. Published games, sounds included, are checked by the server's owner.</p></div>
+      <div class="btns st-dialog-btns"><button class="btn green" data-st="sound-import" ${names.length >= MAX_SOUNDS ? "disabled" : ""}>Add a sound</button><span></span>
+        <button class="btn" data-close>Done</button></div>
+      <input type="file" id="stSoundFile" accept="audio/*,.mp3,.wav,.ogg,.m4a" hidden></div>`);
+    $("#stSoundFile").onchange = (e) => importSound(e.target.files[0]);
+  }
+
+  const AUDIO_TYPES = { mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", oga: "audio/ogg", m4a: "audio/mp4", aac: "audio/aac", webm: "audio/webm", flac: "audio/flac" };
+  function importSound(file) {
+    if (!file || !ed) return;
+    const g = ed.game;
+    const ext = (file.name.match(/\.([a-z0-9]+)$/i) || [])[1];
+    const type = /^audio\//.test(file.type) ? file.type : AUDIO_TYPES[(ext || "").toLowerCase()];
+    if (!type) return toast("That isn't a sound file. Use MP3, WAV, OGG or M4A.");
+    if (file.size > MAX_SOUND_FILE) return toast(`That sound is too big (${Math.ceil(file.size / 1024)} KB). Sounds can be up to 300 KB: use a shorter one.`);
+    const sounds = getSounds(g.id);
+    if (Object.keys(sounds).length >= MAX_SOUNDS) return toast(`A game can have up to ${MAX_SOUNDS} sounds.`);
+    const r = new FileReader();
+    r.onload = () => {
+      const base64 = String(r.result).split(",")[1] || "";
+      const url = `data:${type.replace(/[^a-z0-9/.+-]/gi, "")};base64,${base64}`;
+      if (!SOUND_URL.test(url)) return toast("Couldn't read that sound file.");
+      if (soundsSize(sounds) + url.length > MAX_SOUND_TOTAL) return toast("There isn't room for that sound. Delete a sound or use a shorter one.");
+      let name = file.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9 _-]+/g, " ").trim().replace(/\s+/g, " ").slice(0, 20).trim() || "sound";
+      if (!/^[a-z0-9]/.test(name)) name = "sound " + name;
+      name = name.slice(0, 20).trim();
+      for (let i = 2; sounds[name]; i++) name = (name.replace(/ \d+$/, "").slice(0, 17) + " " + i).trim();
+      sounds[name] = url;
+      if (setSounds(g.id, sounds)) {
+        toast(`Added the sound <b>${esc(name)}</b>. Play it with <code>sound("${esc(name)}")</code>.`);
+        soundsDialog();
+      }
+    };
+    r.readAsDataURL(file);
   }
 
   // ---------------------------------------------------------------- publishing
@@ -400,7 +496,7 @@ window.BlockStudio = function (ctx) {
     const g = ed.game;
     const server = ctx.lobby.url;
     publishWaiting = { id: g.id, server };
-    ctx.lobby.send({ t: "cpub", id: g.pub[server] || undefined, title: g.title, desc: g.desc, genre: g.genre, color: g.color, code: g.code });
+    ctx.lobby.send({ t: "cpub", id: g.pub[server] || undefined, title: g.title, desc: g.desc, genre: g.genre, color: g.color, code: g.code, sounds: getSounds(g.id) });
     const btn = $('[data-st="publish-go"]');
     if (btn) { btn.disabled = true; btn.textContent = "Publishing..."; }
   }
@@ -503,7 +599,7 @@ window.BlockStudio = function (ctx) {
         delete com.gets[m.id];
         if (!cb) return true;
         if (m.error || typeof m.code !== "string" || !cleanGame(m.game)) toast(esc(str(m.error, 200) || "Couldn't load that game."));
-        else cb({ code: m.code, game: cleanGame(m.game) });
+        else cb({ code: m.code, game: cleanGame(m.game), sounds: cleanSounds(m.sounds) });
         return true;
       }
       case "clike":
@@ -636,7 +732,7 @@ window.BlockStudio = function (ctx) {
   function playCommunity(id) {
     fetchGame(id, (m) => {
       closeModal();
-      ctx.playSandboxed({ title: m.game.title, code: m.code, dataId: "c-" + id, server: ctx.lobby.url });
+      ctx.playSandboxed({ title: m.game.title, code: m.code, dataId: "c-" + id, server: ctx.lobby.url, sounds: m.sounds });
     });
   }
   function remix(id) {
@@ -647,6 +743,7 @@ window.BlockStudio = function (ctx) {
         desc: `A remix of "${src.title}" by ${src.author}.`,
         genre: src.genre, color: src.color, code: m.code,
       });
+      setSounds(g.id, m.sounds);
       closeModal();
       toast("Copied into Create. Change anything you like!");
       ctx.go("create", { studioGame: g.id });
@@ -673,7 +770,9 @@ window.BlockStudio = function (ctx) {
         case "help": return helpDialog();
         case "back": saveNow(); ed = null; return ctx.go("create");
         case "run": return run();
-        case "play": saveNow(); return ctx.playSandboxed({ title: ed.game.title, code: ed.game.code, dataId: "studio-" + ed.game.id, server: onlineServer() });
+        case "play": saveNow(); return ctx.playSandboxed({ title: ed.game.title, code: ed.game.code, dataId: "studio-" + ed.game.id, server: onlineServer(), sounds: getSounds(ed.game.id) });
+        case "sounds": return soundsDialog();
+        case "sound-import": return $("#stSoundFile").click();
         case "settings": return settingsDialog();
         case "settings-done": return saveSettings();
         case "export": return exportFile();
@@ -686,6 +785,7 @@ window.BlockStudio = function (ctx) {
             delete store.games[g.id];
             saveStore();
             try { localStorage.removeItem("blockos.studio.data.studio-" + g.id); } catch (_) {}
+            setSounds(g.id, {});
             ed = null;
             ctx.go("create");
           });
@@ -694,6 +794,18 @@ window.BlockStudio = function (ctx) {
       return;
     }
     if (d.stEdit) return ctx.go("create", { studioGame: d.stEdit });
+    if (d.stSoundPlay) {
+      const url = getSounds(ed.game.id)[d.stSoundPlay];
+      if (previewAudio) previewAudio.pause();
+      if (url) { previewAudio = new Audio(url); previewAudio.play().catch(() => toast("This computer couldn't play that sound.")); }
+      return;
+    }
+    if (d.stSoundDel) {
+      const sounds = getSounds(ed.game.id);
+      delete sounds[d.stSoundDel];
+      setSounds(ed.game.id, sounds);
+      return soundsDialog();
+    }
     if (d.stTemplate !== undefined) return startFromTemplate(d.stTemplate);
     if (d.stLine) return goToLine(+d.stLine);
     if (d.stDoc) return helpDialog(d.stDoc);

@@ -1,7 +1,8 @@
 // Community games: games players made in BlockOS's Create studio and published to this server.
 //
-// Each game is one HTML page. It's stored in <dataDir>/games/<id>.html, and its details (title,
-// author, status, plays, likes, reports) in <dataDir>/community.json.
+// Each game is one HTML page. It's stored in <dataDir>/games/<id>.html, any sounds imported into it
+// in <dataDir>/games/<id>.sounds.json, and its details (title, author, status, plays, likes,
+// reports) in <dataDir>/community.json.
 //
 // New and updated games start as "pending": only their author and the server's moderators see
 // them until a moderator approves them. Moderators are people who know the server's moderator key
@@ -15,6 +16,10 @@ const crypto = require("crypto");
 const { filterText } = require("./chatfilter.js");
 
 const MAX_CODE = 300000;          // characters of HTML per game
+const MAX_SOUNDS = 12;            // imported sounds per game
+const MAX_SOUND_CHARS = 1500000;  // all of a game's sounds together (base64 data: URLs)
+const SOUND_NAME = /^[a-z0-9][a-z0-9 _-]{0,19}$/i;
+const SOUND_URL = /^data:audio\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/]+=*$/;
 const MAX_GAMES_PER_PLAYER = 10;
 const PUBLISH_GAP = 20000;        // ms between publishes from one player
 const HIDE_AFTER_REPORTS = 3;     // different players
@@ -43,6 +48,7 @@ function createCommunity(opts) {
   const indexFile = dir && path.join(dir, "community.json");
   let games = {};
   const codeCache = new Map();          // id -> html, for games stored without a data folder
+  const soundCache = new Map();         // id -> sounds, the same
   const lastPublish = new Map();        // uid -> time
 
   if (dir) {
@@ -78,8 +84,34 @@ function createCommunity(opts) {
     fs.writeFileSync(path.join(gamesDir, id + ".html"), code);
   }
   function removeCode(id) {
-    if (!dir) return codeCache.delete(id);
+    if (!dir) { soundCache.delete(id); return codeCache.delete(id); }
     try { fs.unlinkSync(path.join(gamesDir, id + ".html")); } catch (_) {}
+    try { fs.unlinkSync(path.join(gamesDir, id + ".sounds.json")); } catch (_) {}
+  }
+  function readSounds(id) {
+    if (!dir) return soundCache.get(id) || {};
+    try { return JSON.parse(fs.readFileSync(path.join(gamesDir, id + ".sounds.json"), "utf8")) || {}; } catch (_) { return {}; }
+  }
+  function writeSounds(id, sounds) {
+    if (!dir) return soundCache.set(id, sounds);
+    const file = path.join(gamesDir, id + ".sounds.json");
+    if (Object.keys(sounds).length) fs.writeFileSync(file, JSON.stringify(sounds));
+    else try { fs.unlinkSync(file); } catch (_) {}
+  }
+  // Only well-formed sounds: a name and an audio data: URL, within the limits.
+  function cleanSounds(input) {
+    const out = {};
+    let total = 0;
+    if (!input || typeof input !== "object") return { sounds: out };
+    const entries = Object.entries(input);
+    if (entries.length > MAX_SOUNDS) return { error: `A game can have up to ${MAX_SOUNDS} sounds.` };
+    for (const [name, url] of entries) {
+      if (!SOUND_NAME.test(name) || typeof url !== "string" || !SOUND_URL.test(url)) return { error: `The sound "${String(name).slice(0, 20)}" isn't a sound file BlockOS can use.` };
+      total += url.length;
+      out[name] = url;
+    }
+    if (total > MAX_SOUND_CHARS) return { error: "Your game's sounds are too big to publish together. Use shorter sounds." };
+    return { sounds: out };
   }
 
   // What players see about a game. Moderators also see reports.
@@ -115,6 +147,8 @@ function createCommunity(opts) {
     if (!title || /^#+$/.test(title.replace(/\s/g, ""))) return { error: "Give your game a title." };
     const desc = clean(m.desc, 300);
     const genre = GENRES.includes(m.genre) ? m.genre : "Arcade";
+    const snd = cleanSounds(m.sounds);
+    if (snd.error) return { error: snd.error };
     const color = COLOR.test(m.color) ? m.color : "#3b82f6";
 
     let g = ID.test(m.id || "") ? games[m.id] : null;
@@ -132,6 +166,7 @@ function createCommunity(opts) {
     });
     g.reports = [];
     writeCode(g.id, code);
+    writeSounds(g.id, snd.sounds);
     lastPublish.set(client.uid, now);
     save();
     return { ok: true, id: g.id, status: g.status };
@@ -146,7 +181,7 @@ function createCommunity(opts) {
     const code = readCode(id);
     if (code === null) return { error: "That game's file is missing on the server." };
     if (g.status === "approved" && !own) { g.plays++; save(); }
-    return { ok: true, code, game: meta(g, client.uid, mod) };
+    return { ok: true, code, sounds: readSounds(id), game: meta(g, client.uid, mod) };
   }
 
   function like(client, id) {

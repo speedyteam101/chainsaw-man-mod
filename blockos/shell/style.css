@@ -578,3 +578,11 @@ select {
 .st-cmds td { padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
 .st-cmds td:first-child { width: 46%; }
 .st-cmds code { white-space: normal; word-break: break-word; }
+.st-sounds { display: flex; flex-direction: column; gap: 8px; margin: 14px 0 6px; }
+.st-sound-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--bg2); border-radius: 10px; padding: 8px 10px; }
+.st-sound-row small { color: var(--muted); }
+.st-sound-row code { margin-left: auto; background: var(--panel); padding: 2px 8px; border-radius: 6px; font-size: 13px; }
+.st-sound-row .btn svg { width: 14px; height: 14px; fill: currentColor; stroke: none; vertical-align: -2px; }
+.st-sound-help { margin-top: 14px; background: var(--bg2); border-radius: 12px; padding: 12px 14px; }
+.st-sound-help p { margin: 6px 0 0; line-height: 1.5; }
+.st-sound-help code { background: var(--panel); padding: 1px 6px; border-radius: 6px; font-size: 13px; }

@@ -136,12 +136,15 @@ Open **Create** to make games with code, like Roblox Studio:
 
 - **New game** starts from a template (Easy 3D obby, Clicker, Platformer, Dodge, 3D obby, Online hangout and
   more) with comments that explain what to change. **Help** has a guide to the BlockOS game kit.
-- **Easy 3D obby** is the simplest start: name your parts, then give them powers with 100 one-line
+- **Easy 3D obby** is the simplest start: name your parts, then give them powers with 178 one-line
   commands like `part("part 1", 0, 2, -10)`, `color("part 1", "red")`, `killOnTouch("part 1")`,
   `checkpoint(...)`, `follow(...)`, `keyFor(...)`, `npc(...)` and `finish(...)`. They're all listed in
   **Help → Easy 3D** (code: `shell/games/easy3d.js`). **Help** has a guide to the BlockOS game kit.
 - **Run** (Ctrl+Enter) shows your game next to the code; mistakes appear under **Output** with
   the line number (click it to jump there). Your games save on this computer as you type.
+- **Sounds** adds your own sound files (MP3, WAV, OGG or M4A, up to 300 KB each, 12 per game). Play
+  them with `sound("name")` / `music("name")` in Easy 3D, or `Kit.sound("name")` in any game. They're
+  saved, published and remixed together with the game.
 - **Save file** keeps a copy as an `.html` file, and **Open a file** loads one, so you can
   share a game by sending the file.
 - **Publish** puts your game on the server you're online on. The server's owner checks it first;

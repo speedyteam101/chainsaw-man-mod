@@ -37,7 +37,7 @@ const { createCommunity } = require("./community.js");
 
 const MAX_PER_SERVER = 12;      // players on one server of one game
 const MAX_MESSAGE = 4096;        // bytes
-const MAX_UPLOAD = 1024 * 1024;  // bytes, for publishing a community game
+const MAX_UPLOAD = 3 * 1024 * 1024;  // bytes, for publishing a community game with its sounds
 const MAX_RATE = 40;             // messages per second per player
 const QUICK_CHAT_COUNT = 64;     // indexes into Kit.QUICK_CHAT
 const MAX_WHO = 200;             // friend codes per "who" question

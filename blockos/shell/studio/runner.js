@@ -83,6 +83,7 @@ window.StudioRunner = (function () {
     try { Object.defineProperty(window, "localStorage", { value: makeStore(function () { return data; }, true), configurable: true }); } catch (e) {}
     try { Object.defineProperty(window, "sessionStorage", { value: makeStore(function () { return mem; }, false), configurable: true }); } catch (e) {}
     window.BLOCKOS_SERVER = seed.server || "";
+    window.BLOCKOS_SOUNDS = seed.sounds || {};
     window.BLOCKOS_STUDIO = { id: seed.id };
     var post = function (level, parts, line) {
       var text = parts.map(function (p) {
@@ -115,6 +116,7 @@ window.StudioRunner = (function () {
       id: String(o.id || "draft"),
       server: serverSource(o.server) ? o.server : "",
       data: o.data || {},
+      sounds: o.sounds || {},
       readonly: readonlyData(),
     };
     const json = JSON.stringify(seed).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");

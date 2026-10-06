@@ -9,6 +9,8 @@
  *   Kit.hud(html)                -> sets the top-right HUD text
  *   Kit.best(id, score, lower)   -> stores and returns the best score (lower=true when smaller wins)
  *   Kit.sfx(name)                -> "click" | "score" | "hit" | "jump" | "lose" | "win" | "coin"
+ *   Kit.sound(name)              -> plays a sound imported in the Create studio (or a built-in one)
+ *   Kit.music(name), Kit.stopMusic(), Kit.volume(0..1), Kit.soundNames() -> imported sounds
  *   Kit.finish(id, score)        -> records the best score and reports it to the BlockOS shell
  *   Kit.rand(a, b), Kit.randInt(a, b), Kit.pick(arr), Kit.clamp(v, a, b)
  *   Kit.colors                   -> brick palette
@@ -209,6 +211,31 @@
       }
     } catch (_) {}
   }
+
+  // Sounds a player imported into their game in the Create studio (studio/runner.js puts them in
+  // window.BLOCKOS_SOUNDS as { name: "data:audio/..." }). Kit.sound(name) plays one of those, or
+  // one of the built-in sounds above; Kit.music(name) loops one until Kit.stopMusic().
+  const imported = () => window.BLOCKOS_SOUNDS || {};
+  const soundOff = () => { try { return localStorage.getItem("blockos.muted") === "1"; } catch (_) { return false; } };
+  let volume = 1, musicEl = null;
+  function sound(name) {
+    const url = imported()[name];
+    if (!url) { sfx(name); return !!SOUNDS[name]; }
+    if (soundOff()) return true;
+    try { const a = new Audio(url); a.volume = volume; a.play().catch(() => {}); } catch (_) {}
+    return true;
+  }
+  function music(name) {
+    stopMusic();
+    const url = imported()[name];
+    if (!url) return false;
+    if (soundOff()) return true;
+    try { musicEl = new Audio(url); musicEl.loop = true; musicEl.volume = volume * 0.6; musicEl.play().catch(() => {}); } catch (_) {}
+    return true;
+  }
+  function stopMusic() { if (musicEl) { musicEl.pause(); musicEl = null; } }
+  function setVolume(v) { volume = Math.max(0, Math.min(1, Number(v) || 0)); if (musicEl) musicEl.volume = volume * 0.6; }
+  const soundNames = () => Object.keys(imported());
 
   function finish(id, score, lowerIsBetter) {
     const b = best(id, score, lowerIsBetter);
@@ -780,7 +807,7 @@
   }
 
   window.Kit = {
-    stage, pointer, loop, overlay, hud, best, sfx, finish, brick,
+    stage, pointer, loop, overlay, hud, best, sfx, finish, brick, sound, music, stopMusic, volume: setVolume, soundNames,
     key: (code) => held.has(code),
     onKey: (fn) => keyHandlers.push(fn),
     rand, randInt, pick, clamp,

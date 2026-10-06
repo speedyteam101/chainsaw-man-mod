@@ -30,7 +30,8 @@ or download things, and they don't earn Bricks.
   wipe a container's files when it restarts, so give it a persistent volume or disk.
 - **Skipping the check** (`--auto-approve` / `BLOCKOS_AUTO_APPROVE=1`) makes new games public
   straight away. Only do that on a server for people you know.
-- Limits: 300,000 characters per game, 10 games per player per server, one publish every 20 seconds.
+- Limits: 300,000 characters per game plus up to 12 sounds (about 1 MB together), 10 games per
+  player per server, one publish every 20 seconds. Sounds are kept in `games/<id>.sounds.json`.
 
 ## Playing on the same Wi-Fi (easiest)
 
@@ -78,5 +79,5 @@ node relay.js --port 8790 --data ./data   # or: docker build -t blockos-server .
 
 Only share the address with people you know. Chat is filtered, but nobody moderates it.
 
-Limits: 12 players per server of each game, 4 KB per message (1 MB to publish a community game), 40 messages per second per player, one chat
+Limits: 12 players per server of each game, 4 KB per message (3 MB to publish a community game with its sounds), 40 messages per second per player, one chat
 message every 0.7 seconds, 120 characters per chat message.

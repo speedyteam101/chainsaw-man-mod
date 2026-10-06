@@ -71,6 +71,7 @@
     create: '<path d="m8 8-5 4 5 4M16 8l5 4-5 4M14 4l-4 16"/>',
     community: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M17.5 14v7M14 17.5h7"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
+    sound: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
     expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     upload: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
@@ -893,7 +894,7 @@
     frame.onload = () => frame.contentWindow && frame.contentWindow.focus();
   }
   function loadSandboxed() {
-    StudioRunner.load(frame, sandboxed.code, { id: sandboxed.dataId, server: sandboxed.server, data: StudioRunner.loadData(sandboxed.dataId) });
+    StudioRunner.load(frame, sandboxed.code, { id: sandboxed.dataId, server: sandboxed.server, data: StudioRunner.loadData(sandboxed.dataId), sounds: sandboxed.sounds });
   }
   function leaveGame() {
     player.hidden = true;

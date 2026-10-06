@@ -45,8 +45,10 @@ let started = false, won = false, over = false;
 let spawnAt = [0, 0, 0];
 let unnamed = 0, clock = 0, time = 0, deaths = 0;
 let coinsTotal = 0, coinsGot = 0, points = 0, usePoints = false, pointsToWin = 0;
-let timeLimit = 0;
-const game = { speed: WALK, jump: JUMP, gravity: 1, fly: false, doubleJump: false, airJumped: false };
+let timeLimit = 0, surviveFor = 0;
+let maxLives = 0, livesLeft = 0, shieldUntil = 0, cycle = 0;
+const counters = new Map();       // counter name -> number (shown at the top)
+const game = { speed: WALK, jump: JUMP, gravity: 1, fly: false, doubleJump: false, airJumped: false, gravityFor: 0, flyFor: 0 };
 
 const key = (name) => String(name).trim().toLowerCase();
 const num = (v, d) => (v === undefined || v === null || v === "" || isNaN(Number(v)) ? d : Number(v));
@@ -257,9 +259,9 @@ const damage = (name, amount) => { healthOn(); power(name, "damage", { type: "da
 const heal = (name, amount) => { healthOn(); power(name, "heal", { type: "heal", amount: num(amount, 50) }); };
 const pointsOnTouch = (name, n) => { usePoints = true; power(name, "pointsOnTouch", { type: "points", n: num(n, 1) }); };
 const messageOnTouch = (name, text) => power(name, "messageOnTouch", { type: "message", text: String(text) });
-function soundOnTouch(name, sound) {
-  if (!SOUNDS.includes(sound)) return problem(`soundOnTouch: sounds are ${SOUNDS.map((x) => `"${x}"`).join(", ")}.`);
-  power(name, "soundOnTouch", { type: "sound", sound });
+function soundOnTouch(name, soundName) {
+  if (!SOUNDS.includes(soundName) && !soundNames().includes(soundName)) return badSound("soundOnTouch", soundName);
+  power(name, "soundOnTouch", { type: "sound", sound: soundName });
 }
 const badgeOnTouch = (name, badgeName) => power(name, "badgeOnTouch", { type: "badge", badge: String(badgeName || "Explorer") });
 const keyFor = (keyName, door) => power(keyName, "keyFor", { type: "key", door });
@@ -328,7 +330,7 @@ function touched(s, p) {
     case "heal": world.heal(p.amount); Kit.sfx("coin"); break;
     case "points": if (!s.rt.scored) { s.rt.scored = true; addPoints(p.n); } break;
     case "message": message(p.text); break;
-    case "sound": Kit.sfx(p.sound); break;
+    case "sound": sound(p.sound); break;
     case "badge": Kit.badge(GAME_ID, p.badge.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30), p.badge, "Found in " + document.title); break;
     case "key":
       if (s.rt.hidden) break;
@@ -346,7 +348,292 @@ function touched(s, p) {
       if (model) world.bubble(model, p.text);
       break;
     }
+    case "color": paint(meshes.get(k), p.color); s.color = p.color; break;
+    case "lose": lose(p.text); break;
+    case "addtime": if (!s.rt.used) { s.rt.used = true; addTime(p.seconds); message(`+${p.seconds} seconds!`); } break;
+    case "lowgravity": game.gravity = 0.4; game.gravityFor = clock + p.seconds; Kit.sfx("score"); break;
+    case "fly": game.flyFor = clock + p.seconds; Kit.sfx("score"); message("You can fly! Hold Jump."); break;
+    case "shield": invincible(p.seconds); Kit.sfx("score"); message(`Shield for ${p.seconds} seconds!`); break;
+    case "hide": hide(p.target); break;
+    case "show": show(p.target); break;
+    case "losepoints": if (!s.rt.scored) { s.rt.scored = true; addPoints(-p.n); Kit.sfx("hit"); } break;
+    case "counter": if (!s.rt.counted) { s.rt.counted = true; addCounter(p.counter, p.n); Kit.sfx("coin"); } break;
+    case "music": music(p.sound); break;
+    case "say": say(p.text); break;
+    case "restart": restart(); break;
+    case "life": if (!s.rt.used && maxLives) { s.rt.used = true; livesLeft++; Kit.sfx("win"); message("+1 life!"); } break;
   }
+}
+
+// ================================================================= more building
+
+const bridge = (name, x, y, z, length) => part(name, x, y, num(z, 0) - num(length, 30) / 2, 4, 1, num(length, 30));
+const pillar = (name, x, y, z, height) => part(name, x, num(y, 0) + num(height, 10) / 2, z, 2, num(height, 10), 2);
+function pyramid(name, x, y, z, levels) {
+  const n = Math.max(1, Math.min(30, Math.round(num(levels, 5))));
+  for (let i = 1; i <= n; i++) { const w = (n - i + 1) * 4; part(`${name} ${i}`, num(x, 0), num(y, 0) + i - 0.5, num(z, 0), w, 1, w); }
+  return name;
+}
+function spiralStairs(name, x, y, z, steps) {
+  const n = Math.max(1, Math.min(200, Math.round(num(steps, 16))));
+  for (let i = 1; i <= n; i++) {
+    const a = i * 0.5;
+    part(`${name} ${i}`, num(x, 0) + Math.cos(a) * 7, num(y, 0) + i, num(z, 0) + Math.sin(a) * 7, 4, 1, 4);
+  }
+  return name;
+}
+function ring(name, x, y, z, count, radius) {
+  const n = Math.max(1, Math.min(100, Math.round(num(count, 8)))), r = num(radius, 12);
+  for (let i = 1; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    part(`${name} ${i}`, num(x, 0) + Math.cos(a) * r, num(y, 0), num(z, 0) + Math.sin(a) * r, 4, 1, 4);
+  }
+  return name;
+}
+function grid(name, x, y, z, rows, cols, gap) {
+  const R = Math.max(1, Math.min(30, Math.round(num(rows, 4)))), C = Math.max(1, Math.min(30, Math.round(num(cols, 4)))), g = num(gap, 6);
+  let i = 0;
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    part(`${name} ${++i}`, num(x, 0) + (c - (C - 1) / 2) * g, num(y, 0), num(z, 0) - r * g, 4, 1, 4);
+    if ((r + c) % 2) color(`${name} ${i}`, "white");
+  }
+  return name;
+}
+function fence(name, x, y, z, length) {
+  part(name, x, num(y, 0) + 1.5, z, num(length, 20), 3, 0.5);
+  color(name, "brown"); wood(name);
+  return name;
+}
+function room(name, x, y, z, roomSize) {
+  const [hx, hy, hz] = [num(x, 0), num(y, 0), num(z, 0)], w = num(roomSize, 16);
+  part(`${name} floor`, hx, hy - 0.5, hz, w, 1, w);
+  part(`${name} back`, hx, hy + 4, hz - w / 2 + 0.5, w, 8, 1);
+  part(`${name} front`, hx, hy + 4, hz + w / 2 - 0.5, w, 8, 1);
+  part(`${name} left`, hx - w / 2 + 0.5, hy + 4, hz, 1, 8, w - 2);
+  part(`${name} right`, hx + w / 2 - 0.5, hy + 4, hz, 1, 8, w - 2);
+  part(`${name} roof`, hx, hy + 8.5, hz, w, 1, w);
+  color(name, "gray");
+  return name;
+}
+function deco(kind, pieces) {
+  const n = `${kind} ${++unnamed}`;
+  pieces.forEach((p, i) => {
+    const pn = `${n} ${i + 1}`;
+    part(pn, p[0], p[1], p[2], p[3], p[4], p[5]);
+    color(pn, p[6]);
+    if (p[7]) p[7].forEach((cmd) => COMMANDS[cmd](pn));
+  });
+  return n;
+}
+const bush = (x, y, z) => deco("bush", [[num(x, 0), num(y, 0) + 1.2, num(z, 0), 3, 2.4, 3, "green", ["smooth"]]]);
+const flower = (x, y, z) => deco("flower", [
+  [num(x, 0), num(y, 0) + 0.75, num(z, 0), 0.3, 1.5, 0.3, "darkgreen", ["smooth", "ghost"]],
+  [num(x, 0), num(y, 0) + 1.7, num(z, 0), 1, 0.6, 1, RAINBOW[unnamed % RAINBOW.length], ["smooth", "ghost"]],
+]);
+const rock = (x, y, z) => deco("rock", [[num(x, 0), num(y, 0) + 1, num(z, 0), 3, 2, 2.5, "darkgray", ["smooth"]]]);
+const lamp = (x, y, z) => deco("lamp", [
+  [num(x, 0), num(y, 0) + 3, num(z, 0), 0.5, 6, 0.5, "black", ["smooth"]],
+  [num(x, 0), num(y, 0) + 6.4, num(z, 0), 1.4, 1, 1.4, "yellow", ["glow", "smooth"]],
+]);
+function mountain(x, y, z, height) {
+  const h = Math.max(5, num(height, 30)), n = `mountain ${++unnamed}`, levels = 5;
+  for (let i = 0; i < levels; i++) {
+    const w = h * 2 * (1 - i / levels);
+    part(`${n} ${i + 1}`, num(x, 0), num(y, 0) + (i + 0.5) * (h / levels), num(z, 0), w, h / levels, w);
+    color(`${n} ${i + 1}`, i === levels - 1 ? "white" : "darkgray");
+  }
+  smooth(n);
+  return n;
+}
+function island(x, y, z) {
+  const n = `island ${++unnamed}`;
+  part(`${n} sand`, x, num(y, 0) - 1, z, 24, 2, 24); color(`${n} sand`, "sand");
+  part(`${n} grass`, x, num(y, 0) - 0.25, z, 18, 0.5, 18); color(`${n} grass`, "green");
+  tree(num(x, 0) + 4, num(y, 0), num(z, 0) - 3);
+  return n;
+}
+function castle(name, x, y, z) {
+  const [cx, cy, cz] = [num(x, 0), num(y, 0), num(z, 0)];
+  part(`${name} floor`, cx, cy - 0.5, cz, 30, 1, 30);
+  part(`${name} back`, cx, cy + 5, cz - 14, 30, 10, 2);
+  part(`${name} left`, cx - 14, cy + 5, cz, 2, 10, 26);
+  part(`${name} right`, cx + 14, cy + 5, cz, 2, 10, 26);
+  part(`${name} front left`, cx - 9.5, cy + 5, cz + 14, 11, 10, 2);
+  part(`${name} front right`, cx + 9.5, cy + 5, cz + 14, 11, 10, 2);
+  [[-14, -14], [14, -14], [-14, 14], [14, 14]].forEach(([dx, dz], i) => part(`${name} tower ${i + 1}`, cx + dx, cy + 8, cz + dz, 6, 16, 6));
+  color(name, "gray");
+  return name;
+}
+function stars(count) {
+  const n = Math.max(1, Math.min(300, Math.round(num(count, 80))));
+  for (let i = 1; i <= n; i++) {
+    const a = Math.random() * Math.PI * 2, d = 150 + Math.random() * 200;
+    part(`star ${i}`, Math.cos(a) * d, 60 + Math.random() * 120, Math.sin(a) * d - 50, 1.2, 1.2, 1.2);
+  }
+  color("star", "white"); glow("star"); smooth("star"); ghost("star");
+  return "star";
+}
+function scatter(kind, count, spread) {
+  const makers = { tree, rock, flower, bush, cloud, coin, lamp };
+  const kindName = String(kind).toLowerCase();
+  const make = makers[kindName];
+  if (!make) return problem(`scatter: you can scatter ${Object.keys(makers).map((x) => `"${x}"`).join(", ")}.`);
+  const n = Math.max(1, Math.min(200, Math.round(num(count, 10)))), r = num(spread, 60);
+  for (let i = 0; i < n; i++) {
+    const x = (Math.random() * 2 - 1) * r, z = (Math.random() * 2 - 1) * r - r / 2;
+    if (kindName === "cloud") make(x, 30 + Math.random() * 20, z);
+    else if (kindName === "coin") make(x, 1.5, z);
+    else make(x, 0, z);
+  }
+}
+
+// ================================================================= more looks
+
+function fadeOut(name, seconds) {
+  for (const s of find(name, "fadeOut")) s.rt.fade = { from: 1, to: 0, t: 0, dur: Math.max(0.1, num(seconds, 1)) };
+}
+function fadeIn(name, seconds) {
+  for (const s of find(name, "fadeIn")) { show(s.name); s.rt.fade = { from: 0, to: s.opacity, t: 0, dur: Math.max(0.1, num(seconds, 1)) }; }
+}
+function flash(name, c) {
+  for (const s of find(name, "flash")) {
+    const m = meshes.get(key(s.name));
+    if (!m) continue;
+    paint(m, colorOf(c || "white"));
+    later(0.25, () => paint(m, s.color));
+  }
+}
+const pulseColors = (name, c1, c2) => change(name, "pulseColors", (s) => { s.pulse = [colorOf(c1 || "red"), colorOf(c2 || "yellow")]; });
+const shake = (name) => change(name, "shake", (s) => { s.shake = true; });
+const bob = (name) => change(name, "bob", (s) => s.motions.push({ axis: 1, distance: 0.6, speed: 2 }));
+const colorOnTouch = (name, c) => power(name, "colorOnTouch", { type: "color", color: colorOf(c || "green") });
+
+// ================================================================= more movement
+
+const rise = (name, speed) => change(name, "rise", (s) => { s.drift = [0, num(speed, 1), 0]; });
+const sink = (name, speed) => change(name, "sink", (s) => { s.drift = [0, -num(speed, 1), 0]; });
+const drift = (name, sx, sy, sz) => change(name, "drift", (s) => { s.drift = [num(sx, 0), num(sy, 0), num(sz, 0)]; });
+const moveBetween = (name, x, y, z, speed) => change(name, "moveBetween", (s) => { s.between = { to: [num(x, s.pos[0]), num(y, s.pos[1]), num(z, s.pos[2])], speed: num(speed, 1) }; });
+const elevator = (name, height, speed) => change(name, "elevator", (s) => { s.between = { to: [s.pos[0], s.pos[1] + num(height, 10), s.pos[2]], speed: num(speed, 0.6) }; });
+const orbit = (name, center, radius, speed) => change(name, "orbit", (s) => { s.orbit = { center, r: num(radius, 8), speed: num(speed, 1) }; });
+const flee = (name, speed) => change(name, "flee", (s) => { s.flee = num(speed, 6); });
+const wander = (name, speed) => change(name, "wander", (s) => { s.wander = num(speed, 4); });
+
+// ================================================================= more touch powers
+
+const loseOnTouch = (name, text) => power(name, "loseOnTouch", { type: "lose", text: text === undefined ? "You touched " + name + "!" : String(text) });
+const addTimeOnTouch = (name, seconds) => power(name, "addTimeOnTouch", { type: "addtime", seconds: num(seconds, 10) });
+const slowOnTouch = (name, speed, seconds) => power(name, "slowOnTouch", { type: "speed", speed: num(speed, 6), seconds: num(seconds, 3) });
+const lowGravityOnTouch = (name, seconds) => power(name, "lowGravityOnTouch", { type: "lowgravity", seconds: num(seconds, 5) });
+const flyOnTouch = (name, seconds) => power(name, "flyOnTouch", { type: "fly", seconds: num(seconds, 5) });
+const shieldOnTouch = (name, seconds) => power(name, "shieldOnTouch", { type: "shield", seconds: num(seconds, 5) });
+const hideOnTouch = (name, target) => power(name, "hideOnTouch", { type: "hide", target });
+const showOnTouch = (name, target) => power(name, "showOnTouch", { type: "show", target });
+const losePointsOnTouch = (name, n) => { usePoints = true; power(name, "losePointsOnTouch", { type: "losepoints", n: num(n, 1) }); };
+const counterOnTouch = (name, counterName, n) => power(name, "counterOnTouch", { type: "counter", counter: String(counterName || "Score"), n: num(n, 1) });
+const musicOnTouch = (name, sound) => power(name, "musicOnTouch", { type: "music", sound: String(sound) });
+const sayOnTouch = (name, text) => power(name, "sayOnTouch", { type: "say", text: String(text) });
+const restartOnTouch = (name) => power(name, "restartOnTouch", { type: "restart" });
+const lifeOnTouch = (name) => power(name, "lifeOnTouch", { type: "life" });
+
+// ================================================================= more for the player
+
+function lives(n) { maxLives = livesLeft = Math.max(1, Math.round(num(n, 3))); }
+function health(n) {
+  healthOn();
+  game.health = Math.max(1, num(n, 100));
+  if (world.player) { world.player.maxHealth = world.player.health = game.health; world.updateHealthBar(); }
+}
+function setHealth(n) {
+  healthOn();
+  const p = world.player;
+  if (!p) return;
+  p.health = Math.max(0, Math.min(p.maxHealth, num(n, p.maxHealth)));
+  world.updateHealthBar();
+  if (p.health <= 0) world.kill();
+}
+const getHealth = () => (world.player ? world.player.health : 100);
+function jump() { const p = world.player; if (p && p.alive && p.onGround) { p.vel.y = p.jump; p.onGround = false; Kit.sfx("jump"); } }
+function shiftLock(on) { world.cam.shiftLock = on !== false; }
+function turnCamera(degrees) { world.cam.yaw += (num(degrees, 90) * Math.PI) / 180; }
+const playerName = () => Kit.player().name;
+const isOnGround = () => !!(world.player && world.player.onGround);
+function invincible(seconds) { shieldUntil = clock + Math.max(0, num(seconds, 5)); }
+function resetSpeed() { const p = world.player; if (p) { p.speed = game.speed; p.jump = game.jump; } }
+function say(text) { if (world.player) world.bubble(world.player.group, String(text)); }
+
+// ================================================================= more for the game
+
+const KEY_NAMES = { space: "Space", enter: "Enter", shift: "ShiftLeft", up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", tab: "Tab" };
+const keyFns = [];
+function onKey(k, fn) {
+  if (typeof fn !== "function") return problem('onKey needs a key and a function, like onKey("E", function () { ... });');
+  const t = String(k).trim();
+  const code = /^[a-z]$/i.test(t) ? "Key" + t.toUpperCase() : /^[0-9]$/.test(t) ? "Digit" + t : KEY_NAMES[t.toLowerCase()] || t;
+  keyFns.push({ code, fn });
+}
+const startCounters = new Map();
+function counter(name, start) { counters.set(String(name), num(start, 0)); if (!started) startCounters.set(String(name), num(start, 0)); }
+function addCounter(name, n) { const k = String(name); counters.set(k, (counters.get(k) || 0) + num(n, 1)); }
+const getCounter = (name) => counters.get(String(name)) || 0;
+let textEl = null;
+function showText(text) {
+  if (!textEl) {
+    textEl = document.createElement("div");
+    textEl.style.cssText = "position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:5;background:rgba(0,0,0,.6);color:#fff;" +
+      "padding:8px 16px;border-radius:10px;font:800 18px system-ui,sans-serif;pointer-events:none;text-align:center;max-width:80vw";
+    document.body.appendChild(textEl);
+  }
+  textEl.textContent = String(text);
+  textEl.style.display = "";
+}
+function hideText() { if (textEl) textEl.style.display = "none"; }
+const chance = (percent) => Math.random() * 100 < num(percent, 50);
+function repeat(n, fn) {
+  if (typeof fn !== "function") return problem("repeat needs a number and a function, like repeat(5, function (i) { ... });");
+  const times = Math.max(0, Math.min(1000, Math.round(num(n, 1))));
+  for (let i = 1; i <= times; i++) fn(i);
+}
+function badge(badgeName) {
+  const b = String(badgeName || "Winner");
+  Kit.badge(GAME_ID, b.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 30), b, "Earned in " + document.title);
+}
+function addTime(seconds) { if (timeLimit) timeLimit += num(seconds, 10); }
+function stopTimer() { timeLimit = 0; }
+function winAfter(seconds) { surviveFor = Math.max(1, num(seconds, 60)); }
+function countdown() {
+  const p = world.player;
+  if (!p) return later(0, countdown);
+  p.frozen = true;
+  ["3", "2", "1"].forEach((t, i) => later(i, () => { showText(t); Kit.sfx("click"); }));
+  later(3, () => { showText("Go!"); Kit.sfx("score"); p.frozen = false; time = 0; });
+  later(4, hideText);
+}
+function soundNames() { return Kit.soundNames ? Kit.soundNames() : []; }
+function badSound(command, name) {
+  const mine = soundNames();
+  problem(`${command}("${name}"): there's no sound called "${name}". Built-in sounds: ${SOUNDS.join(", ")}.` +
+    (mine.length ? ` Your sounds: ${mine.join(", ")}.` : " Add your own with the Sounds button."));
+}
+function sound(name) { if (!Kit.sound(String(name))) badSound("sound", name); }
+function music(name) { if (!Kit.music(String(name))) badSound("music", name); }
+function stopMusic() { Kit.stopMusic(); }
+function volume(n) { Kit.volume(num(n, 1)); }
+
+// ================================================================= more sky and light
+
+let brightnessLevel = 1;
+function brightness(n) {
+  brightnessLevel = Math.max(0, num(n, 1));
+  world.hemi.intensity = 1.15 * brightnessLevel;
+  world.sun.intensity = 1.6 * brightnessLevel;
+}
+function sunColor(c) { world.sun.color.set(colorOf(c)); }
+function dayNightCycle(seconds) { cycle = Math.max(5, num(seconds, 60)); }
+function mix(a, b, f) {
+  const ca = parseInt(a.slice(1), 16), cb = parseInt(b.slice(1), 16);
+  const ch = (sh) => Math.round(((ca >> sh) & 255) * (1 - f) + ((cb >> sh) & 255) * f);
+  return "#" + ((ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).padStart(6, "0");
 }
 
 // ================================================================= showing and hiding
@@ -436,10 +723,7 @@ function later(seconds, fn) { timers.push({ at: clock + Math.max(0, seconds), fn
 
 function message(text) { Kit.toast(String(text), "", "#3b82f6"); }
 function popup(title, text) { return Kit.overlay(String(title), text === undefined ? "" : String(text), "OK"); }
-function playSound(sound) {
-  if (!SOUNDS.includes(sound)) return problem(`playSound: sounds are ${SOUNDS.map((x) => `"${x}"`).join(", ")}.`);
-  Kit.sfx(sound);
-}
+function playSound(name) { if (!Kit.sound(String(name))) badSound("playSound", name); }
 function random(a, b) {
   const lo = Math.ceil(Math.min(num(a, 1), num(b, 10))), hi = Math.floor(Math.max(num(a, 1), num(b, 10)));
   return lo + Math.floor(Math.random() * (hi - lo + 1));
@@ -522,6 +806,34 @@ function animate(s, m, dt) {
     if (mo.axis === 0) x += v; else if (mo.axis === 1) y += v; else z += v;
   }
   if (s.circle) { x += Math.cos(clock * s.circle.speed) * s.circle.r; z += Math.sin(clock * s.circle.speed) * s.circle.r; }
+  if (s.drift) {
+    const d = s.rt.drift || (s.rt.drift = [0, 0, 0]);
+    for (let i = 0; i < 3; i++) d[i] += s.drift[i] * dt;
+    x += d[0]; y += d[1]; z += d[2];
+  }
+  if (s.between) {
+    const f = (1 - Math.cos(clock * s.between.speed)) / 2;
+    x += (s.between.to[0] - s.pos[0]) * f; y += (s.between.to[1] - s.pos[1]) * f; z += (s.between.to[2] - s.pos[2]) * f;
+  }
+  if (s.orbit) {
+    const c = meshes.get(key(s.orbit.center));
+    if (c) { x = c.position.x + Math.cos(clock * s.orbit.speed) * s.orbit.r; z = c.position.z + Math.sin(clock * s.orbit.speed) * s.orbit.r; }
+  }
+  if ((s.flee || s.wander) && p) {
+    const at = s.rt.at || (s.rt.at = [x, z]);
+    let dx = 0, dz = 0, speed = 0;
+    if (s.flee && Math.hypot(at[0] - p.pos.x, at[1] - p.pos.z) < 30) { dx = at[0] - p.pos.x; dz = at[1] - p.pos.z; speed = s.flee; }
+    else if (s.wander) {
+      if (!s.rt.dir || clock > s.rt.dirUntil) { const a = Math.random() * Math.PI * 2; s.rt.dir = [Math.cos(a), Math.sin(a)]; s.rt.dirUntil = clock + 1 + Math.random() * 2; }
+      // Stay within 25 studs of where it started.
+      if (Math.hypot(at[0] - s.pos[0], at[1] - s.pos[2]) > 25) s.rt.dir = [s.pos[0] - at[0], s.pos[2] - at[1]];
+      [dx, dz] = s.rt.dir; speed = s.wander;
+    }
+    const d = Math.hypot(dx, dz);
+    if (d > 0.01) { at[0] += (dx / d) * speed * dt; at[1] += (dz / d) * speed * dt; }
+    x = at[0]; z = at[1];
+  }
+  if (s.shake) { x += Math.sin(clock * 47) * 0.12; z += Math.cos(clock * 53) * 0.12; }
   if (s.rt.falling) {
     const f = s.rt.falling;
     f.t += dt;
@@ -534,6 +846,15 @@ function animate(s, m, dt) {
   m.position.set(x, y, z);
   if (s.spin) m.rotation.y += s.spin * dt;
   if (s.rainbow) paint(m, RAINBOW[Math.floor(clock * 3 + s.name.length) % RAINBOW.length]);
+  if (s.pulse) paint(m, s.pulse[Math.floor(clock * 2) % 2]);
+  if (s.rt.fade) {
+    const f = s.rt.fade;
+    f.t = Math.min(f.dur, f.t + dt);
+    const o = f.from + (f.to - f.from) * (f.t / f.dur);
+    if (!m.userData.ownPaint) { m.material = m.material.map((x2) => x2.clone()); m.userData.ownPaint = true; }
+    m.material.forEach((mat) => { mat.transparent = true; mat.opacity = o; });
+    if (f.t >= f.dur) { s.rt.fade = null; if (f.to === 0) hide(s.name); }
+  }
   if (s.blink) {
     const on = Math.floor(clock / s.blink) % 2 === 0;
     if (on && s.rt.blinkHid) { s.rt.blinkHid = false; show(s.name); }
@@ -580,6 +901,9 @@ function restart() {
   Object.assign(world.player, { speed: game.speed, jump: game.jump, frozen: false });
   if (world.healthEl) world.heal(1000);
   coinsGot = 0; points = 0; deaths = 0; time = 0; won = false; over = false;
+  livesLeft = maxLives; shieldUntil = 0; game.flyFor = 0; game.gravityFor = 0;
+  if (game.health) { world.player.maxHealth = world.player.health = game.health; world.updateHealthBar(); }
+  for (const k of counters.keys()) counters.set(k, startCounters.get(k) || 0);
   for (const r of repeaters) if (r.every) r.next = clock + r.every;
 }
 
@@ -591,9 +915,23 @@ function begin() {
   const me = world.spawnPlayer({ pos: [spawnAt[0], spawnAt[1] + 1, spawnAt[2]] });
   me.speed = game.speed;
   me.jump = game.jump;
+  if (game.health) me.maxHealth = me.health = game.health;
+  // invincible(): touching kill parts does nothing; falling off the world still sends you back.
+  const realKill = world.kill.bind(world);
+  world.kill = () => {
+    if (clock < shieldUntil) { if (me.pos.y < world.voidY) { world.respawn(); } return; }
+    realKill();
+  };
   world.onDeath(() => {
     deaths++;
+    if (maxLives) {
+      livesLeft--;
+      if (livesLeft <= 0) later(0.5, () => lose("Out of lives!"));
+    }
     deathFns.forEach((fn) => { try { fn(); } catch (e) { problem("Something went wrong in onDeath: " + e.message); } });
+  });
+  Kit.onKey((code) => {
+    if (!won && !over) for (const k of keyFns) if (k.code === code) { try { k.fn(); } catch (e) { problem("Something went wrong in onKey: " + e.message); } }
   });
   Kit.onKey((code) => {
     if (code !== "Space" || !game.doubleJump || !me.alive || me.frozen || me.onGround || game.airJumped) return;
@@ -615,8 +953,9 @@ function begin() {
       // Conveyor belts push you along; gravity() and fly() change how you fall.
       const on = me.onGround && me.standingOn && me.standingOn.userData.spec;
       if (on && on.conveyor) me.pos.z -= on.conveyor * dt;
+      if (game.gravityFor && clock > game.gravityFor) { game.gravityFor = 0; game.gravity = 1; }
       if (game.gravity !== 1) me.vel.y += GRAVITY * (1 - game.gravity) * dt;
-      if (game.fly && !me.frozen && Kit.key("Space")) me.vel.y = Math.max(me.vel.y, 30);
+      if ((game.fly || clock < game.flyFor) && !me.frozen && Kit.key("Space")) me.vel.y = Math.max(me.vel.y, 30);
       if (me.onGround) game.airJumped = false;
     }
     for (const s of specs.values()) {
@@ -635,12 +974,20 @@ function begin() {
       try { r.fn(dt); } catch (e) { problem("Something went wrong in forever/every: " + e.message); r.fn = null; }
     }
     if (timeLimit && !won && !over && time >= timeLimit) lose("Time's up!");
+    if (surviveFor && !won && !over && time >= surviveFor) win();
+    if (cycle) {
+      const f = (1 - Math.cos((clock / cycle) * Math.PI * 2)) / 2;   // 0 = day, 1 = night
+      sky(mix("#8fd3ff", "#0b1026", f));
+      world.hemi.intensity = (1.15 - 0.7 * f) * brightnessLevel;
+      world.sun.intensity = (1.6 - 1.25 * f) * brightnessLevel;
+    }
 
-    const left = timeLimit ? Math.max(0, Math.ceil(timeLimit - time)) : null;
-    const extra = [`Deaths ${deaths}`];
+    const left = timeLimit ? Math.max(0, Math.ceil(timeLimit - time)) : surviveFor ? Math.max(0, Math.ceil(surviveFor - time)) : null;
+    const extra = [maxLives ? `Lives ${livesLeft}` : `Deaths ${deaths}`];
+    for (const [cn, cv] of counters) extra.push(`${cn} ${cv}`);
     if (coinsTotal) extra.push(`Coins ${coinsGot}/${coinsTotal}`);
     if (usePoints) extra.push(`Points ${points}${pointsToWin ? "/" + pointsToWin : ""}`);
-    Kit.hud(`${left !== null ? `Time left ${left}` : `Time ${time.toFixed(1)}`}<small>${extra.join(" - ")}</small>`);
+    Kit.hud(`${left !== null ? `${surviveFor && !timeLimit ? "Survive" : "Time left"} ${left}` : `Time ${time.toFixed(1)}`}<small>${extra.join(" - ")}</small>`);
   });
 }
 
@@ -684,13 +1031,27 @@ const COMMANDS = {
   message, popup, playSound, random,
   // sky and light
   sky, night, day, sunset, fog,
+  // ----- added later -----
+  bridge, pillar, pyramid, spiralStairs, ring, grid, fence, room, bush, flower, rock, lamp, mountain, island, castle, stars, scatter,
+  fadeOut, fadeIn, flash, pulseColors, shake, bob, colorOnTouch,
+  rise, sink, drift, moveBetween, elevator, orbit, flee, wander,
+  loseOnTouch, addTimeOnTouch, slowOnTouch, lowGravityOnTouch, flyOnTouch, shieldOnTouch, hideOnTouch, showOnTouch,
+  losePointsOnTouch, counterOnTouch, musicOnTouch, sayOnTouch, restartOnTouch, lifeOnTouch,
+  lives, health, setHealth, getHealth, jump, shiftLock, turnCamera, playerName, isOnGround, invincible, resetSpeed, say,
+  onKey, counter, addCounter, getCounter, showText, hideText, chance, repeat, badge, addTime, stopTimer, winAfter, countdown,
+  sound, music, stopMusic, volume,
+  brightness, sunColor, dayNightCycle,
 };
+// defineProperty also replaces names the browser already uses on window (like "fence").
 for (const [name, fn] of Object.entries(COMMANDS)) {
-  window[name] = fn;
-  window[name.toLowerCase()] = fn;
+  for (const n of new Set([name, name.toLowerCase()])) {
+    try { Object.defineProperty(window, n, { value: fn, writable: true, configurable: true }); }
+    catch (_) { problem(`The command ${n}() isn't available in this browser.`); }
+  }
 }
 window.world = world;
 window.EASY3D_COMMANDS = Object.keys(COMMANDS);
+window.EASY3D_CLOCK = () => clock;   // game time in seconds (used by tests)
 
 // Your code runs right after this file; the game starts once it's done.
 setTimeout(begin, 0);
