@@ -1,0 +1,5063 @@
+<roblox version="4">
+  <Item class="Lighting" referent="0">
+    <Properties>
+      <string name="Name">Lighting</string>
+      <Color3 name="Ambient">
+        <R>0.35</R>
+        <G>0.35</G>
+        <B>0.4</B>
+      </Color3>
+      <float name="Brightness">2</float>
+      <float name="ClockTime">15.5</float>
+    </Properties>
+  </Item>
+  <Item class="Players" referent="1">
+    <Properties>
+      <string name="Name">Players</string>
+      <bool name="CharacterAutoLoads">true</bool>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="2">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="3">
+      <Properties>
+        <string name="Name">Shared</string>
+      </Properties>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
+          <string name="Name">AbilityTypes</string>
+          <string name="Source"><![CDATA[-- Ability types. A player-made ability picks one type, an element, and three
+-- levels (Damage, Size, Speed, each 1..Config.AbilityLevelMax). What each level
+-- means depends on the type (see `labels`). Stronger abilities get a longer
+-- cooldown and cost more energy, so any combination is allowed and stays fair.
+
+local AbilityTypes = {}
+
+AbilityTypes.Order = {
+	"Projectile",
+	"Barrage",
+	"Beam",
+	"Blast",
+	"Explosion",
+	"MeteorRain",
+	"Melee",
+	"DashStrike",
+	"Teleport",
+	"Shield",
+	"Heal",
+	"PowerUp",
+}
+
+-- Each entry:
+--   displayName, description
+--   labels   = what the Damage / Size / Speed levels control (nil = unused)
+--   weights  = how much each level adds to cooldown and energy cost
+--   cooldown = base cooldown in seconds, energy = base energy cost
+--   compute(d, s, v) -> table of real numbers used by the server
+AbilityTypes.List = {
+	Projectile = {
+		displayName = "Projectile",
+		description = "Fire a blast that flies toward your aim.",
+		labels = { damage = "Damage", size = "Size", speed = "Speed" },
+		weights = { damage = 1, size = 0.5, speed = 0.4 },
+		cooldown = 2.5,
+		energy = 15,
+		compute = function(d, s, v)
+			return { damage = 10 + 3 * d, radius = 0.8 + 0.25 * s, speed = 70 + 12 * v, range = 260 }
+		end,
+	},
+	Barrage = {
+		displayName = "Barrage",
+		description = "Rapid-fire a spread of small shots.",
+		labels = { damage = "Damage per shot", size = "Shot count", speed = "Speed" },
+		weights = { damage = 1, size = 1, speed = 0.4 },
+		cooldown = 5,
+		energy = 25,
+		compute = function(d, s, v)
+			return {
+				damage = 3 + 1.2 * d,
+				count = 3 + math.floor(s / 2),
+				radius = 0.6,
+				speed = 80 + 10 * v,
+				range = 200,
+			}
+		end,
+	},
+	Beam = {
+		displayName = "Beam",
+		description = "A long energy beam that pierces through everyone in its path.",
+		labels = { damage = "Damage", size = "Width", speed = "Length" },
+		weights = { damage = 1, size = 0.6, speed = 0.5 },
+		cooldown = 6,
+		energy = 30,
+		compute = function(d, s, v)
+			return { damage = 15 + 4 * d, width = 1 + 0.4 * s, range = 40 + 8 * v }
+		end,
+	},
+	Blast = {
+		displayName = "Shockwave",
+		description = "Explode outward from your body, hitting everyone around you.",
+		labels = { damage = "Damage", size = "Radius", speed = "Knockback" },
+		weights = { damage = 1, size = 0.7, speed = 0.3 },
+		cooldown = 6,
+		energy = 30,
+		compute = function(d, s, v)
+			return { damage = 14 + 3.5 * d, radius = 8 + 1.5 * s, knockback = 30 + 8 * v }
+		end,
+	},
+	Explosion = {
+		displayName = "Explosion",
+		description = "After a short warning, the spot you aim at explodes.",
+		labels = { damage = "Damage", size = "Radius", speed = "Range" },
+		weights = { damage = 1, size = 0.7, speed = 0.3 },
+		cooldown = 6,
+		energy = 30,
+		compute = function(d, s, v)
+			return { damage = 16 + 3.8 * d, radius = 5 + 1.2 * s, range = 40 + 10 * v, delay = 0.6 }
+		end,
+	},
+	MeteorRain = {
+		displayName = "Meteor Rain",
+		description = "Call down a rain of falling blasts around your aim.",
+		labels = { damage = "Damage per meteor", size = "Area", speed = "Meteor count" },
+		weights = { damage = 1, size = 0.4, speed = 0.9 },
+		cooldown = 10,
+		energy = 40,
+		compute = function(d, s, v)
+			return { damage = 6 + 2 * d, area = 8 + 1.2 * s, count = 4 + v, radius = 4, range = 120 }
+		end,
+	},
+	Melee = {
+		displayName = "Melee Combo",
+		description = "A powerful close-range strike combo.",
+		labels = { damage = "Damage per hit", size = "Reach", speed = "Hits" },
+		weights = { damage = 1, size = 0.4, speed = 0.8 },
+		cooldown = 2,
+		energy = 10,
+		compute = function(d, s, v)
+			return { damage = 8 + 2.6 * d, reach = 6 + 0.8 * s, hits = 1 + math.floor(v / 3), knockback = 25 }
+		end,
+	},
+	DashStrike = {
+		displayName = "Dash Strike",
+		description = "Dash toward your aim, hitting everyone you pass through.",
+		labels = { damage = "Damage", size = "Hit width", speed = "Distance" },
+		weights = { damage = 1, size = 0.4, speed = 0.4 },
+		cooldown = 4,
+		energy = 20,
+		compute = function(d, s, v)
+			return { damage = 10 + 3 * d, width = 3 + 0.4 * s, distance = 20 + 5 * v }
+		end,
+	},
+	Teleport = {
+		displayName = "Teleport",
+		description = "Vanish and reappear at your aim, with a shockwave where you land.",
+		labels = { damage = "Landing damage", size = "Landing radius", speed = "Range" },
+		weights = { damage = 0.8, size = 0.4, speed = 0.5 },
+		cooldown = 5,
+		energy = 20,
+		compute = function(d, s, v)
+			return { damage = 2.5 * d, radius = 5 + 0.6 * s, range = 25 + 7 * v }
+		end,
+	},
+	Shield = {
+		displayName = "Barrier",
+		description = "Surround yourself with a barrier that blocks damage.",
+		labels = { damage = "Strength", size = nil, speed = "Duration" },
+		weights = { damage = 1, size = 0, speed = 0.6 },
+		cooldown = 12,
+		energy = 30,
+		compute = function(d, _s, v)
+			return { absorb = 20 + 8 * d, duration = 3 + 0.5 * v }
+		end,
+	},
+	Heal = {
+		displayName = "Heal",
+		description = "Recover health.",
+		labels = { damage = "Healing", size = nil, speed = nil },
+		weights = { damage = 1.2, size = 0, speed = 0 },
+		cooldown = 14,
+		energy = 35,
+		compute = function(d, _s, _v)
+			return { heal = 12 + 5 * d }
+		end,
+	},
+	PowerUp = {
+		displayName = "Power Up / Transform",
+		description = "Transform for 12 seconds: more damage, more speed, a huge aura.",
+		labels = { damage = "Damage boost", size = nil, speed = "Speed boost" },
+		weights = { damage = 1, size = 0, speed = 0.6 },
+		cooldown = 30,
+		energy = 50,
+		compute = function(d, _s, v)
+			return { damageMultiplier = 1.1 + 0.04 * d, walkSpeedBonus = 2 + 1.5 * v, duration = 12 }
+		end,
+	},
+}
+
+function AbilityTypes.get(name: string)
+	return AbilityTypes.List[name]
+end
+
+function AbilityTypes.isValid(name: any): boolean
+	return type(name) == "string" and AbilityTypes.List[name] ~= nil
+end
+
+-- Weighted strength of an ability's levels. Used for cooldown and energy cost.
+local function strength(def, d: number, s: number, v: number): number
+	return d * def.weights.damage + s * def.weights.size + v * def.weights.speed
+end
+
+-- Returns the real numbers for an ability, plus its cooldown and energy cost.
+function AbilityTypes.computeStats(ability)
+	local def = AbilityTypes.List[ability.type]
+	local stats = def.compute(ability.damage, ability.size, ability.speed)
+	local power = strength(def, ability.damage, ability.size, ability.speed)
+	-- Scale from ~0.6x (all level 1) to ~2x (everything maxed)
+	local scale = 0.55 + 0.05 * power
+	stats.cooldown = math.floor(def.cooldown * scale * 10 + 0.5) / 10
+	stats.energy = math.floor(def.energy * scale + 0.5)
+	return stats
+end
+
+return AbilityTypes
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="5">
+        <Properties>
+          <string name="Name">Config</string>
+          <string name="Source"><![CDATA[-- Game-wide tuning numbers. Shared by the server (which enforces them) and the
+-- client (which uses them to show limits in the Power Creator).
+
+local Config = {}
+
+-- Power creation limits
+Config.MaxSavedPowers = 6
+Config.MaxAbilities = 4
+Config.MaxNameLength = 24
+Config.StatPointBudget = 20 -- points to spread across the four stats
+Config.StatMax = 10 -- max points in a single stat
+Config.AbilityLevelMax = 10 -- max level for an ability's Damage / Size / Speed
+
+-- Keys bound to ability slots 1..MaxAbilities (the client also shows these)
+Config.AbilityKeys = { "Q", "E", "R", "F" }
+
+-- Base character numbers before stats are applied
+Config.BaseHealth = 100
+Config.HealthPerDefense = 15 -- +15 max HP per Defense point
+Config.BaseWalkSpeed = 16
+Config.WalkSpeedPerSpeed = 1.2 -- +1.2 studs/s per Speed point
+Config.DamagePerStrength = 0.06 -- +6% damage per Strength point
+Config.BaseEnergy = 100
+Config.EnergyPerPoint = 10 -- +10 max energy per Energy point
+Config.BaseEnergyRegen = 8 -- energy per second
+Config.EnergyRegenPerPoint = 1.2
+
+-- Basic attack (left click / Attack button), always available
+Config.BasicAttackDamage = 8
+Config.BasicAttackRange = 7
+Config.BasicAttackCooldown = 0.45
+
+-- Fighting
+Config.SafeZoneCenter = Vector3.new(0, 0, 0) -- around the spawn, players can't be hurt here
+Config.SafeZoneRadius = 34
+Config.MaxAimDistance = 300 -- clamp for client-sent aim points
+Config.RespawnTime = 4
+Config.EnemyCount = 5 -- roaming enemies in the arena
+Config.DummyCount = 5 -- training dummies
+Config.EnemyRespawnTime = 8
+
+-- Saving
+Config.DataStoreName = "MakeAnAnimePower_v1"
+
+return Config
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="6">
+        <Properties>
+          <string name="Name">Elements</string>
+          <string name="Source"><![CDATA[-- Elements. Every power and every ability has one. The element sets the
+-- default color and adds a side effect to every hit.
+--
+-- Effect fields (all optional):
+--   burn        = { damagePerSecond, duration }   damage over time
+--   slow        = { speedMultiplier, duration }   lowers WalkSpeed
+--   stun        = duration                        can't move or jump
+--   knockback   = multiplier on the normal knockback
+--   lifesteal   = fraction of damage dealt that heals the attacker
+--   damage      = multiplier on damage dealt
+--   speed       = multiplier on projectile speed
+
+local Elements = {}
+
+Elements.Order = {
+	"Ki",
+	"Fire",
+	"Ice",
+	"Lightning",
+	"Wind",
+	"Water",
+	"Earth",
+	"Shadow",
+	"Light",
+	"Poison",
+	"Blood",
+	"Cursed",
+}
+
+Elements.List = {
+	Ki = {
+		color = Color3.fromRGB(255, 220, 90),
+		description = "Raw spirit energy. +10% damage.",
+		effects = { damage = 1.1 },
+	},
+	Fire = {
+		color = Color3.fromRGB(255, 110, 40),
+		description = "Sets targets on fire (burn damage over time).",
+		effects = { burn = { 4, 3 } },
+	},
+	Ice = {
+		color = Color3.fromRGB(140, 220, 255),
+		description = "Freezes targets, slowing them down.",
+		effects = { slow = { 0.5, 2.5 } },
+	},
+	Lightning = {
+		color = Color3.fromRGB(255, 255, 120),
+		description = "Shocks targets, stunning them briefly. Fast projectiles.",
+		effects = { stun = 0.5, speed = 1.3 },
+	},
+	Wind = {
+		color = Color3.fromRGB(190, 255, 210),
+		description = "Blows targets far away. Fast projectiles.",
+		effects = { knockback = 2.2, speed = 1.2 },
+	},
+	Water = {
+		color = Color3.fromRGB(60, 140, 255),
+		description = "Heavy waves: extra knockback and a small slow.",
+		effects = { knockback = 1.5, slow = { 0.75, 1.5 } },
+	},
+	Earth = {
+		color = Color3.fromRGB(150, 105, 60),
+		description = "Crushing rock: +20% damage, slower projectiles.",
+		effects = { damage = 1.2, speed = 0.8 },
+	},
+	Shadow = {
+		color = Color3.fromRGB(110, 60, 170),
+		description = "Drains life: heals you for 20% of damage dealt.",
+		effects = { lifesteal = 0.2 },
+	},
+	Light = {
+		color = Color3.fromRGB(255, 255, 235),
+		description = "Blinding speed: much faster projectiles.",
+		effects = { speed = 1.6 },
+	},
+	Poison = {
+		color = Color3.fromRGB(140, 230, 60),
+		description = "Long-lasting poison damage over time.",
+		effects = { burn = { 3, 6 } },
+	},
+	Blood = {
+		color = Color3.fromRGB(190, 20, 40),
+		description = "Drinks blood: heals you for 30% of damage dealt.",
+		effects = { lifesteal = 0.3, damage = 0.95 },
+	},
+	Cursed = {
+		color = Color3.fromRGB(70, 20, 90),
+		description = "Cursed energy: +15% damage and a short slow.",
+		effects = { damage = 1.15, slow = { 0.8, 1.5 } },
+	},
+}
+
+function Elements.get(name: string)
+	return Elements.List[name] or Elements.List.Ki
+end
+
+function Elements.isValid(name: any): boolean
+	return type(name) == "string" and Elements.List[name] ~= nil
+end
+
+return Elements
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="7">
+        <Properties>
+          <string name="Name">PowerValidator</string>
+          <string name="Source"><![CDATA[-- Cleans up a power table so it always follows the rules. The server runs every
+-- power a client sends through `sanitize` before using or saving it, so a
+-- modified client can't create an over-powered ability. The client uses the
+-- same code to show what the server will accept.
+
+local Config = require(script.Parent.Config)
+local Elements = require(script.Parent.Elements)
+local AbilityTypes = require(script.Parent.AbilityTypes)
+
+local PowerValidator = {}
+
+PowerValidator.Auras = { "None", "Flames", "Sparkles", "Smoke", "Glow" }
+
+local STAT_NAMES = { "strength", "defense", "speed", "energy" }
+PowerValidator.StatNames = STAT_NAMES
+
+local function clampInt(value: any, min: number, max: number, default: number): number
+	if type(value) ~= "number" or value ~= value then -- reject non-numbers and NaN
+		return default
+	end
+	return math.clamp(math.floor(value + 0.5), min, max)
+end
+
+-- Cuts a name down to Config.MaxNameLength characters (not bytes, so
+-- multi-byte characters are never split). Returns nil for invalid UTF-8.
+function PowerValidator.truncate(text: string): string?
+	local length = utf8.len(text)
+	if length == nil then
+		return nil
+	end
+	if length > Config.MaxNameLength then
+		local cut = utf8.offset(text, Config.MaxNameLength + 1) :: number
+		return text:sub(1, cut - 1)
+	end
+	return text
+end
+
+local function cleanText(value: any, default: string): string
+	if type(value) ~= "string" then
+		return default
+	end
+	-- Drop control characters and trim spaces
+	local text = PowerValidator.truncate((value:gsub("%c", ""):gsub("^%s+", ""):gsub("%s+$", "")))
+	if text == nil or text == "" then
+		return default
+	end
+	return text
+end
+
+local function isAura(value: any): boolean
+	return table.find(PowerValidator.Auras, value) ~= nil
+end
+
+function PowerValidator.sanitizeAbility(raw: any, fallbackElement: string)
+	if type(raw) ~= "table" then
+		return nil
+	end
+	local level = Config.AbilityLevelMax
+	return {
+		name = cleanText(raw.name, "Ability"),
+		type = AbilityTypes.isValid(raw.type) and raw.type or "Projectile",
+		element = Elements.isValid(raw.element) and raw.element or fallbackElement,
+		damage = clampInt(raw.damage, 1, level, 5),
+		size = clampInt(raw.size, 1, level, 5),
+		speed = clampInt(raw.speed, 1, level, 5),
+	}
+end
+
+function PowerValidator.sanitize(raw: any)
+	if type(raw) ~= "table" then
+		return nil
+	end
+
+	local element = Elements.isValid(raw.element) and raw.element or "Ki"
+
+	local color = { 255, 255, 255 }
+	if type(raw.color) == "table" then
+		for i = 1, 3 do
+			color[i] = clampInt(raw.color[i], 0, 255, 255)
+		end
+	end
+
+	-- Stats: each 0..StatMax, and the total can't go over the budget.
+	-- If it does, points are removed from the last stats first.
+	local stats = {}
+	local rawStats = type(raw.stats) == "table" and raw.stats or {}
+	local remaining = Config.StatPointBudget
+	for _, statName in STAT_NAMES do
+		local value = math.min(clampInt(rawStats[statName], 0, Config.StatMax, 0), remaining)
+		stats[statName] = value
+		remaining -= value
+	end
+
+	local abilities = {}
+	if type(raw.abilities) == "table" then
+		for i = 1, Config.MaxAbilities do
+			local ability = PowerValidator.sanitizeAbility(raw.abilities[i], element)
+			if ability then
+				table.insert(abilities, ability)
+			end
+		end
+	end
+
+	return {
+		name = cleanText(raw.name, "My Power"),
+		template = type(raw.template) == "string" and raw.template:sub(1, 32) or "Blank",
+		element = element,
+		color = color,
+		aura = isAura(raw.aura) and raw.aura or "None",
+		stats = stats,
+		abilities = abilities,
+	}
+end
+
+function PowerValidator.statPointsUsed(stats): number
+	local total = 0
+	for _, statName in STAT_NAMES do
+		total += stats[statName] or 0
+	end
+	return total
+end
+
+function PowerValidator.colorOf(power): Color3
+	return Color3.fromRGB(power.color[1], power.color[2], power.color[3])
+end
+
+return PowerValidator
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="8">
+        <Properties>
+          <string name="Name">Remotes</string>
+          <string name="Source"><![CDATA[-- All RemoteEvents / RemoteFunctions. The server creates them; clients wait
+-- for them. Require this module instead of looking remotes up by hand.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local DEFINITIONS = {
+	-- client -> server
+	GetPowerData = "RemoteFunction", -- () -> data
+	SavePower = "RemoteFunction", -- (index?, power) -> result
+	DeletePower = "RemoteFunction", -- (index) -> result
+	EquipPower = "RemoteFunction", -- (index) -> result
+	UseAbility = "RemoteEvent", -- (slot, aimPosition)
+	BasicAttack = "RemoteEvent", -- (aimPosition)
+
+	-- server -> client
+	DataChanged = "RemoteEvent", -- (data)
+	AbilityResult = "RemoteEvent", -- (slot, cooldownSeconds)
+	Notify = "RemoteEvent", -- (text)
+	Fx = "RemoteEvent", -- (kind, info) visual effects, drawn by every client
+}
+
+local Remotes = {}
+
+if RunService:IsServer() then
+	local folder = ReplicatedStorage:FindFirstChild("Remotes")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "Remotes"
+		folder.Parent = ReplicatedStorage
+	end
+	for name, className in DEFINITIONS do
+		local remote = folder:FindFirstChild(name)
+		if not remote then
+			remote = Instance.new(className)
+			remote.Name = name
+			remote.Parent = folder
+		end
+		Remotes[name] = remote
+	end
+else
+	local folder = ReplicatedStorage:WaitForChild("Remotes")
+	for name in DEFINITIONS do
+		Remotes[name] = folder:WaitForChild(name)
+	end
+end
+
+return Remotes
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="9">
+        <Properties>
+          <string name="Name">Templates</string>
+          <string name="Source"><![CDATA[-- Anime templates. Picking one in the Power Creator fills in a complete power
+-- that the player can then change however they like (or use as-is).
+-- Names are generic anime archetypes, not characters from real shows.
+
+local Templates = {}
+
+local function ability(name, abilityType, element, damage, size, speed)
+	return { name = name, type = abilityType, element = element, damage = damage, size = size, speed = speed }
+end
+
+Templates.List = {
+	{
+		id = "KiWarrior",
+		name = "Ki Warrior",
+		description = "Scream, power up, fire giant energy waves.",
+		power = {
+			element = "Ki",
+			color = { 255, 215, 70 },
+			aura = "Flames",
+			stats = { strength = 7, defense = 4, speed = 4, energy = 5 },
+			abilities = {
+				ability("Ki Blast", "Barrage", "Ki", 4, 6, 6),
+				ability("Wave Cannon", "Beam", "Ki", 8, 6, 6),
+				ability("Instant Step", "Teleport", "Ki", 3, 3, 6),
+				ability("Super Form", "PowerUp", "Ki", 8, 1, 6),
+			},
+		},
+	},
+	{
+		id = "Ninja",
+		name = "Shadow Ninja",
+		description = "Fast, sneaky, throws stars and vanishes.",
+		power = {
+			element = "Wind",
+			color = { 80, 200, 140 },
+			aura = "Smoke",
+			stats = { strength = 5, defense = 3, speed = 8, energy = 4 },
+			abilities = {
+				ability("Star Throw", "Barrage", "Wind", 4, 4, 8),
+				ability("Wind Palm", "Blast", "Wind", 5, 5, 8),
+				ability("Body Flicker", "Teleport", "Shadow", 2, 2, 7),
+				ability("Spiral Sphere", "Projectile", "Wind", 8, 6, 4),
+			},
+		},
+	},
+	{
+		id = "FlameFist",
+		name = "Flame Fist",
+		description = "A body made of fire. Punches that burn.",
+		power = {
+			element = "Fire",
+			color = { 255, 100, 30 },
+			aura = "Flames",
+			stats = { strength = 8, defense = 5, speed = 4, energy = 3 },
+			abilities = {
+				ability("Fire Fist", "Projectile", "Fire", 7, 7, 5),
+				ability("Fire Pillar", "Blast", "Fire", 7, 6, 4),
+				ability("Flame Comet", "MeteorRain", "Fire", 5, 5, 5),
+				ability("Blazing Rush", "DashStrike", "Fire", 6, 4, 6),
+			},
+		},
+	},
+	{
+		id = "IceMage",
+		name = "Ice Maker",
+		description = "Freeze enemies in place and wall yourself in ice.",
+		power = {
+			element = "Ice",
+			color = { 140, 220, 255 },
+			aura = "Sparkles",
+			stats = { strength = 5, defense = 7, speed = 3, energy = 5 },
+			abilities = {
+				ability("Ice Lance", "Projectile", "Ice", 6, 4, 7),
+				ability("Frozen Field", "Explosion", "Ice", 6, 7, 5),
+				ability("Ice Wall", "Shield", "Ice", 7, 1, 5),
+				ability("Blizzard", "MeteorRain", "Ice", 4, 7, 6),
+			},
+		},
+	},
+	{
+		id = "ThunderBreath",
+		name = "Thunder Breathing",
+		description = "One perfect, lightning-fast sword dash.",
+		power = {
+			element = "Lightning",
+			color = { 255, 240, 90 },
+			aura = "Sparkles",
+			stats = { strength = 7, defense = 3, speed = 8, energy = 2 },
+			abilities = {
+				ability("Thunderclap Flash", "DashStrike", "Lightning", 8, 4, 9),
+				ability("Sword Combo", "Melee", "Lightning", 6, 5, 6),
+				ability("Lightning Rain", "MeteorRain", "Lightning", 4, 4, 7),
+				ability("Focused Breath", "PowerUp", "Lightning", 6, 1, 7),
+			},
+		},
+	},
+	{
+		id = "CursedSorcerer",
+		name = "Cursed Sorcerer",
+		description = "Cursed energy techniques and a deadly domain.",
+		power = {
+			element = "Cursed",
+			color = { 120, 50, 200 },
+			aura = "Smoke",
+			stats = { strength = 7, defense = 5, speed = 4, energy = 4 },
+			abilities = {
+				ability("Black Flash", "Melee", "Cursed", 8, 3, 3),
+				ability("Hollow Purple", "Beam", "Cursed", 9, 7, 6),
+				ability("Domain Expansion", "Blast", "Cursed", 7, 9, 5),
+				ability("Reverse Technique", "Heal", "Cursed", 7, 1, 1),
+			},
+		},
+	},
+	{
+		id = "ChainsawDevil",
+		name = "Chainsaw Devil",
+		description = "Rev up and shred. Heals by drinking blood.",
+		power = {
+			element = "Blood",
+			color = { 220, 30, 40 },
+			aura = "Flames",
+			stats = { strength = 8, defense = 6, speed = 4, energy = 2 },
+			abilities = {
+				ability("Chainsaw Slash", "Melee", "Blood", 7, 6, 9),
+				ability("Rev Dash", "DashStrike", "Blood", 7, 5, 6),
+				ability("Chain Shot", "Projectile", "Blood", 5, 3, 7),
+				ability("Blood Drink", "Heal", "Blood", 6, 1, 1),
+			},
+		},
+	},
+	{
+		id = "SpiritGunner",
+		name = "Spirit Gunner",
+		description = "Charge your spirit into one huge finger-gun shot.",
+		power = {
+			element = "Light",
+			color = { 120, 200, 255 },
+			aura = "Glow",
+			stats = { strength = 8, defense = 4, speed = 5, energy = 3 },
+			abilities = {
+				ability("Spirit Gun", "Projectile", "Light", 9, 6, 6),
+				ability("Spirit Shotgun", "Barrage", "Light", 4, 10, 5),
+				ability("Spirit Sword", "Melee", "Light", 6, 7, 3),
+				ability("Spirit Barrier", "Shield", "Light", 5, 1, 5),
+			},
+		},
+	},
+	{
+		id = "Psychic",
+		name = "Psychic",
+		description = "Telekinesis. Throw people around with your mind.",
+		power = {
+			element = "Wind",
+			color = { 230, 120, 255 },
+			aura = "Glow",
+			stats = { strength = 5, defense = 4, speed = 5, energy = 6 },
+			abilities = {
+				ability("Mind Push", "Blast", "Wind", 5, 8, 10),
+				ability("Psychic Crush", "Explosion", "Wind", 7, 4, 6),
+				ability("Psi Shield", "Shield", "Light", 6, 1, 6),
+				ability("Blink", "Teleport", "Light", 1, 1, 8),
+			},
+		},
+	},
+	{
+		id = "WaterHashira",
+		name = "Water Swordsman",
+		description = "Flowing water sword forms.",
+		power = {
+			element = "Water",
+			color = { 60, 140, 255 },
+			aura = "Sparkles",
+			stats = { strength = 6, defense = 5, speed = 6, energy = 3 },
+			abilities = {
+				ability("Water Surface Slash", "Melee", "Water", 6, 6, 6),
+				ability("Whirlpool", "Blast", "Water", 5, 6, 7),
+				ability("Flowing Dance", "DashStrike", "Water", 6, 6, 7),
+				ability("Water Wheel", "Projectile", "Water", 6, 6, 5),
+			},
+		},
+	},
+	{
+		id = "EarthTitan",
+		name = "Earth Titan",
+		description = "Slow, huge and almost impossible to knock down.",
+		power = {
+			element = "Earth",
+			color = { 160, 110, 60 },
+			aura = "Smoke",
+			stats = { strength = 7, defense = 10, speed = 1, energy = 2 },
+			abilities = {
+				ability("Ground Slam", "Blast", "Earth", 7, 7, 6),
+				ability("Boulder Toss", "Projectile", "Earth", 8, 9, 3),
+				ability("Stone Skin", "Shield", "Earth", 9, 1, 6),
+				ability("Titan Punch", "Melee", "Earth", 9, 4, 1),
+			},
+		},
+	},
+	{
+		id = "PoisonAssassin",
+		name = "Poison Assassin",
+		description = "Wear enemies down with poison that keeps hurting.",
+		power = {
+			element = "Poison",
+			color = { 140, 230, 60 },
+			aura = "Smoke",
+			stats = { strength = 5, defense = 3, speed = 7, energy = 5 },
+			abilities = {
+				ability("Venom Needles", "Barrage", "Poison", 4, 8, 7),
+				ability("Toxic Cloud", "Explosion", "Poison", 4, 8, 5),
+				ability("Shadow Step", "DashStrike", "Shadow", 5, 3, 7),
+				ability("Fang Strike", "Melee", "Poison", 6, 3, 6),
+			},
+		},
+	},
+	{
+		id = "Blank",
+		name = "Blank Power",
+		description = "Start from nothing and invent your own power.",
+		power = {
+			element = "Ki",
+			color = { 255, 255, 255 },
+			aura = "None",
+			stats = { strength = 5, defense = 5, speed = 5, energy = 5 },
+			abilities = {
+				ability("My First Ability", "Projectile", "Ki", 5, 5, 5),
+			},
+		},
+	},
+}
+
+function Templates.get(id: string)
+	for _, template in Templates.List do
+		if template.id == id then
+			return template
+		end
+	end
+	return nil
+end
+
+-- A fresh copy of a template's power, named after the template.
+function Templates.makePower(id: string)
+	local template = Templates.get(id) or Templates.List[1]
+	local p = template.power
+	local abilities = {}
+	for i, a in p.abilities do
+		abilities[i] = table.clone(a)
+	end
+	return {
+		name = template.name,
+		template = template.id,
+		element = p.element,
+		color = table.clone(p.color),
+		aura = p.aura,
+		stats = table.clone(p.stats),
+		abilities = abilities,
+	}
+end
+
+return Templates
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="10">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="11">
+      <Properties>
+        <string name="Name">Server</string>
+      </Properties>
+      <Item class="ModuleScript" referent="12">
+        <Properties>
+          <string name="Name">CombatService</string>
+          <string name="Source"><![CDATA[-- Fighting. Everything that decides a hit happens here on the server: the
+-- client only says "I used ability N, aiming here". Visual effects are sent to
+-- every client through the Fx remote and drawn there.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Elements = require(Shared.Elements)
+local AbilityTypes = require(Shared.AbilityTypes)
+local Remotes = require(Shared.Remotes)
+local Status = require(script.Parent.Status)
+local Visuals = require(script.Parent.Visuals)
+
+local CombatService = {}
+
+local GLOBAL_COOLDOWN = 0.25 -- minimum time between two abilities
+local DASH_SPEED = 110
+
+local playerStates = {} -- [Player] = state, see getPlayerState
+local enemiesFolder: Folder
+
+local function fx(kind: string, info)
+	Remotes.Fx:FireAllClients(kind, info)
+end
+CombatService.fx = fx
+
+----------------------------------------------------------------------
+-- Targets and geometry
+----------------------------------------------------------------------
+
+export type Target = { model: Model, humanoid: Humanoid, root: BasePart, player: Player? }
+
+local function asTarget(model: Instance?, player: Player?): Target?
+	if not model or not model:IsA("Model") then
+		return nil
+	end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if humanoid and root and root:IsA("BasePart") and humanoid.Health > 0 then
+		return { model = model, humanoid = humanoid, root = root, player = player }
+	end
+	return nil
+end
+
+-- Every living thing that can be hit: player characters, enemies and dummies.
+function CombatService.getTargets(): { Target }
+	local list = {}
+	for _, player in Players:GetPlayers() do
+		local target = asTarget(player.Character, player)
+		if target then
+			table.insert(list, target)
+		end
+	end
+	for _, model in enemiesFolder:GetChildren() do
+		local target = asTarget(model, nil)
+		if target then
+			table.insert(list, target)
+		end
+	end
+	return list
+end
+
+-- Raycast params that only see the map (characters are hit with distance checks).
+local function worldParams(): RaycastParams
+	local exclude: { Instance } = { enemiesFolder }
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			table.insert(exclude, player.Character)
+		end
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = exclude
+	params.IgnoreWater = true
+	return params
+end
+CombatService.worldParams = worldParams
+
+-- Distance along segment a->b to the point closest to `point`, and how far away it is.
+local function closestOnSegment(point: Vector3, a: Vector3, b: Vector3): (number, number)
+	local ab = b - a
+	local lengthSquared = ab:Dot(ab)
+	local t = 0
+	if lengthSquared > 0 then
+		t = math.clamp((point - a):Dot(ab) / lengthSquared, 0, 1)
+	end
+	local closest = a + ab * t
+	return t * math.sqrt(lengthSquared), (point - closest).Magnitude
+end
+
+function CombatService.inSafeZone(position: Vector3): boolean
+	local center = Config.SafeZoneCenter
+	local flat = Vector3.new(position.X - center.X, 0, position.Z - center.Z)
+	return flat.Magnitude <= Config.SafeZoneRadius
+end
+
+local function isEnemy(model: Model?): boolean
+	return model ~= nil and model.Parent == enemiesFolder
+end
+
+-- Can `attacker` hurt `target` right now?
+local function canDamage(attacker: Model?, target: Model, targetRoot: BasePart): boolean
+	if attacker == target then
+		return false
+	end
+	-- Enemies don't hurt each other
+	if isEnemy(attacker) and isEnemy(target) then
+		return false
+	end
+	local targetIsPlayer = Players:GetPlayerFromCharacter(target) ~= nil
+	if targetIsPlayer and CombatService.inSafeZone(targetRoot.Position) then
+		return false
+	end
+	-- No sniping other players from inside the safe zone
+	if targetIsPlayer and attacker and Players:GetPlayerFromCharacter(attacker) then
+		local attackerRoot = attacker:FindFirstChild("HumanoidRootPart")
+		if attackerRoot and attackerRoot:IsA("BasePart") and CombatService.inSafeZone(attackerRoot.Position) then
+			return false
+		end
+	end
+	return true
+end
+
+----------------------------------------------------------------------
+-- Damage
+----------------------------------------------------------------------
+
+-- Pushes a part with a short burst of velocity. Works for player characters
+-- too, because the mover instance replicates to the client that simulates it.
+local function push(root: BasePart, velocity: Vector3, duration: number)
+	if root.Anchored then
+		return
+	end
+	local attachment = Instance.new("Attachment")
+	attachment.Name = "PushAttachment"
+	attachment.Parent = root
+
+	local mover = Instance.new("LinearVelocity")
+	mover.Name = "Push"
+	mover.Attachment0 = attachment
+	mover.RelativeTo = Enum.ActuatorRelativeTo.World
+	mover.MaxForce = 1e6
+	mover.VectorVelocity = velocity
+	mover.Parent = root
+
+	Debris:AddItem(mover, duration)
+	Debris:AddItem(attachment, duration)
+end
+
+local function attackerMultiplier(attacker: Model?): number
+	if not attacker then
+		return 1
+	end
+	local multiplier = 1
+	local player = Players:GetPlayerFromCharacter(attacker)
+	if player then
+		local state = playerStates[player]
+		if state and state.power then
+			multiplier += state.power.stats.strength * Config.DamagePerStrength
+		end
+	else
+		multiplier = attacker:GetAttribute("DamageMultiplier") or 1
+	end
+	local humanoid = attacker:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		multiplier *= Status.damageMultiplier(humanoid)
+	end
+	return multiplier
+end
+
+local function nameOf(model: Model): string
+	local player = Players:GetPlayerFromCharacter(model)
+	if player then
+		return player.DisplayName
+	end
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	return humanoid and humanoid.DisplayName ~= "" and humanoid.DisplayName or model.Name
+end
+
+local function onKill(attacker: Model?, victim: Model)
+	if not attacker then
+		return
+	end
+	local player = Players:GetPlayerFromCharacter(attacker)
+	if not player then
+		return
+	end
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local kos = leaderstats and leaderstats:FindFirstChild("KOs")
+	if kos and kos:IsA("IntValue") then
+		kos.Value += 1
+	end
+	Remotes.Notify:FireClient(player, "You defeated " .. nameOf(victim) .. "!")
+end
+
+export type DamageOptions = {
+	element: string?,
+	direction: Vector3?, -- knockback direction
+	knockback: number?, -- knockback speed before element bonus
+	noEffects: boolean?, -- skip element effects and knockback (burn ticks)
+	raw: boolean?, -- skip the attacker's damage multipliers
+}
+
+-- Deals damage with all the rules applied. Returns the damage actually dealt.
+function CombatService.damage(attacker: Model?, targetModel: Model, baseAmount: number, options: DamageOptions?): number
+	local opts: DamageOptions = options or {}
+	local humanoid = targetModel:FindFirstChildOfClass("Humanoid")
+	local root = targetModel:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not root or not root:IsA("BasePart") or humanoid.Health <= 0 then
+		return 0
+	end
+	if not canDamage(attacker, targetModel, root) then
+		return 0
+	end
+	if targetModel:FindFirstChildOfClass("ForceField") then
+		return 0 -- spawn protection
+	end
+
+	local element = Elements.get(opts.element or "Ki")
+	local effects = element.effects
+
+	local amount = baseAmount
+	if not opts.raw then
+		amount *= attackerMultiplier(attacker) * (effects.damage or 1)
+	end
+	amount = Status.absorb(humanoid, amount)
+
+	if amount > 0 then
+		local attackerPlayer = attacker and Players:GetPlayerFromCharacter(attacker)
+		if attackerPlayer then
+			-- Standard "creator" tag, so other kill-credit scripts work too
+			local old = humanoid:FindFirstChild("creator")
+			if old then
+				old:Destroy()
+			end
+			local tag = Instance.new("ObjectValue")
+			tag.Name = "creator"
+			tag.Value = attackerPlayer
+			tag.Parent = humanoid
+			Debris:AddItem(tag, 3)
+		end
+
+		local before = humanoid.Health
+		humanoid:TakeDamage(amount)
+		if before > 0 and humanoid.Health <= 0 then
+			onKill(attacker, targetModel)
+		end
+
+		if not opts.noEffects then
+			if effects.burn then
+				Status.burn(humanoid, attacker, effects.burn[1], effects.burn[2], opts.element or "Ki")
+			end
+			if effects.slow then
+				Status.slow(humanoid, effects.slow[1], effects.slow[2])
+			end
+			if effects.stun then
+				Status.stun(humanoid, effects.stun)
+			end
+			if effects.lifesteal and attacker then
+				local attackerHumanoid = attacker:FindFirstChildOfClass("Humanoid")
+				if attackerHumanoid and attackerHumanoid.Health > 0 then
+					attackerHumanoid.Health =
+						math.min(attackerHumanoid.MaxHealth, attackerHumanoid.Health + amount * effects.lifesteal)
+				end
+			end
+			local direction = opts.direction
+			if direction and direction.Magnitude > 0.01 then
+				local force = (opts.knockback or 15) * (effects.knockback or 1)
+				local flat = Vector3.new(direction.X, 0, direction.Z)
+				flat = flat.Magnitude > 0.01 and flat.Unit or Vector3.zero
+				push(root, flat * force + Vector3.new(0, force * 0.35, 0), 0.15)
+			end
+		end
+	end
+
+	fx("Damage", {
+		position = root.Position + Vector3.new(0, 3, 0),
+		amount = math.floor(amount + 0.5),
+		color = element.color,
+		blocked = amount <= 0,
+	})
+	return amount
+end
+
+-- Burns tick through the normal damage rules, without re-applying effects
+Status.burnDamage = function(attacker, target, amount, element)
+	CombatService.damage(attacker, target, amount, { element = element, noEffects = true, raw = true })
+end
+
+-- Damages everyone within `radius` of `center` and pushes them outward.
+function CombatService.areaDamage(
+	attacker: Model?,
+	center: Vector3,
+	radius: number,
+	amount: number,
+	element: string,
+	knockback: number
+)
+	for _, target in CombatService.getTargets() do
+		if target.model ~= attacker then
+			local offset = target.root.Position - center
+			if offset.Magnitude <= radius + 1.5 then
+				local direction = offset.Magnitude > 0.1 and offset or Vector3.new(0, 0, 1)
+				CombatService.damage(attacker, target.model, amount, {
+					element = element,
+					direction = direction,
+					knockback = knockback,
+				})
+			end
+		end
+	end
+end
+
+-- A single close-range hit in front of `attacker` (basic attacks and enemies).
+function CombatService.frontHit(
+	attacker: Model,
+	root: BasePart,
+	facing: Vector3,
+	reach: number,
+	amount: number,
+	element: string,
+	knockback: number
+): number
+	local hits = 0
+	for _, target in CombatService.getTargets() do
+		if target.model ~= attacker then
+			local offset = target.root.Position - root.Position
+			local flat = Vector3.new(offset.X, 0, offset.Z)
+			local inFront = flat.Magnitude < 2 or flat.Unit:Dot(facing) > 0.25
+			if offset.Magnitude <= reach + 1 and inFront then
+				if
+					CombatService.damage(attacker, target.model, amount, {
+						element = element,
+						direction = facing,
+						knockback = knockback,
+					}) > 0
+				then
+					hits += 1
+				end
+			end
+		end
+	end
+	return hits
+end
+
+----------------------------------------------------------------------
+-- Projectiles (simulated on the server, drawn by clients)
+----------------------------------------------------------------------
+
+local projectiles = {}
+local nextProjectileId = 0
+
+export type ProjectileInfo = {
+	damage: number,
+	radius: number,
+	speed: number,
+	range: number,
+	element: string,
+	splash: number?, -- explode on impact with this radius instead of hitting one target
+	knockback: number?,
+}
+
+function CombatService.fireProjectile(caster: Model, origin: Vector3, direction: Vector3, info: ProjectileInfo)
+	if direction.Magnitude < 0.001 then
+		return
+	end
+	nextProjectileId += 1
+	local element = Elements.get(info.element)
+	local projectile = {
+		id = nextProjectileId,
+		caster = caster,
+		position = origin,
+		direction = direction.Unit,
+		speed = info.speed * (element.effects.speed or 1),
+		traveled = 0,
+		range = info.range,
+		radius = info.radius,
+		damage = info.damage,
+		element = info.element,
+		splash = info.splash or 0,
+		knockback = info.knockback or 18,
+		color = element.color,
+	}
+	table.insert(projectiles, projectile)
+	fx("Projectile", {
+		id = projectile.id,
+		origin = origin,
+		direction = projectile.direction,
+		speed = projectile.speed,
+		radius = projectile.radius,
+		range = projectile.range,
+		color = projectile.color,
+	})
+end
+
+local function endProjectile(projectile, position: Vector3, target: Target?)
+	if projectile.splash > 0 then
+		CombatService.areaDamage(
+			projectile.caster,
+			position,
+			projectile.splash,
+			projectile.damage,
+			projectile.element,
+			projectile.knockback
+		)
+	elseif target then
+		CombatService.damage(projectile.caster, target.model, projectile.damage, {
+			element = projectile.element,
+			direction = projectile.direction,
+			knockback = projectile.knockback,
+		})
+	end
+	fx("ProjectileEnd", {
+		id = projectile.id,
+		position = position,
+		color = projectile.color,
+		radius = math.max(projectile.radius * 2.5, projectile.splash),
+	})
+end
+
+local function stepProjectiles(dt: number)
+	if #projectiles == 0 then
+		return
+	end
+	local targets = CombatService.getTargets()
+	local params = worldParams()
+
+	for i = #projectiles, 1, -1 do
+		local projectile = projectiles[i]
+		local stepLength = math.min(projectile.speed * dt, projectile.range - projectile.traveled)
+		local from = projectile.position
+		local step = projectile.direction * stepLength
+		local to = from + step
+
+		-- Closest character along this step
+		local hitTarget: Target? = nil
+		local hitAlong = math.huge
+		for _, target in targets do
+			if
+				target.model ~= projectile.caster
+				and target.humanoid.Health > 0
+				and canDamage(projectile.caster, target.model, target.root)
+			then
+				local along, distance = closestOnSegment(target.root.Position, from, to)
+				if distance <= projectile.radius + 2 and along < hitAlong then
+					hitTarget, hitAlong = target, along
+				end
+			end
+		end
+
+		local wall = workspace:Raycast(from, step, params)
+		local wallAlong = wall and (wall.Position - from).Magnitude or math.huge
+
+		local finished = true
+		if hitTarget and hitAlong <= wallAlong then
+			endProjectile(projectile, from + projectile.direction * hitAlong, hitTarget)
+		elseif wall then
+			endProjectile(projectile, wall.Position, nil)
+		else
+			projectile.position = to
+			projectile.traveled += stepLength
+			if projectile.traveled >= projectile.range - 0.01 then
+				endProjectile(projectile, to, nil)
+			else
+				finished = false
+			end
+		end
+
+		if finished then
+			table.remove(projectiles, i)
+		end
+	end
+end
+
+----------------------------------------------------------------------
+-- Player state (power, energy, cooldowns)
+----------------------------------------------------------------------
+
+local function getPlayerState(player: Player)
+	local state = playerStates[player]
+	if not state then
+		state = {
+			power = nil,
+			abilityStats = {},
+			cooldowns = {},
+			lastAbility = 0,
+			lastBasic = 0,
+			energy = Config.BaseEnergy,
+			maxEnergy = Config.BaseEnergy,
+			regen = Config.BaseEnergyRegen,
+		}
+		playerStates[player] = state
+	end
+	return state
+end
+
+-- Called by PowerService when a player equips a power (or nil for none).
+-- Cooldowns and current energy carry over, so switching powers can't be used
+-- to skip cooldowns.
+function CombatService.setPower(player: Player, power)
+	local state = getPlayerState(player)
+	state.power = power
+	state.abilityStats = {}
+	if power then
+		for i, ability in power.abilities do
+			state.abilityStats[i] = AbilityTypes.computeStats(ability)
+		end
+	end
+	local energyPoints = power and power.stats.energy or 0
+	state.maxEnergy = Config.BaseEnergy + energyPoints * Config.EnergyPerPoint
+	state.regen = Config.BaseEnergyRegen + energyPoints * Config.EnergyRegenPerPoint
+	state.energy = math.min(state.energy, state.maxEnergy)
+	player:SetAttribute("MaxEnergy", state.maxEnergy)
+	player:SetAttribute("Energy", math.floor(state.energy))
+end
+
+function CombatService.onCharacterSpawned(player: Player)
+	local state = getPlayerState(player)
+	state.energy = state.maxEnergy
+	player:SetAttribute("Energy", math.floor(state.energy))
+end
+
+----------------------------------------------------------------------
+-- Abilities
+----------------------------------------------------------------------
+
+type Context = {
+	player: Player,
+	character: Model,
+	humanoid: Humanoid,
+	root: BasePart,
+	ability: any,
+	stats: any,
+	element: string,
+	color: Color3,
+	aim: Vector3,
+	origin: Vector3, -- chest height
+	direction: Vector3, -- unit vector toward the aim
+	flat: Vector3, -- unit vector toward the aim, ignoring height
+}
+
+local function alive(ctx: Context): boolean
+	return ctx.humanoid.Health > 0 and ctx.character.Parent ~= nil
+end
+
+-- Moves `point` toward `from` so it is at most `range` away.
+local function clampRange(from: Vector3, point: Vector3, range: number): Vector3
+	local offset = point - from
+	if offset.Magnitude > range then
+		return from + offset.Unit * range
+	end
+	return point
+end
+
+-- Finds the ground below a point (or returns the point if there is none).
+local function groundBelow(point: Vector3): Vector3
+	local hit = workspace:Raycast(point + Vector3.new(0, 6, 0), Vector3.new(0, -120, 0), worldParams())
+	return hit and hit.Position or point
+end
+
+local Executors = {}
+
+function Executors.Projectile(ctx: Context)
+	local stats = ctx.stats
+	CombatService.fireProjectile(ctx.character, ctx.origin + ctx.direction * 2, ctx.direction, {
+		damage = stats.damage,
+		radius = stats.radius,
+		speed = stats.speed,
+		range = stats.range,
+		element = ctx.element,
+	})
+end
+
+function Executors.Barrage(ctx: Context)
+	local stats = ctx.stats
+	for i = 1, stats.count do
+		task.delay((i - 1) * 0.07, function()
+			if not alive(ctx) then
+				return
+			end
+			local spread = (i - (stats.count + 1) / 2) * 3.5
+			local direction = CFrame.Angles(0, math.rad(spread), 0):VectorToWorldSpace(ctx.direction)
+			local origin = ctx.root.Position + Vector3.new(0, 1, 0) + direction * 2
+			CombatService.fireProjectile(ctx.character, origin, direction, {
+				damage = stats.damage,
+				radius = stats.radius,
+				speed = stats.speed,
+				range = stats.range,
+				element = ctx.element,
+				knockback = 6,
+			})
+		end)
+	end
+end
+
+function Executors.Beam(ctx: Context)
+	local stats = ctx.stats
+	local start = ctx.origin + ctx.direction * 1.5
+	local length = stats.range
+	local wall = workspace:Raycast(start, ctx.direction * length, worldParams())
+	if wall then
+		length = (wall.Position - start).Magnitude
+	end
+	local finish = start + ctx.direction * length
+
+	fx("Beam", { from = start, to = finish, width = stats.width, color = ctx.color })
+
+	for _, target in CombatService.getTargets() do
+		if target.model ~= ctx.character then
+			local _, distance = closestOnSegment(target.root.Position, start, finish)
+			if distance <= stats.width / 2 + 2 then
+				CombatService.damage(ctx.character, target.model, stats.damage, {
+					element = ctx.element,
+					direction = ctx.direction,
+					knockback = 30,
+				})
+			end
+		end
+	end
+end
+
+function Executors.Blast(ctx: Context)
+	local stats = ctx.stats
+	local center = ctx.root.Position
+	fx("Burst", { position = center, radius = stats.radius, color = ctx.color })
+	CombatService.areaDamage(ctx.character, center, stats.radius, stats.damage, ctx.element, stats.knockback)
+end
+
+function Executors.Explosion(ctx: Context)
+	local stats = ctx.stats
+	local point = groundBelow(clampRange(ctx.root.Position, ctx.aim, stats.range))
+	fx("Warning", { position = point, radius = stats.radius, color = ctx.color, duration = stats.delay })
+	task.delay(stats.delay, function()
+		fx("Burst", { position = point, radius = stats.radius, color = ctx.color })
+		CombatService.areaDamage(ctx.character, point, stats.radius, stats.damage, ctx.element, 30)
+	end)
+end
+
+function Executors.MeteorRain(ctx: Context)
+	local stats = ctx.stats
+	local center = groundBelow(clampRange(ctx.root.Position, ctx.aim, stats.range))
+	fx("Warning", { position = center, radius = stats.area, color = ctx.color, duration = 0.4 + stats.count * 0.12 })
+	for i = 1, stats.count do
+		task.delay(0.3 + i * 0.12, function()
+			local angle = math.random() * math.pi * 2
+			local distance = math.sqrt(math.random()) * stats.area
+			local landing = center + Vector3.new(math.cos(angle) * distance, 0, math.sin(angle) * distance)
+			local origin = landing + Vector3.new(-10, 70, -10)
+			local direction = landing - origin
+			CombatService.fireProjectile(ctx.character, origin, direction, {
+				damage = stats.damage,
+				radius = 1.5,
+				speed = 140,
+				range = direction.Magnitude + 15,
+				element = ctx.element,
+				splash = stats.radius,
+				knockback = 12,
+			})
+		end)
+	end
+end
+
+function Executors.Melee(ctx: Context)
+	local stats = ctx.stats
+	for i = 1, stats.hits do
+		task.delay((i - 1) * 0.2, function()
+			if not alive(ctx) then
+				return
+			end
+			local last = i == stats.hits
+			fx("Slash", {
+				cframe = CFrame.lookAt(ctx.root.Position, ctx.root.Position + ctx.flat),
+				reach = stats.reach,
+				color = ctx.color,
+				flip = i % 2 == 0,
+			})
+			CombatService.frontHit(
+				ctx.character,
+				ctx.root,
+				ctx.flat,
+				stats.reach,
+				stats.damage,
+				ctx.element,
+				last and stats.knockback or 4
+			)
+		end)
+	end
+end
+
+function Executors.DashStrike(ctx: Context)
+	local stats = ctx.stats
+	local start = ctx.root.Position
+	local distance = stats.distance
+	local wall = workspace:Raycast(start, ctx.flat * distance, worldParams())
+	if wall then
+		distance = math.max(0, (wall.Position - start).Magnitude - 3)
+	end
+	local finish = start + ctx.flat * distance
+	local duration = math.max(distance / DASH_SPEED, 0.05)
+
+	push(ctx.root, ctx.flat * DASH_SPEED, duration)
+	fx("Dash", { from = start, to = finish, width = stats.width, color = ctx.color })
+
+	task.delay(duration * 0.5, function()
+		for _, target in CombatService.getTargets() do
+			if target.model ~= ctx.character then
+				local _, away = closestOnSegment(target.root.Position, start, finish)
+				if away <= stats.width / 2 + 2 then
+					CombatService.damage(ctx.character, target.model, stats.damage, {
+						element = ctx.element,
+						direction = ctx.flat,
+						knockback = 25,
+					})
+				end
+			end
+		end
+	end)
+end
+
+function Executors.Teleport(ctx: Context)
+	local stats = ctx.stats
+	local start = ctx.root.Position
+	local destination = clampRange(start, ctx.aim + Vector3.new(0, 3, 0), stats.range)
+	local offset = destination - start
+	if offset.Magnitude > 0.5 then
+		local wall = workspace:Raycast(start, offset, worldParams())
+		if wall then
+			destination = wall.Position - offset.Unit * 2.5
+		end
+	end
+	local ground = workspace:Raycast(destination + Vector3.new(0, 2, 0), Vector3.new(0, -60, 0), worldParams())
+	if ground then
+		destination = ground.Position + Vector3.new(0, 3, 0)
+	end
+
+	fx("Teleport", { from = start, to = destination, color = ctx.color })
+	ctx.character:PivotTo(CFrame.lookAt(destination, destination + ctx.flat))
+
+	if stats.damage > 0 then
+		task.delay(0.05, function()
+			fx("Burst", { position = destination, radius = stats.radius, color = ctx.color })
+			CombatService.areaDamage(ctx.character, destination, stats.radius, stats.damage, ctx.element, 25)
+		end)
+	end
+end
+
+function Executors.Shield(ctx: Context)
+	local stats = ctx.stats
+	local bubble = Visuals.makeBubble(ctx.root, ctx.color, 8)
+	Status.addShield(ctx.humanoid, stats.absorb, stats.duration, bubble)
+end
+
+function Executors.Heal(ctx: Context)
+	local humanoid = ctx.humanoid
+	humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + ctx.stats.heal)
+	fx("Heal", { position = ctx.root.Position, color = ctx.color })
+end
+
+function Executors.PowerUp(ctx: Context)
+	local stats = ctx.stats
+	Status.powerUp(ctx.humanoid, stats.damageMultiplier, stats.walkSpeedBonus, stats.duration)
+
+	local power = playerStates[ctx.player].power
+	local style = power and power.aura ~= "None" and power.aura or "Flames"
+	for _, instance in Visuals.makeAura(ctx.root, style, ctx.color, 2.2) do
+		Debris:AddItem(instance, stats.duration)
+	end
+	local highlight = Instance.new("Highlight")
+	highlight.Name = "PowerUpHighlight"
+	highlight.FillColor = ctx.color
+	highlight.OutlineColor = ctx.color
+	highlight.FillTransparency = 0.75
+	highlight.Parent = ctx.character
+	Debris:AddItem(highlight, stats.duration)
+
+	fx("Burst", { position = ctx.root.Position, radius = 12, color = ctx.color })
+end
+
+local function validAim(aim: any): boolean
+	if typeof(aim) ~= "Vector3" then
+		return false
+	end
+	for _, value in { aim.X, aim.Y, aim.Z } do
+		if value ~= value or math.abs(value) > 1e6 then
+			return false -- NaN or absurdly far
+		end
+	end
+	return true
+end
+
+-- Builds the context for an attack, or nil if the player can't attack now.
+local function makeContext(player: Player, aim: any): Context?
+	if not validAim(aim) then
+		return nil
+	end
+	local character = player.Character
+	local target = asTarget(character, player)
+	if not target or not character then
+		return nil
+	end
+	if Status.isStunned(target.humanoid) then
+		return nil
+	end
+	local root = target.root
+	local origin = root.Position + Vector3.new(0, 1, 0)
+	local clampedAim = clampRange(origin, aim, Config.MaxAimDistance)
+	local offset = clampedAim - origin
+	local direction = offset.Magnitude > 0.1 and offset.Unit or root.CFrame.LookVector
+	local flat = Vector3.new(direction.X, 0, direction.Z)
+	flat = flat.Magnitude > 0.01 and flat.Unit
+		or Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z).Unit
+
+	local state = getPlayerState(player)
+	local element = state.power and state.power.element or "Ki"
+	return {
+		player = player,
+		character = character,
+		humanoid = target.humanoid,
+		root = root,
+		ability = nil,
+		stats = nil,
+		element = element,
+		color = Elements.get(element).color,
+		aim = clampedAim,
+		origin = origin,
+		direction = direction,
+		flat = flat,
+	}
+end
+
+local function useAbility(player: Player, slot: any, aim: any)
+	local state = playerStates[player]
+	if not state or not state.power then
+		return
+	end
+	if type(slot) ~= "number" or slot ~= math.floor(slot) then
+		return
+	end
+	local ability = state.power.abilities[slot]
+	local stats = state.abilityStats[slot]
+	if not ability or not stats then
+		return
+	end
+
+	local now = os.clock()
+	if now - state.lastAbility < GLOBAL_COOLDOWN or (state.cooldowns[slot] or 0) > now then
+		return
+	end
+
+	local ctx = makeContext(player, aim)
+	if not ctx then
+		return
+	end
+	if state.energy < stats.energy then
+		Remotes.Notify:FireClient(player, "Not enough energy!")
+		return
+	end
+
+	state.energy -= stats.energy
+	state.cooldowns[slot] = now + stats.cooldown
+	state.lastAbility = now
+	player:SetAttribute("Energy", math.floor(state.energy))
+	Remotes.AbilityResult:FireClient(player, slot, stats.cooldown)
+
+	ctx.ability = ability
+	ctx.stats = stats
+	ctx.element = ability.element
+	ctx.color = Elements.get(ability.element).color
+
+	-- Anime rule: shout the attack's name
+	fx("Shout", { character = ctx.character, text = ability.name, color = ctx.color })
+
+	local executor = Executors[ability.type]
+	if executor then
+		executor(ctx)
+	end
+end
+
+local function basicAttack(player: Player, aim: any)
+	local state = getPlayerState(player)
+	local now = os.clock()
+	if now - state.lastBasic < Config.BasicAttackCooldown then
+		return
+	end
+	local ctx = makeContext(player, aim)
+	if not ctx then
+		return
+	end
+	state.lastBasic = now
+	fx("Slash", {
+		cframe = CFrame.lookAt(ctx.root.Position, ctx.root.Position + ctx.flat),
+		reach = Config.BasicAttackRange,
+		color = ctx.color,
+		flip = math.random() < 0.5,
+		small = true,
+	})
+	CombatService.frontHit(
+		ctx.character,
+		ctx.root,
+		ctx.flat,
+		Config.BasicAttackRange,
+		Config.BasicAttackDamage,
+		ctx.element,
+		8
+	)
+end
+
+----------------------------------------------------------------------
+-- Setup
+----------------------------------------------------------------------
+
+function CombatService.init(folder: Folder)
+	enemiesFolder = folder
+
+	Remotes.UseAbility.OnServerEvent:Connect(useAbility)
+	Remotes.BasicAttack.OnServerEvent:Connect(basicAttack)
+
+	Players.PlayerRemoving:Connect(function(player)
+		playerStates[player] = nil
+	end)
+
+	RunService.Heartbeat:Connect(stepProjectiles)
+
+	-- Energy regeneration
+	local elapsed = 0
+	RunService.Heartbeat:Connect(function(dt)
+		elapsed += dt
+		if elapsed < 0.1 then
+			return
+		end
+		for player, state in playerStates do
+			if state.energy < state.maxEnergy then
+				state.energy = math.min(state.maxEnergy, state.energy + state.regen * elapsed)
+				local shown = math.floor(state.energy)
+				if player:GetAttribute("Energy") ~= shown then
+					player:SetAttribute("Energy", shown)
+				end
+			end
+		end
+		elapsed = 0
+	end)
+end
+
+return CombatService
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">EnemyService</string>
+          <string name="Source"><![CDATA[-- Training dummies (stand still, heal back up) and arena enemies (chase,
+-- punch and shoot at players). Both respawn after being defeated.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
+local Status = require(script.Parent.Status)
+local CombatService = require(script.Parent.CombatService)
+local World = require(script.Parent.World)
+
+local EnemyService = {}
+
+local ENEMY_KINDS = {
+	{
+		name = "Rogue Ninja",
+		element = "Wind",
+		health = 120,
+		damage = 9,
+		speed = 20,
+		color = Color3.fromRGB(60, 70, 80),
+		attackName = "Wind Star!",
+	},
+	{
+		name = "Fire Cultist",
+		element = "Fire",
+		health = 140,
+		damage = 10,
+		speed = 15,
+		color = Color3.fromRGB(170, 50, 30),
+		attackName = "Hellfire!",
+	},
+	{
+		name = "Ice Phantom",
+		element = "Ice",
+		health = 130,
+		damage = 9,
+		speed = 16,
+		color = Color3.fromRGB(150, 210, 240),
+		attackName = "Frost Bite!",
+	},
+	{
+		name = "Thunder Brute",
+		element = "Lightning",
+		health = 260,
+		damage = 14,
+		speed = 12,
+		color = Color3.fromRGB(200, 180, 40),
+		attackName = "Thunder Smash!",
+	},
+	{
+		name = "Shadow Fiend",
+		element = "Shadow",
+		health = 160,
+		damage = 11,
+		speed = 17,
+		color = Color3.fromRGB(70, 30, 100),
+		attackName = "Night Claw!",
+	},
+}
+
+local AGGRO_RANGE = 90
+local MELEE_RANGE = 6
+local MELEE_COOLDOWN = 1.2
+local SHOT_COOLDOWN = 3.5
+
+local folder: Folder
+local enemies = {} -- list of enemy records driven by the AI loop
+
+----------------------------------------------------------------------
+-- Rigs
+----------------------------------------------------------------------
+
+-- A plain blocky rig, only used if Roblox can't build a normal character.
+local function fallbackRig(color: Color3): Model
+	local model = Instance.new("Model")
+
+	local root = Instance.new("Part")
+	root.Name = "HumanoidRootPart"
+	root.Size = Vector3.new(2, 2, 1)
+	root.Transparency = 1
+	root.CanCollide = false
+	root.Parent = model
+	model.PrimaryPart = root
+
+	local function limb(name: string, size: Vector3, offset: Vector3)
+		local p = Instance.new("Part")
+		p.Name = name
+		p.Size = size
+		p.Color = color
+		p.CFrame = root.CFrame * CFrame.new(offset)
+		p.Parent = model
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = root
+		weld.Part1 = p
+		weld.Parent = p
+	end
+	limb("Torso", Vector3.new(2, 2, 1), Vector3.zero)
+	limb("Head", Vector3.new(1.2, 1.2, 1.2), Vector3.new(0, 1.6, 0))
+	limb("Left Arm", Vector3.new(1, 2, 1), Vector3.new(-1.5, 0, 0))
+	limb("Right Arm", Vector3.new(1, 2, 1), Vector3.new(1.5, 0, 0))
+	limb("Left Leg", Vector3.new(1, 2, 1), Vector3.new(-0.5, -2, 0))
+	limb("Right Leg", Vector3.new(1, 2, 1), Vector3.new(0.5, -2, 0))
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.RigType = Enum.HumanoidRigType.R15
+	humanoid.HipHeight = 2
+	humanoid.Parent = model
+	return model
+end
+
+local function makeRig(color: Color3): Model
+	local ok, model = pcall(function()
+		local description = Instance.new("HumanoidDescription")
+		description.HeadColor = color:Lerp(Color3.new(1, 1, 1), 0.3)
+		description.TorsoColor = color
+		description.LeftArmColor = color
+		description.RightArmColor = color
+		description.LeftLegColor = color:Lerp(Color3.new(0, 0, 0), 0.3)
+		description.RightLegColor = color:Lerp(Color3.new(0, 0, 0), 0.3)
+		return Players:CreateHumanoidModelFromDescription(description, Enum.HumanoidRigType.R15)
+	end)
+	if ok and model then
+		return model
+	end
+	warn("[EnemyService] Using fallback rig:", model)
+	return fallbackRig(color)
+end
+
+local function randomArenaPoint(): Vector3
+	local arena = World.Arena
+	local half = math.floor(arena.size / 2 - 12)
+	return arena.center + Vector3.new(math.random(-half, half), 0, math.random(-half, half))
+end
+
+----------------------------------------------------------------------
+-- Dummies
+----------------------------------------------------------------------
+
+local function spawnDummy(position: Vector3)
+	local model = makeRig(Color3.fromRGB(210, 160, 90))
+	model.Name = "Training Dummy"
+	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	humanoid.DisplayName = "Training Dummy"
+	humanoid.MaxHealth = 400
+	humanoid.Health = 400
+	humanoid.WalkSpeed = 0
+	humanoid.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOn
+	root.Anchored = true
+	model:PivotTo(CFrame.new(position + Vector3.new(0, 3, 0)) * CFrame.Angles(0, math.pi, 0))
+	model.Parent = folder
+
+	-- Heal back to full after a few seconds without being hit
+	local lastHit = 0
+	local lastHealth = humanoid.Health
+	humanoid.HealthChanged:Connect(function(health)
+		if health < lastHealth then
+			lastHit = os.clock()
+		end
+		lastHealth = health
+	end)
+	task.spawn(function()
+		while model.Parent and humanoid.Health > 0 do
+			task.wait(1)
+			if humanoid.Health > 0 and humanoid.Health < humanoid.MaxHealth and os.clock() - lastHit > 4 then
+				humanoid.Health = humanoid.MaxHealth
+			end
+		end
+	end)
+
+	humanoid.Died:Connect(function()
+		task.wait(3)
+		model:Destroy()
+		spawnDummy(position)
+	end)
+end
+
+----------------------------------------------------------------------
+-- Enemies
+----------------------------------------------------------------------
+
+local spawnEnemy
+
+local function onEnemyDied(record)
+	local index = table.find(enemies, record)
+	if index then
+		table.remove(enemies, index)
+	end
+	task.delay(3, function()
+		record.model:Destroy()
+	end)
+	task.delay(Config.EnemyRespawnTime, function()
+		spawnEnemy(record.kind)
+	end)
+end
+
+function spawnEnemy(kind)
+	local model = makeRig(kind.color)
+	model.Name = kind.name
+	local humanoid = model:FindFirstChildOfClass("Humanoid") :: Humanoid
+	local root = model:FindFirstChild("HumanoidRootPart") :: BasePart
+	humanoid.DisplayName = kind.name
+	humanoid.MaxHealth = kind.health
+	humanoid.Health = kind.health
+	humanoid.WalkSpeed = kind.speed
+	model:SetAttribute("DamageMultiplier", 1)
+	model:PivotTo(CFrame.new(randomArenaPoint() + Vector3.new(0, 4, 0)))
+	model.Parent = folder
+	Status.setBaseSpeed(humanoid, kind.speed)
+
+	-- Let the server simulate enemy physics so knockback is smooth
+	pcall(function()
+		root:SetNetworkOwner(nil)
+	end)
+
+	local record = {
+		model = model,
+		humanoid = humanoid,
+		root = root,
+		kind = kind,
+		lastMelee = 0,
+		lastShot = os.clock(),
+		wanderTarget = nil :: Vector3?,
+		nextWander = 0,
+	}
+	table.insert(enemies, record)
+	humanoid.Died:Connect(function()
+		onEnemyDied(record)
+	end)
+end
+
+local function nearestPlayer(position: Vector3)
+	local best, bestDistance = nil, AGGRO_RANGE
+	for _, target in CombatService.getTargets() do
+		if target.player and not CombatService.inSafeZone(target.root.Position) then
+			local distance = (target.root.Position - position).Magnitude
+			if distance < bestDistance then
+				best, bestDistance = target, distance
+			end
+		end
+	end
+	return best, bestDistance
+end
+
+local function think(record)
+	local root = record.root
+	local humanoid = record.humanoid
+	if humanoid.Health <= 0 or Status.isStunned(humanoid) then
+		return
+	end
+	local now = os.clock()
+	local kind = record.kind
+
+	-- Don't wander off too far from the arena
+	local arena = World.Arena
+	local fromCenter = Vector3.new(root.Position.X - arena.center.X, 0, root.Position.Z - arena.center.Z).Magnitude
+	if fromCenter > arena.size * 0.8 then
+		humanoid:MoveTo(arena.center)
+		return
+	end
+
+	local target, distance = nearestPlayer(root.Position)
+	if target then
+		local offset = target.root.Position - root.Position
+		local flat = Vector3.new(offset.X, 0, offset.Z)
+		local facing = flat.Magnitude > 0.1 and flat.Unit or root.CFrame.LookVector
+
+		if distance > MELEE_RANGE - 1 then
+			humanoid:MoveTo(target.root.Position)
+		end
+
+		if distance <= MELEE_RANGE and now - record.lastMelee >= MELEE_COOLDOWN then
+			record.lastMelee = now
+			CombatService.fx("Slash", {
+				cframe = CFrame.lookAt(root.Position, root.Position + facing),
+				reach = MELEE_RANGE,
+				color = Color3.new(1, 1, 1),
+				flip = math.random() < 0.5,
+				small = true,
+			})
+			CombatService.frontHit(record.model, root, facing, MELEE_RANGE, kind.damage, kind.element, 20)
+		elseif distance > 14 and distance < 70 and now - record.lastShot >= SHOT_COOLDOWN then
+			record.lastShot = now + math.random() -- a little randomness so they don't all fire together
+			local origin = root.Position + Vector3.new(0, 1, 0)
+			local direction = (target.root.Position - origin).Unit
+			CombatService.fx(
+				"Shout",
+				{ character = record.model, text = kind.attackName, color = Color3.new(1, 0.4, 0.4) }
+			)
+			CombatService.fireProjectile(record.model, origin + direction * 2, direction, {
+				damage = kind.damage * 0.8,
+				radius = 1,
+				speed = 70,
+				range = 120,
+				element = kind.element,
+			})
+		end
+	else
+		-- Wander around the arena
+		if not record.wanderTarget or now >= record.nextWander then
+			record.wanderTarget = randomArenaPoint()
+			record.nextWander = now + math.random(4, 8)
+			humanoid:MoveTo(record.wanderTarget)
+		end
+	end
+end
+
+function EnemyService.init(enemiesFolder: Folder)
+	folder = enemiesFolder
+
+	local row = World.DummyRow
+	for i = 1, Config.DummyCount do
+		local x = (i - (Config.DummyCount + 1) / 2) * row.spacing
+		task.spawn(spawnDummy, row.center + Vector3.new(x, 0, 0))
+	end
+
+	for i = 1, Config.EnemyCount do
+		task.spawn(spawnEnemy, ENEMY_KINDS[(i - 1) % #ENEMY_KINDS + 1])
+	end
+
+	task.spawn(function()
+		while true do
+			task.wait(0.2)
+			for _, record in table.clone(enemies) do
+				local ok, err = pcall(think, record)
+				if not ok then
+					warn("[EnemyService]", err)
+				end
+			end
+		end
+	end)
+end
+
+return EnemyService
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Script" referent="14">
+        <Properties>
+          <string name="Name">Main</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[-- Make an Anime Power: server entry point.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
+require(ReplicatedStorage.Shared.Remotes) -- creates the remotes before clients look for them
+
+local World = require(script.Parent.World)
+local CombatService = require(script.Parent.CombatService)
+local PowerService = require(script.Parent.PowerService)
+local EnemyService = require(script.Parent.EnemyService)
+
+Players.RespawnTime = Config.RespawnTime
+
+local enemiesFolder = World.build()
+CombatService.init(enemiesFolder)
+PowerService.init()
+EnemyService.init(enemiesFolder)
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="15">
+        <Properties>
+          <string name="Name">PowerService</string>
+          <string name="Source"><![CDATA[-- Saved powers: loading/saving with DataStores, the Power Creator remotes,
+-- and applying the equipped power to the player's character.
+
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local TextService = game:GetService("TextService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local PowerValidator = require(Shared.PowerValidator)
+local Remotes = require(Shared.Remotes)
+local Status = require(script.Parent.Status)
+local Visuals = require(script.Parent.Visuals)
+local CombatService = require(script.Parent.CombatService)
+
+local PowerService = {}
+
+local AUTOSAVE_INTERVAL = 90
+local REQUEST_COOLDOWN = 0.4 -- per player, for the creator remotes
+
+local store: DataStore? = nil
+do
+	local ok, result = pcall(function()
+		return DataStoreService:GetDataStore(Config.DataStoreName)
+	end)
+	if ok then
+		store = result
+	else
+		warn("[PowerService] DataStores unavailable, powers won't be saved:", result)
+	end
+end
+
+-- [Player] = { powers = {...}, equipped = number, loaded = bool, canSave = bool, dirty = bool, lastRequest = number }
+local sessions = {}
+
+----------------------------------------------------------------------
+-- Text filtering (required by Roblox for text other players can see)
+----------------------------------------------------------------------
+
+local function filterText(text: string, userId: number): string?
+	local ok, result = pcall(function()
+		return TextService:FilterStringAsync(text, userId)
+	end)
+	if not ok then
+		return nil
+	end
+	local ok2, filtered = pcall(function()
+		return result:GetNonChatStringForBroadcastAsync()
+	end)
+	if not ok2 then
+		return nil
+	end
+	return filtered
+end
+
+-- Filters every name in a power. If filtering fails, the name is replaced
+-- with a safe default rather than shown unfiltered.
+local function filterPower(power, userId: number)
+	power.name = filterText(power.name, userId) or "Power"
+	for _, ability in power.abilities do
+		ability.name = filterText(ability.name, userId) or "Ability"
+	end
+	return power
+end
+
+----------------------------------------------------------------------
+-- Data
+----------------------------------------------------------------------
+
+local function publicData(session)
+	return {
+		powers = session.powers,
+		equipped = session.equipped,
+		canSave = session.canSave,
+	}
+end
+
+local function sendData(player: Player)
+	local session = sessions[player]
+	if session then
+		Remotes.DataChanged:FireClient(player, publicData(session))
+	end
+end
+
+local function load(player: Player)
+	local session = {
+		powers = {},
+		equipped = 0,
+		loaded = false,
+		canSave = false,
+		dirty = false,
+		lastRequest = 0,
+	}
+	sessions[player] = session
+
+	if store then
+		local ok, saved = pcall(function()
+			return store:GetAsync("u_" .. player.UserId)
+		end)
+		if ok then
+			session.canSave = true
+			if type(saved) == "table" and type(saved.powers) == "table" then
+				for _, raw in saved.powers do
+					local power = PowerValidator.sanitize(raw)
+					if power and #session.powers < Config.MaxSavedPowers then
+						table.insert(session.powers, power)
+					end
+				end
+				if type(saved.equipped) == "number" and session.powers[saved.equipped] then
+					session.equipped = saved.equipped
+				end
+			end
+		else
+			-- Don't save over data we failed to read
+			warn("[PowerService] Failed to load data for", player.Name, saved)
+		end
+	end
+
+	session.loaded = true
+	return session
+end
+
+local function save(player: Player)
+	local session = sessions[player]
+	if not session or not store or not session.canSave or not session.dirty then
+		return
+	end
+	session.dirty = false
+	local ok, err = pcall(function()
+		store:SetAsync("u_" .. player.UserId, {
+			version = 1,
+			powers = session.powers,
+			equipped = session.equipped,
+		}, { player.UserId })
+	end)
+	if not ok then
+		session.dirty = true
+		warn("[PowerService] Failed to save data for", player.Name, err)
+	end
+end
+
+----------------------------------------------------------------------
+-- Character
+----------------------------------------------------------------------
+
+local function equippedPower(player: Player)
+	local session = sessions[player]
+	return session and session.powers[session.equipped] or nil
+end
+
+local function clearPowerVisuals(character: Model)
+	for _, descendant in character:GetDescendants() do
+		if descendant.Name == "PowerAura" or descendant.Name == "PowerAuraLight" or descendant.Name == "PowerTag" then
+			descendant:Destroy()
+		end
+	end
+end
+
+local function makeNameTag(head: BasePart, power, color: Color3)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "PowerTag"
+	gui.Size = UDim2.fromOffset(200, 26)
+	gui.StudsOffset = Vector3.new(0, 2.6, 0)
+	gui.MaxDistance = 120
+	gui.AlwaysOnTop = false
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBlack
+	label.TextScaled = true
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0.3
+	label.Text = power.name
+	label.Parent = gui
+
+	gui.Parent = head
+end
+
+local function applyToCharacter(player: Player)
+	local character = player.Character
+	if not character then
+		return
+	end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not root or not root:IsA("BasePart") then
+		return
+	end
+
+	local power = equippedPower(player)
+	local stats = power and power.stats or { strength = 0, defense = 0, speed = 0, energy = 0 }
+
+	-- Keep the same health percentage, so equipping can't be used to heal
+	local ratio = humanoid.MaxHealth > 0 and humanoid.Health / humanoid.MaxHealth or 1
+	humanoid.MaxHealth = Config.BaseHealth + stats.defense * Config.HealthPerDefense
+	humanoid.Health = humanoid.MaxHealth * ratio
+	Status.setBaseSpeed(humanoid, Config.BaseWalkSpeed + stats.speed * Config.WalkSpeedPerSpeed)
+
+	clearPowerVisuals(character)
+	if power then
+		local color = PowerValidator.colorOf(power)
+		Visuals.makeAura(root, power.aura, color)
+		local head = character:FindFirstChild("Head")
+		if head and head:IsA("BasePart") then
+			makeNameTag(head, power, color)
+		end
+	end
+
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local powerValue = leaderstats and leaderstats:FindFirstChild("Power")
+	if powerValue and powerValue:IsA("StringValue") then
+		powerValue.Value = power and power.name or "None"
+	end
+
+	CombatService.setPower(player, power)
+end
+
+local function onCharacterAdded(player: Player, character: Model)
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	character:WaitForChild("HumanoidRootPart", 10)
+	if not humanoid or character.Parent == nil then
+		return
+	end
+	Status.reset(humanoid :: Humanoid)
+	applyToCharacter(player)
+	CombatService.onCharacterSpawned(player)
+end
+
+----------------------------------------------------------------------
+-- Remotes
+----------------------------------------------------------------------
+
+local function checkRequest(player: Player)
+	local session = sessions[player]
+	if not session or not session.loaded then
+		return nil, "Still loading, try again in a moment."
+	end
+	local now = os.clock()
+	if now - session.lastRequest < REQUEST_COOLDOWN then
+		return nil, "Slow down!"
+	end
+	session.lastRequest = now
+	return session, nil
+end
+
+local function onSavePower(player: Player, index: any, raw: any)
+	local session, err = checkRequest(player)
+	if not session then
+		return { ok = false, message = err }
+	end
+
+	local power = PowerValidator.sanitize(raw)
+	if not power then
+		return { ok = false, message = "That power couldn't be read." }
+	end
+	if #power.abilities == 0 then
+		return { ok = false, message = "Give your power at least one ability." }
+	end
+	filterPower(power, player.UserId)
+
+	local slot
+	if type(index) == "number" and session.powers[index] then
+		slot = index
+	elseif #session.powers < Config.MaxSavedPowers then
+		slot = #session.powers + 1
+	else
+		return { ok = false, message = "You can save up to " .. Config.MaxSavedPowers .. " powers. Delete one first." }
+	end
+
+	session.powers[slot] = power
+	session.equipped = slot
+	session.dirty = true
+	applyToCharacter(player)
+	sendData(player)
+
+	local message = "Saved and equipped " .. power.name .. "!"
+	if not session.canSave then
+		message ..= " (Saving is off here, so it will be lost when you leave.)"
+	end
+	return { ok = true, index = slot, message = message }
+end
+
+local function onDeletePower(player: Player, index: any)
+	local session, err = checkRequest(player)
+	if not session then
+		return { ok = false, message = err }
+	end
+	if type(index) ~= "number" or not session.powers[index] then
+		return { ok = false, message = "That power doesn't exist." }
+	end
+
+	table.remove(session.powers, index)
+	if session.equipped == index then
+		session.equipped = 0
+	elseif session.equipped > index then
+		session.equipped -= 1
+	end
+	session.dirty = true
+	applyToCharacter(player)
+	sendData(player)
+	return { ok = true, message = "Power deleted." }
+end
+
+local function onEquipPower(player: Player, index: any)
+	local session, err = checkRequest(player)
+	if not session then
+		return { ok = false, message = err }
+	end
+	if type(index) ~= "number" or (index ~= 0 and not session.powers[index]) then
+		return { ok = false, message = "That power doesn't exist." }
+	end
+	session.equipped = index
+	session.dirty = true
+	applyToCharacter(player)
+	sendData(player)
+	return {
+		ok = true,
+		message = index == 0 and "Power unequipped." or ("Equipped " .. session.powers[index].name .. "!"),
+	}
+end
+
+----------------------------------------------------------------------
+-- Setup
+----------------------------------------------------------------------
+
+local function onPlayerAdded(player: Player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	local kos = Instance.new("IntValue")
+	kos.Name = "KOs"
+	kos.Parent = leaderstats
+	local powerName = Instance.new("StringValue")
+	powerName.Name = "Power"
+	powerName.Value = "None"
+	powerName.Parent = leaderstats
+	leaderstats.Parent = player
+
+	load(player)
+	if player.Parent == nil then
+		return -- left while loading
+	end
+
+	player.CharacterAdded:Connect(function(character)
+		onCharacterAdded(player, character)
+	end)
+	if player.Character then
+		task.spawn(onCharacterAdded, player, player.Character)
+	end
+	sendData(player)
+end
+
+function PowerService.init()
+	Remotes.GetPowerData.OnServerInvoke = function(player)
+		local session = sessions[player]
+		while not session or not session.loaded do
+			task.wait(0.2)
+			if player.Parent == nil then
+				return nil
+			end
+			session = sessions[player]
+		end
+		return publicData(session)
+	end
+	Remotes.SavePower.OnServerInvoke = onSavePower
+	Remotes.DeletePower.OnServerInvoke = onDeletePower
+	Remotes.EquipPower.OnServerInvoke = onEquipPower
+
+	Players.PlayerAdded:Connect(onPlayerAdded)
+	for _, player in Players:GetPlayers() do
+		task.spawn(onPlayerAdded, player)
+	end
+
+	Players.PlayerRemoving:Connect(function(player)
+		save(player)
+		sessions[player] = nil
+	end)
+
+	game:BindToClose(function()
+		for _, player in Players:GetPlayers() do
+			task.spawn(save, player)
+		end
+		task.wait(3)
+	end)
+
+	task.spawn(function()
+		while true do
+			task.wait(AUTOSAVE_INTERVAL)
+			for _, player in Players:GetPlayers() do
+				task.spawn(save, player)
+			end
+		end
+	end)
+end
+
+return PowerService
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="16">
+        <Properties>
+          <string name="Name">Status</string>
+          <string name="Source"><![CDATA[-- Status effects on any Humanoid (players, enemies, dummies):
+-- walk speed (base speed, slows, stuns, power-up boosts), burns (damage over
+-- time) and barriers (absorb damage).
+
+local RunService = game:GetService("RunService")
+
+local Status = {}
+
+-- Set by CombatService so burns go through the normal damage rules.
+-- Signature: (attackerModel, targetModel, amount, element)
+Status.burnDamage = nil :: ((Model?, Model, number, string) -> ())?
+
+local states = {}
+
+local function newState(humanoid: Humanoid)
+	return {
+		humanoid = humanoid,
+		baseSpeed = humanoid.WalkSpeed,
+		baseJumpPower = humanoid.JumpPower,
+		baseJumpHeight = humanoid.JumpHeight,
+		slowMultiplier = 1,
+		slowUntil = 0,
+		stunUntil = 0,
+		boostSpeed = 0,
+		boostDamage = 1,
+		boostUntil = 0,
+		shield = 0,
+		shieldUntil = 0,
+		shieldPart = nil :: BasePart?,
+		burns = {},
+		wasStunned = false,
+	}
+end
+
+function Status.get(humanoid: Humanoid)
+	local state = states[humanoid]
+	if not state then
+		state = newState(humanoid)
+		states[humanoid] = state
+	end
+	return state
+end
+
+function Status.setBaseSpeed(humanoid: Humanoid, speed: number)
+	Status.get(humanoid).baseSpeed = speed
+end
+
+function Status.slow(humanoid: Humanoid, multiplier: number, duration: number)
+	local state = Status.get(humanoid)
+	local now = os.clock()
+	-- Keep the strongest slow
+	if state.slowUntil < now or multiplier < state.slowMultiplier then
+		state.slowMultiplier = multiplier
+	end
+	state.slowUntil = math.max(state.slowUntil, now + duration)
+end
+
+function Status.stun(humanoid: Humanoid, duration: number)
+	local state = Status.get(humanoid)
+	state.stunUntil = math.max(state.stunUntil, os.clock() + duration)
+end
+
+function Status.isStunned(humanoid: Humanoid): boolean
+	local state = states[humanoid]
+	return state ~= nil and state.stunUntil > os.clock()
+end
+
+function Status.burn(humanoid: Humanoid, attacker: Model?, damagePerSecond: number, duration: number, element: string)
+	local state = Status.get(humanoid)
+	local now = os.clock()
+	-- One burn per element: re-applying refreshes it instead of stacking
+	state.burns[element] = {
+		attacker = attacker,
+		damagePerTick = damagePerSecond * 0.5,
+		untilTime = now + duration,
+		nextTick = now + 0.5,
+	}
+end
+
+function Status.powerUp(humanoid: Humanoid, damageMultiplier: number, speedBonus: number, duration: number)
+	local state = Status.get(humanoid)
+	state.boostDamage = damageMultiplier
+	state.boostSpeed = speedBonus
+	state.boostUntil = os.clock() + duration
+end
+
+function Status.damageMultiplier(humanoid: Humanoid): number
+	local state = states[humanoid]
+	if state and state.boostUntil > os.clock() then
+		return state.boostDamage
+	end
+	return 1
+end
+
+function Status.addShield(humanoid: Humanoid, absorb: number, duration: number, part: BasePart?)
+	local state = Status.get(humanoid)
+	if state.shieldPart then
+		state.shieldPart:Destroy()
+	end
+	state.shield = absorb
+	state.shieldUntil = os.clock() + duration
+	state.shieldPart = part
+end
+
+local function removeShield(state)
+	state.shield = 0
+	state.shieldUntil = 0
+	if state.shieldPart then
+		state.shieldPart:Destroy()
+		state.shieldPart = nil
+	end
+end
+
+-- Takes damage out of the barrier first. Returns the damage left over.
+function Status.absorb(humanoid: Humanoid, amount: number): number
+	local state = states[humanoid]
+	if not state or state.shield <= 0 or state.shieldUntil < os.clock() then
+		return amount
+	end
+	local blocked = math.min(state.shield, amount)
+	state.shield -= blocked
+	if state.shield <= 0 then
+		removeShield(state)
+	end
+	return amount - blocked
+end
+
+-- Clears everything (used when a character respawns or changes power).
+function Status.reset(humanoid: Humanoid)
+	local state = states[humanoid]
+	if state then
+		removeShield(state)
+		states[humanoid] = nil
+	end
+end
+
+local function update()
+	local now = os.clock()
+	local ticks = {} -- burn damage is applied after the loop, so damage code can't change `states` mid-loop
+	for humanoid, state in states do
+		if humanoid.Parent == nil or humanoid.Health <= 0 then
+			removeShield(state)
+			states[humanoid] = nil
+			continue
+		end
+
+		-- Movement
+		local stunned = state.stunUntil > now
+		local speed = state.baseSpeed
+		if state.boostUntil > now then
+			speed += state.boostSpeed
+		end
+		if state.slowUntil > now then
+			speed *= state.slowMultiplier
+		end
+		if stunned then
+			speed = 0
+		end
+		if math.abs(humanoid.WalkSpeed - speed) > 0.01 then
+			humanoid.WalkSpeed = speed
+		end
+		if stunned ~= state.wasStunned then
+			state.wasStunned = stunned
+			humanoid.JumpPower = stunned and 0 or state.baseJumpPower
+			humanoid.JumpHeight = stunned and 0 or state.baseJumpHeight
+		end
+
+		-- Barrier timeout
+		if state.shieldPart and state.shieldUntil < now then
+			removeShield(state)
+		end
+
+		-- Burns
+		for element, burn in state.burns do
+			if burn.untilTime < now then
+				state.burns[element] = nil
+			elseif burn.nextTick <= now then
+				burn.nextTick += 0.5
+				local model = humanoid.Parent
+				if model and model:IsA("Model") then
+					table.insert(ticks, { burn.attacker, model, burn.damagePerTick, element })
+				end
+			end
+		end
+	end
+
+	if Status.burnDamage then
+		for _, entry in ticks do
+			Status.burnDamage(entry[1], entry[2], entry[3], entry[4])
+		end
+	end
+end
+
+RunService.Heartbeat:Connect(update)
+
+return Status
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="17">
+        <Properties>
+          <string name="Name">Visuals</string>
+          <string name="Source"><![CDATA[-- Server-side visuals that need to stick to a character (so every player sees
+-- them and they move with it): power auras and barrier bubbles.
+
+local Visuals = {}
+
+local function sequence(color: Color3)
+	return ColorSequence.new(color, color:Lerp(Color3.new(1, 1, 1), 0.5))
+end
+
+-- Adds an aura to a character's root part. `scale` makes it bigger (used by
+-- Power Up). Returns the created instances so the caller can remove them.
+function Visuals.makeAura(root: BasePart, style: string, color: Color3, scale: number?): { Instance }
+	local s = scale or 1
+	local created = {}
+
+	local light = Instance.new("PointLight")
+	light.Name = "PowerAuraLight"
+	light.Color = color
+	light.Range = 8 * s
+	light.Brightness = 1.5
+	light.Parent = root
+	table.insert(created, light)
+
+	if style == "None" then
+		return created
+	end
+
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = "PowerAura"
+	emitter.Color = sequence(color)
+	emitter.LightEmission = 0.8
+	emitter.LockedToPart = false
+	emitter.SpreadAngle = Vector2.new(25, 25)
+	emitter.Parent = root
+
+	if style == "Flames" then
+		emitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1.6 * s),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		emitter.Transparency = NumberSequence.new(0.3, 1)
+		emitter.Lifetime = NumberRange.new(0.5, 0.9)
+		emitter.Rate = 40 * s
+		emitter.Speed = NumberRange.new(4, 8)
+		emitter.Acceleration = Vector3.new(0, 8, 0)
+		emitter.Shape = Enum.ParticleEmitterShape.Box
+	elseif style == "Sparkles" then
+		emitter.Size = NumberSequence.new(0.35 * s)
+		emitter.Transparency = NumberSequence.new(0, 1)
+		emitter.Lifetime = NumberRange.new(0.6, 1.2)
+		emitter.Rate = 30 * s
+		emitter.Speed = NumberRange.new(2, 6)
+		emitter.SpreadAngle = Vector2.new(180, 180)
+	elseif style == "Smoke" then
+		emitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 1 * s),
+			NumberSequenceKeypoint.new(1, 3 * s),
+		})
+		emitter.Transparency = NumberSequence.new(0.5, 1)
+		emitter.LightEmission = 0.1
+		emitter.Lifetime = NumberRange.new(1, 1.6)
+		emitter.Rate = 18 * s
+		emitter.Speed = NumberRange.new(1, 3)
+		emitter.Acceleration = Vector3.new(0, 3, 0)
+	else -- Glow
+		emitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 3 * s),
+			NumberSequenceKeypoint.new(1, 5 * s),
+		})
+		emitter.Transparency = NumberSequence.new(0.75, 1)
+		emitter.Lifetime = NumberRange.new(0.4, 0.6)
+		emitter.Rate = 12 * s
+		emitter.Speed = NumberRange.new(0, 0.5)
+	end
+
+	table.insert(created, emitter)
+	return created
+end
+
+-- A see-through bubble welded around a character, used by Barrier.
+function Visuals.makeBubble(root: BasePart, color: Color3, size: number): BasePart
+	local bubble = Instance.new("Part")
+	bubble.Name = "BarrierBubble"
+	bubble.Shape = Enum.PartType.Ball
+	bubble.Size = Vector3.one * size
+	bubble.Material = Enum.Material.ForceField
+	bubble.Color = color
+	bubble.Transparency = 0.1
+	bubble.CanCollide = false
+	bubble.CanQuery = false
+	bubble.CanTouch = false
+	bubble.CastShadow = false
+	bubble.Massless = true
+	bubble.CFrame = root.CFrame
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = root
+	weld.Part1 = bubble
+	weld.Parent = bubble
+
+	bubble.Parent = root.Parent
+	return bubble
+end
+
+return Visuals
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="18">
+        <Properties>
+          <string name="Name">World</string>
+          <string name="Source"><![CDATA[-- Builds the map with code, so the place works straight from a Rojo build:
+-- a safe spawn plaza, a training ground with dummies, and a battle arena
+-- where enemies roam. Anything already in Workspace is left alone.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Config = require(ReplicatedStorage:WaitForChild("Shared").Config)
+
+local World = {}
+
+-- Where things are, used by EnemyService
+World.DummyRow = { center = Vector3.new(0, 0, 70), spacing = 14 }
+World.Arena = { center = Vector3.new(0, 0, -130), size = 170 }
+
+local mapFolder: Folder
+
+local function part(props: { [string]: any }): Part
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	if props.Shape then
+		p.Shape = props.Shape -- set first so it can't reset the size
+	end
+	for key, value in props do
+		if key ~= "Shape" and key ~= "Parent" then
+			(p :: any)[key] = value
+		end
+	end
+	p.Parent = props.Parent or mapFolder
+	return p
+end
+
+local function sign(position: Vector3, text: string, color: Color3)
+	local post = part({
+		Name = "Sign",
+		Size = Vector3.new(1, 8, 1),
+		Position = position + Vector3.new(0, 4, 0),
+		Material = Enum.Material.Wood,
+		Color = Color3.fromRGB(110, 80, 50),
+	})
+	local gui = Instance.new("BillboardGui")
+	gui.Size = UDim2.fromOffset(260, 50)
+	gui.StudsOffset = Vector3.new(0, 5.5, 0)
+	gui.MaxDistance = 200
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamBlack
+	label.TextScaled = true
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0.2
+	label.Text = text
+	label.Parent = gui
+	gui.Parent = post
+end
+
+local function buildGround()
+	if workspace:FindFirstChild("Baseplate") then
+		return
+	end
+	part({
+		Name = "Ground",
+		Size = Vector3.new(600, 4, 600),
+		Position = Vector3.new(0, -2, 0),
+		Material = Enum.Material.Grass,
+		Color = Color3.fromRGB(90, 150, 80),
+	})
+end
+
+local function buildSpawn()
+	local center = Config.SafeZoneCenter
+	local radius = Config.SafeZoneRadius
+
+	local plaza = part({
+		Name = "SafeZone",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.4, radius * 2, radius * 2),
+		CFrame = CFrame.new(center + Vector3.new(0, 0.2, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+		Material = Enum.Material.Marble,
+		Color = Color3.fromRGB(235, 230, 245),
+	})
+	plaza.CanCollide = true
+
+	local ring = part({
+		Name = "SafeZoneEdge",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.3, radius * 2 + 2, radius * 2 + 2),
+		CFrame = CFrame.new(center + Vector3.new(0, 0.1, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+		Material = Enum.Material.Neon,
+		Color = Color3.fromRGB(120, 200, 255),
+	})
+	ring.CanCollide = false
+
+	if not workspace:FindFirstChildWhichIsA("SpawnLocation", true) then
+		local spawn = Instance.new("SpawnLocation")
+		spawn.Name = "Spawn"
+		spawn.Anchored = true
+		spawn.Size = Vector3.new(12, 1, 12)
+		spawn.Position = center + Vector3.new(0, 0.9, 0)
+		spawn.Material = Enum.Material.Neon
+		spawn.Color = Color3.fromRGB(255, 200, 80)
+		spawn.Duration = 3
+		spawn.Neutral = true
+		spawn.TopSurface = Enum.SurfaceType.Smooth
+		spawn.Parent = mapFolder
+	end
+
+	sign(center + Vector3.new(-16, 0, -16), "SAFE ZONE", Color3.fromRGB(120, 200, 255))
+	sign(center + Vector3.new(16, 0, 16), "Press P to make a power!", Color3.fromRGB(255, 220, 90))
+end
+
+local function buildTrainingGround()
+	local row = World.DummyRow
+	local width = row.spacing * (Config.DummyCount + 1)
+	part({
+		Name = "TrainingFloor",
+		Size = Vector3.new(width, 0.4, 30),
+		Position = row.center + Vector3.new(0, 0.2, 0),
+		Material = Enum.Material.WoodPlanks,
+		Color = Color3.fromRGB(170, 130, 90),
+	})
+	sign(row.center + Vector3.new(-width / 2 - 4, 0, 0), "TRAINING DUMMIES", Color3.fromRGB(255, 180, 120))
+end
+
+local function buildArena()
+	local arena = World.Arena
+	local half = arena.size / 2
+	local center = arena.center
+
+	part({
+		Name = "ArenaFloor",
+		Size = Vector3.new(arena.size, 0.4, arena.size),
+		Position = center + Vector3.new(0, 0.2, 0),
+		Material = Enum.Material.Slate,
+		Color = Color3.fromRGB(110, 105, 120),
+	})
+
+	-- Low walls with an opening facing the spawn
+	local wallColor = Color3.fromRGB(80, 75, 90)
+	local gap = 30
+	local sideLength = (arena.size - gap) / 2
+	for _, side in { -1, 1 } do
+		part({
+			Name = "ArenaWall",
+			Size = Vector3.new(sideLength, 8, 3),
+			Position = center + Vector3.new(side * (gap / 2 + sideLength / 2), 4, half),
+			Material = Enum.Material.Brick,
+			Color = wallColor,
+		})
+	end
+	part({
+		Name = "ArenaWall",
+		Size = Vector3.new(arena.size, 8, 3),
+		Position = center + Vector3.new(0, 4, -half),
+		Material = Enum.Material.Brick,
+		Color = wallColor,
+	})
+	for _, side in { -1, 1 } do
+		part({
+			Name = "ArenaWall",
+			Size = Vector3.new(3, 8, arena.size),
+			Position = center + Vector3.new(side * half, 4, 0),
+			Material = Enum.Material.Brick,
+			Color = wallColor,
+		})
+	end
+
+	-- Pillars and rocks for cover (same layout every time)
+	local random = Random.new(2024)
+	for _ = 1, 14 do
+		local x = random:NextNumber(-half + 15, half - 15)
+		local z = random:NextNumber(-half + 15, half - 25)
+		if random:NextNumber() < 0.5 then
+			local height = random:NextNumber(10, 22)
+			part({
+				Name = "Pillar",
+				Size = Vector3.new(5, height, 5),
+				Position = center + Vector3.new(x, height / 2, z),
+				Material = Enum.Material.Cobblestone,
+				Color = Color3.fromRGB(140, 135, 150),
+			})
+		else
+			local size = random:NextNumber(5, 10)
+			part({
+				Name = "Rock",
+				Size = Vector3.new(size, size * 0.7, size),
+				CFrame = CFrame.new(center + Vector3.new(x, size * 0.3, z))
+					* CFrame.Angles(0, random:NextNumber(0, math.pi), random:NextNumber(-0.2, 0.2)),
+				Material = Enum.Material.Rock,
+				Color = Color3.fromRGB(105, 100, 95),
+			})
+		end
+	end
+
+	sign(center + Vector3.new(-gap / 2 - 4, 0, half + 4), "BATTLE ARENA", Color3.fromRGB(255, 90, 90))
+end
+
+-- Builds the map. Returns the folder enemies and dummies should go in.
+function World.build(): Folder
+	local existing = workspace:FindFirstChild("Map")
+	if existing and existing:IsA("Folder") then
+		mapFolder = existing
+	else
+		local folder = Instance.new("Folder")
+		folder.Name = "Map"
+		folder.Parent = workspace
+		mapFolder = folder
+		buildGround()
+		buildSpawn()
+		buildTrainingGround()
+		buildArena()
+	end
+
+	local enemies = workspace:FindFirstChild("Enemies")
+	if enemies and enemies:IsA("Folder") then
+		return enemies
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "Enemies"
+	folder.Parent = workspace
+	return folder
+end
+
+return World
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="19">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="20">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="21">
+        <Properties>
+          <string name="Name">Client</string>
+        </Properties>
+        <Item class="ModuleScript" referent="22">
+          <Properties>
+            <string name="Name">Controls</string>
+            <string name="Source"><![CDATA[-- Input: keys / clicks / touch buttons -> ability and attack requests.
+-- Works out where the player is aiming and turns the character to face it.
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+
+local Controls = {}
+
+local player = Players.LocalPlayer
+local AIM_DISTANCE = 300
+local AUTO_AIM_RANGE = 80
+
+local fxFolder: Instance?
+
+local function aimParams(): RaycastParams
+	local exclude = {}
+	if player.Character then
+		table.insert(exclude, player.Character)
+	end
+	if fxFolder then
+		table.insert(exclude, fxFolder)
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = exclude
+	return params
+end
+
+local function castRay(ray: Ray): Vector3
+	local result = workspace:Raycast(ray.Origin, ray.Direction * AIM_DISTANCE, aimParams())
+	return result and result.Position or ray.Origin + ray.Direction * AIM_DISTANCE
+end
+
+-- On touch screens there is no mouse, so aim at the closest enemy roughly in
+-- front of the camera (or straight ahead if there is none).
+local function autoAim(camera: Camera): Vector3?
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return nil
+	end
+	local candidates = {}
+	for _, other in Players:GetPlayers() do
+		if other ~= player and other.Character then
+			table.insert(candidates, other.Character)
+		end
+	end
+	local enemies = workspace:FindFirstChild("Enemies")
+	if enemies then
+		for _, model in enemies:GetChildren() do
+			table.insert(candidates, model)
+		end
+	end
+
+	local look = camera.CFrame.LookVector
+	local best, bestDistance = nil, AUTO_AIM_RANGE
+	for _, model in candidates do
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		local targetRoot = model:FindFirstChild("HumanoidRootPart")
+		if humanoid and targetRoot and humanoid.Health > 0 then
+			local offset = targetRoot.Position - root.Position
+			local distance = offset.Magnitude
+			if distance < bestDistance and distance > 0.1 and offset.Unit:Dot(look) > 0.4 then
+				best, bestDistance = targetRoot.Position, distance
+			end
+		end
+	end
+	return best
+end
+
+-- Where the player is aiming, in world space.
+function Controls.getAim(fromTouch: boolean): Vector3
+	local camera = workspace.CurrentCamera
+	if fromTouch then
+		local target = autoAim(camera)
+		if target then
+			return target
+		end
+		local size = camera.ViewportSize
+		return castRay(camera:ViewportPointToRay(size.X / 2, size.Y / 2))
+	end
+	local mouse = UserInputService:GetMouseLocation()
+	return castRay(camera:ViewportPointToRay(mouse.X, mouse.Y))
+end
+
+local function faceAim(aim: Vector3)
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not root or not root:IsA("BasePart") then
+		return
+	end
+	local flat = Vector3.new(aim.X, root.Position.Y, aim.Z)
+	if (flat - root.Position).Magnitude > 1 then
+		root.CFrame = CFrame.lookAt(root.Position, flat)
+	end
+end
+
+export type Handlers = {
+	useAbility: (slot: number, aim: Vector3) -> (),
+	basicAttack: (aim: Vector3) -> (),
+	toggleCreator: () -> (),
+}
+
+function Controls.init(handlers: Handlers, localFxFolder: Instance)
+	fxFolder = localFxFolder
+
+	local keyToSlot = {}
+	for slot, keyName in Config.AbilityKeys do
+		keyToSlot[Enum.KeyCode[keyName]] = slot
+	end
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed then
+			return -- typing in a text box, clicking a button, etc.
+		end
+		if input.KeyCode == Enum.KeyCode.P then
+			handlers.toggleCreator()
+			return
+		end
+		local slot = keyToSlot[input.KeyCode]
+		if slot then
+			local aim = Controls.getAim(false)
+			faceAim(aim)
+			handlers.useAbility(slot, aim)
+		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+			local aim = Controls.getAim(false)
+			faceAim(aim)
+			handlers.basicAttack(aim)
+		end
+	end)
+end
+
+-- Used by the on-screen hotbar and Attack buttons.
+function Controls.aimForButton(): Vector3
+	local touch = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+	local aim = Controls.getAim(touch)
+	faceAim(aim)
+	return aim
+end
+
+return Controls
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="23">
+          <Properties>
+            <string name="Name">Creator</string>
+            <string name="Source"><![CDATA[-- The Power Creator window. Three tabs:
+--   My Powers  - saved powers: equip, edit or delete them
+--   Templates  - the anime template list; picking one starts a new power
+--   Edit Power - change everything about a power and build its abilities
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Elements = require(Shared.Elements)
+local AbilityTypes = require(Shared.AbilityTypes)
+local Templates = require(Shared.Templates)
+local PowerValidator = require(Shared.PowerValidator)
+local UIKit = require(script.Parent.UIKit)
+
+local Theme = UIKit.Theme
+
+local Creator = {}
+Creator.__index = Creator
+
+local STAT_INFO = {
+	strength = { "Strength", string.format("+%d%% damage per point", Config.DamagePerStrength * 100) },
+	defense = { "Defense", string.format("+%d max health per point", Config.HealthPerDefense) },
+	speed = { "Speed", string.format("+%.1f walk speed per point", Config.WalkSpeedPerSpeed) },
+	energy = { "Energy", string.format("+%d max energy and faster regen per point", Config.EnergyPerPoint) },
+}
+
+-- How to show each computed ability number in the preview
+local STAT_FORMATS = {
+	{ "damage", "Damage", "%.0f" },
+	{ "count", "Count", "%.0f" },
+	{ "hits", "Hits", "%.0f" },
+	{ "radius", "Radius", "%.1f" },
+	{ "width", "Width", "%.1f" },
+	{ "area", "Area", "%.0f" },
+	{ "reach", "Reach", "%.1f" },
+	{ "range", "Range", "%.0f" },
+	{ "distance", "Distance", "%.0f" },
+	{ "speed", "Speed", "%.0f" },
+	{ "knockback", "Knockback", "%.0f" },
+	{ "absorb", "Blocks", "%.0f damage" },
+	{ "heal", "Heals", "%.0f HP" },
+	{ "damageMultiplier", "Damage boost", "x%.2f" },
+	{ "walkSpeedBonus", "Speed boost", "+%.0f" },
+	{ "duration", "Lasts", "%.1fs" },
+}
+
+local EXTRA_COLORS = {
+	{ 255, 255, 255 },
+	{ 255, 120, 200 },
+	{ 255, 150, 60 },
+	{ 40, 40, 50 },
+}
+
+local function deepCopy(value)
+	if type(value) ~= "table" then
+		return value
+	end
+	local copy = {}
+	for k, v in value do
+		copy[k] = deepCopy(v)
+	end
+	return copy
+end
+
+local function toRGB(color: Color3)
+	return {
+		math.floor(color.R * 255 + 0.5),
+		math.floor(color.G * 255 + 0.5),
+		math.floor(color.B * 255 + 0.5),
+	}
+end
+
+----------------------------------------------------------------------
+-- Small widgets
+----------------------------------------------------------------------
+
+local function row(parent: Instance, height: number, order: number): Frame
+	return UIKit.new("Frame", {
+		BackgroundTransparency = 1,
+		Size = UDim2.new(1, 0, 0, height),
+		LayoutOrder = order,
+		Parent = parent,
+	})
+end
+
+local function heading(parent: Instance, text: string, order: number)
+	return UIKit.label(text, {
+		Font = Theme.FontBold,
+		TextColor3 = Theme.Accent,
+		TextSize = 16,
+		LayoutOrder = order,
+		Parent = parent,
+	})
+end
+
+local function note(parent: Instance, text: string, order: number)
+	return UIKit.label(text, {
+		TextColor3 = Theme.Muted,
+		TextSize = 13,
+		TextWrapped = true,
+		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(1, 0, 0, 16),
+		LayoutOrder = order,
+		Parent = parent,
+	})
+end
+
+-- "Label   <  value  >" for picking from a list
+local function cycler(
+	parent: Instance,
+	labelText: string,
+	list: { string },
+	current: string,
+	display: ((string) -> string)?,
+	onChange: (string) -> (),
+	order: number
+)
+	local frame = row(parent, 32, order)
+	UIKit.label(labelText, { Size = UDim2.new(0.32, 0, 1, 0), Parent = frame })
+	local index = table.find(list, current) or 1
+	local function step(delta: number)
+		index = (index - 1 + delta) % #list + 1
+		onChange(list[index])
+	end
+	UIKit.button("<", {
+		Position = UDim2.new(0.32, 0, 0, 0),
+		Size = UDim2.new(0, 32, 1, 0),
+		Parent = frame,
+	}, function()
+		step(-1)
+	end)
+	UIKit.label(display and display(current) or current, {
+		Position = UDim2.new(0.32, 36, 0, 0),
+		Size = UDim2.new(0.68, -72, 1, 0),
+		Font = Theme.FontBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextScaled = true,
+		Parent = frame,
+	})
+	UIKit.button(">", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 32, 1, 0),
+		Parent = frame,
+	}, function()
+		step(1)
+	end)
+	return frame
+end
+
+-- "Label   -  [bar] value  +" for numbers
+local function stepper(
+	parent: Instance,
+	labelText: string,
+	value: number,
+	max: number,
+	canAdd: boolean,
+	onChange: (number) -> (),
+	order: number
+)
+	local frame = row(parent, 30, order)
+	UIKit.label(labelText, {
+		Size = UDim2.new(0.38, 0, 1, 0),
+		TextScaled = true,
+		Parent = frame,
+	})
+	UIKit.button("-", {
+		Position = UDim2.new(0.38, 0, 0, 0),
+		Size = UDim2.new(0, 30, 1, 0),
+		Parent = frame,
+	}, function()
+		onChange(value - 1)
+	end)
+	local bar = UIKit.new("Frame", {
+		Position = UDim2.new(0.38, 36, 0.5, -7),
+		Size = UDim2.new(0.62, -108, 0, 14),
+		BackgroundColor3 = Theme.Background,
+		Parent = frame,
+	})
+	UIKit.corner(bar, 4)
+	local fill = UIKit.new("Frame", {
+		Size = UDim2.fromScale(value / max, 1),
+		BackgroundColor3 = Theme.Accent,
+		Parent = bar,
+	})
+	UIKit.corner(fill, 4)
+	UIKit.label(tostring(value), {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -36, 0, 0),
+		Size = UDim2.new(0, 30, 1, 0),
+		Font = Theme.FontBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Parent = frame,
+	})
+	local plus = UIKit.button("+", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, 0, 0, 0),
+		Size = UDim2.new(0, 30, 1, 0),
+		Parent = frame,
+	}, function()
+		if canAdd then
+			onChange(value + 1)
+		end
+	end)
+	if not canAdd then
+		plus.BackgroundTransparency = 0.6
+	end
+	return frame
+end
+
+local function scrolling(parent: Instance, props: { [string]: any }): ScrollingFrame
+	local frame = UIKit.new("ScrollingFrame", {
+		BackgroundColor3 = Theme.Panel,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		ScrollBarImageColor3 = Theme.Muted,
+		CanvasSize = UDim2.new(),
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		Parent = parent,
+	})
+	for key, value in props do
+		frame[key] = value
+	end
+	UIKit.corner(frame, 8)
+	UIKit.padding(frame, 10)
+	return frame
+end
+
+----------------------------------------------------------------------
+-- Window
+----------------------------------------------------------------------
+
+export type Api = {
+	save: (index: number?, power: any) -> any,
+	delete: (index: number) -> any,
+	equip: (index: number) -> any,
+	notify: (text: string) -> (),
+}
+
+function Creator.new(screenGui: ScreenGui, api: Api)
+	local self = setmetatable({}, Creator)
+	self.api = api
+	self.data = { powers = {}, equipped = 0, canSave = true }
+	self.draft = nil
+	self.draftIndex = nil :: number?
+	self.editingAbility = nil :: number?
+	self.tab = "Templates"
+	self.saving = false
+	self.confirmDelete = nil :: number?
+
+	local window = UIKit.new("Frame", {
+		Name = "PowerCreator",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.94, 0.9),
+		BackgroundColor3 = Theme.Background,
+		Visible = false,
+		Parent = screenGui,
+	})
+	UIKit.corner(window, 12)
+	UIKit.stroke(window, Theme.Accent, 2)
+	UIKit.new("UISizeConstraint", { MaxSize = Vector2.new(900, 600), Parent = window })
+	self.window = window
+
+	UIKit.label("MAKE AN ANIME POWER", {
+		Position = UDim2.fromOffset(14, 6),
+		Size = UDim2.new(1, -70, 0, 32),
+		Font = Theme.FontBold,
+		TextSize = 22,
+		TextColor3 = Theme.Accent,
+		Parent = window,
+	})
+	UIKit.button("X", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -8, 0, 6),
+		Size = UDim2.fromOffset(32, 32),
+		BackgroundColor3 = Theme.Danger,
+		Parent = window,
+	}, function()
+		self:close()
+	end)
+
+	-- Tabs
+	local tabBar = UIKit.new("Frame", {
+		Position = UDim2.fromOffset(10, 42),
+		Size = UDim2.new(1, -20, 0, 32),
+		BackgroundTransparency = 1,
+		Parent = window,
+	})
+	UIKit.list(tabBar, 6, true)
+	self.tabButtons = {}
+	for i, tab in { { "MyPowers", "My Powers" }, { "Templates", "Anime Templates" }, { "Edit", "Edit Power" } } do
+		self.tabButtons[tab[1]] = UIKit.button(tab[2], {
+			Size = UDim2.new(1 / 3, -4, 1, 0),
+			LayoutOrder = i,
+			Parent = tabBar,
+		}, function()
+			self:showTab(tab[1])
+		end)
+	end
+
+	-- Pages
+	local content = UIKit.new("Frame", {
+		Position = UDim2.fromOffset(10, 82),
+		Size = UDim2.new(1, -20, 1, -92),
+		BackgroundTransparency = 1,
+		Parent = window,
+	})
+
+	self.myPowersPage = scrolling(content, { Size = UDim2.fromScale(1, 1) })
+	UIKit.list(self.myPowersPage, 8)
+
+	self.templatesPage = scrolling(content, { Size = UDim2.fromScale(1, 1) })
+	UIKit.new("UIGridLayout", {
+		CellSize = UDim2.new(0.5, -5, 0, 92),
+		CellPadding = UDim2.fromOffset(10, 10),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = self.templatesPage,
+	})
+
+	self.editPage = UIKit.new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, Parent = content })
+	self.leftColumn = scrolling(self.editPage, { Size = UDim2.new(0.5, -5, 1, -46) })
+	UIKit.list(self.leftColumn, 6)
+	self.rightColumn = scrolling(self.editPage, {
+		Position = UDim2.new(0.5, 5, 0, 0),
+		Size = UDim2.new(0.5, -5, 1, -46),
+	})
+	UIKit.list(self.rightColumn, 6)
+
+	local footer = UIKit.new("Frame", {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.new(1, 0, 0, 38),
+		BackgroundTransparency = 1,
+		Parent = self.editPage,
+	})
+	self.statusLabel = UIKit.label("", {
+		Size = UDim2.new(1, -200, 1, 0),
+		TextWrapped = true,
+		TextSize = 14,
+		Parent = footer,
+	})
+	self.saveButton = UIKit.button("SAVE & EQUIP", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.fromScale(1, 0),
+		Size = UDim2.new(0, 190, 1, 0),
+		BackgroundColor3 = Theme.Good,
+		TextColor3 = Theme.Background,
+		TextSize = 17,
+		Parent = footer,
+	}, function()
+		self:save()
+	end)
+
+	self:_renderTemplates()
+	self:showTab("Templates")
+	return self
+end
+
+function Creator:isOpen(): boolean
+	return self.window.Visible
+end
+
+function Creator:open(tab: string?)
+	self.window.Visible = true
+	self:showTab(tab or self.tab)
+end
+
+function Creator:close()
+	self.window.Visible = false
+end
+
+function Creator:toggle()
+	if self:isOpen() then
+		self:close()
+	else
+		self:open()
+	end
+end
+
+function Creator:setData(data)
+	self.data = data
+	if self.tab == "MyPowers" then
+		self:_renderMyPowers()
+	end
+end
+
+function Creator:showTab(tab: string)
+	if tab == "Edit" and not self.draft then
+		self:_startDraft(Templates.makePower("Blank"), nil)
+	end
+	self.tab = tab
+	self.myPowersPage.Visible = tab == "MyPowers"
+	self.templatesPage.Visible = tab == "Templates"
+	self.editPage.Visible = tab == "Edit"
+	for name, button in self.tabButtons do
+		button.BackgroundColor3 = name == tab and Theme.Accent or Theme.PanelLight
+		button.TextColor3 = name == tab and Theme.Background or Theme.Text
+	end
+	if tab == "MyPowers" then
+		self:_renderMyPowers()
+	elseif tab == "Edit" then
+		self:_renderEdit()
+	end
+end
+
+function Creator:_startDraft(power, index: number?)
+	self.draft = power
+	self.draftIndex = index
+	self.editingAbility = nil
+	self.statusLabel.Text = ""
+end
+
+function Creator:_setStatus(text: string, good: boolean)
+	self.statusLabel.Text = text
+	self.statusLabel.TextColor3 = good and Theme.Good or Theme.Danger
+end
+
+----------------------------------------------------------------------
+-- My Powers tab
+----------------------------------------------------------------------
+
+function Creator:_renderMyPowers()
+	local page = self.myPowersPage
+	UIKit.clear(page)
+	local powers = self.data.powers
+
+	heading(page, string.format("Your powers (%d/%d)", #powers, Config.MaxSavedPowers), 0)
+	if not self.data.canSave then
+		note(page, "Saving isn't available in this server, so powers are kept only until you leave.", 1)
+	end
+	if #powers == 0 then
+		note(page, "You haven't made a power yet. Pick an anime template to start, then make it your own!", 2)
+	end
+
+	for i, power in powers do
+		local color = PowerValidator.colorOf(power)
+		local card = UIKit.new("Frame", {
+			Size = UDim2.new(1, 0, 0, 58),
+			BackgroundColor3 = Theme.PanelLight,
+			LayoutOrder = 10 + i,
+			Parent = page,
+		})
+		UIKit.corner(card, 8)
+		UIKit.stroke(card, color, i == self.data.equipped and 3 or 1)
+		local strip = UIKit.new("Frame", { Size = UDim2.new(0, 8, 1, 0), BackgroundColor3 = color, Parent = card })
+		UIKit.corner(strip, 4)
+
+		UIKit.label(power.name, {
+			Position = UDim2.fromOffset(18, 6),
+			Size = UDim2.new(1, -300, 0, 24),
+			Font = Theme.FontBold,
+			TextSize = 18,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+		local names = {}
+		for _, ability in power.abilities do
+			table.insert(names, ability.name)
+		end
+		UIKit.label(power.element .. "  |  " .. table.concat(names, ", "), {
+			Position = UDim2.fromOffset(18, 30),
+			Size = UDim2.new(1, -300, 0, 20),
+			TextColor3 = Theme.Muted,
+			TextSize = 13,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+
+		local buttons = UIKit.new("Frame", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -8, 0.5, 0),
+			Size = UDim2.fromOffset(276, 34),
+			BackgroundTransparency = 1,
+			Parent = card,
+		})
+		local layout = UIKit.list(buttons, 6, true)
+		layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+
+		local equipped = i == self.data.equipped
+		UIKit.button(equipped and "EQUIPPED" or "EQUIP", {
+			Size = UDim2.fromOffset(96, 34),
+			BackgroundColor3 = equipped and Theme.Good or Theme.Accent,
+			TextColor3 = Theme.Background,
+			LayoutOrder = 1,
+			Parent = buttons,
+		}, function()
+			if not equipped then
+				local result = self.api.equip(i)
+				if result then
+					self.api.notify(result.message)
+				end
+			end
+		end)
+		UIKit.button("EDIT", { Size = UDim2.fromOffset(80, 34), LayoutOrder = 2, Parent = buttons }, function()
+			self:_startDraft(deepCopy(power), i)
+			self:showTab("Edit")
+		end)
+		local confirming = self.confirmDelete == i
+		UIKit.button(confirming and "SURE?" or "DELETE", {
+			Size = UDim2.fromOffset(84, 34),
+			BackgroundColor3 = Theme.Danger,
+			LayoutOrder = 3,
+			Parent = buttons,
+		}, function()
+			if self.confirmDelete == i then
+				self.confirmDelete = nil
+				local result = self.api.delete(i)
+				if result then
+					self.api.notify(result.message)
+				end
+				if self.draftIndex == i then
+					self.draft = nil
+					self.draftIndex = nil
+				elseif self.draftIndex and self.draftIndex > i then
+					self.draftIndex -= 1 -- the list shifted up
+				end
+			else
+				self.confirmDelete = i
+			end
+			self:_renderMyPowers()
+		end)
+	end
+
+	if #powers < Config.MaxSavedPowers then
+		UIKit.button("+ NEW POWER", {
+			Size = UDim2.new(1, 0, 0, 40),
+			BackgroundColor3 = Theme.Accent,
+			TextColor3 = Theme.Background,
+			LayoutOrder = 100,
+			Parent = page,
+		}, function()
+			self:showTab("Templates")
+		end)
+	end
+end
+
+----------------------------------------------------------------------
+-- Templates tab
+----------------------------------------------------------------------
+
+function Creator:_renderTemplates()
+	local page = self.templatesPage
+	for i, template in Templates.List do
+		local power = template.power
+		local color = Color3.fromRGB(power.color[1], power.color[2], power.color[3])
+		local card = UIKit.button("", {
+			BackgroundColor3 = Theme.PanelLight,
+			LayoutOrder = i,
+			Parent = page,
+		}, function()
+			self:_startDraft(Templates.makePower(template.id), nil)
+			self:showTab("Edit")
+			self:_setStatus("Template loaded. Change anything you like, then press Save & Equip.", true)
+		end)
+		UIKit.stroke(card, color, 2)
+		UIKit.label(template.name, {
+			Position = UDim2.fromOffset(12, 6),
+			Size = UDim2.new(1, -24, 0, 24),
+			Font = Theme.FontBold,
+			TextSize = 18,
+			TextColor3 = color,
+			TextStrokeTransparency = 0.6,
+			Parent = card,
+		})
+		UIKit.label(template.description, {
+			Position = UDim2.fromOffset(12, 30),
+			Size = UDim2.new(1, -24, 0, 34),
+			TextSize = 13,
+			TextWrapped = true,
+			TextYAlignment = Enum.TextYAlignment.Top,
+			Parent = card,
+		})
+		local names = {}
+		for _, ability in power.abilities do
+			table.insert(names, ability.name)
+		end
+		UIKit.label(power.element .. "  |  " .. table.concat(names, ", "), {
+			Position = UDim2.new(0, 12, 1, -24),
+			Size = UDim2.new(1, -24, 0, 18),
+			TextSize = 12,
+			TextColor3 = Theme.Muted,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+	end
+end
+
+----------------------------------------------------------------------
+-- Edit tab
+----------------------------------------------------------------------
+
+function Creator:_renderEdit()
+	self:_renderLeft()
+	self:_renderRight()
+	self.saveButton.Text = self.draftIndex and "SAVE & EQUIP" or "SAVE NEW POWER"
+end
+
+function Creator:_renderLeft()
+	local column = self.leftColumn
+	local draft = self.draft
+	UIKit.clear(column)
+
+	heading(column, "Power Name", 1)
+	local nameBox = UIKit.textBox(draft.name, {
+		PlaceholderText = "Name your power",
+		LayoutOrder = 2,
+		Parent = column,
+	})
+	nameBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local trimmed = PowerValidator.truncate(nameBox.Text)
+		if trimmed and trimmed ~= nameBox.Text then
+			nameBox.Text = trimmed
+		end
+		draft.name = nameBox.Text
+	end)
+
+	cycler(column, "Element", Elements.Order, draft.element, nil, function(element)
+		draft.element = element
+		draft.color = toRGB(Elements.get(element).color)
+		self:_renderLeft()
+	end, 3)
+	note(column, Elements.get(draft.element).description, 4)
+
+	heading(column, "Aura Color", 5)
+	local swatches = row(column, 0, 6)
+	swatches.AutomaticSize = Enum.AutomaticSize.Y
+	UIKit.new("UIGridLayout", {
+		CellSize = UDim2.fromOffset(26, 26),
+		CellPadding = UDim2.fromOffset(6, 6),
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		Parent = swatches,
+	})
+	local colors = {}
+	for _, element in Elements.Order do
+		table.insert(colors, toRGB(Elements.get(element).color))
+	end
+	for _, extra in EXTRA_COLORS do
+		table.insert(colors, extra)
+	end
+	for i, rgb in colors do
+		local selected = rgb[1] == draft.color[1] and rgb[2] == draft.color[2] and rgb[3] == draft.color[3]
+		local swatch = UIKit.button("", {
+			BackgroundColor3 = Color3.fromRGB(rgb[1], rgb[2], rgb[3]),
+			LayoutOrder = i,
+			Parent = swatches,
+		}, function()
+			draft.color = table.clone(rgb)
+			self:_renderLeft()
+		end)
+		UIKit.stroke(swatch, selected and Theme.Text or Theme.Background, selected and 3 or 1)
+	end
+
+	cycler(column, "Aura", PowerValidator.Auras, draft.aura, nil, function(aura)
+		draft.aura = aura
+		self:_renderLeft()
+	end, 7)
+
+	local used = PowerValidator.statPointsUsed(draft.stats)
+	local left = Config.StatPointBudget - used
+	heading(column, string.format("Stats  (%d points left)", left), 8)
+	for i, statName in PowerValidator.StatNames do
+		local info = STAT_INFO[statName]
+		local value = draft.stats[statName]
+		stepper(column, info[1], value, Config.StatMax, left > 0 and value < Config.StatMax, function(newValue)
+			draft.stats[statName] = math.clamp(newValue, 0, Config.StatMax)
+			self:_renderLeft()
+			self:_renderRight() -- Strength changes the damage preview
+		end, 8 + i * 2 - 1)
+		note(column, info[2], 8 + i * 2)
+	end
+end
+
+function Creator:_renderRight()
+	local column = self.rightColumn
+	UIKit.clear(column)
+	if self.editingAbility and self.draft.abilities[self.editingAbility] then
+		self:_renderAbilityEditor(column, self.editingAbility)
+		return
+	end
+	self.editingAbility = nil
+
+	local abilities = self.draft.abilities
+	heading(column, string.format("Abilities  (%d/%d)", #abilities, Config.MaxAbilities), 1)
+
+	for i, ability in abilities do
+		local def = AbilityTypes.get(ability.type)
+		local color = Elements.get(ability.element).color
+		local card = UIKit.new("Frame", {
+			Size = UDim2.new(1, 0, 0, 52),
+			BackgroundColor3 = Theme.PanelLight,
+			LayoutOrder = 1 + i,
+			Parent = column,
+		})
+		UIKit.corner(card, 8)
+		UIKit.stroke(card, color, 2)
+		UIKit.label(Config.AbilityKeys[i] or "?", {
+			Position = UDim2.fromOffset(8, 0),
+			Size = UDim2.new(0, 22, 1, 0),
+			Font = Theme.FontBold,
+			TextSize = 20,
+			TextColor3 = Theme.Accent,
+			Parent = card,
+		})
+		UIKit.label(ability.name, {
+			Position = UDim2.fromOffset(34, 5),
+			Size = UDim2.new(1, -150, 0, 22),
+			Font = Theme.FontBold,
+			TextTruncate = Enum.TextTruncate.AtEnd,
+			Parent = card,
+		})
+		UIKit.label(def.displayName .. "  |  " .. ability.element, {
+			Position = UDim2.fromOffset(34, 26),
+			Size = UDim2.new(1, -150, 0, 18),
+			TextSize = 13,
+			TextColor3 = color,
+			Parent = card,
+		})
+		UIKit.button("EDIT", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -48, 0.5, 0),
+			Size = UDim2.fromOffset(64, 32),
+			Parent = card,
+		}, function()
+			self.editingAbility = i
+			self:_renderRight()
+		end)
+		UIKit.button("X", {
+			AnchorPoint = Vector2.new(1, 0.5),
+			Position = UDim2.new(1, -8, 0.5, 0),
+			Size = UDim2.fromOffset(34, 32),
+			BackgroundColor3 = Theme.Danger,
+			Parent = card,
+		}, function()
+			table.remove(abilities, i)
+			self:_renderRight()
+		end)
+	end
+
+	if #abilities < Config.MaxAbilities then
+		UIKit.button("+ ADD ABILITY", {
+			Size = UDim2.new(1, 0, 0, 38),
+			BackgroundColor3 = Theme.Accent,
+			TextColor3 = Theme.Background,
+			LayoutOrder = 50,
+			Parent = column,
+		}, function()
+			table.insert(abilities, {
+				name = "New Ability",
+				type = "Projectile",
+				element = self.draft.element,
+				damage = 5,
+				size = 5,
+				speed = 5,
+			})
+			self.editingAbility = #abilities
+			self:_renderRight()
+		end)
+	end
+	note(
+		column,
+		"Make any ability you want! Stronger abilities get longer cooldowns and cost more energy. "
+			.. "Left click (or the Attack button) is a basic attack every power has.",
+		60
+	)
+end
+
+function Creator:_abilityPreview(ability): string
+	local stats = AbilityTypes.computeStats(ability)
+	local strength = self.draft.stats.strength or 0
+	local elementBonus = Elements.get(ability.element).effects.damage or 1
+	local lines = {}
+	for _, format in STAT_FORMATS do
+		local value = stats[format[1]]
+		if value then
+			if format[1] == "damage" then
+				value *= (1 + strength * Config.DamagePerStrength) * elementBonus
+			end
+			table.insert(lines, format[2] .. ": " .. string.format(format[3], value))
+		end
+	end
+	table.insert(lines, string.format("Cooldown: %.1fs   Energy: %d", stats.cooldown, stats.energy))
+	return table.concat(lines, "\n")
+end
+
+function Creator:_renderAbilityEditor(column: Instance, index: number)
+	local ability = self.draft.abilities[index]
+	local def = AbilityTypes.get(ability.type)
+
+	UIKit.button("< BACK TO ABILITIES", {
+		Size = UDim2.new(1, 0, 0, 30),
+		LayoutOrder = 1,
+		Parent = column,
+	}, function()
+		self.editingAbility = nil
+		self:_renderRight()
+	end)
+
+	heading(column, string.format("Ability %d  [%s]", index, Config.AbilityKeys[index] or "?"), 2)
+	local nameBox = UIKit.textBox(ability.name, {
+		PlaceholderText = "Name your attack (you'll shout it!)",
+		LayoutOrder = 3,
+		Parent = column,
+	})
+	nameBox:GetPropertyChangedSignal("Text"):Connect(function()
+		local trimmed = PowerValidator.truncate(nameBox.Text)
+		if trimmed and trimmed ~= nameBox.Text then
+			nameBox.Text = trimmed
+		end
+		ability.name = nameBox.Text
+	end)
+
+	cycler(column, "Type", AbilityTypes.Order, ability.type, function(typeName)
+		return AbilityTypes.get(typeName).displayName
+	end, function(typeName)
+		ability.type = typeName
+		self:_renderRight()
+	end, 4)
+	note(column, def.description, 5)
+
+	cycler(column, "Element", Elements.Order, ability.element, nil, function(element)
+		ability.element = element
+		self:_renderRight()
+	end, 6)
+	note(column, Elements.get(ability.element).description, 7)
+
+	heading(column, "Levels", 8)
+	local order = 9
+	for _, key in { "damage", "size", "speed" } do
+		local label = def.labels[key]
+		if label then
+			stepper(
+				column,
+				label,
+				ability[key],
+				Config.AbilityLevelMax,
+				ability[key] < Config.AbilityLevelMax,
+				function(value)
+					ability[key] = math.clamp(value, 1, Config.AbilityLevelMax)
+					self:_renderRight()
+				end,
+				order
+			)
+			order += 1
+		end
+	end
+
+	heading(column, "Preview", 20)
+	local preview = note(column, self:_abilityPreview(ability), 21)
+	preview.TextColor3 = Theme.Text
+	preview.TextSize = 14
+end
+
+----------------------------------------------------------------------
+-- Saving
+----------------------------------------------------------------------
+
+function Creator:save()
+	if self.saving or not self.draft then
+		return
+	end
+	if #self.draft.abilities == 0 then
+		self:_setStatus("Add at least one ability first.", false)
+		return
+	end
+	self.saving = true
+	self.saveButton.Text = "SAVING..."
+	local result = self.api.save(self.draftIndex, self.draft)
+	self.saving = false
+	self.saveButton.Text = self.draftIndex and "SAVE & EQUIP" or "SAVE NEW POWER"
+
+	if result and result.ok then
+		self.draft = nil
+		self.draftIndex = nil
+		self.editingAbility = nil
+		self.api.notify(result.message)
+		self:close()
+		self.tab = "MyPowers"
+	else
+		self:_setStatus(result and result.message or "Couldn't save. Try again.", false)
+	end
+end
+
+return Creator
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="24">
+          <Properties>
+            <string name="Name">Fx</string>
+            <string name="Source"><![CDATA[-- Draws the visual effects the server sends through the Fx remote. Everything
+-- here is client-only decoration: hits are decided on the server.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+
+local Fx = {}
+
+local player = Players.LocalPlayer
+local folder: Folder
+local projectiles = {} -- [id] = { part, origin, direction, speed, range, started }
+
+local function neon(props): Part
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.Material = Enum.Material.Neon
+	if props.Shape then
+		p.Shape = props.Shape
+	end
+	for key, value in props do
+		if key ~= "Shape" then
+			(p :: any)[key] = value
+		end
+	end
+	p.Parent = folder
+	return p
+end
+
+local function tween(instance: Instance, seconds: number, goal, style: Enum.EasingStyle?)
+	local t = TweenService:Create(
+		instance,
+		TweenInfo.new(seconds, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		goal
+	)
+	t:Play()
+	return t
+end
+
+local function isNear(position: Vector3, distance: number): boolean
+	local camera = workspace.CurrentCamera
+	return camera ~= nil and (camera.CFrame.Position - position).Magnitude <= distance
+end
+
+----------------------------------------------------------------------
+-- Effects
+----------------------------------------------------------------------
+
+local Handlers = {}
+
+local function burst(position: Vector3, radius: number, color: Color3, seconds: number?)
+	local duration = seconds or 0.35
+	local sphere = neon({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one,
+		Color = color,
+		Transparency = 0.15,
+		CFrame = CFrame.new(position),
+	})
+	tween(sphere, duration, { Size = Vector3.one * radius * 2, Transparency = 1 })
+	Debris:AddItem(sphere, duration + 0.05)
+
+	local ring = neon({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.3, 1, 1),
+		Color = color:Lerp(Color3.new(1, 1, 1), 0.4),
+		Transparency = 0.2,
+		CFrame = CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90)),
+	})
+	tween(ring, duration * 1.3, { Size = Vector3.new(0.3, radius * 2.6, radius * 2.6), Transparency = 1 })
+	Debris:AddItem(ring, duration * 1.3 + 0.05)
+end
+
+function Handlers.Burst(info)
+	burst(info.position, info.radius, info.color)
+end
+
+function Handlers.Projectile(info)
+	local radius = info.radius
+	local part = neon({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * radius * 2,
+		Color = info.color,
+		CFrame = CFrame.new(info.origin),
+	})
+
+	local a0 = Instance.new("Attachment")
+	a0.Position = Vector3.new(0, radius * 0.6, 0)
+	a0.Parent = part
+	local a1 = Instance.new("Attachment")
+	a1.Position = Vector3.new(0, -radius * 0.6, 0)
+	a1.Parent = part
+	local trail = Instance.new("Trail")
+	trail.Attachment0 = a0
+	trail.Attachment1 = a1
+	trail.Color = ColorSequence.new(info.color)
+	trail.LightEmission = 1
+	trail.Lifetime = 0.25
+	trail.Transparency = NumberSequence.new(0.2, 1)
+	trail.Parent = part
+
+	local light = Instance.new("PointLight")
+	light.Color = info.color
+	light.Range = 6 + radius * 3
+	light.Parent = part
+
+	projectiles[info.id] = {
+		part = part,
+		origin = info.origin,
+		direction = info.direction,
+		speed = info.speed,
+		range = info.range,
+		started = os.clock(),
+	}
+end
+
+function Handlers.ProjectileEnd(info)
+	local projectile = projectiles[info.id]
+	if projectile then
+		projectiles[info.id] = nil
+		projectile.part:Destroy()
+	end
+	burst(info.position, info.radius, info.color, 0.3)
+end
+
+function Handlers.Beam(info)
+	local from, to = info.from, info.to
+	local length = (to - from).Magnitude
+	local middle = (from + to) / 2
+	-- Cylinders point along X; turn X to face along the beam
+	local cframe = CFrame.lookAt(middle, to) * CFrame.Angles(0, math.rad(90), 0)
+
+	local outer = neon({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(length, info.width, info.width),
+		Color = info.color,
+		Transparency = 0.25,
+		CFrame = cframe,
+	})
+	local core = neon({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(length, info.width * 0.45, info.width * 0.45),
+		Color = Color3.new(1, 1, 1),
+		Transparency = 0,
+		CFrame = cframe,
+	})
+	tween(outer, 0.5, { Size = Vector3.new(length, 0.1, 0.1), Transparency = 1 })
+	tween(core, 0.4, { Size = Vector3.new(length, 0.05, 0.05), Transparency = 1 })
+	Debris:AddItem(outer, 0.55)
+	Debris:AddItem(core, 0.45)
+	burst(to, info.width * 1.5, info.color)
+end
+
+function Handlers.Warning(info)
+	local circle = neon({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.2, info.radius * 2, info.radius * 2),
+		Color = info.color,
+		Transparency = 0.65,
+		CFrame = CFrame.new(info.position + Vector3.new(0, 0.15, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+	})
+	tween(circle, info.duration, { Transparency = 0.3 }, Enum.EasingStyle.Linear)
+	Debris:AddItem(circle, info.duration)
+end
+
+function Handlers.Slash(info)
+	local reach = info.reach
+	local blade = neon({
+		Size = Vector3.new(0.3, info.small and 0.6 or 1.4, reach),
+		Color = info.color,
+		Transparency = 0.1,
+		CFrame = info.cframe,
+	})
+	local tilt = CFrame.Angles(0, 0, math.rad(info.flip and -25 or 25))
+	local from, to = -70, 70
+	if info.flip then
+		from, to = to, from
+	end
+	local duration = info.small and 0.12 or 0.16
+	local started = os.clock()
+	local connection
+	connection = RunService.RenderStepped:Connect(function()
+		local alpha = math.min((os.clock() - started) / duration, 1)
+		local angle = math.rad(from + (to - from) * alpha)
+		blade.CFrame = info.cframe * tilt * CFrame.Angles(0, angle, 0) * CFrame.new(0, 0, -reach / 2)
+		blade.Transparency = 0.1 + 0.9 * alpha * alpha
+		if alpha >= 1 then
+			connection:Disconnect()
+			blade:Destroy()
+		end
+	end)
+end
+
+function Handlers.Dash(info)
+	local from, to = info.from, info.to
+	local length = (to - from).Magnitude
+	if length < 0.5 then
+		return
+	end
+	local streak = neon({
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(length, info.width * 0.6, info.width * 0.6),
+		Color = info.color,
+		Transparency = 0.4,
+		CFrame = CFrame.lookAt((from + to) / 2, to) * CFrame.Angles(0, math.rad(90), 0),
+	})
+	tween(streak, 0.45, { Transparency = 1, Size = Vector3.new(length, 0.1, 0.1) })
+	Debris:AddItem(streak, 0.5)
+end
+
+function Handlers.Teleport(info)
+	burst(info.from, 4, info.color)
+	burst(info.to, 4, info.color)
+end
+
+function Handlers.Heal(info)
+	burst(info.position, 5, Color3.fromRGB(120, 255, 140))
+	local holder = neon({
+		Size = Vector3.one,
+		Transparency = 1,
+		CFrame = CFrame.new(info.position),
+	})
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(Color3.fromRGB(140, 255, 150))
+	emitter.LightEmission = 1
+	emitter.Size = NumberSequence.new(0.4, 0)
+	emitter.Lifetime = NumberRange.new(0.8, 1.2)
+	emitter.Speed = NumberRange.new(4, 8)
+	emitter.SpreadAngle = Vector2.new(60, 60)
+	emitter.EmissionDirection = Enum.NormalId.Top
+	emitter.Rate = 0
+	emitter.Parent = holder
+	emitter:Emit(30)
+	Debris:AddItem(holder, 1.5)
+end
+
+-- Floating text above a character or a point
+local function floatingText(adornee: Instance, text: string, color: Color3, size: number, rise: number, seconds: number)
+	local gui = Instance.new("BillboardGui")
+	gui.Adornee = adornee
+	gui.AlwaysOnTop = true
+	gui.Size = UDim2.fromOffset(300, size)
+	gui.StudsOffset = Vector3.new(0, 3, 0)
+	gui.MaxDistance = 150
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.fromScale(1, 1)
+	label.Font = Enum.Font.GothamBlack
+	label.TextScaled = true
+	label.Text = text
+	label.TextColor3 = color
+	label.TextStrokeTransparency = 0
+	label.TextStrokeColor3 = Color3.new(0, 0, 0)
+	label.Parent = gui
+
+	gui.Parent = player:WaitForChild("PlayerGui")
+	tween(gui, seconds, { StudsOffset = Vector3.new(0, 3 + rise, 0) })
+	tween(label, seconds, { TextTransparency = 1, TextStrokeTransparency = 1 }, Enum.EasingStyle.Quint)
+	Debris:AddItem(gui, seconds)
+end
+
+function Handlers.Shout(info)
+	local character = info.character
+	local head = character and character:FindFirstChild("Head")
+	if not head or not head:IsA("BasePart") or not isNear(head.Position, 150) then
+		return
+	end
+	floatingText(head, string.upper(info.text) .. "!", info.color, 42, 1.5, 1.4)
+end
+
+function Handlers.Damage(info)
+	if not isNear(info.position, 120) then
+		return
+	end
+	local anchor = neon({
+		Size = Vector3.one * 0.1,
+		Transparency = 1,
+		CFrame = CFrame.new(info.position + Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)),
+	})
+	Debris:AddItem(anchor, 1)
+	local text = info.blocked and "BLOCKED" or tostring(info.amount)
+	floatingText(anchor, text, info.blocked and Color3.fromRGB(180, 220, 255) or info.color, 28, 2.5, 0.9)
+end
+
+----------------------------------------------------------------------
+-- Setup
+----------------------------------------------------------------------
+
+function Fx.getFolder(): Folder
+	return folder
+end
+
+function Fx.init(fxRemote: RemoteEvent)
+	folder = Instance.new("Folder")
+	folder.Name = "LocalFx"
+	folder.Parent = workspace
+
+	fxRemote.OnClientEvent:Connect(function(kind, info)
+		local handler = Handlers[kind]
+		if handler and type(info) == "table" then
+			local ok, err = pcall(handler, info)
+			if not ok then
+				warn("[Fx]", kind, err)
+			end
+		end
+	end)
+
+	-- Move projectiles along their path
+	RunService.RenderStepped:Connect(function()
+		local now = os.clock()
+		for id, projectile in projectiles do
+			local age = now - projectile.started
+			local distance = math.min(projectile.speed * age, projectile.range)
+			projectile.part.CFrame = CFrame.new(projectile.origin + projectile.direction * distance)
+			-- Safety net in case the end message is missed
+			if age > 10 or projectile.speed * age >= projectile.range + 30 then
+				projectiles[id] = nil
+				projectile.part:Destroy()
+			end
+		end
+	end)
+end
+
+return Fx
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="25">
+          <Properties>
+            <string name="Name">HUD</string>
+            <string name="Source"><![CDATA[-- The in-game HUD: health and energy bars, the ability hotbar with cooldowns,
+-- an Attack button (for touch screens), the Power Creator button and
+-- notifications.
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared.Config)
+local Elements = require(Shared.Elements)
+local UIKit = require(script.Parent.UIKit)
+
+local Theme = UIKit.Theme
+local player = Players.LocalPlayer
+
+local HUD = {}
+HUD.__index = HUD
+
+local SLOT_SIZE = 74
+
+local function makeBar(parent: Instance, color: Color3, order: number)
+	local bar = UIKit.new("Frame", {
+		BackgroundColor3 = Theme.Background,
+		BackgroundTransparency = 0.2,
+		Size = UDim2.new(1, 0, 0, 18),
+		LayoutOrder = order,
+		Parent = parent,
+	})
+	UIKit.corner(bar, 5)
+	local fill = UIKit.new("Frame", {
+		BackgroundColor3 = color,
+		Size = UDim2.fromScale(1, 1),
+		Parent = bar,
+	})
+	UIKit.corner(fill, 5)
+	local text = UIKit.label("", {
+		Size = UDim2.fromScale(1, 1),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Font = Theme.FontBold,
+		TextSize = 13,
+		TextStrokeTransparency = 0.5,
+		ZIndex = 2,
+		Parent = bar,
+	})
+	return fill, text
+end
+
+function HUD.new(screenGui: ScreenGui)
+	local self = setmetatable({}, HUD)
+	self.slots = {}
+	self.cooldownEnds = {}
+	self.cooldownLengths = {}
+	self.onSlotPressed = nil :: ((number) -> ())?
+	self.onAttackPressed = nil :: (() -> ())?
+	self.onCreatorPressed = nil :: (() -> ())?
+
+	-- Bottom panel
+	local bottom = UIKit.new("Frame", {
+		Name = "BottomPanel",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 1, -10),
+		Size = UDim2.fromOffset(SLOT_SIZE * 5 + 8 * 4, 70 + SLOT_SIZE),
+		BackgroundTransparency = 1,
+		Parent = screenGui,
+	})
+	UIKit.list(bottom, 4)
+
+	self.powerLabel = UIKit.label("No power - press P to make one!", {
+		Font = Theme.FontBold,
+		TextSize = 18,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextStrokeTransparency = 0.4,
+		LayoutOrder = 1,
+		Parent = bottom,
+	})
+	self.healthFill, self.healthText = makeBar(bottom, Theme.Health, 2)
+	self.energyFill, self.energyText = makeBar(bottom, Theme.Energy, 3)
+
+	local hotbar = UIKit.new("Frame", {
+		Size = UDim2.new(1, 0, 0, SLOT_SIZE),
+		BackgroundTransparency = 1,
+		LayoutOrder = 4,
+		Parent = bottom,
+	})
+	local hotbarLayout = UIKit.list(hotbar, 8, true)
+	hotbarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+	for slot = 1, Config.MaxAbilities do
+		self.slots[slot] = self:_makeSlot(hotbar, slot)
+	end
+
+	local attack = UIKit.button("ATTACK\n(Click)", {
+		Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE),
+		BackgroundColor3 = Theme.Danger,
+		TextSize = 13,
+		LayoutOrder = Config.MaxAbilities + 1,
+		Parent = hotbar,
+	}, function()
+		if self.onAttackPressed then
+			self.onAttackPressed()
+		end
+	end)
+	UIKit.stroke(attack, Color3.new(0, 0, 0), 2)
+
+	-- Power Creator button (top left, below the Roblox menu buttons)
+	UIKit.button("MAKE A POWER  [P]", {
+		Position = UDim2.fromOffset(12, 60),
+		Size = UDim2.fromOffset(190, 40),
+		BackgroundColor3 = Theme.Accent,
+		TextColor3 = Theme.Background,
+		TextSize = 16,
+		Parent = screenGui,
+	}, function()
+		if self.onCreatorPressed then
+			self.onCreatorPressed()
+		end
+	end)
+
+	-- Notifications (top middle)
+	self.notifications = UIKit.new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 0, 50),
+		Size = UDim2.fromOffset(420, 200),
+		BackgroundTransparency = 1,
+		Parent = screenGui,
+	})
+	UIKit.list(self.notifications, 4)
+
+	RunService.RenderStepped:Connect(function()
+		self:_update()
+	end)
+	return self
+end
+
+function HUD:_makeSlot(parent: Instance, slot: number)
+	local button = UIKit.button("", {
+		Size = UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE),
+		BackgroundColor3 = Theme.Panel,
+		LayoutOrder = slot,
+		ClipsDescendants = true,
+		Parent = parent,
+	}, function()
+		if self.onSlotPressed then
+			self.onSlotPressed(slot)
+		end
+	end)
+	local stroke = UIKit.stroke(button, Theme.PanelLight, 2)
+
+	UIKit.label(Config.AbilityKeys[slot] or tostring(slot), {
+		Position = UDim2.fromOffset(5, 2),
+		Size = UDim2.fromOffset(20, 18),
+		Font = Theme.FontBold,
+		TextColor3 = Theme.Accent,
+		TextSize = 15,
+		ZIndex = 3,
+		Parent = button,
+	})
+	local name = UIKit.label("-", {
+		Position = UDim2.fromOffset(4, 18),
+		Size = UDim2.new(1, -8, 1, -22),
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextSize = 12,
+		Font = Theme.FontBold,
+		ZIndex = 3,
+		Parent = button,
+	})
+	local overlay = UIKit.new("Frame", {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.fromScale(0, 1),
+		Size = UDim2.fromScale(1, 0),
+		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 0.35,
+		ZIndex = 4,
+		Parent = button,
+	})
+	local timer = UIKit.label("", {
+		Size = UDim2.fromScale(1, 1),
+		TextXAlignment = Enum.TextXAlignment.Center,
+		Font = Theme.FontBold,
+		TextSize = 22,
+		ZIndex = 5,
+		Parent = button,
+	})
+	return { button = button, stroke = stroke, name = name, overlay = overlay, timer = timer }
+end
+
+-- Shows the equipped power (or nil) on the hotbar.
+function HUD:setPower(power)
+	self.power = power
+	if power then
+		self.powerLabel.Text = power.name
+		self.powerLabel.TextColor3 = Color3.fromRGB(power.color[1], power.color[2], power.color[3])
+	else
+		self.powerLabel.Text = "No power - press P to make one!"
+		self.powerLabel.TextColor3 = Theme.Text
+	end
+	for slot, ui in self.slots do
+		local ability = power and power.abilities[slot]
+		ui.name.Text = ability and ability.name or "-"
+		ui.stroke.Color = ability and Elements.get(ability.element).color or Theme.PanelLight
+		ui.button.Visible = ability ~= nil
+	end
+end
+
+function HUD:startCooldown(slot: number, seconds: number)
+	self.cooldownEnds[slot] = os.clock() + seconds
+	self.cooldownLengths[slot] = seconds
+end
+
+function HUD:isOnCooldown(slot: number): boolean
+	return (self.cooldownEnds[slot] or 0) > os.clock()
+end
+
+function HUD:notify(text: string)
+	local label = UIKit.label(text, {
+		Size = UDim2.new(1, 0, 0, 26),
+		BackgroundColor3 = Theme.Background,
+		BackgroundTransparency = 0.3,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		TextWrapped = true,
+		Font = Theme.FontBold,
+		TextSize = 16,
+		Parent = self.notifications,
+	})
+	UIKit.corner(label, 6)
+	local children = self.notifications:GetChildren()
+	if #children > 6 then -- 5 labels + the layout
+		for _, child in children do
+			if child:IsA("TextLabel") and child ~= label then
+				child:Destroy()
+				break
+			end
+		end
+	end
+	task.delay(3, function()
+		local fade =
+			TweenService:Create(label, TweenInfo.new(0.5), { TextTransparency = 1, BackgroundTransparency = 1 })
+		fade:Play()
+		fade.Completed:Wait()
+		label:Destroy()
+	end)
+end
+
+function HUD:_update()
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		local max = math.max(humanoid.MaxHealth, 1)
+		local health = math.max(humanoid.Health, 0)
+		self.healthFill.Size = UDim2.fromScale(health / max, 1)
+		self.healthText.Text = string.format("%d / %d", math.ceil(health), math.floor(max))
+	end
+
+	local energy = player:GetAttribute("Energy") or 0
+	local maxEnergy = player:GetAttribute("MaxEnergy") or Config.BaseEnergy
+	self.energyFill.Size = UDim2.fromScale(math.clamp(energy / math.max(maxEnergy, 1), 0, 1), 1)
+	self.energyText.Text = string.format("Energy %d / %d", math.floor(energy), math.floor(maxEnergy))
+
+	local now = os.clock()
+	for slot, ui in self.slots do
+		local remaining = (self.cooldownEnds[slot] or 0) - now
+		if remaining > 0 then
+			ui.overlay.Size = UDim2.fromScale(1, remaining / math.max(self.cooldownLengths[slot], 0.01))
+			ui.timer.Text = remaining >= 10 and string.format("%d", math.ceil(remaining))
+				or string.format("%.1f", remaining)
+		else
+			ui.overlay.Size = UDim2.fromScale(1, 0)
+			ui.timer.Text = ""
+		end
+	end
+end
+
+return HUD
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="LocalScript" referent="26">
+          <Properties>
+            <string name="Name">Main</string>
+            <string name="Source"><![CDATA[-- Make an Anime Power: client entry point.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Remotes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes"))
+local Fx = require(script.Parent.Fx)
+local HUD = require(script.Parent.HUD)
+local Creator = require(script.Parent.Creator)
+local Controls = require(script.Parent.Controls)
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+Fx.init(Remotes.Fx)
+
+local hudGui = Instance.new("ScreenGui")
+hudGui.Name = "AnimePowerHUD"
+hudGui.ResetOnSpawn = false
+hudGui.DisplayOrder = 1
+hudGui.Parent = playerGui
+
+local creatorGui = Instance.new("ScreenGui")
+creatorGui.Name = "AnimePowerCreator"
+creatorGui.ResetOnSpawn = false
+creatorGui.DisplayOrder = 5
+creatorGui.Parent = playerGui
+
+local hud = HUD.new(hudGui)
+
+local function call(remote: RemoteFunction, ...)
+	local ok, result = pcall(remote.InvokeServer, remote, ...)
+	if ok then
+		return result
+	end
+	return { ok = false, message = "Couldn't reach the server. Try again." }
+end
+
+local creator = Creator.new(creatorGui, {
+	save = function(index, power)
+		return call(Remotes.SavePower, index, power)
+	end,
+	delete = function(index)
+		return call(Remotes.DeletePower, index)
+	end,
+	equip = function(index)
+		return call(Remotes.EquipPower, index)
+	end,
+	notify = function(text)
+		hud:notify(text)
+	end,
+})
+
+local function applyData(data)
+	if type(data) ~= "table" then
+		return
+	end
+	creator:setData(data)
+	hud:setPower(data.powers[data.equipped])
+end
+
+Remotes.DataChanged.OnClientEvent:Connect(applyData)
+Remotes.AbilityResult.OnClientEvent:Connect(function(slot, cooldown)
+	hud:startCooldown(slot, cooldown)
+end)
+Remotes.Notify.OnClientEvent:Connect(function(text)
+	hud:notify(text)
+end)
+
+local function useAbility(slot: number, aim: Vector3)
+	if not hud.power or not hud.power.abilities[slot] or hud:isOnCooldown(slot) then
+		return
+	end
+	Remotes.UseAbility:FireServer(slot, aim)
+end
+
+local function basicAttack(aim: Vector3)
+	Remotes.BasicAttack:FireServer(aim)
+end
+
+hud.onSlotPressed = function(slot)
+	useAbility(slot, Controls.aimForButton())
+end
+hud.onAttackPressed = function()
+	basicAttack(Controls.aimForButton())
+end
+hud.onCreatorPressed = function()
+	creator:toggle()
+end
+
+Controls.init({
+	useAbility = useAbility,
+	basicAttack = basicAttack,
+	toggleCreator = function()
+		creator:toggle()
+	end,
+}, Fx.getFolder())
+
+-- Load saved powers. New players start in the template list.
+local ok, data = pcall(Remotes.GetPowerData.InvokeServer, Remotes.GetPowerData)
+if ok and type(data) == "table" then
+	applyData(data)
+	if #data.powers == 0 then
+		creator:open("Templates")
+		hud:notify("Welcome! Pick an anime template to make your first power.")
+	end
+else
+	hud:notify("Couldn't load your powers. Press P to make one.")
+end
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="27">
+          <Properties>
+            <string name="Name">UIKit</string>
+            <string name="Source"><![CDATA[-- Small helpers for building UI in code.
+
+local UIKit = {}
+
+UIKit.Theme = {
+	Background = Color3.fromRGB(20, 18, 30),
+	Panel = Color3.fromRGB(34, 31, 50),
+	PanelLight = Color3.fromRGB(50, 46, 72),
+	Accent = Color3.fromRGB(255, 196, 60),
+	AccentDark = Color3.fromRGB(200, 140, 20),
+	Text = Color3.fromRGB(245, 242, 255),
+	Muted = Color3.fromRGB(170, 165, 195),
+	Danger = Color3.fromRGB(230, 70, 80),
+	Good = Color3.fromRGB(90, 210, 120),
+	Health = Color3.fromRGB(230, 60, 70),
+	Energy = Color3.fromRGB(70, 170, 255),
+	Font = Enum.Font.GothamMedium,
+	FontBold = Enum.Font.GothamBlack,
+}
+
+local Theme = UIKit.Theme
+
+-- Creates an instance, sets its properties (Parent last) and returns it.
+function UIKit.new(className: string, props: { [string]: any }?): any
+	local instance = Instance.new(className)
+	local parent = nil
+	if props then
+		for key, value in props do
+			if key == "Parent" then
+				parent = value
+			else
+				(instance :: any)[key] = value
+			end
+		end
+	end
+	if parent then
+		instance.Parent = parent
+	end
+	return instance
+end
+
+function UIKit.corner(parent: Instance, radius: number?)
+	return UIKit.new("UICorner", { CornerRadius = UDim.new(0, radius or 8), Parent = parent })
+end
+
+function UIKit.stroke(parent: Instance, color: Color3?, thickness: number?)
+	return UIKit.new("UIStroke", {
+		Color = color or Theme.PanelLight,
+		Thickness = thickness or 1,
+		ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+		Parent = parent,
+	})
+end
+
+function UIKit.padding(parent: Instance, pixels: number)
+	local p = UDim.new(0, pixels)
+	return UIKit.new("UIPadding", {
+		PaddingTop = p,
+		PaddingBottom = p,
+		PaddingLeft = p,
+		PaddingRight = p,
+		Parent = parent,
+	})
+end
+
+function UIKit.list(parent: Instance, spacing: number?, horizontal: boolean?)
+	return UIKit.new("UIListLayout", {
+		Padding = UDim.new(0, spacing or 6),
+		FillDirection = horizontal and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical,
+		SortOrder = Enum.SortOrder.LayoutOrder,
+		VerticalAlignment = horizontal and Enum.VerticalAlignment.Center or Enum.VerticalAlignment.Top,
+		Parent = parent,
+	})
+end
+
+function UIKit.label(text: string, props: { [string]: any }?)
+	local label = UIKit.new("TextLabel", {
+		BackgroundTransparency = 1,
+		Font = Theme.Font,
+		Text = text,
+		TextColor3 = Theme.Text,
+		TextSize = 16,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.new(1, 0, 0, 22),
+	})
+	if props then
+		for key, value in props do
+			label[key] = value
+		end
+	end
+	return label
+end
+
+function UIKit.button(text: string, props: { [string]: any }?, onClick: (() -> ())?)
+	local button = UIKit.new("TextButton", {
+		AutoButtonColor = true,
+		BackgroundColor3 = Theme.PanelLight,
+		Font = Theme.FontBold,
+		Text = text,
+		TextColor3 = Theme.Text,
+		TextSize = 15,
+		Size = UDim2.fromOffset(100, 32),
+	})
+	UIKit.corner(button, 6)
+	if props then
+		for key, value in props do
+			button[key] = value
+		end
+	end
+	if onClick then
+		button.Activated:Connect(onClick)
+	end
+	return button
+end
+
+function UIKit.textBox(text: string, props: { [string]: any }?)
+	local box = UIKit.new("TextBox", {
+		BackgroundColor3 = Theme.Background,
+		ClearTextOnFocus = false,
+		Font = Theme.Font,
+		Text = text,
+		PlaceholderColor3 = Theme.Muted,
+		TextColor3 = Theme.Text,
+		TextSize = 16,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.new(1, 0, 0, 32),
+	})
+	UIKit.corner(box, 6)
+	UIKit.padding(box, 6)
+	if props then
+		for key, value in props do
+			box[key] = value
+		end
+	end
+	return box
+end
+
+function UIKit.clear(parent: Instance)
+	for _, child in parent:GetChildren() do
+		if not child:IsA("UIListLayout") and not child:IsA("UIPadding") and not child:IsA("UIGridLayout") then
+			child:Destroy()
+		end
+	end
+end
+
+return UIKit
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

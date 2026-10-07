@@ -4,6 +4,9 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 
 The wiki site lives in [`docs/`](docs/index.html) (plain HTML, ready for GitHub Pages).
 
+This repo also holds **Make an Anime Power**, a separate Roblox game where you build your own anime
+power and abilities and fight with them: see [`make-an-anime-power/`](make-an-anime-power/README.md).
+
 ## Content
 
 | Item | What it does | Recipe |
