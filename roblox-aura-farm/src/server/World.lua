@@ -178,37 +178,118 @@ end
 local HOW_TO = table.concat({
 	"HOW TO FARM AURA",
 	"",
-	"1. Say heroic lines in chat (or the SHOUT box).",
-	"   Boss fights double it. The right line at the right",
-	"   moment is worth way more. Repeating yourself is cringe.",
-	"",
-	"2. Challenge a boss at an altar. Click to slash, Q to dash,",
-	"   F for your ultimate once your style hits S rank.",
-	"",
-	"3. Fight cool: dodge at the last second, don't get hit,",
+	"1. Pick a side and a class: Heroes or Villains (CLASS button).",
+	"2. Say heroic (or villainous) lines in chat or the SHOUT box.",
+	"   The right line at the right moment is worth way more.",
+	"   Repeating yourself is cringe.",
+	"3. Challenge a boss at an altar, or fight the other side.",
+	"   Click: slash    Q: dash    F: ultimate (at S style)",
+	"4. Fight cool: last-second dodges, no damage taken,",
 	"   call your shot, finish with your ultimate...",
 	"   then walk away without looking back.",
+	"",
+	"Spawns are safe zones. Heroes can't hurt heroes,",
+	"and villains can't hurt villains.",
 }, "\n")
 
-local function buildSpawn()
-	local spawnPos = Vector3.new(0, 1.5, Config.ArenaRadius + 35)
+-- Team colors (BrickColor is what Teams and SpawnLocations use).
+World.TeamColors = {
+	Undecided = BrickColor.Gray(),
+	Good = BrickColor.new("Bright yellow"),
+	Evil = BrickColor.new("Really red"),
+}
+
+-- Where nobody can be hurt by other players: { position, radius }.
+World.SafeZones = {}
+
+local function spawnPad(name: string, position: Vector3, teamColor: BrickColor, color: Color3, facing: Vector3)
 	local spawn = Instance.new("SpawnLocation")
-	spawn.Name = "HeroSpawn"
+	spawn.Name = name
 	spawn.Anchored = true
 	spawn.Size = Vector3.new(14, 1, 14)
-	spawn.Position = spawnPos
-	spawn.Color = Color3.fromRGB(255, 200, 90)
+	-- Players spawn facing the pad's front (-Z), so point it at `facing`.
+	spawn.CFrame = CFrame.lookAt(position, Vector3.new(facing.X, position.Y, facing.Z))
+	spawn.Color = color
 	spawn.Material = Enum.Material.Neon
 	spawn.Duration = 3
+	spawn.Neutral = false
+	spawn.TeamColor = teamColor
+	spawn.AllowTeamChangeOnTouch = false
 	spawn.TopSurface = Enum.SurfaceType.Smooth
 	spawn.Parent = map
 
-	-- Front-left of the spawn (players spawn facing -Z, toward the arena),
+	local radius = Config.Pvp.SafeZoneRadius
+	block({
+		Name = name .. "SafeZone",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.3, radius * 2, radius * 2),
+		CFrame = CFrame.new(position.X, 1.05, position.Z) * CFrame.Angles(0, 0, math.rad(90)),
+		Color = color,
+		Material = Enum.Material.Neon,
+		Transparency = 0.85,
+		CanCollide = false,
+		CanQuery = false,
+	})
+	table.insert(World.SafeZones, { position = position, radius = radius })
+	return spawn
+end
+
+local function sign(position: Vector3, lines: { { text: string, size: number, color: Color3 } })
+	local post = block({
+		Name = "Sign",
+		Size = Vector3.new(1, 10, 1),
+		Position = position + Vector3.new(0, 5, 0),
+		Color = Color3.fromRGB(50, 45, 55),
+		Material = Enum.Material.Wood,
+	})
+	billboard(post, lines, 7)
+end
+
+local function buildBase(side: string, position: Vector3)
+	local isGood = side == "Good"
+	local color = if isGood then Color3.fromRGB(255, 205, 80) else Color3.fromRGB(200, 40, 60)
+	local stone = if isGood then Color3.fromRGB(235, 230, 215) else Color3.fromRGB(40, 30, 40)
+	spawnPad(if isGood then "HeroSpawn" else "VillainSpawn", position, World.TeamColors[side], color, World.ArenaCenter)
+
+	-- A ring of columns (heroes) or spikes (villains) around the base.
+	for i = 0, 7 do
+		local angle = (i / 8) * math.pi * 2
+		local at = position + Vector3.new(math.sin(angle) * 24, 0, math.cos(angle) * 24)
+		if isGood then
+			block({ Name = "Column", Size = Vector3.new(3, 16, 3), Position = at + Vector3.new(0, 8, 0), Color = stone, Material = Enum.Material.Marble })
+			block({ Name = "ColumnLight", Size = Vector3.new(2, 2, 2), Position = at + Vector3.new(0, 17, 0), Color = color, Material = Enum.Material.Neon, CanCollide = false })
+		else
+			block({
+				Name = "Spike",
+				Size = Vector3.new(3, 18, 3),
+				CFrame = CFrame.new(at + Vector3.new(0, 8, 0)) * CFrame.Angles(math.rad(12), angle, 0),
+				Color = stone,
+				Material = Enum.Material.Basalt,
+			})
+			block({ Name = "SpikeGlow", Size = Vector3.new(1.5, 1.5, 1.5), Position = at + Vector3.new(0, 17.5, 0), Color = color, Material = Enum.Material.Neon, CanCollide = false })
+		end
+	end
+
+	sign(position + Vector3.new(0, 0, 18), {
+		{ text = if isGood then "HALL OF HEROES" else "VILLAINS' LAIR", size = 26, color = color },
+		{ text = "Safe zone: no PvP inside the glowing circle", size = 14, color = Color3.fromRGB(230, 230, 230) },
+	})
+end
+
+local function buildSpawns()
+	-- Lobby: where undecided players pick a class.
+	local spawnPos = Vector3.new(0, 1.5, Config.ArenaRadius + 35)
+	spawnPad("LobbySpawn", spawnPos, World.TeamColors.Undecided, Color3.fromRGB(200, 200, 210), World.ArenaCenter)
+
+	buildBase("Good", Vector3.new(-(Config.ArenaRadius + 70), 1.5, 0))
+	buildBase("Evil", Vector3.new(Config.ArenaRadius + 70, 1.5, 0))
+
+	-- Front-left of the lobby spawn (players spawn facing the arena, -Z),
 	-- with its Front face (-Z) turned to look at the spawn.
-	local boardPos = spawnPos + Vector3.new(-20, 7.5, -12)
+	local boardPos = spawnPos + Vector3.new(-22, 9.5, -12)
 	local board = block({
 		Name = "HowToBoard",
-		Size = Vector3.new(26, 14, 1),
+		Size = Vector3.new(30, 18, 1),
 		CFrame = CFrame.lookAt(boardPos, Vector3.new(spawnPos.X, boardPos.Y, spawnPos.Z)),
 		Color = Color3.fromRGB(35, 30, 45),
 		Material = Enum.Material.SmoothPlastic,
@@ -223,7 +304,7 @@ local function buildSpawn()
 	text.BackgroundTransparency = 1
 	text.Size = UDim2.fromScale(1, 1)
 	text.Font = Enum.Font.GothamBold
-	text.TextSize = 34
+	text.TextSize = 30
 	text.TextColor3 = Color3.fromRGB(255, 235, 190)
 	text.TextXAlignment = Enum.TextXAlignment.Left
 	text.TextYAlignment = Enum.TextYAlignment.Top
@@ -235,10 +316,20 @@ local function buildSpawn()
 	padding.Parent = text
 end
 
+function World.inSafeZone(position: Vector3): boolean
+	for _, zone in ipairs(World.SafeZones) do
+		local dx, dz = position.X - zone.position.X, position.Z - zone.position.Z
+		if dx * dx + dz * dz <= zone.radius * zone.radius then
+			return true
+		end
+	end
+	return false
+end
+
 function World.build()
 	setupLighting()
 	buildArena()
-	buildSpawn()
+	buildSpawns()
 	local altars = buildAltars()
 	map.Parent = workspace
 	return altars

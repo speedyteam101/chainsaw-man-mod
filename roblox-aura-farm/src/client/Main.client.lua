@@ -8,7 +8,10 @@ local TextChatService = game:GetService("TextChatService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Classes = require(Shared:WaitForChild("Classes"))
+local ClassPicker = require(script.Parent:WaitForChild("ClassPicker"))
 local Hud = require(script.Parent:WaitForChild("Hud"))
 
 local player = Players.LocalPlayer
@@ -16,6 +19,14 @@ local remotes = ReplicatedStorage:WaitForChild("AuraFarmRemotes")
 local ActionRemote = remotes:WaitForChild("Action") :: RemoteEvent
 local ShoutRemote = remotes:WaitForChild("Shout") :: RemoteEvent
 local NotifyRemote = remotes:WaitForChild("Notify") :: RemoteEvent
+local ChooseClassRemote = remotes:WaitForChild("ChooseClass") :: RemoteEvent
+
+-- A stat of the player's class (defaults while undecided). Cooldowns here
+-- only stop pointless requests; the server enforces the real ones.
+local function stat(key: string): number
+	local class = Classes.get(player:GetAttribute("ClassId"))
+	return if class then class[key] else Classes.Defaults[key]
+end
 
 local function rgb(t: { number }): Color3
 	return Color3.fromRGB(t[1], t[2], t[3])
@@ -86,28 +97,23 @@ end
 
 local function slash()
 	local now = os.clock()
-	if now - lastSlash < Config.Combat.SlashCooldown or not liveCharacter() then
+	local cooldown = stat("SlashCooldown")
+	if now - lastSlash < cooldown or not liveCharacter() then
 		return
 	end
 	lastSlash = now
 	ActionRemote:FireServer("Slash")
-	hud.cooldown("Slash", Config.Combat.SlashCooldown)
+	hud.cooldown("Slash", cooldown)
 end
 
-local function dash()
-	local now = os.clock()
-	if now - lastDash < Config.Combat.DashCooldown then
-		return
-	end
+-- Pushes the character forward for `duration` seconds at `speed`. With
+-- useFacing, it goes the way you're facing; otherwise the way you're moving.
+local function lunge(speed: number, duration: number, useFacing: boolean)
 	local _, humanoid, root = liveCharacter()
-	if not humanoid then
+	if not humanoid or not root then
 		return
 	end
-	lastDash = now
-	ActionRemote:FireServer("Dash")
-	hud.cooldown("Dash", Config.Combat.DashCooldown)
-
-	local direction = humanoid.MoveDirection
+	local direction = if useFacing then root.CFrame.LookVector else humanoid.MoveDirection
 	if direction.Magnitude < 0.1 then
 		direction = root.CFrame.LookVector
 	end
@@ -118,13 +124,12 @@ local function dash()
 	direction = direction.Unit
 	root.CFrame = CFrame.lookAt(root.Position, root.Position + direction)
 
-	local speed = Config.Combat.DashSpeed
 	local elapsed, sinceGhost = 0, 0
 	local connection
 	connection = RunService.Heartbeat:Connect(function(dt)
 		elapsed += dt
 		sinceGhost += dt
-		if elapsed >= Config.Combat.DashDuration or not root.Parent then
+		if elapsed >= duration or not root.Parent then
 			connection:Disconnect()
 			return
 		end
@@ -135,6 +140,18 @@ local function dash()
 			afterimage(root)
 		end
 	end)
+end
+
+local function dash()
+	local now = os.clock()
+	local cooldown = stat("DashCooldown")
+	if now - lastDash < cooldown or not liveCharacter() then
+		return
+	end
+	lastDash = now
+	ActionRemote:FireServer("Dash")
+	hud.cooldown("Dash", cooldown)
+	lunge(Config.Combat.DashSpeed, Config.Combat.DashDuration, false)
 end
 
 local function ultimate()
@@ -149,7 +166,15 @@ end
 
 local ACTIONS = { Slash = slash, Dash = dash, Ultimate = ultimate }
 
-hud = Hud.new(player:WaitForChild("PlayerGui") :: PlayerGui, {
+local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
+local picker = ClassPicker.new(playerGui, function(classId: string)
+	ChooseClassRemote:FireServer(classId)
+end)
+
+hud = Hud.new(playerGui, {
+	onClassButton = function()
+		picker.open(player:GetAttribute("ClassId"))
+	end,
 	onShout = shout,
 	onAction = function(name: string)
 		local action = ACTIONS[name]
@@ -214,6 +239,26 @@ task.spawn(function()
 	refresh()
 end)
 
+-- Class: update the HUD when it changes, and open the picker for new
+-- players once their save has loaded.
+local function onClassChanged()
+	local class = Classes.get(player:GetAttribute("ClassId"))
+	hud.setClass(class)
+	if class then
+		picker.close()
+	end
+end
+player:GetAttributeChangedSignal("ClassId"):Connect(onClassChanged)
+onClassChanged()
+
+local function onLoaded()
+	if player:GetAttribute("Loaded") and player:GetAttribute("ClassId") == nil and not picker.isOpen() then
+		picker.open(nil)
+	end
+end
+player:GetAttributeChangedSignal("Loaded"):Connect(onLoaded)
+onLoaded()
+
 NotifyRemote.OnClientEvent:Connect(function(payload)
 	if type(payload) ~= "table" then
 		return
@@ -229,5 +274,15 @@ NotifyRemote.OnClientEvent:Connect(function(payload)
 		hud.announce(payload.Text, Color3.fromRGB(255, 160, 160))
 	elseif payload.Kind == "Announce" then
 		hud.announce(payload.Text)
+	elseif payload.Kind == "PickClass" then
+		if not picker.isOpen() then
+			picker.open(player:GetAttribute("ClassId"))
+		end
+	elseif payload.Kind == "ClassChosen" then
+		picker.close()
+	elseif payload.Kind == "Rush" and type(payload.Distance) == "number" then
+		-- The Rush ultimate: carry the character along the line it hit.
+		local duration = 0.3
+		lunge(payload.Distance / duration, duration, true)
 	end
 end)

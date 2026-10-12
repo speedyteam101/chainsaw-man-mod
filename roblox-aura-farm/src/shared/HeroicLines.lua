@@ -91,51 +91,67 @@ end
 
 --[[
 	context = {
-		inBossFight: boolean,
-		healthFraction: number,      -- the speaker's health, 0..1
-		bossHealthFraction: number?, -- nil when no boss is active
-		sinceDodge: number,          -- seconds since the last perfect dodge
-		sinceHit: number,            -- seconds since the speaker was last hit
+		inFight: boolean,           -- boss fight, or an enemy player nearby
+		healthFraction: number,     -- the speaker's health, 0..1
+		foeHealthFraction: number?, -- lowest health fraction of the boss /
+		                            -- nearby enemy players; nil if none
+		sinceDodge: number,         -- seconds since the last perfect dodge
+		sinceHit: number,           -- seconds since the speaker was last hit
+		sinceKill: number,          -- seconds since the speaker defeated an enemy player
 	}
 ]]
 function HeroicLines.conditionMet(condition: string?, context): boolean
 	if condition == nil then
 		return false
-	elseif condition == "BossLow" then
-		return context.bossHealthFraction ~= nil and context.bossHealthFraction < 0.25
+	elseif condition == "FoeLow" then
+		return context.foeHealthFraction ~= nil and context.foeHealthFraction < 0.25
 	elseif condition == "LowHealth" then
 		return context.healthFraction < 0.3
 	elseif condition == "AfterDodge" then
 		return context.sinceDodge <= 4
 	elseif condition == "AfterHit" then
 		return context.sinceHit <= 4
-	elseif condition == "NoBoss" then
-		return not context.inBossFight
+	elseif condition == "AfterKill" then
+		return context.sinceKill <= 5
+	elseif condition == "NoFight" then
+		return not context.inFight
 	end
 	return false
 end
 
-local CONDITION_LABELS = {
-	BossLow = "BOSS ON ITS LAST LEGS",
+HeroicLines.ConditionLabels = {
+	FoeLow = "FOE ON ITS LAST LEGS",
 	LowHealth = "LOW HP",
 	AfterDodge = "AFTER A PERFECT DODGE",
 	AfterHit = "SHRUGGED IT OFF",
-	NoBoss = "PRE-FIGHT",
+	AfterKill = "RIGHT AFTER A TAKEDOWN",
+	NoFight = "PRE-FIGHT",
 }
+
+-- The line list and freestyle words for a side ("Good", "Evil" or nil).
+-- Undecided players use the heroic lines.
+function HeroicLines.forSide(config, side: string?)
+	if side == "Evil" then
+		return config.VillainLines, config.VillainFreestyle
+	end
+	return config.HeroicLines, config.Freestyle
+end
 
 --[[
 	Scores a message. Doesn't change any state: the caller records
 	history[result.historyKey] = now when result.historyKey is set.
 
 	history: { [string]: number } -- key -> last time it was said
+	side: "Good" | "Evil" | nil   -- picks heroic or villain lines
 	Returns {
 		kind = "Line" | "Freestyle" | "Repeat" | "None",
 		line = <line table>?, amount = number, tags = { string },
 		historyKey = string?,
 	}
 ]]
-function HeroicLines.evaluate(message: string, context, config, history, now: number)
-	local line = HeroicLines.match(message, config.HeroicLines, config.LineMatchThreshold)
+function HeroicLines.evaluate(message: string, context, config, history, now: number, side: string?)
+	local lines, freestyleConfig = HeroicLines.forSide(config, side)
+	local line = HeroicLines.match(message, lines, config.LineMatchThreshold)
 	local tags = {}
 	local amount
 	local historyKey
@@ -145,10 +161,10 @@ function HeroicLines.evaluate(message: string, context, config, history, now: nu
 		amount = line.Aura
 		if line.Condition and HeroicLines.conditionMet(line.Condition, context) then
 			amount *= line.Bonus
-			table.insert(tags, string.format("%s x%s", CONDITION_LABELS[line.Condition], tostring(line.Bonus)))
+			table.insert(tags, string.format("%s x%s", HeroicLines.ConditionLabels[line.Condition], tostring(line.Bonus)))
 		end
 	else
-		local freestyleAura = HeroicLines.freestyle(message, config.Freestyle)
+		local freestyleAura = HeroicLines.freestyle(message, freestyleConfig)
 		if freestyleAura <= 0 then
 			return { kind = "None", amount = 0, tags = tags }
 		end
@@ -168,9 +184,9 @@ function HeroicLines.evaluate(message: string, context, config, history, now: nu
 		}
 	end
 
-	if context.inBossFight then
-		amount *= config.BossFightLineMultiplier
-		table.insert(tags, string.format("BOSS FIGHT x%s", tostring(config.BossFightLineMultiplier)))
+	if context.inFight then
+		amount *= config.FightLineMultiplier
+		table.insert(tags, string.format("IN A FIGHT x%s", tostring(config.FightLineMultiplier)))
 	end
 
 	return {

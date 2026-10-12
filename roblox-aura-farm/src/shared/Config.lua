@@ -9,52 +9,84 @@ local Config = {}
 
 ---------------------------------------------------------------------------
 -- Aura ranks (lowest first). You hold the highest rank whose Min you meet.
+-- Villains see EvilName instead of Name.
 ---------------------------------------------------------------------------
 Config.Ranks = {
-	{ Name = "NPC", Min = 0, Color = { 170, 170, 170 } },
-	{ Name = "Background Character", Min = 100, Color = { 120, 200, 255 } },
-	{ Name = "Side Character", Min = 500, Color = { 90, 255, 160 } },
-	{ Name = "Rival", Min = 1500, Color = { 255, 230, 80 } },
-	{ Name = "Main Character", Min = 4000, Color = { 255, 150, 40 } },
-	{ Name = "Protagonist", Min = 10000, Color = { 255, 70, 70 } },
-	{ Name = "Legend", Min = 25000, Color = { 200, 90, 255 } },
-	{ Name = "Aura God", Min = 60000, Color = { 255, 255, 255 } },
+	{ Name = "NPC", EvilName = "Minion", Min = 0, Color = { 170, 170, 170 } },
+	{ Name = "Background Character", EvilName = "Henchman", Min = 100, Color = { 120, 200, 255 } },
+	{ Name = "Side Character", EvilName = "Enforcer", Min = 500, Color = { 90, 255, 160 } },
+	{ Name = "Rival", EvilName = "Nemesis", Min = 1500, Color = { 255, 230, 80 } },
+	{ Name = "Main Character", EvilName = "Main Villain", Min = 4000, Color = { 255, 150, 40 } },
+	{ Name = "Protagonist", EvilName = "Overlord", Min = 10000, Color = { 255, 70, 70 } },
+	{ Name = "Legend", EvilName = "Calamity", Min = 25000, Color = { 200, 90, 255 } },
+	{ Name = "Aura God", EvilName = "Demon King", Min = 60000, Color = { 255, 255, 255 } },
 }
 
 ---------------------------------------------------------------------------
--- Heroic lines.
+-- Heroic lines (Good side and undecided players). Villains use
+-- Config.VillainLines further down.
 --   Aura:      base aura for saying it.
 --   Condition: optional situation that makes it hit much harder:
---     "BossLow"    the boss you're fighting is below 25% health
+--     "FoeLow"     the boss you're fighting, or an enemy player near you,
+--                  is below 25% health
 --     "LowHealth"  you are below 30% health
 --     "AfterDodge" you perfect-dodged in the last 4 seconds
 --     "AfterHit"   you took a hit in the last 4 seconds
---     "NoBoss"     no boss is active (pre-fight trash talk)
+--     "AfterKill"  you defeated an enemy player in the last 5 seconds
+--     "NoFight"    you're not in a fight (pre-fight trash talk)
 --   Bonus:     multiplier applied when the Condition is met.
 ---------------------------------------------------------------------------
 Config.HeroicLines = {
 	{ Id = "notHere", Text = "I won't lose. Not here. Not now.", Aura = 15, Condition = "LowHealth", Bonus = 3 },
-	{ Id = "standBack", Text = "Stand back. I'll handle this.", Aura = 10, Condition = "NoBoss", Bonus = 2 },
+	{ Id = "standBack", Text = "Stand back. I'll handle this.", Aura = 10, Condition = "NoFight", Bonus = 2 },
 	{ Id = "wrongHero", Text = "You picked the wrong hero to fight.", Aura = 20 },
 	{ Id = "friends", Text = "My friends are my power!", Aura = 15 },
-	{ Id = "endsNow", Text = "This ends now.", Aura = 10, Condition = "BossLow", Bonus = 4 },
+	{ Id = "endsNow", Text = "This ends now.", Aura = 10, Condition = "FoeLow", Bonus = 4 },
 	{ Id = "thatsAll", Text = "Is that all you've got?", Aura = 15, Condition = "AfterHit", Bonus = 3 },
 	{ Id = "neverBackDown", Text = "I never back down.", Aura = 10 },
 	{ Id = "getBackUp", Text = "Even if I fall, I'll get back up.", Aura = 20, Condition = "LowHealth", Bonus = 2 },
 	{ Id = "beyondLimits", Text = "Today, I go beyond my limits!", Aura = 25 },
 	{ Id = "yourMistake", Text = "You hurt the people I care about. That was your mistake.", Aura = 30 },
 	{ Id = "notTrying", Text = "I'm not even trying yet.", Aura = 25, Condition = "AfterDodge", Bonus = 2 },
-	{ Id = "getBehindMe", Text = "Get behind me.", Aura = 10, Condition = "NoBoss", Bonus = 2 },
+	{ Id = "getBehindMe", Text = "Get behind me.", Aura = 10, Condition = "NoFight", Bonus = 2 },
 	{ Id = "fightForAll", Text = "I fight for everyone who can't.", Aura = 25 },
-	{ Id = "rememberName", Text = "Remember my name.", Aura = 20, Condition = "BossLow", Bonus = 3 },
+	{ Id = "rememberName", Text = "Remember my name.", Aura = 20, Condition = "FoeLow", Bonus = 3 },
 	{ Id = "oneMoreRound", Text = "One more round.", Aura = 10, Condition = "LowHealth", Bonus = 3 },
-	{ Id = "heroShowsUp", Text = "The hero always shows up.", Aura = 15, Condition = "NoBoss", Bonus = 2 },
+	{ Id = "heroShowsUp", Text = "The hero always shows up.", Aura = 15, Condition = "NoFight", Bonus = 2 },
 	{ Id = "myTurn", Text = "It's my turn now.", Aura = 15, Condition = "AfterDodge", Bonus = 3 },
 	{ Id = "nothingStops", Text = "Nothing can stop me.", Aura = 15 },
 	{ Id = "cameThisFar", Text = "I didn't come this far to quit.", Aura = 20, Condition = "LowHealth", Bonus = 2 },
-	{ Id = "watchClosely", Text = "Watch closely. This is how it's done.", Aura = 25, Condition = "BossLow", Bonus = 2 },
+	{ Id = "watchClosely", Text = "Watch closely. This is how it's done.", Aura = 25, Condition = "FoeLow", Bonus = 2 },
 	{ Id = "tooSlow", Text = "Too slow.", Aura = 10, Condition = "AfterDodge", Bonus = 4 },
 	{ Id = "barelyScratch", Text = "That barely scratched me.", Aura = 15, Condition = "AfterHit", Bonus = 3 },
+	{ Id = "justiceServed", Text = "Justice is served.", Aura = 15, Condition = "AfterKill", Bonus = 3 },
+	{ Id = "stayDown", Text = "Stay down.", Aura = 10, Condition = "AfterKill", Bonus = 4 },
+}
+
+-- Villain lines: same rules as the heroic lines, for the Evil side.
+Config.VillainLines = {
+	{ Id = "neverThreat", Text = "You were never a threat to me.", Aura = 20 },
+	{ Id = "kneel", Text = "Kneel.", Aura = 10, Condition = "FoeLow", Bonus = 4 },
+	{ Id = "bestHeroes", Text = "Is this the best your heroes can do?", Aura = 15, Condition = "AfterDodge", Bonus = 3 },
+	{ Id = "pathetic", Text = "Pathetic.", Aura = 10, Condition = "AfterDodge", Bonus = 4 },
+	{ Id = "hopeEnds", Text = "Your hope ends here.", Aura = 15, Condition = "FoeLow", Bonus = 3 },
+	{ Id = "letYouHit", Text = "I let you hit me.", Aura = 15, Condition = "AfterHit", Bonus = 3 },
+	{ Id = "painStronger", Text = "Pain only makes me stronger.", Aura = 20, Condition = "AfterHit", Bonus = 2 },
+	{ Id = "runWhileYouCan", Text = "Run while you still can.", Aura = 10, Condition = "NoFight", Bonus = 2 },
+	{ Id = "worldBows", Text = "This world will bow to me.", Aura = 25 },
+	{ Id = "heroOnce", Text = "I was the hero once.", Aura = 25 },
+	{ Id = "darknessWins", Text = "Darkness always wins.", Aura = 15 },
+	{ Id = "mercyWeak", Text = "Mercy is for the weak.", Aura = 20 },
+	{ Id = "alreadyWon", Text = "I've already won. You just don't know it yet.", Aura = 30 },
+	{ Id = "nobodyComing", Text = "Nobody is coming to save you.", Aura = 20, Condition = "FoeLow", Bonus = 2 },
+	{ Id = "anotherFalls", Text = "Another one falls.", Aura = 15, Condition = "AfterKill", Bonus = 3 },
+	{ Id = "whosNext", Text = "Who's next?", Aura = 10, Condition = "AfterKill", Bonus = 4 },
+	{ Id = "whatsComing", Text = "You can't stop what's coming.", Aura = 15, Condition = "NoFight", Bonus = 2 },
+	{ Id = "evenBroken", Text = "Even broken, I am stronger than you.", Aura = 20, Condition = "LowHealth", Bonus = 3 },
+	{ Id = "fearMe", Text = "Fear me.", Aura = 10 },
+	{ Id = "lightFading", Text = "Your light is fading.", Aura = 20, Condition = "FoeLow", Bonus = 2 },
+	{ Id = "iDontLose", Text = "I don't lose.", Aura = 15, Condition = "LowHealth", Bonus = 3 },
+	{ Id = "newRuler", Text = "Bow before your new ruler.", Aura = 25 },
 }
 
 -- A message counts as a heroic line when at least this fraction of the
@@ -75,8 +107,22 @@ Config.Freestyle = {
 	},
 }
 
--- Saying anything heroic while a boss is active multiplies its aura.
-Config.BossFightLineMultiplier = 2
+-- Freestyle words for villains.
+Config.VillainFreestyle = {
+	MinKeywords = 2,
+	AuraPerKeyword = 4,
+	MaxAura = 16,
+	Keywords = {
+		"weak", "kneel", "pathetic", "despair", "destroy", "darkness", "dark",
+		"fear", "crush", "mercy", "worthless", "bow", "ruin", "hopeless",
+		"suffer", "doom", "power", "rule", "conquer", "fall", "chaos", "beg",
+		"tremble", "shadow", "hero", "heroes", "nothing",
+	},
+}
+
+-- Saying a line while in a fight (boss fight, or an enemy player nearby)
+-- multiplies its aura.
+Config.FightLineMultiplier = 2
 -- Ignore heroic messages sent closer together than this (anti-spam), seconds.
 Config.LineGlobalCooldown = 2.5
 -- Repeating the same line within this window costs aura instead ("cringe").
@@ -111,12 +157,10 @@ Config.Style = {
 -- Player combat
 ---------------------------------------------------------------------------
 Config.Combat = {
-	SlashDamage = 22,
-	SlashCooldown = 0.35,
-	SlashRange = 9, -- studs from your body to the boss's edge
+	-- Slash damage / range / speed, dash cooldown, health and move speed
+	-- come from your class (see Classes.lua).
 	AuraPerHit = 1, -- multiplied by your style rank multiplier, rounded
 
-	DashCooldown = 1.2,
 	DashSpeed = 95,
 	DashDuration = 0.18, -- how long the client pushes you forward
 	DashInvulnerability = 0.45, -- i-frames, seconds
@@ -124,12 +168,37 @@ Config.Combat = {
 	PerfectDodgeAura = 15,
 
 	UltimateStyleCost = 80, -- needs S rank or higher; spends this much style
-	UltimateDamageFraction = 0.12, -- of the boss's max health...
-	UltimateFlatDamage = 150, -- ...plus this
-	UltimateRange = 30,
 	UltimateCooldown = 3,
 
 	DeathAuraLoss = 20, -- dying in a boss fight ("took the L")
+}
+
+---------------------------------------------------------------------------
+-- PvP: Good vs Evil only. Players on the same side can't hurt each other,
+-- and nobody can be hurt by players inside a spawn's safe zone.
+---------------------------------------------------------------------------
+Config.Pvp = {
+	KillAura = 40, -- base aura for defeating an enemy player
+	DeathAuraLoss = 10, -- for being defeated by one
+	KillCreditWindow = 10, -- your hit must be this recent to get the kill
+	-- Defeating the same player again within RepeatWindow seconds pays
+	-- RepeatFalloff times less each time (stops kill farming).
+	RepeatWindow = 120,
+	RepeatFalloff = 0.5,
+	GiantSlayerPerRank = 0.5, -- bonus per aura rank the victim is above you
+	GiantSlayerMax = 1.5,
+	RevengeBonus = 0.5, -- for defeating whoever last defeated you
+	HitRangeBonus = 2, -- extra slash reach against players (hit boxes are small)
+	HitConeDot = 0.2, -- players must be roughly in front of you to be slashed
+	FightRadius = 40, -- an enemy player this close counts as "in a fight"
+	SafeZoneRadius = 30,
+	ClassChangeCooldown = 5,
+	CombatLock = 8, -- can't change class this soon after a player hit you
+	HitPlayerDamageFactor = 1, -- multiplies slash damage against players
+}
+Config.PvpBonuses = {
+	GiantSlayer = "GIANT SLAYER (they outranked you)",
+	Revenge = "REVENGE",
 }
 
 ---------------------------------------------------------------------------

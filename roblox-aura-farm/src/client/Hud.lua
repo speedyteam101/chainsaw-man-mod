@@ -8,6 +8,7 @@ local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local AuraMath = require(Shared:WaitForChild("AuraMath"))
+local HeroicLines = require(Shared:WaitForChild("HeroicLines"))
 
 local Hud = {}
 
@@ -79,8 +80,15 @@ local function fadeOut(root: GuiObject, delay: number, duration: number)
 	end)
 end
 
-function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onAction: (string) -> () })
+function Hud.new(
+	playerGui: PlayerGui,
+	callbacks: { onShout: (string) -> (), onAction: (string) -> (), onClassButton: () -> () }
+)
 	local self = {}
+	local side: string? = nil -- "Good" / "Evil" / nil (undecided)
+	local currentAura = 0
+	local currentStyle = 0
+	local ultimateName = ""
 
 	local screen = new("ScreenGui", {
 		Name = "AuraFarmHud",
@@ -174,11 +182,13 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	}, { corner(3) })
 
 	function self.setAura(aura: number)
+		currentAura = aura
 		local rank, _, nextRank = AuraMath.getRank(aura, Config.Ranks)
+		local name = AuraMath.rankName(rank, side)
 		auraLabel.Text = string.format("%d AURA", aura)
 		rankLabel.Text = if nextRank
-			then string.format("%s   (next: %s at %d)", rank.Name, nextRank.Name, nextRank.Min)
-			else rank.Name .. "   (max rank)"
+			then string.format("%s   (next: %s at %d)", name, AuraMath.rankName(nextRank, side), nextRank.Min)
+			else name .. "   (max rank)"
 		rankLabel.TextColor3 = rgb(rank.Color)
 		rankFill.BackgroundColor3 = rgb(rank.Color)
 		rankFill.Size = UDim2.fromScale(AuraMath.rankProgress(aura, Config.Ranks), 1)
@@ -194,12 +204,15 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	}
 
 	function self.setStyle(style: number)
+		currentStyle = style
 		local rank = AuraMath.getRank(style, Config.Style.Ranks)
 		styleLetter.Text = rank.Name
 		styleLetter.TextColor3 = STYLE_COLORS[rank.Name] or WHITE
 		styleFill.Size = UDim2.fromScale(style / Config.Style.Max, 1)
 		styleFill.BackgroundColor3 = STYLE_COLORS[rank.Name] or GOLD
-		ultReady.Text = if style >= Config.Combat.UltimateStyleCost then "ULTIMATE READY  [F]" else ""
+		ultReady.Text = if style >= Config.Combat.UltimateStyleCost and ultimateName ~= ""
+			then string.format("[F] %s READY", string.upper(ultimateName))
+			else ""
 	end
 
 	-------------------------------------------------------------------------
@@ -434,7 +447,7 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	local shoutFrame = new("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 12, 0.62, 0),
-		Size = UDim2.fromOffset(330, 40),
+		Size = UDim2.fromOffset(392, 40),
 		BackgroundColor3 = DARK,
 		BackgroundTransparency = 0.25,
 		Parent = screen,
@@ -469,6 +482,8 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	end
 	local shoutButton = button("SHOUT", UDim2.fromOffset(208, 5), UDim2.fromOffset(62, 30), GOLD, shoutFrame)
 	local linesButton = button("LINES", UDim2.fromOffset(274, 5), UDim2.fromOffset(50, 30), Color3.fromRGB(150, 220, 255), shoutFrame)
+	local classButton = button("CLASS", UDim2.fromOffset(328, 5), UDim2.fromOffset(58, 30), Color3.fromRGB(255, 140, 140), shoutFrame)
+	classButton.Activated:Connect(callbacks.onClassButton)
 
 	local function submit()
 		local message = box.Text
@@ -485,16 +500,17 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	end)
 
 	local CONDITION_HINTS = {
-		BossLow = "boss under 25% HP",
+		FoeLow = "enemy under 25% HP",
 		LowHealth = "you under 30% HP",
 		AfterDodge = "right after a perfect dodge",
 		AfterHit = "right after taking a hit",
-		NoBoss = "before a fight",
+		AfterKill = "right after a takedown",
+		NoFight = "before a fight",
 	}
 	local list = new("ScrollingFrame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.fromOffset(0, -6),
-		Size = UDim2.fromOffset(330, 260),
+		Size = UDim2.fromOffset(392, 260),
 		BackgroundColor3 = DARK,
 		BackgroundTransparency = 0.15,
 		BorderSizePixel = 0,
@@ -519,38 +535,59 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 		TextWrapped = true,
 		Font = Enum.Font.GothamBold,
 		TextColor3 = Color3.fromRGB(200, 200, 200),
-		Text = "Tap a line to load it. x2 during boss fights. Saying the same line twice in 30s costs aura!",
+		Text = "Tap a line to load it. x2 in a fight. Saying the same line twice in 30s costs aura!",
 		LayoutOrder = 0,
 		Parent = list,
 	})
-	for i, line in ipairs(Config.HeroicLines) do
-		local hint = if line.Condition
-			then string.format("  (x%s %s)", tostring(line.Bonus), CONDITION_HINTS[line.Condition] or "")
-			else ""
-		local entry = new("TextButton", {
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundColor3 = Color3.fromRGB(45, 38, 58),
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextColor3 = WHITE,
-			RichText = true,
-			Text = string.format('<font color="#FFD76E">+%d</font>  %s<font color="#96DCFF">%s</font>', line.Aura, line.Text, hint),
-			LayoutOrder = i,
-			Parent = list,
-		}, { corner(6), new("UIPadding", {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 4),
-			PaddingBottom = UDim.new(0, 4),
-		}) })
-		entry.Activated:Connect(function()
-			box.Text = line.Text
-			list.Visible = false
-		end)
+	local function buildLines()
+		for _, child in ipairs(list:GetChildren()) do
+			if child:IsA("TextButton") then
+				child:Destroy()
+			end
+		end
+		local lines = HeroicLines.forSide(Config, side)
+		local accent = if side == "Evil" then "#FF7878" else "#FFD76E"
+		for i, line in ipairs(lines) do
+			local hint = if line.Condition
+				then string.format("  (x%s %s)", tostring(line.Bonus), CONDITION_HINTS[line.Condition] or "")
+				else ""
+			local entry = new("TextButton", {
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundColor3 = Color3.fromRGB(45, 38, 58),
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextWrapped = true,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextColor3 = WHITE,
+				RichText = true,
+				Text = string.format('<font color="%s">+%d</font>  %s<font color="#96DCFF">%s</font>', accent, line.Aura, line.Text, hint),
+				LayoutOrder = i,
+				Parent = list,
+			}, { corner(6), new("UIPadding", {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				PaddingTop = UDim.new(0, 4),
+				PaddingBottom = UDim.new(0, 4),
+			}) })
+			entry.Activated:Connect(function()
+				box.Text = line.Text
+				list.Visible = false
+			end)
+		end
 	end
+	buildLines()
+
+	-- Switch rank names, line list and ultimate label to a class (nil = undecided).
+	function self.setClass(class)
+		side = if class then class.Side else nil
+		ultimateName = if class then class.Ultimate.Name else ""
+		box.PlaceholderText = if side == "Evil" then "Say something villainous..." else "Say something heroic..."
+		buildLines()
+		self.setAura(currentAura)
+		self.setStyle(currentStyle)
+	end
+
 	linesButton.Activated:Connect(function()
 		list.Visible = not list.Visible
 	end)

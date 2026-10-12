@@ -154,6 +154,34 @@ function Effects.pillar(position: Vector3, color: Color3)
 	Effects.shockwave(position, 30, color)
 end
 
+-- A glowing dome around a point (Fortify / Mend).
+function Effects.dome(position: Vector3, radius: number, color: Color3)
+	local sphere = part({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * radius * 2,
+		Position = position,
+		Color = color,
+		Transparency = 0.6,
+		Material = Enum.Material.ForceField,
+	})
+	fade(sphere, 0.9, {})
+end
+
+-- A streak along a line (Rush).
+function Effects.streak(from: Vector3, to: Vector3, width: number, color: Color3)
+	local length = (to - from).Magnitude
+	if length < 0.1 then
+		return
+	end
+	local beam = part({
+		Size = Vector3.new(width, 1, length),
+		CFrame = CFrame.lookAt((from + to) / 2, to),
+		Color = color,
+		Transparency = 0.2,
+	})
+	fade(beam, 0.4, { Size = Vector3.new(0.2, 0.2, length) })
+end
+
 -- Unanchor every part of a model and throw them outwards.
 function Effects.explodeModel(model: Model, color: Color3)
 	local centre = model:GetPivot().Position
@@ -180,7 +208,7 @@ end
 -- The hero blade, welded to the right hand (R15) or right arm (R6).
 ---------------------------------------------------------------------------
 
-function Effects.buildSword(character: Model)
+function Effects.buildSword(character: Model, bladeColor: Color3?)
 	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	if not hand or not hand:IsA("BasePart") then
 		return
@@ -218,7 +246,7 @@ function Effects.buildSword(character: Model)
 	local base = CFrame.new(0, -hand.Size.Y / 2, 0)
 	swordPart("Grip", Vector3.new(0.3, 0.3, 1.1), base, Color3.fromRGB(40, 30, 30), Enum.Material.Fabric)
 	swordPart("Guard", Vector3.new(1.3, 0.25, 0.25), base * CFrame.new(0, 0, -0.65), Color3.fromRGB(230, 190, 60), Enum.Material.Metal)
-	swordPart("Blade", Vector3.new(0.35, 0.12, 4), base * CFrame.new(0, 0, -2.75), Color3.fromRGB(210, 235, 255), Enum.Material.Neon)
+	swordPart("Blade", Vector3.new(0.35, 0.12, 4), base * CFrame.new(0, 0, -2.75), bladeColor or Color3.fromRGB(210, 235, 255), Enum.Material.Neon)
 
 	model.Parent = character
 end
@@ -299,18 +327,19 @@ function Effects.buildOverhead(character: Model): BillboardGui?
 	end
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "AuraTag"
-	gui.Size = UDim2.fromOffset(320, 130)
+	gui.Size = UDim2.fromOffset(320, 150)
 	gui.StudsOffset = Vector3.new(0, 4.2, 0)
 	gui.MaxDistance = 140
 	gui.LightInfluence = 0
 	label(gui, "Speech", UDim2.fromOffset(0, 0), UDim2.fromOffset(320, 70), 20)
 	label(gui, "Rank", UDim2.fromOffset(0, 72), UDim2.fromOffset(320, 30), 22)
-	label(gui, "Aura", UDim2.fromOffset(0, 100), UDim2.fromOffset(320, 26), 16)
+	label(gui, "Aura", UDim2.fromOffset(0, 100), UDim2.fromOffset(320, 22), 15)
+	label(gui, "Class", UDim2.fromOffset(0, 122), UDim2.fromOffset(320, 22), 15)
 	gui.Parent = head
 	return gui
 end
 
-function Effects.updateOverhead(character: Model, rankName: string, color: Color3, aura: number)
+function Effects.updateOverhead(character: Model, rankName: string, color: Color3, aura: number, className: string, sideColor: Color3)
 	local head = character:FindFirstChild("Head")
 	local gui = head and head:FindFirstChild("AuraTag")
 	if not gui then
@@ -321,11 +350,14 @@ function Effects.updateOverhead(character: Model, rankName: string, color: Color
 	rank.TextColor3 = color
 	local auraLabel = gui:FindFirstChild("Aura") :: TextLabel
 	auraLabel.Text = string.format("%d aura", aura)
+	local classLabel = gui:FindFirstChild("Class") :: TextLabel
+	classLabel.Text = className
+	classLabel.TextColor3 = sideColor
 end
 
 -- Only ever shows lines from Config (never raw player text), so nothing
 -- unfiltered is displayed to other players.
-function Effects.showSpeech(character: Model, text: string, duration: number)
+function Effects.showSpeech(character: Model, text: string, duration: number, color: Color3)
 	local head = character:FindFirstChild("Head")
 	local gui = head and head:FindFirstChild("AuraTag")
 	if not gui then
@@ -333,7 +365,7 @@ function Effects.showSpeech(character: Model, text: string, duration: number)
 	end
 	local speech = gui:FindFirstChild("Speech") :: TextLabel
 	speech.Text = "\u{201C}" .. text .. "\u{201D}"
-	speech.TextColor3 = Color3.fromRGB(255, 240, 160)
+	speech.TextColor3 = color
 	local stamp = os.clock()
 	speech:SetAttribute("Stamp", stamp)
 	task.delay(duration, function()

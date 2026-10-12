@@ -99,14 +99,20 @@ function BossService.getActive(): Boss?
 	return active
 end
 
--- For AuraService: is this player in a fight, and how hurt is the boss?
+-- For heroic lines: is this player in a boss fight, and how hurt is the boss?
 function BossService.contextFor(player: Player)
 	local boss = active
 	local root = rootOf(player)
 	if boss and boss.alive and root and inArena(root.Position) then
-		return { inBossFight = true, bossHealthFraction = boss.health / boss.maxHealth }
+		return { inFight = true, foeHealthFraction = boss.health / boss.maxHealth }
 	end
-	return { inBossFight = false, bossHealthFraction = nil }
+	return { inFight = false, foeHealthFraction = nil }
+end
+
+-- Did this player take part in the current boss fight?
+function BossService.isParticipant(player: Player): boolean
+	local boss = active
+	return boss ~= nil and boss.alive and boss.participants[player] ~= nil
 end
 
 ---------------------------------------------------------------------------
@@ -236,11 +242,8 @@ local function resolve(boss: Boss, inZone: (number, number) -> boolean)
 			local protected = now < state.invulnerableUntil
 
 			if hit and not protected then
-				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid:TakeDamage(boss.def.Damage)
+				if AuraService.takeDamage(player, boss.def.Damage) > 0 then
 					participant(boss, player).hurt = true
-					AuraService.onHurt(player)
 				end
 			elseif dashedRecently and (hit or startedInZone) then
 				participant(boss, player)
@@ -368,43 +371,6 @@ local function despawn(boss: Boss, reason: string)
 	AuraService.announce(reason)
 end
 
-local function startWalkAwayCheck(player: Player, explosion: Vector3)
-	local settings = Config.WalkAway
-	task.spawn(function()
-		local function flatDistance(position: Vector3): number
-			return Vector3.new(position.X - explosion.X, 0, position.Z - explosion.Z).Magnitude
-		end
-		local startRoot = rootOf(player)
-		if not startRoot then
-			return
-		end
-		-- Uses positions rather than Humanoid.MoveDirection, which the API
-		-- marks as not replicated.
-		local lastDistance = flatDistance(startRoot.Position)
-		local samples, good = 0, 0
-		local elapsed = 0
-		while elapsed < settings.Duration do
-			task.wait(settings.SampleInterval)
-			elapsed += settings.SampleInterval
-			local root = rootOf(player)
-			if not root then
-				return
-			end
-			samples += 1
-			local look = root.CFrame.LookVector
-			local toBoss = explosion - root.Position
-			local distance = flatDistance(root.Position)
-			if AuraMath.isWalkingAway(look.X, look.Z, toBoss.X, toBoss.Z, distance - lastDistance) then
-				good += 1
-			end
-			lastDistance = distance
-		end
-		if samples > 0 and good / samples >= settings.RequiredFraction then
-			AuraService.addAura(player, settings.Aura, settings.Label, { "Cool guys don't look at explosions" })
-		end
-	end)
-end
-
 local function defeat(boss: Boss, killer: Player, source: string)
 	boss.alive = false
 	if active == boss then
@@ -439,7 +405,7 @@ local function defeat(boss: Boss, killer: Player, source: string)
 				Total = total,
 				Color = def.EyeColor,
 			})
-			startWalkAwayCheck(player, explosion)
+			AuraService.startWalkAwayCheck(player, explosion)
 		end
 	end
 
@@ -607,20 +573,6 @@ function BossService.summon(player: Player, def)
 	AuraService.announce(string.format("%s challenged %s, %s!", player.DisplayName, def.Name, def.Title))
 
 	task.spawn(brain, boss)
-end
-
--- Losing aura for dying mid-fight.
-function BossService.watchCharacter(player: Player, character: Model)
-	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
-	if not humanoid then
-		return
-	end
-	humanoid.Died:Connect(function()
-		local boss = active
-		if boss and boss.alive and boss.participants[player] then
-			AuraService.onDiedInFight(player)
-		end
-	end)
 end
 
 function BossService.start(altars)

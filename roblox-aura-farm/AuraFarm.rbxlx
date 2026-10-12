@@ -30,6 +30,14 @@ function AuraMath.getRank(value: number, ranks)
 	return ranks[index], index, ranks[index + 1]
 end
 
+-- A rank's display name for a side (villains get EvilName).
+function AuraMath.rankName(rank, side: string?): string
+	if side == "Evil" and rank.EvilName then
+		return rank.EvilName
+	end
+	return rank.Name
+end
+
 -- 0..1 progress from the current rank to the next (1 at the top rank).
 function AuraMath.rankProgress(value: number, ranks): number
 	local rank, _, nextRank = AuraMath.getRank(value, ranks)
@@ -84,6 +92,50 @@ function AuraMath.defeatReward(base: number, styleRank, flags, bonuses, assistFr
 	return total, breakdown
 end
 
+--[[
+	Aura for defeating an enemy player.
+
+	killerRank / victimRank: aura rank indexes (1 = lowest).
+	flags = { Clutch = bool, CalledIt = bool, Finisher = bool, Revenge = bool }
+	repeats: how many times the killer already defeated this victim within
+	         the repeat window (0 for the first time).
+
+	reward = KillAura * style * (1 + bonuses) * RepeatFalloff^repeats
+	Returns total (integer) and a breakdown list of label strings.
+]]
+function AuraMath.pvpKillReward(pvp, pvpBonuses, defeatBonuses, killerRank: number, victimRank: number, styleRank, flags, repeats: number)
+	local breakdown = { string.format("Enemy defeated: %d", pvp.KillAura) }
+	local bonusTotal = 0
+
+	local ranksAbove = victimRank - killerRank
+	if ranksAbove > 0 then
+		local bonus = math.min(ranksAbove * pvp.GiantSlayerPerRank, pvp.GiantSlayerMax)
+		bonusTotal += bonus
+		table.insert(breakdown, string.format("%s  +%d%%", pvpBonuses.GiantSlayer, math.floor(bonus * 100 + 0.5)))
+	end
+	if flags.Revenge then
+		bonusTotal += pvp.RevengeBonus
+		table.insert(breakdown, string.format("%s  +%d%%", pvpBonuses.Revenge, math.floor(pvp.RevengeBonus * 100 + 0.5)))
+	end
+	for _, key in ipairs({ "Clutch", "CalledIt", "Finisher" }) do
+		if flags[key] then
+			bonusTotal += defeatBonuses[key].Bonus
+			table.insert(breakdown, string.format("%s  +%d%%", defeatBonuses[key].Label, math.floor(defeatBonuses[key].Bonus * 100 + 0.5)))
+		end
+	end
+	if styleRank.Multiplier ~= 1 then
+		table.insert(breakdown, string.format("STYLE %s  x%s", styleRank.Name, tostring(styleRank.Multiplier)))
+	end
+
+	local falloff = pvp.RepeatFalloff ^ repeats
+	if repeats > 0 then
+		table.insert(breakdown, string.format("Same target again  x%s", tostring(falloff)))
+	end
+
+	local total = math.floor(pvp.KillAura * styleRank.Multiplier * (1 + bonusTotal) * falloff + 0.5)
+	return total, breakdown
+end
+
 ---------------------------------------------------------------------------
 -- Top-down geometry (x/z plane)
 ---------------------------------------------------------------------------
@@ -129,6 +181,270 @@ return AuraMath
       </Item>
       <Item class="ModuleScript" referent="3">
         <Properties>
+          <string name="Name">Classes</string>
+          <string name="Source"><![CDATA[--[[
+	Every class, for both sides. Pure Luau (no Roblox types) so it can be
+	unit tested outside Roblox; colors are {R, G, B} arrays.
+
+	Stats (all optional except Id/Name/Side/Role/Ultimate; missing ones use
+	Classes.Defaults):
+		MaxHealth, WalkSpeed
+		SlashDamage, SlashRange (studs), SlashCooldown (seconds)
+		DashCooldown (seconds)
+		Armor      fraction of incoming damage ignored (0..0.5)
+		Lifesteal  fraction of damage dealt healed back
+		StyleGain  multiplier on style meter gains
+	Ultimate = { Kind = <one of Classes.UltimateKinds>, Name = string, Power = number }
+		Power multiplies the kind's damage and healing.
+]]
+
+local Classes = {}
+
+Classes.Defaults = {
+	MaxHealth = 100,
+	WalkSpeed = 16,
+	SlashDamage = 22,
+	SlashRange = 9,
+	SlashCooldown = 0.35,
+	DashCooldown = 1.2,
+	Armor = 0,
+	Lifesteal = 0,
+	StyleGain = 1,
+}
+
+-- The six ultimate mechanics. Damage numbers are before the class's Power.
+Classes.UltimateKinds = {
+	-- A column of light on one target (the boss, or the nearest enemy player).
+	Pillar = { Range = 30, BossFraction = 0.12, BossFlat = 150, PlayerDamage = 45, Description = "Huge hit on one target" },
+	-- An explosion around you.
+	Nova = { Radius = 18, BossDamage = 180, PlayerDamage = 35, Description = "Blast everything around you" },
+	-- A long dash that cuts through everything in a line.
+	Rush = { Length = 32, Width = 9, BossDamage = 170, PlayerDamage = 40, Description = "Dash through enemies in a line" },
+	-- Damage around you and heal yourself for part of it.
+	Drain = { Radius = 16, BossDamage = 130, PlayerDamage = 28, HealFraction = 0.6, Description = "Steal life from enemies around you" },
+	-- Heal yourself and allies around you.
+	Mend = { Radius = 25, HealPercent = 0.4, AuraPerAlly = 8, Description = "Heal yourself and nearby allies" },
+	-- Brief invincibility (and a small heal) for you and allies around you.
+	Fortify = { Radius = 20, Duration = 3, HealPercent = 0.15, AuraPerAlly = 6, Description = "Make you and nearby allies invincible" },
+}
+
+Classes.Sides = {
+	Good = { Name = "Heroes", Color = { 255, 205, 80 } },
+	Evil = { Name = "Villains", Color = { 200, 40, 60 } },
+}
+
+local good = {
+	{ Id = "Paladin", Name = "Paladin", Role = "Tank", Color = { 255, 225, 120 },
+		Description = "Holy armor and a steady blade. Shields the team when it matters.",
+		MaxHealth = 160, WalkSpeed = 14, SlashDamage = 20, Armor = 0.1,
+		Ultimate = { Kind = "Fortify", Name = "Sacred Bulwark", Power = 1 } },
+	{ Id = "Guardian", Name = "Guardian", Role = "Tank", Color = { 150, 200, 255 },
+		Description = "A walking fortress. Slow, but almost impossible to take down.",
+		MaxHealth = 180, WalkSpeed = 13, SlashDamage = 16, Armor = 0.2,
+		Ultimate = { Kind = "Fortify", Name = "Unbreakable Wall", Power = 1.3 } },
+	{ Id = "Swordmaster", Name = "Swordmaster", Role = "Duelist", Color = { 220, 240, 255 },
+		Description = "Perfect technique. Every cut lands where it should.",
+		MaxHealth = 100, WalkSpeed = 17, SlashDamage = 26,
+		Ultimate = { Kind = "Pillar", Name = "Heaven Splitter", Power = 1.1 } },
+	{ Id = "LightningKnight", Name = "Lightning Knight", Role = "Speedster", Color = { 255, 255, 120 },
+		Description = "Too fast to see. Dashes twice as often as anyone else.",
+		MaxHealth = 90, WalkSpeed = 22, SlashDamage = 20, DashCooldown = 0.7,
+		Ultimate = { Kind = "Rush", Name = "Thunderclap Rush", Power = 1 } },
+	{ Id = "SkyLancer", Name = "Sky Lancer", Role = "Duelist", Color = { 140, 220, 255 },
+		Description = "Long spear, long reach. Hits from where others can't.",
+		MaxHealth = 105, WalkSpeed = 17, SlashDamage = 22, SlashRange = 13,
+		Ultimate = { Kind = "Rush", Name = "Falling Star Lance", Power = 1.1 } },
+	{ Id = "Cleric", Name = "Cleric", Role = "Support", Color = { 255, 250, 210 },
+		Description = "Keeps everyone standing. Earns aura for every ally healed.",
+		MaxHealth = 110, WalkSpeed = 16, SlashDamage = 15,
+		Ultimate = { Kind = "Mend", Name = "Grand Blessing", Power = 1.2 } },
+	{ Id = "SunMonk", Name = "Sun Monk", Role = "Fighter", Color = { 255, 170, 60 },
+		Description = "A flurry of fists. Fastest attacks in the game.",
+		MaxHealth = 110, WalkSpeed = 18, SlashDamage = 15, SlashRange = 7, SlashCooldown = 0.22,
+		Ultimate = { Kind = "Nova", Name = "Solar Flare Palm", Power = 1 } },
+	{ Id = "StormCaller", Name = "Storm Caller", Role = "Mage", Color = { 120, 180, 255 },
+		Description = "Fragile, but the storm answers when called.",
+		MaxHealth = 85, WalkSpeed = 16, SlashDamage = 18, SlashRange = 11,
+		Ultimate = { Kind = "Nova", Name = "Tempest Crown", Power = 1.45 } },
+	{ Id = "StarArcher", Name = "Star Archer", Role = "Ranged", Color = { 200, 230, 255 },
+		Description = "Strikes from the longest range of any hero.",
+		MaxHealth = 85, WalkSpeed = 17, SlashDamage = 18, SlashRange = 15,
+		Ultimate = { Kind = "Pillar", Name = "Starfall Arrow", Power = 1.2 } },
+	{ Id = "IronFist", Name = "Iron Fist", Role = "Bruiser", Color = { 200, 200, 210 },
+		Description = "Heavy, slow punches that hit like a truck.",
+		MaxHealth = 140, WalkSpeed = 15, SlashDamage = 28, SlashRange = 8, SlashCooldown = 0.5,
+		Ultimate = { Kind = "Nova", Name = "Earthshaker", Power = 1.1 } },
+	{ Id = "ShieldBearer", Name = "Shield Bearer", Role = "Tank", Color = { 180, 160, 120 },
+		Description = "Shield first, sword second. The best armor on the hero side.",
+		MaxHealth = 150, WalkSpeed = 14, SlashDamage = 17, Armor = 0.3,
+		Ultimate = { Kind = "Fortify", Name = "Phalanx", Power = 1.1 } },
+	{ Id = "DawnBlade", Name = "Dawn Blade", Role = "Duelist", Color = { 255, 200, 150 },
+		Description = "Each strike draws strength from the morning sun.",
+		MaxHealth = 110, WalkSpeed = 17, SlashDamage = 24, Lifesteal = 0.1,
+		Ultimate = { Kind = "Pillar", Name = "First Light", Power = 1 } },
+	{ Id = "WindDancer", Name = "Wind Dancer", Role = "Speedster", Color = { 170, 255, 210 },
+		Description = "Moves like the wind and fills the style meter faster.",
+		MaxHealth = 90, WalkSpeed = 23, SlashDamage = 17, DashCooldown = 0.9, StyleGain = 1.3,
+		Ultimate = { Kind = "Rush", Name = "Gale Waltz", Power = 0.9 } },
+	{ Id = "FrostWarden", Name = "Frost Warden", Role = "Bruiser", Color = { 170, 230, 255 },
+		Description = "Cold, calm and very hard to move.",
+		MaxHealth = 130, WalkSpeed = 15, SlashDamage = 20, Armor = 0.1,
+		Ultimate = { Kind = "Nova", Name = "Absolute Zero", Power = 1.1 } },
+	{ Id = "GroveHealer", Name = "Grove Healer", Role = "Support", Color = { 140, 230, 120 },
+		Description = "The strongest healer on either side.",
+		MaxHealth = 105, WalkSpeed = 16, SlashDamage = 14,
+		Ultimate = { Kind = "Mend", Name = "Bloom of Life", Power = 1.5 } },
+	{ Id = "Lionheart", Name = "Lionheart", Role = "Bruiser", Color = { 255, 190, 90 },
+		Description = "Charges in first and roars the loudest.",
+		MaxHealth = 135, WalkSpeed = 17, SlashDamage = 23,
+		Ultimate = { Kind = "Rush", Name = "Pride Charge", Power = 1.1 } },
+	{ Id = "SpiritSage", Name = "Spirit Sage", Role = "Support", Color = { 210, 180, 255 },
+		Description = "Calls on ancestors to protect the team.",
+		MaxHealth = 100, WalkSpeed = 16, SlashDamage = 16, SlashRange = 11,
+		Ultimate = { Kind = "Fortify", Name = "Ancestral Ward", Power = 1 } },
+	{ Id = "Crusader", Name = "Crusader", Role = "Fighter", Color = { 240, 240, 240 },
+		Description = "Balanced in every way. A good first pick.",
+		MaxHealth = 125, WalkSpeed = 16, SlashDamage = 22,
+		Ultimate = { Kind = "Pillar", Name = "Righteous Verdict", Power = 1 } },
+	{ Id = "PhoenixKnight", Name = "Phoenix Knight", Role = "Fighter", Color = { 255, 120, 60 },
+		Description = "Burns bright and heals from every hit.",
+		MaxHealth = 115, WalkSpeed = 17, SlashDamage = 20, Lifesteal = 0.15,
+		Ultimate = { Kind = "Nova", Name = "Rebirth Flame", Power = 1 } },
+	{ Id = "Valkyrie", Name = "Valkyrie", Role = "Duelist", Color = { 230, 220, 255 },
+		Description = "Swift wings, sharp spear.",
+		MaxHealth = 115, WalkSpeed = 19, SlashDamage = 22, SlashRange = 11,
+		Ultimate = { Kind = "Rush", Name = "Winged Descent", Power = 1 } },
+	{ Id = "CometStriker", Name = "Comet Striker", Role = "Speedster", Color = { 255, 230, 200 },
+		Description = "Hits hard for something so fast.",
+		MaxHealth = 95, WalkSpeed = 20, SlashDamage = 23, DashCooldown = 1,
+		Ultimate = { Kind = "Rush", Name = "Comet Trail", Power = 1.2 } },
+	{ Id = "LegendHero", Name = "Hero of Legend", Role = "All-rounder", Color = { 255, 215, 0 },
+		Description = "The classic hero. Gains style faster than anyone.",
+		MaxHealth = 120, WalkSpeed = 17, SlashDamage = 21, StyleGain = 1.25,
+		Ultimate = { Kind = "Pillar", Name = "Legendary Strike", Power = 1.05 } },
+}
+
+local evil = {
+	{ Id = "Warlord", Name = "Warlord", Role = "Bruiser", Color = { 200, 60, 40 },
+		Description = "Conquers by force. Big hits, big health.",
+		MaxHealth = 145, WalkSpeed = 15, SlashDamage = 25,
+		Ultimate = { Kind = "Nova", Name = "Warpath", Power = 1.1 } },
+	{ Id = "ShadowAssassin", Name = "Shadow Assassin", Role = "Assassin", Color = { 120, 60, 180 },
+		Description = "Deadliest blade in the game, but goes down fast.",
+		MaxHealth = 80, WalkSpeed = 22, SlashDamage = 29, DashCooldown = 0.8,
+		Ultimate = { Kind = "Rush", Name = "Thousand Shadows", Power = 1.2 } },
+	{ Id = "Necromancer", Name = "Necromancer", Role = "Mage", Color = { 120, 255, 150 },
+		Description = "Feeds on the life of anything nearby.",
+		MaxHealth = 95, WalkSpeed = 16, SlashDamage = 18, SlashRange = 11,
+		Ultimate = { Kind = "Drain", Name = "Grave Harvest", Power = 1.3 } },
+	{ Id = "BloodKnight", Name = "Blood Knight", Role = "Fighter", Color = { 180, 0, 30 },
+		Description = "Every wound he deals keeps him alive.",
+		MaxHealth = 120, WalkSpeed = 16, SlashDamage = 21, Lifesteal = 0.15,
+		Ultimate = { Kind = "Drain", Name = "Crimson Feast", Power = 1 } },
+	{ Id = "DreadJuggernaut", Name = "Dread Juggernaut", Role = "Tank", Color = { 90, 80, 90 },
+		Description = "The most health in the game. Slow as a glacier.",
+		MaxHealth = 190, WalkSpeed = 12, SlashDamage = 20, Armor = 0.2,
+		Ultimate = { Kind = "Nova", Name = "Cataclysm Stomp", Power = 1 } },
+	{ Id = "HexWitch", Name = "Hex Witch", Role = "Mage", Color = { 200, 90, 255 },
+		Description = "Curses from a distance and drinks the life out of heroes.",
+		MaxHealth = 90, WalkSpeed = 16, SlashDamage = 18, SlashRange = 12,
+		Ultimate = { Kind = "Drain", Name = "Withering Hex", Power = 1.2 } },
+	{ Id = "VoidReaper", Name = "Void Reaper", Role = "Duelist", Color = { 60, 0, 90 },
+		Description = "A scythe with terrible reach.",
+		MaxHealth = 105, WalkSpeed = 16, SlashDamage = 26, SlashRange = 12, SlashCooldown = 0.42,
+		Ultimate = { Kind = "Pillar", Name = "Void Sentence", Power = 1.15 } },
+	{ Id = "PlagueDoctor", Name = "Plague Doctor", Role = "Support", Color = { 160, 200, 60 },
+		Description = "Patches up villains so they can keep fighting.",
+		MaxHealth = 105, WalkSpeed = 16, SlashDamage = 16,
+		Ultimate = { Kind = "Mend", Name = "Dark Remedy", Power = 1.2 } },
+	{ Id = "InfernoTyrant", Name = "Inferno Tyrant", Role = "Mage", Color = { 255, 80, 0 },
+		Description = "The biggest explosion on the villain side.",
+		MaxHealth = 90, WalkSpeed = 15, SlashDamage = 19, SlashRange = 10,
+		Ultimate = { Kind = "Nova", Name = "Hellfire Eruption", Power = 1.5 } },
+	{ Id = "BoneColossus", Name = "Bone Colossus", Role = "Tank", Color = { 230, 220, 200 },
+		Description = "A wall of bones that protects its allies.",
+		MaxHealth = 170, WalkSpeed = 13, SlashDamage = 17, Armor = 0.2,
+		Ultimate = { Kind = "Fortify", Name = "Ossuary Shell", Power = 1.2 } },
+	{ Id = "VenomStalker", Name = "Venom Stalker", Role = "Speedster", Color = { 100, 255, 60 },
+		Description = "Hunts heroes down before they can run.",
+		MaxHealth = 90, WalkSpeed = 22, SlashDamage = 19, DashCooldown = 0.8,
+		Ultimate = { Kind = "Rush", Name = "Fang Lunge", Power = 1 } },
+	{ Id = "DoomKnight", Name = "Doom Knight", Role = "Fighter", Color = { 80, 80, 120 },
+		Description = "Balanced in every way. A good first pick.",
+		MaxHealth = 125, WalkSpeed = 16, SlashDamage = 22,
+		Ultimate = { Kind = "Pillar", Name = "Doomfall", Power = 1 } },
+	{ Id = "StormDespot", Name = "Storm Despot", Role = "Mage", Color = { 100, 120, 200 },
+		Description = "Rules the sky with dark lightning.",
+		MaxHealth = 95, WalkSpeed = 16, SlashDamage = 18, SlashRange = 11,
+		Ultimate = { Kind = "Nova", Name = "Black Thunder", Power = 1.35 } },
+	{ Id = "NightHunter", Name = "Night Hunter", Role = "Ranged", Color = { 90, 70, 140 },
+		Description = "Picks heroes off from the longest range of any villain.",
+		MaxHealth = 85, WalkSpeed = 17, SlashDamage = 18, SlashRange = 15,
+		Ultimate = { Kind = "Pillar", Name = "Moonless Shot", Power = 1.2 } },
+	{ Id = "ChaosBrawler", Name = "Chaos Brawler", Role = "Fighter", Color = { 255, 60, 120 },
+		Description = "Wild, fast swings that never stop.",
+		MaxHealth = 115, WalkSpeed = 18, SlashDamage = 16, SlashRange = 7, SlashCooldown = 0.24,
+		Ultimate = { Kind = "Nova", Name = "Pandemonium", Power = 1 } },
+	{ Id = "IronTyrant", Name = "Iron Tyrant", Role = "Tank", Color = { 120, 110, 110 },
+		Description = "Thick iron plating. The best armor on the villain side.",
+		MaxHealth = 150, WalkSpeed = 14, SlashDamage = 18, Armor = 0.3,
+		Ultimate = { Kind = "Fortify", Name = "Iron Dominion", Power = 1 } },
+	{ Id = "SoulEater", Name = "Soul Eater", Role = "Fighter", Color = { 150, 220, 255 },
+		Description = "Weak hits, but devours life with every one.",
+		MaxHealth = 110, WalkSpeed = 17, SlashDamage = 18, Lifesteal = 0.2,
+		Ultimate = { Kind = "Drain", Name = "Soul Devour", Power = 1.1 } },
+	{ Id = "CursedSamurai", Name = "Cursed Samurai", Role = "Duelist", Color = { 150, 0, 0 },
+		Description = "A cursed blade that cuts deeper than any other.",
+		MaxHealth = 100, WalkSpeed = 17, SlashDamage = 27,
+		Ultimate = { Kind = "Pillar", Name = "Cursed Iaido", Power = 1.1 } },
+	{ Id = "AbyssWalker", Name = "Abyss Walker", Role = "Speedster", Color = { 30, 60, 90 },
+		Description = "Steps out of the dark right behind you.",
+		MaxHealth = 95, WalkSpeed = 20, SlashDamage = 22, DashCooldown = 0.9,
+		Ultimate = { Kind = "Rush", Name = "Abyssal Step", Power = 1.1 } },
+	{ Id = "DarkPriest", Name = "Dark Priest", Role = "Support", Color = { 120, 40, 80 },
+		Description = "Unholy prayers that keep the villains fighting.",
+		MaxHealth = 100, WalkSpeed = 16, SlashDamage = 16, SlashRange = 11,
+		Ultimate = { Kind = "Fortify", Name = "Unholy Covenant", Power = 1 } },
+	{ Id = "FallenHero", Name = "Fallen Hero", Role = "All-rounder", Color = { 160, 140, 100 },
+		Description = "Was a hero once. Gains style faster than anyone.",
+		MaxHealth = 120, WalkSpeed = 17, SlashDamage = 21, StyleGain = 1.25,
+		Ultimate = { Kind = "Pillar", Name = "Betrayal", Power = 1.05 } },
+	{ Id = "DemonLord", Name = "Demon Lord", Role = "Bruiser", Color = { 255, 0, 60 },
+		Description = "Raw demonic power. Slow, tough and terrifying.",
+		MaxHealth = 150, WalkSpeed = 14, SlashDamage = 25, Armor = 0.1,
+		Ultimate = { Kind = "Nova", Name = "Demon King's Wrath", Power = 1.2 } },
+}
+
+Classes.Good = good
+Classes.Evil = evil
+
+-- Lookup by Id, with defaults filled in and Side set.
+Classes.byId = {}
+for side, list in pairs({ Good = good, Evil = evil }) do
+	for _, class in ipairs(list) do
+		class.Side = side
+		for key, value in pairs(Classes.Defaults) do
+			if class[key] == nil then
+				class[key] = value
+			end
+		end
+		Classes.byId[class.Id] = class
+	end
+end
+
+function Classes.get(id: any)
+	if type(id) ~= "string" then
+		return nil
+	end
+	return Classes.byId[id]
+end
+
+return Classes
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="4">
+        <Properties>
           <string name="Name">Config</string>
           <string name="Source"><![CDATA[--[[
 	Every tunable number in Aura Farm lives here.
@@ -141,52 +457,84 @@ local Config = {}
 
 ---------------------------------------------------------------------------
 -- Aura ranks (lowest first). You hold the highest rank whose Min you meet.
+-- Villains see EvilName instead of Name.
 ---------------------------------------------------------------------------
 Config.Ranks = {
-	{ Name = "NPC", Min = 0, Color = { 170, 170, 170 } },
-	{ Name = "Background Character", Min = 100, Color = { 120, 200, 255 } },
-	{ Name = "Side Character", Min = 500, Color = { 90, 255, 160 } },
-	{ Name = "Rival", Min = 1500, Color = { 255, 230, 80 } },
-	{ Name = "Main Character", Min = 4000, Color = { 255, 150, 40 } },
-	{ Name = "Protagonist", Min = 10000, Color = { 255, 70, 70 } },
-	{ Name = "Legend", Min = 25000, Color = { 200, 90, 255 } },
-	{ Name = "Aura God", Min = 60000, Color = { 255, 255, 255 } },
+	{ Name = "NPC", EvilName = "Minion", Min = 0, Color = { 170, 170, 170 } },
+	{ Name = "Background Character", EvilName = "Henchman", Min = 100, Color = { 120, 200, 255 } },
+	{ Name = "Side Character", EvilName = "Enforcer", Min = 500, Color = { 90, 255, 160 } },
+	{ Name = "Rival", EvilName = "Nemesis", Min = 1500, Color = { 255, 230, 80 } },
+	{ Name = "Main Character", EvilName = "Main Villain", Min = 4000, Color = { 255, 150, 40 } },
+	{ Name = "Protagonist", EvilName = "Overlord", Min = 10000, Color = { 255, 70, 70 } },
+	{ Name = "Legend", EvilName = "Calamity", Min = 25000, Color = { 200, 90, 255 } },
+	{ Name = "Aura God", EvilName = "Demon King", Min = 60000, Color = { 255, 255, 255 } },
 }
 
 ---------------------------------------------------------------------------
--- Heroic lines.
+-- Heroic lines (Good side and undecided players). Villains use
+-- Config.VillainLines further down.
 --   Aura:      base aura for saying it.
 --   Condition: optional situation that makes it hit much harder:
---     "BossLow"    the boss you're fighting is below 25% health
+--     "FoeLow"     the boss you're fighting, or an enemy player near you,
+--                  is below 25% health
 --     "LowHealth"  you are below 30% health
 --     "AfterDodge" you perfect-dodged in the last 4 seconds
 --     "AfterHit"   you took a hit in the last 4 seconds
---     "NoBoss"     no boss is active (pre-fight trash talk)
+--     "AfterKill"  you defeated an enemy player in the last 5 seconds
+--     "NoFight"    you're not in a fight (pre-fight trash talk)
 --   Bonus:     multiplier applied when the Condition is met.
 ---------------------------------------------------------------------------
 Config.HeroicLines = {
 	{ Id = "notHere", Text = "I won't lose. Not here. Not now.", Aura = 15, Condition = "LowHealth", Bonus = 3 },
-	{ Id = "standBack", Text = "Stand back. I'll handle this.", Aura = 10, Condition = "NoBoss", Bonus = 2 },
+	{ Id = "standBack", Text = "Stand back. I'll handle this.", Aura = 10, Condition = "NoFight", Bonus = 2 },
 	{ Id = "wrongHero", Text = "You picked the wrong hero to fight.", Aura = 20 },
 	{ Id = "friends", Text = "My friends are my power!", Aura = 15 },
-	{ Id = "endsNow", Text = "This ends now.", Aura = 10, Condition = "BossLow", Bonus = 4 },
+	{ Id = "endsNow", Text = "This ends now.", Aura = 10, Condition = "FoeLow", Bonus = 4 },
 	{ Id = "thatsAll", Text = "Is that all you've got?", Aura = 15, Condition = "AfterHit", Bonus = 3 },
 	{ Id = "neverBackDown", Text = "I never back down.", Aura = 10 },
 	{ Id = "getBackUp", Text = "Even if I fall, I'll get back up.", Aura = 20, Condition = "LowHealth", Bonus = 2 },
 	{ Id = "beyondLimits", Text = "Today, I go beyond my limits!", Aura = 25 },
 	{ Id = "yourMistake", Text = "You hurt the people I care about. That was your mistake.", Aura = 30 },
 	{ Id = "notTrying", Text = "I'm not even trying yet.", Aura = 25, Condition = "AfterDodge", Bonus = 2 },
-	{ Id = "getBehindMe", Text = "Get behind me.", Aura = 10, Condition = "NoBoss", Bonus = 2 },
+	{ Id = "getBehindMe", Text = "Get behind me.", Aura = 10, Condition = "NoFight", Bonus = 2 },
 	{ Id = "fightForAll", Text = "I fight for everyone who can't.", Aura = 25 },
-	{ Id = "rememberName", Text = "Remember my name.", Aura = 20, Condition = "BossLow", Bonus = 3 },
+	{ Id = "rememberName", Text = "Remember my name.", Aura = 20, Condition = "FoeLow", Bonus = 3 },
 	{ Id = "oneMoreRound", Text = "One more round.", Aura = 10, Condition = "LowHealth", Bonus = 3 },
-	{ Id = "heroShowsUp", Text = "The hero always shows up.", Aura = 15, Condition = "NoBoss", Bonus = 2 },
+	{ Id = "heroShowsUp", Text = "The hero always shows up.", Aura = 15, Condition = "NoFight", Bonus = 2 },
 	{ Id = "myTurn", Text = "It's my turn now.", Aura = 15, Condition = "AfterDodge", Bonus = 3 },
 	{ Id = "nothingStops", Text = "Nothing can stop me.", Aura = 15 },
 	{ Id = "cameThisFar", Text = "I didn't come this far to quit.", Aura = 20, Condition = "LowHealth", Bonus = 2 },
-	{ Id = "watchClosely", Text = "Watch closely. This is how it's done.", Aura = 25, Condition = "BossLow", Bonus = 2 },
+	{ Id = "watchClosely", Text = "Watch closely. This is how it's done.", Aura = 25, Condition = "FoeLow", Bonus = 2 },
 	{ Id = "tooSlow", Text = "Too slow.", Aura = 10, Condition = "AfterDodge", Bonus = 4 },
 	{ Id = "barelyScratch", Text = "That barely scratched me.", Aura = 15, Condition = "AfterHit", Bonus = 3 },
+	{ Id = "justiceServed", Text = "Justice is served.", Aura = 15, Condition = "AfterKill", Bonus = 3 },
+	{ Id = "stayDown", Text = "Stay down.", Aura = 10, Condition = "AfterKill", Bonus = 4 },
+}
+
+-- Villain lines: same rules as the heroic lines, for the Evil side.
+Config.VillainLines = {
+	{ Id = "neverThreat", Text = "You were never a threat to me.", Aura = 20 },
+	{ Id = "kneel", Text = "Kneel.", Aura = 10, Condition = "FoeLow", Bonus = 4 },
+	{ Id = "bestHeroes", Text = "Is this the best your heroes can do?", Aura = 15, Condition = "AfterDodge", Bonus = 3 },
+	{ Id = "pathetic", Text = "Pathetic.", Aura = 10, Condition = "AfterDodge", Bonus = 4 },
+	{ Id = "hopeEnds", Text = "Your hope ends here.", Aura = 15, Condition = "FoeLow", Bonus = 3 },
+	{ Id = "letYouHit", Text = "I let you hit me.", Aura = 15, Condition = "AfterHit", Bonus = 3 },
+	{ Id = "painStronger", Text = "Pain only makes me stronger.", Aura = 20, Condition = "AfterHit", Bonus = 2 },
+	{ Id = "runWhileYouCan", Text = "Run while you still can.", Aura = 10, Condition = "NoFight", Bonus = 2 },
+	{ Id = "worldBows", Text = "This world will bow to me.", Aura = 25 },
+	{ Id = "heroOnce", Text = "I was the hero once.", Aura = 25 },
+	{ Id = "darknessWins", Text = "Darkness always wins.", Aura = 15 },
+	{ Id = "mercyWeak", Text = "Mercy is for the weak.", Aura = 20 },
+	{ Id = "alreadyWon", Text = "I've already won. You just don't know it yet.", Aura = 30 },
+	{ Id = "nobodyComing", Text = "Nobody is coming to save you.", Aura = 20, Condition = "FoeLow", Bonus = 2 },
+	{ Id = "anotherFalls", Text = "Another one falls.", Aura = 15, Condition = "AfterKill", Bonus = 3 },
+	{ Id = "whosNext", Text = "Who's next?", Aura = 10, Condition = "AfterKill", Bonus = 4 },
+	{ Id = "whatsComing", Text = "You can't stop what's coming.", Aura = 15, Condition = "NoFight", Bonus = 2 },
+	{ Id = "evenBroken", Text = "Even broken, I am stronger than you.", Aura = 20, Condition = "LowHealth", Bonus = 3 },
+	{ Id = "fearMe", Text = "Fear me.", Aura = 10 },
+	{ Id = "lightFading", Text = "Your light is fading.", Aura = 20, Condition = "FoeLow", Bonus = 2 },
+	{ Id = "iDontLose", Text = "I don't lose.", Aura = 15, Condition = "LowHealth", Bonus = 3 },
+	{ Id = "newRuler", Text = "Bow before your new ruler.", Aura = 25 },
 }
 
 -- A message counts as a heroic line when at least this fraction of the
@@ -207,8 +555,22 @@ Config.Freestyle = {
 	},
 }
 
--- Saying anything heroic while a boss is active multiplies its aura.
-Config.BossFightLineMultiplier = 2
+-- Freestyle words for villains.
+Config.VillainFreestyle = {
+	MinKeywords = 2,
+	AuraPerKeyword = 4,
+	MaxAura = 16,
+	Keywords = {
+		"weak", "kneel", "pathetic", "despair", "destroy", "darkness", "dark",
+		"fear", "crush", "mercy", "worthless", "bow", "ruin", "hopeless",
+		"suffer", "doom", "power", "rule", "conquer", "fall", "chaos", "beg",
+		"tremble", "shadow", "hero", "heroes", "nothing",
+	},
+}
+
+-- Saying a line while in a fight (boss fight, or an enemy player nearby)
+-- multiplies its aura.
+Config.FightLineMultiplier = 2
 -- Ignore heroic messages sent closer together than this (anti-spam), seconds.
 Config.LineGlobalCooldown = 2.5
 -- Repeating the same line within this window costs aura instead ("cringe").
@@ -243,12 +605,10 @@ Config.Style = {
 -- Player combat
 ---------------------------------------------------------------------------
 Config.Combat = {
-	SlashDamage = 22,
-	SlashCooldown = 0.35,
-	SlashRange = 9, -- studs from your body to the boss's edge
+	-- Slash damage / range / speed, dash cooldown, health and move speed
+	-- come from your class (see Classes.lua).
 	AuraPerHit = 1, -- multiplied by your style rank multiplier, rounded
 
-	DashCooldown = 1.2,
 	DashSpeed = 95,
 	DashDuration = 0.18, -- how long the client pushes you forward
 	DashInvulnerability = 0.45, -- i-frames, seconds
@@ -256,12 +616,37 @@ Config.Combat = {
 	PerfectDodgeAura = 15,
 
 	UltimateStyleCost = 80, -- needs S rank or higher; spends this much style
-	UltimateDamageFraction = 0.12, -- of the boss's max health...
-	UltimateFlatDamage = 150, -- ...plus this
-	UltimateRange = 30,
 	UltimateCooldown = 3,
 
 	DeathAuraLoss = 20, -- dying in a boss fight ("took the L")
+}
+
+---------------------------------------------------------------------------
+-- PvP: Good vs Evil only. Players on the same side can't hurt each other,
+-- and nobody can be hurt by players inside a spawn's safe zone.
+---------------------------------------------------------------------------
+Config.Pvp = {
+	KillAura = 40, -- base aura for defeating an enemy player
+	DeathAuraLoss = 10, -- for being defeated by one
+	KillCreditWindow = 10, -- your hit must be this recent to get the kill
+	-- Defeating the same player again within RepeatWindow seconds pays
+	-- RepeatFalloff times less each time (stops kill farming).
+	RepeatWindow = 120,
+	RepeatFalloff = 0.5,
+	GiantSlayerPerRank = 0.5, -- bonus per aura rank the victim is above you
+	GiantSlayerMax = 1.5,
+	RevengeBonus = 0.5, -- for defeating whoever last defeated you
+	HitRangeBonus = 2, -- extra slash reach against players (hit boxes are small)
+	HitConeDot = 0.2, -- players must be roughly in front of you to be slashed
+	FightRadius = 40, -- an enemy player this close counts as "in a fight"
+	SafeZoneRadius = 30,
+	ClassChangeCooldown = 5,
+	CombatLock = 8, -- can't change class this soon after a player hit you
+	HitPlayerDamageFactor = 1, -- multiplies slash damage against players
+}
+Config.PvpBonuses = {
+	GiantSlayer = "GIANT SLAYER (they outranked you)",
+	Revenge = "REVENGE",
 }
 
 ---------------------------------------------------------------------------
@@ -366,7 +751,7 @@ return Config
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="4">
+      <Item class="ModuleScript" referent="5">
         <Properties>
           <string name="Name">HeroicLines</string>
           <string name="Source"><![CDATA[--[[
@@ -462,51 +847,67 @@ end
 
 --[[
 	context = {
-		inBossFight: boolean,
-		healthFraction: number,      -- the speaker's health, 0..1
-		bossHealthFraction: number?, -- nil when no boss is active
-		sinceDodge: number,          -- seconds since the last perfect dodge
-		sinceHit: number,            -- seconds since the speaker was last hit
+		inFight: boolean,           -- boss fight, or an enemy player nearby
+		healthFraction: number,     -- the speaker's health, 0..1
+		foeHealthFraction: number?, -- lowest health fraction of the boss /
+		                            -- nearby enemy players; nil if none
+		sinceDodge: number,         -- seconds since the last perfect dodge
+		sinceHit: number,           -- seconds since the speaker was last hit
+		sinceKill: number,          -- seconds since the speaker defeated an enemy player
 	}
 ]]
 function HeroicLines.conditionMet(condition: string?, context): boolean
 	if condition == nil then
 		return false
-	elseif condition == "BossLow" then
-		return context.bossHealthFraction ~= nil and context.bossHealthFraction < 0.25
+	elseif condition == "FoeLow" then
+		return context.foeHealthFraction ~= nil and context.foeHealthFraction < 0.25
 	elseif condition == "LowHealth" then
 		return context.healthFraction < 0.3
 	elseif condition == "AfterDodge" then
 		return context.sinceDodge <= 4
 	elseif condition == "AfterHit" then
 		return context.sinceHit <= 4
-	elseif condition == "NoBoss" then
-		return not context.inBossFight
+	elseif condition == "AfterKill" then
+		return context.sinceKill <= 5
+	elseif condition == "NoFight" then
+		return not context.inFight
 	end
 	return false
 end
 
-local CONDITION_LABELS = {
-	BossLow = "BOSS ON ITS LAST LEGS",
+HeroicLines.ConditionLabels = {
+	FoeLow = "FOE ON ITS LAST LEGS",
 	LowHealth = "LOW HP",
 	AfterDodge = "AFTER A PERFECT DODGE",
 	AfterHit = "SHRUGGED IT OFF",
-	NoBoss = "PRE-FIGHT",
+	AfterKill = "RIGHT AFTER A TAKEDOWN",
+	NoFight = "PRE-FIGHT",
 }
+
+-- The line list and freestyle words for a side ("Good", "Evil" or nil).
+-- Undecided players use the heroic lines.
+function HeroicLines.forSide(config, side: string?)
+	if side == "Evil" then
+		return config.VillainLines, config.VillainFreestyle
+	end
+	return config.HeroicLines, config.Freestyle
+end
 
 --[[
 	Scores a message. Doesn't change any state: the caller records
 	history[result.historyKey] = now when result.historyKey is set.
 
 	history: { [string]: number } -- key -> last time it was said
+	side: "Good" | "Evil" | nil   -- picks heroic or villain lines
 	Returns {
 		kind = "Line" | "Freestyle" | "Repeat" | "None",
 		line = <line table>?, amount = number, tags = { string },
 		historyKey = string?,
 	}
 ]]
-function HeroicLines.evaluate(message: string, context, config, history, now: number)
-	local line = HeroicLines.match(message, config.HeroicLines, config.LineMatchThreshold)
+function HeroicLines.evaluate(message: string, context, config, history, now: number, side: string?)
+	local lines, freestyleConfig = HeroicLines.forSide(config, side)
+	local line = HeroicLines.match(message, lines, config.LineMatchThreshold)
 	local tags = {}
 	local amount
 	local historyKey
@@ -516,10 +917,10 @@ function HeroicLines.evaluate(message: string, context, config, history, now: nu
 		amount = line.Aura
 		if line.Condition and HeroicLines.conditionMet(line.Condition, context) then
 			amount *= line.Bonus
-			table.insert(tags, string.format("%s x%s", CONDITION_LABELS[line.Condition], tostring(line.Bonus)))
+			table.insert(tags, string.format("%s x%s", HeroicLines.ConditionLabels[line.Condition], tostring(line.Bonus)))
 		end
 	else
-		local freestyleAura = HeroicLines.freestyle(message, config.Freestyle)
+		local freestyleAura = HeroicLines.freestyle(message, freestyleConfig)
 		if freestyleAura <= 0 then
 			return { kind = "None", amount = 0, tags = tags }
 		end
@@ -539,9 +940,9 @@ function HeroicLines.evaluate(message: string, context, config, history, now: nu
 		}
 	end
 
-	if context.inBossFight then
-		amount *= config.BossFightLineMultiplier
-		table.insert(tags, string.format("BOSS FIGHT x%s", tostring(config.BossFightLineMultiplier)))
+	if context.inFight then
+		amount *= config.FightLineMultiplier
+		table.insert(tags, string.format("IN A FIGHT x%s", tostring(config.FightLineMultiplier)))
 	end
 
 	return {
@@ -559,19 +960,19 @@ return HeroicLines
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="5">
+  <Item class="ServerScriptService" referent="6">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="6">
+    <Item class="Folder" referent="7">
       <Properties>
         <string name="Name">AuraFarmServer</string>
       </Properties>
-      <Item class="ModuleScript" referent="7">
+      <Item class="ModuleScript" referent="8">
         <Properties>
           <string name="Name">AuraService</string>
-          <string name="Source"><![CDATA[-- Owns each player's aura (saved), style meter, combat timers and the
--- heroic-line handling.
+          <string name="Source"><![CDATA[-- Owns each player's aura (saved, with their class), style meter, combat
+-- timers and the heroic / villain line handling.
 
 local DataStoreService = game:GetService("DataStoreService")
 local Players = game:GetService("Players")
@@ -581,6 +982,7 @@ local RunService = game:GetService("RunService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local AuraMath = require(Shared:WaitForChild("AuraMath"))
+local Classes = require(Shared:WaitForChild("Classes"))
 local HeroicLines = require(Shared:WaitForChild("HeroicLines"))
 local Effects = require(script.Parent.Effects)
 local Remotes = require(script.Parent.Remotes)
@@ -590,10 +992,12 @@ local AuraService = {}
 export type State = {
 	aura: number,
 	loaded: boolean,
+	savedClassId: string?,
 	style: number,
 	lastStyleGain: number,
 	lastDodge: number,
 	lastHit: number,
+	lastKill: number,
 	lastHeroicLine: number,
 	lastLineTime: number,
 	lineHistory: { [string]: number },
@@ -604,6 +1008,15 @@ export type State = {
 	dashStartPos: Vector3?,
 	invulnerableUntil: number,
 	lastUltimate: number,
+	-- PvP bookkeeping (see PvpService)
+	lastAttacker: Player?,
+	lastAttackTime: number,
+	lastAttackSource: string,
+	lastAttackStyle: number, -- attacker's style when they last hit us
+	dodgedDash: number, -- the dash a PvP perfect dodge was already given for
+	lastKilledBy: Player?,
+	kills: { [number]: { number } }, -- victim UserId -> times defeated
+	lastClassChange: number,
 	rankIndex: number,
 	auraValue: IntValue,
 	rankValue: StringValue,
@@ -611,14 +1024,38 @@ export type State = {
 
 local states: { [Player]: State } = {}
 
--- Supplies { inBossFight, bossHealthFraction } for a player. BossService sets
--- this (it can't be required from here without a require cycle).
+-- Supplies { inFight, foeHealthFraction } for a player. Main sets this from
+-- BossService and PvpService (they can't be required from here without a
+-- require cycle).
 local contextProvider = function(_player: Player)
-	return { inBossFight = false, bossHealthFraction = nil }
+	return { inFight = false, foeHealthFraction = nil }
 end
 
 function AuraService.setContextProvider(fn)
 	contextProvider = fn
+end
+
+---------------------------------------------------------------------------
+-- Class helpers (the class lives in player attributes, set by ClassService)
+---------------------------------------------------------------------------
+
+function AuraService.sideOf(player: Player): string?
+	local side = player:GetAttribute("Side")
+	return if side == "Good" or side == "Evil" then side else nil
+end
+
+-- The player's class, or nil while they're undecided.
+function AuraService.classOf(player: Player)
+	return Classes.get(player:GetAttribute("ClassId"))
+end
+
+-- A class stat, falling back to the defaults for undecided players.
+function AuraService.stat(player: Player, key: string): number
+	local class = AuraService.classOf(player)
+	if class then
+		return class[key]
+	end
+	return Classes.Defaults[key]
 end
 
 ---------------------------------------------------------------------------
@@ -641,21 +1078,24 @@ local function key(player: Player): string
 	return "u_" .. player.UserId
 end
 
-local function load(player: Player): number
+-- Returns saved aura and class id.
+local function load(player: Player): (number, string?)
 	if not store then
-		return 0
+		return 0, nil
 	end
 	local ok, result = pcall(function()
 		return store:GetAsync(key(player))
 	end)
 	if not ok then
 		warn("[AuraFarm] Couldn't load aura for", player.Name, result)
-		return 0
+		return 0, nil
 	end
-	if type(result) == "table" and type(result.Aura) == "number" then
-		return result.Aura
+	if type(result) == "table" then
+		local aura = if type(result.Aura) == "number" then result.Aura else 0
+		local classId = if Classes.get(result.ClassId) then result.ClassId else nil
+		return aura, classId
 	end
-	return 0
+	return 0, nil
 end
 
 function AuraService.save(player: Player)
@@ -664,8 +1104,9 @@ function AuraService.save(player: Player)
 	if not store or not state or not state.loaded then
 		return
 	end
+	local classId = player:GetAttribute("ClassId") or state.savedClassId
 	local ok, err = pcall(function()
-		store:SetAsync(key(player), { Aura = state.aura })
+		store:SetAsync(key(player), { Aura = state.aura, ClassId = classId })
 	end)
 	if not ok then
 		warn("[AuraFarm] Couldn't save aura for", player.Name, err)
@@ -694,22 +1135,36 @@ function AuraService.announce(text: string, except: Player?)
 	end
 end
 
-local function refreshVisuals(player: Player)
+function AuraService.rankName(player: Player): string
 	local state = states[player]
+	local rank = Config.Ranks[state and state.rankIndex or 1]
+	return AuraMath.rankName(rank, AuraService.sideOf(player))
+end
+
+-- Re-applies rank name, overhead tag and aura particles.
+function AuraService.refreshVisuals(player: Player)
+	local state = states[player]
+	if not state then
+		return
+	end
+	state.rankValue.Value = AuraService.rankName(player)
 	local character = player.Character
-	if not state or not character then
+	if not character then
 		return
 	end
 	local rank = Config.Ranks[state.rankIndex]
 	local color = Effects.color(rank.Color)
-	Effects.updateOverhead(character, rank.Name, color, state.aura)
-	Effects.setAura(character, state.rankIndex, color)
+	local class = AuraService.classOf(player)
+	local classLabel = if class then class.Name else "Undecided"
+	local sideColor = if class then Effects.color(Classes.Sides[class.Side].Color) else Color3.fromRGB(200, 200, 200)
+	Effects.updateOverhead(character, AuraService.rankName(player), color, state.aura, classLabel, sideColor)
+	Effects.setAura(character, state.rankIndex, if class then Effects.color(class.Color) else color)
 end
 
 --[[
 	Adds (or with a negative amount, removes) aura. Aura never drops below 0.
 	title/tags describe why, for the client's popup. silent skips the popup
-	(used for small per-hit aura and for boss rewards, which get a banner).
+	(used for small per-hit aura and for big rewards, which get a banner).
 ]]
 function AuraService.addAura(player: Player, amount: number, title: string?, tags: { string }?, silent: boolean?)
 	local state = states[player]
@@ -723,13 +1178,13 @@ function AuraService.addAura(player: Player, amount: number, title: string?, tag
 	if index ~= state.rankIndex then
 		local rankedUp = index > state.rankIndex
 		state.rankIndex = index
-		state.rankValue.Value = rank.Name
 		if rankedUp then
-			notify(player, { Kind = "RankUp", Rank = rank.Name, Color = rank.Color })
-			AuraService.announce(string.format("%s is now a %s!", player.DisplayName, rank.Name), player)
+			local name = AuraMath.rankName(rank, AuraService.sideOf(player))
+			notify(player, { Kind = "RankUp", Rank = name, Color = rank.Color })
+			AuraService.announce(string.format("%s is now a %s!", player.DisplayName, name), player)
 		end
 	end
-	refreshVisuals(player)
+	AuraService.refreshVisuals(player)
 
 	if not silent then
 		notify(player, { Kind = "Aura", Amount = amount, Title = title or "", Tags = tags or {} })
@@ -745,6 +1200,7 @@ local function setStyle(player: Player, state: State, value: number)
 	player:SetAttribute("Style", math.floor(state.style + 0.5))
 end
 
+-- Gains are multiplied by the class's StyleGain; losses aren't.
 function AuraService.addStyle(player: Player, amount: number)
 	local state = states[player]
 	if not state then
@@ -752,8 +1208,16 @@ function AuraService.addStyle(player: Player, amount: number)
 	end
 	if amount > 0 then
 		state.lastStyleGain = os.clock()
+		amount *= AuraService.stat(player, "StyleGain")
 	end
 	setStyle(player, state, state.style + amount)
+end
+
+function AuraService.resetStyle(player: Player)
+	local state = states[player]
+	if state then
+		setStyle(player, state, 0)
+	end
 end
 
 function AuraService.styleRank(player: Player)
@@ -762,16 +1226,42 @@ function AuraService.styleRank(player: Player)
 end
 
 ---------------------------------------------------------------------------
--- Combat bookkeeping (called by Combat / BossService)
+-- Damage and combat bookkeeping (called by Combat / BossService / PvpService)
 ---------------------------------------------------------------------------
 
-function AuraService.onHurt(player: Player)
+-- Hurts a player, reduced by their class armor. Returns the damage dealt
+-- (0 if they're invincible from a dash or Fortify).
+function AuraService.takeDamage(player: Player, amount: number): number
 	local state = states[player]
-	if not state then
-		return
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not state or not humanoid or humanoid.Health <= 0 then
+		return 0
 	end
+	if os.clock() < state.invulnerableUntil then
+		return 0
+	end
+	local dealt = amount * (1 - AuraService.stat(player, "Armor"))
+	humanoid:TakeDamage(dealt)
 	state.lastHit = os.clock()
 	AuraService.addStyle(player, -Config.Style.LostWhenHit)
+	return dealt
+end
+
+function AuraService.heal(player: Player, amount: number)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid and humanoid.Health > 0 and amount > 0 then
+		humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + amount)
+	end
+end
+
+-- Lifesteal for damage the player dealt.
+function AuraService.onDealtDamage(player: Player, amount: number)
+	local lifesteal = AuraService.stat(player, "Lifesteal")
+	if lifesteal > 0 then
+		AuraService.heal(player, amount * lifesteal)
+	end
 end
 
 function AuraService.onPerfectDodge(player: Player)
@@ -786,17 +1276,54 @@ function AuraService.onPerfectDodge(player: Player)
 	AuraService.addAura(player, amount, "PERFECT DODGE", { "STYLE " .. styleRank.Name })
 end
 
-function AuraService.onDiedInFight(player: Player)
-	local state = states[player]
-	if not state then
-		return
+-- After a big win: walk away from `position` without looking back.
+function AuraService.startWalkAwayCheck(player: Player, position: Vector3)
+	local settings = Config.WalkAway
+	local function rootOf(): BasePart?
+		local character = player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 then
+			return nil
+		end
+		return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	end
-	setStyle(player, state, 0)
-	AuraService.addAura(player, -Config.Combat.DeathAuraLoss, "TOOK THE L", { "Fell in battle" })
+	local function flatDistance(at: Vector3): number
+		return Vector3.new(at.X - position.X, 0, at.Z - position.Z).Magnitude
+	end
+	task.spawn(function()
+		local startRoot = rootOf()
+		if not startRoot then
+			return
+		end
+		-- Uses positions rather than Humanoid.MoveDirection, which the API
+		-- marks as not replicated.
+		local lastDistance = flatDistance(startRoot.Position)
+		local samples, good = 0, 0
+		local elapsed = 0
+		while elapsed < settings.Duration do
+			task.wait(settings.SampleInterval)
+			elapsed += settings.SampleInterval
+			local root = rootOf()
+			if not root then
+				return
+			end
+			samples += 1
+			local look = root.CFrame.LookVector
+			local toTarget = position - root.Position
+			local distance = flatDistance(root.Position)
+			if AuraMath.isWalkingAway(look.X, look.Z, toTarget.X, toTarget.Z, distance - lastDistance) then
+				good += 1
+			end
+			lastDistance = distance
+		end
+		if samples > 0 and good / samples >= settings.RequiredFraction then
+			AuraService.addAura(player, settings.Aura, settings.Label, { "Cool people don't look at explosions" })
+		end
+	end)
 end
 
 ---------------------------------------------------------------------------
--- Heroic lines
+-- Heroic / villain lines
 ---------------------------------------------------------------------------
 
 function AuraService.handleMessage(player: Player, text: any)
@@ -822,14 +1349,16 @@ function AuraService.handleMessage(player: Player, text: any)
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	local fight = contextProvider(player)
 	local context = {
-		inBossFight = fight.inBossFight,
-		bossHealthFraction = fight.bossHealthFraction,
+		inFight = fight.inFight,
+		foeHealthFraction = fight.foeHealthFraction,
 		healthFraction = if humanoid and humanoid.MaxHealth > 0 then humanoid.Health / humanoid.MaxHealth else 1,
 		sinceDodge = now - state.lastDodge,
 		sinceHit = now - state.lastHit,
+		sinceKill = now - state.lastKill,
 	}
 
-	local result = HeroicLines.evaluate(text, context, Config, state.lineHistory, now)
+	local side = AuraService.sideOf(player)
+	local result = HeroicLines.evaluate(text, context, Config, state.lineHistory, now, side)
 	if result.kind == "None" then
 		return
 	end
@@ -842,14 +1371,15 @@ function AuraService.handleMessage(player: Player, text: any)
 	end
 
 	state.lastHeroicLine = now
-	if context.inBossFight then
+	if context.inFight then
 		AuraService.addStyle(player, Config.Style.PerHeroicLineInFight)
 	end
-	local title = "Freestyle heroics"
+	local title = if side == "Evil" then "Villainous freestyle" else "Freestyle heroics"
 	if result.line then
 		title = "\u{201C}" .. result.line.Text .. "\u{201D}"
 		if character then
-			Effects.showSpeech(character, result.line.Text, Config.SpeechDuration)
+			local speechColor = if side == "Evil" then Color3.fromRGB(255, 110, 110) else Color3.fromRGB(255, 240, 160)
+			Effects.showSpeech(character, result.line.Text, Config.SpeechDuration, speechColor)
 		end
 	end
 	AuraService.addAura(player, result.amount, title, result.tags)
@@ -863,16 +1393,19 @@ function AuraService.setupCharacter(player: Player, character: Model)
 	character:WaitForChild("Head", 10)
 	character:WaitForChild("HumanoidRootPart", 10)
 	Effects.buildOverhead(character)
-	Effects.buildSword(character)
-	refreshVisuals(player)
+	local class = AuraService.classOf(player)
+	Effects.buildSword(character, if class then Effects.color(class.Color) else nil)
+	AuraService.refreshVisuals(player)
 	local state = states[player]
 	if state then
 		setStyle(player, state, 0)
 		state.invulnerableUntil = 0
+		state.lastAttacker = nil
 	end
 end
 
-function AuraService.setupPlayer(player: Player)
+-- Calls onLoaded(savedClassId) once the player's save has loaded (or failed).
+function AuraService.setupPlayer(player: Player, onLoaded: (string?) -> ())
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	local auraValue = Instance.new("IntValue")
@@ -888,10 +1421,12 @@ function AuraService.setupPlayer(player: Player)
 	local state: State = {
 		aura = 0,
 		loaded = false,
+		savedClassId = nil,
 		style = 0,
 		lastStyleGain = never,
 		lastDodge = never,
 		lastHit = never,
+		lastKill = never,
 		lastHeroicLine = never,
 		lastLineTime = never,
 		lineHistory = {},
@@ -902,6 +1437,14 @@ function AuraService.setupPlayer(player: Player)
 		dashStartPos = nil,
 		invulnerableUntil = 0,
 		lastUltimate = never,
+		lastAttacker = nil,
+		lastAttackTime = never,
+		lastAttackSource = "",
+		lastAttackStyle = 0,
+		dodgedDash = never,
+		lastKilledBy = nil,
+		kills = {},
+		lastClassChange = never,
 		rankIndex = 1,
 		auraValue = auraValue,
 		rankValue = rankValue,
@@ -911,27 +1454,37 @@ function AuraService.setupPlayer(player: Player)
 
 	-- Load in the background so the player's state exists right away.
 	task.spawn(function()
-		local saved = load(player)
+		local saved, classId = load(player)
 		if states[player] ~= state then
 			return -- left while loading
 		end
 		state.loaded = true
+		state.savedClassId = classId
 		if saved > 0 then
 			-- Silent: just restoring, not earning. Keep anything earned
 			-- while the load was in flight.
 			state.aura += saved
 			auraValue.Value = state.aura
-			local rank, index = AuraMath.getRank(state.aura, Config.Ranks)
+			local _, index = AuraMath.getRank(state.aura, Config.Ranks)
 			state.rankIndex = index
-			rankValue.Value = rank.Name
-			refreshVisuals(player)
+			AuraService.refreshVisuals(player)
 		end
+		onLoaded(classId)
 	end)
 end
 
 function AuraService.removePlayer(player: Player)
 	AuraService.save(player)
 	states[player] = nil
+	-- Forget this player in everyone else's PvP bookkeeping.
+	for _, state in pairs(states) do
+		if state.lastAttacker == player then
+			state.lastAttacker = nil
+		end
+		if state.lastKilledBy == player then
+			state.lastKilledBy = nil
+		end
+	end
 end
 
 -- Style decay and autosave.
@@ -984,7 +1537,7 @@ return AuraService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="9">
         <Properties>
           <string name="Name">BossService</string>
           <string name="Source"><![CDATA[-- Summons, moves and fights the bosses, and pays out aura when one dies.
@@ -1088,14 +1641,20 @@ function BossService.getActive(): Boss?
 	return active
 end
 
--- For AuraService: is this player in a fight, and how hurt is the boss?
+-- For heroic lines: is this player in a boss fight, and how hurt is the boss?
 function BossService.contextFor(player: Player)
 	local boss = active
 	local root = rootOf(player)
 	if boss and boss.alive and root and inArena(root.Position) then
-		return { inBossFight = true, bossHealthFraction = boss.health / boss.maxHealth }
+		return { inFight = true, foeHealthFraction = boss.health / boss.maxHealth }
 	end
-	return { inBossFight = false, bossHealthFraction = nil }
+	return { inFight = false, foeHealthFraction = nil }
+end
+
+-- Did this player take part in the current boss fight?
+function BossService.isParticipant(player: Player): boolean
+	local boss = active
+	return boss ~= nil and boss.alive and boss.participants[player] ~= nil
 end
 
 ---------------------------------------------------------------------------
@@ -1225,11 +1784,8 @@ local function resolve(boss: Boss, inZone: (number, number) -> boolean)
 			local protected = now < state.invulnerableUntil
 
 			if hit and not protected then
-				local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid:TakeDamage(boss.def.Damage)
+				if AuraService.takeDamage(player, boss.def.Damage) > 0 then
 					participant(boss, player).hurt = true
-					AuraService.onHurt(player)
 				end
 			elseif dashedRecently and (hit or startedInZone) then
 				participant(boss, player)
@@ -1357,43 +1913,6 @@ local function despawn(boss: Boss, reason: string)
 	AuraService.announce(reason)
 end
 
-local function startWalkAwayCheck(player: Player, explosion: Vector3)
-	local settings = Config.WalkAway
-	task.spawn(function()
-		local function flatDistance(position: Vector3): number
-			return Vector3.new(position.X - explosion.X, 0, position.Z - explosion.Z).Magnitude
-		end
-		local startRoot = rootOf(player)
-		if not startRoot then
-			return
-		end
-		-- Uses positions rather than Humanoid.MoveDirection, which the API
-		-- marks as not replicated.
-		local lastDistance = flatDistance(startRoot.Position)
-		local samples, good = 0, 0
-		local elapsed = 0
-		while elapsed < settings.Duration do
-			task.wait(settings.SampleInterval)
-			elapsed += settings.SampleInterval
-			local root = rootOf(player)
-			if not root then
-				return
-			end
-			samples += 1
-			local look = root.CFrame.LookVector
-			local toBoss = explosion - root.Position
-			local distance = flatDistance(root.Position)
-			if AuraMath.isWalkingAway(look.X, look.Z, toBoss.X, toBoss.Z, distance - lastDistance) then
-				good += 1
-			end
-			lastDistance = distance
-		end
-		if samples > 0 and good / samples >= settings.RequiredFraction then
-			AuraService.addAura(player, settings.Aura, settings.Label, { "Cool guys don't look at explosions" })
-		end
-	end)
-end
-
 local function defeat(boss: Boss, killer: Player, source: string)
 	boss.alive = false
 	if active == boss then
@@ -1428,7 +1947,7 @@ local function defeat(boss: Boss, killer: Player, source: string)
 				Total = total,
 				Color = def.EyeColor,
 			})
-			startWalkAwayCheck(player, explosion)
+			AuraService.startWalkAwayCheck(player, explosion)
 		end
 	end
 
@@ -1598,20 +2117,6 @@ function BossService.summon(player: Player, def)
 	task.spawn(brain, boss)
 end
 
--- Losing aura for dying mid-fight.
-function BossService.watchCharacter(player: Player, character: Model)
-	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
-	if not humanoid then
-		return
-	end
-	humanoid.Died:Connect(function()
-		local boss = active
-		if boss and boss.alive and boss.participants[player] then
-			AuraService.onDiedInFight(player)
-		end
-	end)
-end
-
 function BossService.start(altars)
 	for _, def in ipairs(Config.Bosses) do
 		local altar = altars[def.Id]
@@ -1639,22 +2144,156 @@ return BossService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="10">
+        <Properties>
+          <string name="Name">ClassService</string>
+          <string name="Source"><![CDATA[-- Sides and classes: Roblox Teams for Heroes / Villains / Undecided, class
+-- selection, and applying a class's health and speed to the character.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Teams = game:GetService("Teams")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Classes = require(Shared:WaitForChild("Classes"))
+local AuraService = require(script.Parent.AuraService)
+local World = require(script.Parent.World)
+
+local ClassService = {}
+
+local teams: { [string]: Team } = {}
+
+local function makeTeam(key: string, name: string, autoAssign: boolean)
+	local team = Instance.new("Team")
+	team.Name = name
+	team.TeamColor = World.TeamColors[key]
+	team.AutoAssignable = autoAssign
+	team.Parent = Teams
+	teams[key] = team
+end
+
+function ClassService.start()
+	makeTeam("Undecided", "Undecided", true)
+	makeTeam("Good", Classes.Sides.Good.Name, false)
+	makeTeam("Evil", Classes.Sides.Evil.Name, false)
+end
+
+-- Respawns at the player's team spawn. (Player:LoadCharacter is
+-- deprecated in favour of LoadCharacterAsync.)
+local function respawn(player: Player)
+	task.spawn(function()
+		local ok, err = pcall(function()
+			player:LoadCharacterAsync()
+		end)
+		if not ok and player.Parent then
+			warn("[AuraFarm] Couldn't respawn", player.Name, err)
+		end
+	end)
+end
+
+-- Health and walk speed from the class (defaults while undecided).
+function ClassService.applyCharacter(player: Player, character: Model)
+	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
+	if not humanoid then
+		return
+	end
+	humanoid.MaxHealth = AuraService.stat(player, "MaxHealth")
+	humanoid.Health = humanoid.MaxHealth
+	humanoid.WalkSpeed = AuraService.stat(player, "WalkSpeed")
+end
+
+local function setClass(player: Player, class)
+	player:SetAttribute("ClassId", class.Id)
+	player:SetAttribute("Side", class.Side)
+	player.Neutral = false
+	player.Team = teams[class.Side]
+	local state = AuraService.get(player)
+	if state then
+		state.savedClassId = class.Id
+	end
+	AuraService.refreshVisuals(player)
+	respawn(player)
+end
+
+-- A player asked to become `classId` (from the class picker).
+function ClassService.request(player: Player, classId: any)
+	local class = Classes.get(classId)
+	local state = AuraService.get(player)
+	if not class or not state then
+		return
+	end
+	if player:GetAttribute("ClassId") == class.Id then
+		AuraService.notify(player, { Kind = "ClassChosen", ClassId = class.Id })
+		return
+	end
+	local now = os.clock()
+	if now - state.lastClassChange < Config.Pvp.ClassChangeCooldown then
+		AuraService.notify(player, { Kind = "Message", Text = "Wait a moment before changing class again." })
+		return
+	end
+	if state.lastAttacker and now - state.lastAttackTime < Config.Pvp.CombatLock then
+		AuraService.notify(player, { Kind = "Message", Text = "You can't change class in the middle of a fight!" })
+		return
+	end
+	state.lastClassChange = now
+
+	local previousSide = AuraService.sideOf(player)
+	setClass(player, class)
+	AuraService.notify(player, { Kind = "ClassChosen", ClassId = class.Id })
+	if previousSide ~= class.Side then
+		local verb = if class.Side == "Evil" then "has turned to evil" else "has joined the heroes"
+		AuraService.announce(string.format("%s %s as a %s!", player.DisplayName, verb, class.Name), player)
+	end
+end
+
+function ClassService.setupPlayer(player: Player)
+	player.Neutral = false
+	player.Team = teams.Undecided
+end
+
+-- After the save loads: bring back the saved class, or ask them to pick.
+function ClassService.onLoaded(player: Player, savedClassId: string?)
+	if not player.Parent then
+		return
+	end
+	local class = Classes.get(savedClassId)
+	if class and player:GetAttribute("ClassId") == nil then
+		setClass(player, class)
+		AuraService.notify(player, { Kind = "ClassChosen", ClassId = class.Id })
+	elseif not class then
+		AuraService.notify(player, { Kind = "PickClass" })
+	end
+	-- The client waits for this before deciding whether to open the picker
+	-- (the PickClass message can arrive before its scripts are listening).
+	player:SetAttribute("Loaded", true)
+end
+
+return ClassService
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="11">
         <Properties>
           <string name="Name">Combat</string>
-          <string name="Source"><![CDATA[-- Validates the player's Slash / Dash / Ultimate requests. The client moves
--- itself for the dash; the server owns cooldowns, i-frames and damage.
+          <string name="Source"><![CDATA[-- Validates the player's Slash / Dash / Ultimate requests using their
+-- class's stats. Slashes and ultimates hit the boss and enemy players.
+-- The client moves itself for dashes; the server owns cooldowns, i-frames
+-- and damage.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local AuraMath = require(Shared:WaitForChild("AuraMath"))
+local Classes = require(Shared:WaitForChild("Classes"))
 local AuraService = require(script.Parent.AuraService)
 local BossService = require(script.Parent.BossService)
 local Effects = require(script.Parent.Effects)
+local PvpService = require(script.Parent.PvpService)
 
 local Combat = {}
 
-local SLASH_COLOR = Color3.fromRGB(210, 235, 255)
+local DEFAULT_COLOR = Color3.fromRGB(210, 235, 255)
 
 local function aliveRoot(player: Player): BasePart?
 	local character = player.Character
@@ -1665,19 +2304,59 @@ local function aliveRoot(player: Player): BasePart?
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
+local function classColor(player: Player): Color3
+	local class = AuraService.classOf(player)
+	return if class then Effects.color(class.Color) else DEFAULT_COLOR
+end
+
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
+end
+
+-- Hits the boss for `amount`; returns true if it landed.
+local function hitBoss(player: Player, amount: number, source: string): boolean
+	if BossService.damage(player, amount, source) then
+		AuraService.onDealtDamage(player, amount)
+		return true
+	end
+	return false
+end
+
+---------------------------------------------------------------------------
+-- Slash and dash
+---------------------------------------------------------------------------
+
 local function slash(player: Player, root: BasePart, state)
 	local now = os.clock()
-	if now - state.lastSlash < Config.Combat.SlashCooldown then
+	if now - state.lastSlash < AuraService.stat(player, "SlashCooldown") then
 		return
 	end
 	state.lastSlash = now
-	Effects.slash(root.CFrame, SLASH_COLOR)
+	Effects.slash(root.CFrame, classColor(player))
+
+	local damage = AuraService.stat(player, "SlashDamage")
+	local range = AuraService.stat(player, "SlashRange")
+	local landed = false
 
 	local distance = BossService.distanceTo(root.Position)
-	if not distance or distance > Config.Combat.SlashRange then
-		return
+	if distance and distance <= range then
+		landed = hitBoss(player, damage, "Slash") or landed
 	end
-	if BossService.damage(player, Config.Combat.SlashDamage, "Slash") then
+
+	-- Enemy players roughly in front of you (or right on top of you).
+	local look = flat(root.CFrame.LookVector).Unit
+	for _, enemy in ipairs(PvpService.enemiesNear(player, root.Position, range + Config.Pvp.HitRangeBonus)) do
+		local enemyRoot = aliveRoot(enemy)
+		if enemyRoot then
+			local offset = flat(enemyRoot.Position - root.Position)
+			local inFront = offset.Magnitude < 3 or look:Dot(offset.Unit) >= Config.Pvp.HitConeDot
+			if inFront and PvpService.damage(player, enemy, damage * Config.Pvp.HitPlayerDamageFactor, "Slash") > 0 then
+				landed = true
+			end
+		end
+	end
+
+	if landed then
 		AuraService.addStyle(player, Config.Style.PerHit)
 		local styleRank = AuraService.styleRank(player)
 		local aura = math.floor(Config.Combat.AuraPerHit * styleRank.Multiplier + 0.5)
@@ -1685,15 +2364,154 @@ local function slash(player: Player, root: BasePart, state)
 	end
 end
 
-local function dash(_player: Player, root: BasePart, state)
+local function dash(player: Player, root: BasePart, state)
 	local now = os.clock()
 	-- A little slack for network jitter versus the client's own cooldown.
-	if now - state.lastDash < Config.Combat.DashCooldown - 0.15 then
+	if now - state.lastDash < AuraService.stat(player, "DashCooldown") - 0.15 then
 		return
 	end
 	state.lastDash = now
 	state.dashStartPos = root.Position
-	state.invulnerableUntil = now + Config.Combat.DashInvulnerability
+	state.invulnerableUntil = math.max(state.invulnerableUntil, now + Config.Combat.DashInvulnerability)
+end
+
+---------------------------------------------------------------------------
+-- Ultimates. Each returns true if it was used (and should cost style).
+---------------------------------------------------------------------------
+
+local function nearestEnemy(player: Player, position: Vector3, radius: number): Player?
+	local best, bestDistance = nil, math.huge
+	for _, enemy in ipairs(PvpService.enemiesNear(player, position, radius)) do
+		local enemyRoot = aliveRoot(enemy)
+		if enemyRoot then
+			local distance = (enemyRoot.Position - position).Magnitude
+			if distance < bestDistance then
+				best, bestDistance = enemy, distance
+			end
+		end
+	end
+	return best
+end
+
+-- Damage everything around `position` within `radius`. Returns damage dealt.
+local function blast(player: Player, position: Vector3, radius: number, kind, power: number): number
+	local total = 0
+	local distance = BossService.distanceTo(position)
+	if distance and distance <= radius and hitBoss(player, kind.BossDamage * power, "Ultimate") then
+		total += kind.BossDamage * power
+	end
+	for _, enemy in ipairs(PvpService.enemiesNear(player, position, radius)) do
+		total += PvpService.damage(player, enemy, kind.PlayerDamage * power, "Ultimate")
+	end
+	return total
+end
+
+-- Heal allies (and yourself) around you; aura for each ally helped.
+local function supportAllies(player: Player, root: BasePart, kind, power: number, title: string, perAlly: (Player) -> ())
+	local allies = PvpService.alliesNear(player, root.Position, kind.Radius)
+	local helped = 0
+	for _, ally in ipairs(allies) do
+		local character = ally.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			AuraService.heal(ally, humanoid.MaxHealth * kind.HealPercent * power)
+		end
+		perAlly(ally)
+		if ally ~= player then
+			helped += 1
+		end
+	end
+	if helped > 0 then
+		AuraService.addAura(player, helped * kind.AuraPerAlly, title, { string.format("Helped %d all%s", helped, if helped == 1 then "y" else "ies") })
+	end
+end
+
+local ULTIMATES = {}
+
+function ULTIMATES.Pillar(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
+	local boss = BossService.getActive()
+	local distance = BossService.distanceTo(root.Position)
+	if boss and distance and distance <= kind.Range then
+		local target = boss.model:GetPivot().Position
+		Effects.pillar(Vector3.new(target.X, root.Position.Y - 3, target.Z), color)
+		hitBoss(player, (boss.maxHealth * kind.BossFraction + kind.BossFlat) * power, "Ultimate")
+		return true
+	end
+	local enemy = nearestEnemy(player, root.Position, kind.Range)
+	local enemyRoot = enemy and aliveRoot(enemy)
+	if enemy and enemyRoot then
+		Effects.pillar(enemyRoot.Position - Vector3.new(0, 3, 0), color)
+		PvpService.damage(player, enemy, kind.PlayerDamage * power, "Ultimate")
+		return true
+	end
+	AuraService.notify(player, { Kind = "Message", Text = "No target in range for your ultimate!" })
+	return false
+end
+
+function ULTIMATES.Nova(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
+	Effects.burst(root.Position, kind.Radius, color, 0.5)
+	Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+	blast(player, root.Position, kind.Radius, kind, power)
+	return true
+end
+
+function ULTIMATES.Drain(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
+	Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+	Effects.dome(root.Position, kind.Radius, color)
+	local dealt = blast(player, root.Position, kind.Radius, kind, power)
+	AuraService.heal(player, dealt * kind.HealFraction)
+	return true
+end
+
+function ULTIMATES.Rush(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
+	local direction = flat(root.CFrame.LookVector)
+	if direction.Magnitude < 0.1 then
+		return false
+	end
+	direction = direction.Unit
+	local origin = root.Position
+	Effects.streak(origin, origin + direction * kind.Length, kind.Width, color)
+
+	local boss = BossService.getActive()
+	if boss and boss.alive then
+		local position = boss.model:GetPivot().Position
+		-- Widen the line by the boss's size so grazing it still counts.
+		local width = kind.Width + boss.radius * 2
+		if AuraMath.inRect(position.X, position.Z, origin.X, origin.Z, direction.X, direction.Z, kind.Length + boss.radius, width) then
+			hitBoss(player, kind.BossDamage * power, "Ultimate")
+		end
+	end
+	for _, enemy in ipairs(PvpService.enemiesNear(player, origin, kind.Length + 2)) do
+		local enemyRoot = aliveRoot(enemy)
+		if enemyRoot and AuraMath.inRect(enemyRoot.Position.X, enemyRoot.Position.Z, origin.X, origin.Z, direction.X, direction.Z, kind.Length, kind.Width) then
+			PvpService.damage(player, enemy, kind.PlayerDamage * power, "Ultimate")
+		end
+	end
+	-- Invincible during the rush, and the client carries you along the line.
+	local state = AuraService.get(player)
+	if state then
+		state.invulnerableUntil = math.max(state.invulnerableUntil, os.clock() + 0.4)
+	end
+	AuraService.notify(player, { Kind = "Rush", Distance = kind.Length })
+	return true
+end
+
+function ULTIMATES.Mend(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
+	Effects.dome(root.Position, kind.Radius, color)
+	supportAllies(player, root, kind, power, "HEALER", function() end)
+	return true
+end
+
+function ULTIMATES.Fortify(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
+	Effects.dome(root.Position, kind.Radius, color)
+	local untilTime = os.clock() + kind.Duration * power
+	supportAllies(player, root, kind, power, "PROTECTOR", function(ally)
+		local allyState = AuraService.get(ally)
+		if allyState then
+			allyState.invulnerableUntil = math.max(allyState.invulnerableUntil, untilTime)
+		end
+	end)
+	return true
 end
 
 local function ultimate(player: Player, root: BasePart, state)
@@ -1701,24 +2519,27 @@ local function ultimate(player: Player, root: BasePart, state)
 	if now - state.lastUltimate < Config.Combat.UltimateCooldown then
 		return
 	end
+	local class = AuraService.classOf(player)
+	if not class then
+		AuraService.notify(player, { Kind = "Message", Text = "Pick a class to unlock your ultimate!" })
+		return
+	end
 	if state.style < Config.Combat.UltimateStyleCost then
 		AuraService.notify(player, { Kind = "Message", Text = "Reach S style rank to unleash your ultimate!" })
 		return
 	end
-	local boss = BossService.getActive()
-	local distance = BossService.distanceTo(root.Position)
-	if not boss or not distance or distance > Config.Combat.UltimateRange then
-		AuraService.notify(player, { Kind = "Message", Text = "Get closer to the boss first!" })
-		return
-	end
-	state.lastUltimate = now
 
-	local target = boss.model:GetPivot().Position
-	Effects.pillar(Vector3.new(target.X, root.Position.Y - 3, target.Z), Effects.color(boss.def.EyeColor):Lerp(Color3.new(1, 1, 1), 0.6))
-	local damage = boss.maxHealth * Config.Combat.UltimateDamageFraction + Config.Combat.UltimateFlatDamage
+	local ult = class.Ultimate
+	local kind = Classes.UltimateKinds[ult.Kind]
+	local color = Effects.color(class.Color):Lerp(Color3.new(1, 1, 1), 0.4)
 	-- Damage first: a finishing ultimate is paid out at your full style rank.
-	BossService.damage(player, damage, "Ultimate")
-	AuraService.addStyle(player, -Config.Combat.UltimateStyleCost)
+	if ULTIMATES[ult.Kind](player, root, kind, ult.Power, color) then
+		state.lastUltimate = now
+		AuraService.addStyle(player, -Config.Combat.UltimateStyleCost)
+		if player.Character then
+			Effects.showSpeech(player.Character, string.upper(ult.Name) .. "!", 2, Effects.color(class.Color))
+		end
+	end
 end
 
 local HANDLERS = { Slash = slash, Dash = dash, Ultimate = ultimate }
@@ -1739,7 +2560,7 @@ return Combat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="12">
         <Properties>
           <string name="Name">Effects</string>
           <string name="Source"><![CDATA[-- Visuals built from plain parts (no uploaded assets needed): attack
@@ -1898,6 +2719,34 @@ function Effects.pillar(position: Vector3, color: Color3)
 	Effects.shockwave(position, 30, color)
 end
 
+-- A glowing dome around a point (Fortify / Mend).
+function Effects.dome(position: Vector3, radius: number, color: Color3)
+	local sphere = part({
+		Shape = Enum.PartType.Ball,
+		Size = Vector3.one * radius * 2,
+		Position = position,
+		Color = color,
+		Transparency = 0.6,
+		Material = Enum.Material.ForceField,
+	})
+	fade(sphere, 0.9, {})
+end
+
+-- A streak along a line (Rush).
+function Effects.streak(from: Vector3, to: Vector3, width: number, color: Color3)
+	local length = (to - from).Magnitude
+	if length < 0.1 then
+		return
+	end
+	local beam = part({
+		Size = Vector3.new(width, 1, length),
+		CFrame = CFrame.lookAt((from + to) / 2, to),
+		Color = color,
+		Transparency = 0.2,
+	})
+	fade(beam, 0.4, { Size = Vector3.new(0.2, 0.2, length) })
+end
+
 -- Unanchor every part of a model and throw them outwards.
 function Effects.explodeModel(model: Model, color: Color3)
 	local centre = model:GetPivot().Position
@@ -1924,7 +2773,7 @@ end
 -- The hero blade, welded to the right hand (R15) or right arm (R6).
 ---------------------------------------------------------------------------
 
-function Effects.buildSword(character: Model)
+function Effects.buildSword(character: Model, bladeColor: Color3?)
 	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	if not hand or not hand:IsA("BasePart") then
 		return
@@ -1962,7 +2811,7 @@ function Effects.buildSword(character: Model)
 	local base = CFrame.new(0, -hand.Size.Y / 2, 0)
 	swordPart("Grip", Vector3.new(0.3, 0.3, 1.1), base, Color3.fromRGB(40, 30, 30), Enum.Material.Fabric)
 	swordPart("Guard", Vector3.new(1.3, 0.25, 0.25), base * CFrame.new(0, 0, -0.65), Color3.fromRGB(230, 190, 60), Enum.Material.Metal)
-	swordPart("Blade", Vector3.new(0.35, 0.12, 4), base * CFrame.new(0, 0, -2.75), Color3.fromRGB(210, 235, 255), Enum.Material.Neon)
+	swordPart("Blade", Vector3.new(0.35, 0.12, 4), base * CFrame.new(0, 0, -2.75), bladeColor or Color3.fromRGB(210, 235, 255), Enum.Material.Neon)
 
 	model.Parent = character
 end
@@ -2043,18 +2892,19 @@ function Effects.buildOverhead(character: Model): BillboardGui?
 	end
 	local gui = Instance.new("BillboardGui")
 	gui.Name = "AuraTag"
-	gui.Size = UDim2.fromOffset(320, 130)
+	gui.Size = UDim2.fromOffset(320, 150)
 	gui.StudsOffset = Vector3.new(0, 4.2, 0)
 	gui.MaxDistance = 140
 	gui.LightInfluence = 0
 	label(gui, "Speech", UDim2.fromOffset(0, 0), UDim2.fromOffset(320, 70), 20)
 	label(gui, "Rank", UDim2.fromOffset(0, 72), UDim2.fromOffset(320, 30), 22)
-	label(gui, "Aura", UDim2.fromOffset(0, 100), UDim2.fromOffset(320, 26), 16)
+	label(gui, "Aura", UDim2.fromOffset(0, 100), UDim2.fromOffset(320, 22), 15)
+	label(gui, "Class", UDim2.fromOffset(0, 122), UDim2.fromOffset(320, 22), 15)
 	gui.Parent = head
 	return gui
 end
 
-function Effects.updateOverhead(character: Model, rankName: string, color: Color3, aura: number)
+function Effects.updateOverhead(character: Model, rankName: string, color: Color3, aura: number, className: string, sideColor: Color3)
 	local head = character:FindFirstChild("Head")
 	local gui = head and head:FindFirstChild("AuraTag")
 	if not gui then
@@ -2065,11 +2915,14 @@ function Effects.updateOverhead(character: Model, rankName: string, color: Color
 	rank.TextColor3 = color
 	local auraLabel = gui:FindFirstChild("Aura") :: TextLabel
 	auraLabel.Text = string.format("%d aura", aura)
+	local classLabel = gui:FindFirstChild("Class") :: TextLabel
+	classLabel.Text = className
+	classLabel.TextColor3 = sideColor
 end
 
 -- Only ever shows lines from Config (never raw player text), so nothing
 -- unfiltered is displayed to other players.
-function Effects.showSpeech(character: Model, text: string, duration: number)
+function Effects.showSpeech(character: Model, text: string, duration: number, color: Color3)
 	local head = character:FindFirstChild("Head")
 	local gui = head and head:FindFirstChild("AuraTag")
 	if not gui then
@@ -2077,7 +2930,7 @@ function Effects.showSpeech(character: Model, text: string, duration: number)
 	end
 	local speech = gui:FindFirstChild("Speech") :: TextLabel
 	speech.Text = "\u{201C}" .. text .. "\u{201D}"
-	speech.TextColor3 = Color3.fromRGB(255, 240, 160)
+	speech.TextColor3 = color
 	local stamp = os.clock()
 	speech:SetAttribute("Stamp", stamp)
 	task.delay(duration, function()
@@ -2091,7 +2944,7 @@ return Effects
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="11">
+      <Item class="Script" referent="13">
         <Properties>
           <string name="Name">Main</string>
           <token name="RunContext">0</token>
@@ -2103,22 +2956,40 @@ local Remotes = require(script.Parent.Remotes)
 local World = require(script.Parent.World)
 local AuraService = require(script.Parent.AuraService)
 local BossService = require(script.Parent.BossService)
+local PvpService = require(script.Parent.PvpService)
+local ClassService = require(script.Parent.ClassService)
 local Combat = require(script.Parent.Combat)
 
 local altars = World.build()
-AuraService.setContextProvider(BossService.contextFor)
+ClassService.start()
+
+-- "In a fight" for heroic lines: a boss fight or an enemy player nearby.
+AuraService.setContextProvider(function(player: Player)
+	local boss = BossService.contextFor(player)
+	local pvp = PvpService.contextFor(player)
+	local foe = boss.foeHealthFraction
+	if pvp.foeHealthFraction and (foe == nil or pvp.foeHealthFraction < foe) then
+		foe = pvp.foeHealthFraction
+	end
+	return { inFight = boss.inFight or pvp.inFight, foeHealthFraction = foe }
+end)
 AuraService.start()
 BossService.start(altars)
 
 Remotes.Action.OnServerEvent:Connect(Combat.handle)
 Remotes.Shout.OnServerEvent:Connect(AuraService.handleMessage)
+Remotes.ChooseClass.OnServerEvent:Connect(ClassService.request)
 
 local function onPlayerAdded(player: Player)
-	AuraService.setupPlayer(player)
+	ClassService.setupPlayer(player)
+	AuraService.setupPlayer(player, function(savedClassId)
+		ClassService.onLoaded(player, savedClassId)
+	end)
 
 	local function onCharacter(character: Model)
 		task.spawn(AuraService.setupCharacter, player, character)
-		task.spawn(BossService.watchCharacter, player, character)
+		task.spawn(ClassService.applyCharacter, player, character)
+		task.spawn(PvpService.watchCharacter, player, character)
 	end
 	player.CharacterAdded:Connect(onCharacter)
 	if player.Character then
@@ -2140,12 +3011,240 @@ Players.PlayerRemoving:Connect(AuraService.removePlayer)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="14">
+        <Properties>
+          <string name="Name">PvpService</string>
+          <string name="Source"><![CDATA[-- Good vs Evil PvP: who can hurt whom, kill credit, kill rewards and the
+-- aura lost for dying.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local AuraMath = require(Shared:WaitForChild("AuraMath"))
+local Classes = require(Shared:WaitForChild("Classes"))
+local AuraService = require(script.Parent.AuraService)
+local BossService = require(script.Parent.BossService)
+local World = require(script.Parent.World)
+
+local PvpService = {}
+
+local function aliveRoot(player: Player): BasePart?
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		return nil
+	end
+	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
+end
+
+local function healthFraction(player: Player): number
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.MaxHealth <= 0 then
+		return 0
+	end
+	return humanoid.Health / humanoid.MaxHealth
+end
+
+-- Only Good vs Evil, both alive, neither standing in a safe zone.
+function PvpService.canHurt(attacker: Player, victim: Player): boolean
+	if attacker == victim then
+		return false
+	end
+	local attackerSide, victimSide = AuraService.sideOf(attacker), AuraService.sideOf(victim)
+	if not attackerSide or not victimSide or attackerSide == victimSide then
+		return false
+	end
+	local attackerRoot, victimRoot = aliveRoot(attacker), aliveRoot(victim)
+	if not attackerRoot or not victimRoot then
+		return false
+	end
+	return not World.inSafeZone(attackerRoot.Position) and not World.inSafeZone(victimRoot.Position)
+end
+
+-- Enemy players `player` can hurt within `radius` of `position`.
+function PvpService.enemiesNear(player: Player, position: Vector3, radius: number): { Player }
+	local list = {}
+	for _, other in ipairs(Players:GetPlayers()) do
+		local root = aliveRoot(other)
+		if root and (root.Position - position).Magnitude <= radius and PvpService.canHurt(player, other) then
+			table.insert(list, other)
+		end
+	end
+	return list
+end
+
+-- Living players on `player`'s side (including `player`) within `radius`.
+function PvpService.alliesNear(player: Player, position: Vector3, radius: number): { Player }
+	local side = AuraService.sideOf(player)
+	local list = {}
+	for _, other in ipairs(Players:GetPlayers()) do
+		local root = aliveRoot(other)
+		if root and (root.Position - position).Magnitude <= radius and (other == player or (side ~= nil and AuraService.sideOf(other) == side)) then
+			table.insert(list, other)
+		end
+	end
+	return list
+end
+
+-- For heroic lines: an enemy player nearby counts as a fight.
+function PvpService.contextFor(player: Player)
+	local root = aliveRoot(player)
+	if not root then
+		return { inFight = false, foeHealthFraction = nil }
+	end
+	local lowest = nil
+	for _, enemy in ipairs(PvpService.enemiesNear(player, root.Position, Config.Pvp.FightRadius)) do
+		local fraction = healthFraction(enemy)
+		if not lowest or fraction < lowest then
+			lowest = fraction
+		end
+	end
+	return { inFight = lowest ~= nil, foeHealthFraction = lowest }
+end
+
+--[[
+	Damages an enemy player. Returns the damage dealt (0 if not allowed, or
+	if the victim was invincible). A blocked hit right after the victim
+	dashed counts as their perfect dodge (once per dash).
+]]
+function PvpService.damage(attacker: Player, victim: Player, amount: number, source: string): number
+	if not PvpService.canHurt(attacker, victim) then
+		return 0
+	end
+	local victimState = AuraService.get(victim)
+	local attackerState = AuraService.get(attacker)
+	if not victimState or not attackerState then
+		return 0
+	end
+
+	-- Record the attacker before the damage: Humanoid.Died may fire during
+	-- TakeDamage, and the kill must already be credited. Undone below if
+	-- the hit is blocked.
+	local now = os.clock()
+	local previous = {
+		victimState.lastAttacker,
+		victimState.lastAttackTime,
+		victimState.lastAttackSource,
+		victimState.lastAttackStyle,
+	}
+	victimState.lastAttacker = attacker
+	victimState.lastAttackTime = now
+	victimState.lastAttackSource = source
+	-- The attacker's style now: an ultimate spends style right after
+	-- hitting, and a finishing blow should pay at the old rank.
+	victimState.lastAttackStyle = attackerState.style
+
+	local dealt = AuraService.takeDamage(victim, amount)
+	if dealt > 0 then
+		AuraService.onDealtDamage(attacker, dealt)
+		return dealt
+	end
+	victimState.lastAttacker, victimState.lastAttackTime, victimState.lastAttackSource, victimState.lastAttackStyle =
+		previous[1], previous[2], previous[3], previous[4]
+	if now - victimState.lastDash <= Config.Combat.PerfectDodgeWindow and victimState.dodgedDash ~= victimState.lastDash then
+		victimState.dodgedDash = victimState.lastDash
+		AuraService.onPerfectDodge(victim)
+	end
+	return dealt
+end
+
+local function rewardKill(killer: Player, victim: Player, source: string, styleAtHit: number, position: Vector3)
+	local killerState = AuraService.get(killer)
+	local victimState = AuraService.get(victim)
+	if not killerState or not victimState then
+		return
+	end
+	local now = os.clock()
+
+	-- How often the killer already beat this victim recently.
+	local recent = {}
+	for _, time in ipairs(killerState.kills[victim.UserId] or {}) do
+		if now - time < Config.Pvp.RepeatWindow then
+			table.insert(recent, time)
+		end
+	end
+	local repeats = #recent
+	table.insert(recent, now)
+	killerState.kills[victim.UserId] = recent
+
+	local killerHealth = healthFraction(killer)
+	local flags = {
+		Clutch = killerHealth > 0 and killerHealth < Config.ClutchHealthFraction,
+		CalledIt = now - killerState.lastHeroicLine <= Config.CalledItWindow,
+		Finisher = source == "Ultimate",
+		Revenge = killerState.lastKilledBy == victim,
+	}
+	if flags.Revenge then
+		killerState.lastKilledBy = nil
+	end
+
+	local styleRank = AuraMath.getRank(styleAtHit, Config.Style.Ranks)
+	local total, breakdown = AuraMath.pvpKillReward(
+		Config.Pvp,
+		Config.PvpBonuses,
+		Config.DefeatBonuses,
+		killerState.rankIndex,
+		victimState.rankIndex,
+		styleRank,
+		flags,
+		repeats
+	)
+	killerState.lastKill = now
+	AuraService.addAura(killer, total, nil, nil, true)
+	local side = AuraService.sideOf(killer)
+	AuraService.notify(killer, {
+		Kind = "Banner",
+		Title = "DEFEATED " .. string.upper(victim.DisplayName),
+		Lines = breakdown,
+		Total = total,
+		Color = if side then Classes.Sides[side].Color else { 255, 255, 255 },
+	})
+	AuraService.announce(string.format("%s (%s) defeated %s (%s)!", killer.DisplayName, AuraService.rankName(killer), victim.DisplayName, AuraService.rankName(victim)))
+	AuraService.startWalkAwayCheck(killer, position)
+end
+
+local function onDied(player: Player, position: Vector3)
+	local state = AuraService.get(player)
+	if not state then
+		return
+	end
+	local killer = state.lastAttacker
+	if killer and killer.Parent and os.clock() - state.lastAttackTime <= Config.Pvp.KillCreditWindow then
+		rewardKill(killer, player, state.lastAttackSource, state.lastAttackStyle, position)
+		state.lastKilledBy = killer
+		AuraService.addAura(player, -Config.Pvp.DeathAuraLoss, "DEFEATED", { "by " .. killer.DisplayName })
+	elseif BossService.isParticipant(player) then
+		AuraService.addAura(player, -Config.Combat.DeathAuraLoss, "TOOK THE L", { "Fell in battle" })
+	end
+	state.lastAttacker = nil
+	AuraService.resetStyle(player)
+end
+
+function PvpService.watchCharacter(player: Player, character: Model)
+	local humanoid = character:WaitForChild("Humanoid", 10) :: Humanoid?
+	if not humanoid then
+		return
+	end
+	humanoid.Died:Connect(function()
+		local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		onDied(player, if root then root.Position else Vector3.zero)
+	end)
+end
+
+return PvpService
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[-- Creates the RemoteEvents the client and server talk through.
 --   Action (client -> server): "Slash" | "Dash" | "Ultimate"
 --   Shout  (client -> server): a chat message / heroic line to score
+--   ChooseClass (client -> server): a class Id from Classes.lua
 --   Notify (server -> client): a table with a Kind field (see Hud.lua)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -2163,6 +3262,7 @@ end
 local Remotes = {
 	Action = event("Action"),
 	Shout = event("Shout"),
+	ChooseClass = event("ChooseClass"),
 	Notify = event("Notify"),
 }
 
@@ -2172,7 +3272,7 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">World</string>
           <string name="Source"><![CDATA[-- Builds the map from code so the place works straight out of `rojo build`:
@@ -2355,37 +3455,118 @@ end
 local HOW_TO = table.concat({
 	"HOW TO FARM AURA",
 	"",
-	"1. Say heroic lines in chat (or the SHOUT box).",
-	"   Boss fights double it. The right line at the right",
-	"   moment is worth way more. Repeating yourself is cringe.",
-	"",
-	"2. Challenge a boss at an altar. Click to slash, Q to dash,",
-	"   F for your ultimate once your style hits S rank.",
-	"",
-	"3. Fight cool: dodge at the last second, don't get hit,",
+	"1. Pick a side and a class: Heroes or Villains (CLASS button).",
+	"2. Say heroic (or villainous) lines in chat or the SHOUT box.",
+	"   The right line at the right moment is worth way more.",
+	"   Repeating yourself is cringe.",
+	"3. Challenge a boss at an altar, or fight the other side.",
+	"   Click: slash    Q: dash    F: ultimate (at S style)",
+	"4. Fight cool: last-second dodges, no damage taken,",
 	"   call your shot, finish with your ultimate...",
 	"   then walk away without looking back.",
+	"",
+	"Spawns are safe zones. Heroes can't hurt heroes,",
+	"and villains can't hurt villains.",
 }, "\n")
 
-local function buildSpawn()
-	local spawnPos = Vector3.new(0, 1.5, Config.ArenaRadius + 35)
+-- Team colors (BrickColor is what Teams and SpawnLocations use).
+World.TeamColors = {
+	Undecided = BrickColor.Gray(),
+	Good = BrickColor.new("Bright yellow"),
+	Evil = BrickColor.new("Really red"),
+}
+
+-- Where nobody can be hurt by other players: { position, radius }.
+World.SafeZones = {}
+
+local function spawnPad(name: string, position: Vector3, teamColor: BrickColor, color: Color3, facing: Vector3)
 	local spawn = Instance.new("SpawnLocation")
-	spawn.Name = "HeroSpawn"
+	spawn.Name = name
 	spawn.Anchored = true
 	spawn.Size = Vector3.new(14, 1, 14)
-	spawn.Position = spawnPos
-	spawn.Color = Color3.fromRGB(255, 200, 90)
+	-- Players spawn facing the pad's front (-Z), so point it at `facing`.
+	spawn.CFrame = CFrame.lookAt(position, Vector3.new(facing.X, position.Y, facing.Z))
+	spawn.Color = color
 	spawn.Material = Enum.Material.Neon
 	spawn.Duration = 3
+	spawn.Neutral = false
+	spawn.TeamColor = teamColor
+	spawn.AllowTeamChangeOnTouch = false
 	spawn.TopSurface = Enum.SurfaceType.Smooth
 	spawn.Parent = map
 
-	-- Front-left of the spawn (players spawn facing -Z, toward the arena),
+	local radius = Config.Pvp.SafeZoneRadius
+	block({
+		Name = name .. "SafeZone",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.3, radius * 2, radius * 2),
+		CFrame = CFrame.new(position.X, 1.05, position.Z) * CFrame.Angles(0, 0, math.rad(90)),
+		Color = color,
+		Material = Enum.Material.Neon,
+		Transparency = 0.85,
+		CanCollide = false,
+		CanQuery = false,
+	})
+	table.insert(World.SafeZones, { position = position, radius = radius })
+	return spawn
+end
+
+local function sign(position: Vector3, lines: { { text: string, size: number, color: Color3 } })
+	local post = block({
+		Name = "Sign",
+		Size = Vector3.new(1, 10, 1),
+		Position = position + Vector3.new(0, 5, 0),
+		Color = Color3.fromRGB(50, 45, 55),
+		Material = Enum.Material.Wood,
+	})
+	billboard(post, lines, 7)
+end
+
+local function buildBase(side: string, position: Vector3)
+	local isGood = side == "Good"
+	local color = if isGood then Color3.fromRGB(255, 205, 80) else Color3.fromRGB(200, 40, 60)
+	local stone = if isGood then Color3.fromRGB(235, 230, 215) else Color3.fromRGB(40, 30, 40)
+	spawnPad(if isGood then "HeroSpawn" else "VillainSpawn", position, World.TeamColors[side], color, World.ArenaCenter)
+
+	-- A ring of columns (heroes) or spikes (villains) around the base.
+	for i = 0, 7 do
+		local angle = (i / 8) * math.pi * 2
+		local at = position + Vector3.new(math.sin(angle) * 24, 0, math.cos(angle) * 24)
+		if isGood then
+			block({ Name = "Column", Size = Vector3.new(3, 16, 3), Position = at + Vector3.new(0, 8, 0), Color = stone, Material = Enum.Material.Marble })
+			block({ Name = "ColumnLight", Size = Vector3.new(2, 2, 2), Position = at + Vector3.new(0, 17, 0), Color = color, Material = Enum.Material.Neon, CanCollide = false })
+		else
+			block({
+				Name = "Spike",
+				Size = Vector3.new(3, 18, 3),
+				CFrame = CFrame.new(at + Vector3.new(0, 8, 0)) * CFrame.Angles(math.rad(12), angle, 0),
+				Color = stone,
+				Material = Enum.Material.Basalt,
+			})
+			block({ Name = "SpikeGlow", Size = Vector3.new(1.5, 1.5, 1.5), Position = at + Vector3.new(0, 17.5, 0), Color = color, Material = Enum.Material.Neon, CanCollide = false })
+		end
+	end
+
+	sign(position + Vector3.new(0, 0, 18), {
+		{ text = if isGood then "HALL OF HEROES" else "VILLAINS' LAIR", size = 26, color = color },
+		{ text = "Safe zone: no PvP inside the glowing circle", size = 14, color = Color3.fromRGB(230, 230, 230) },
+	})
+end
+
+local function buildSpawns()
+	-- Lobby: where undecided players pick a class.
+	local spawnPos = Vector3.new(0, 1.5, Config.ArenaRadius + 35)
+	spawnPad("LobbySpawn", spawnPos, World.TeamColors.Undecided, Color3.fromRGB(200, 200, 210), World.ArenaCenter)
+
+	buildBase("Good", Vector3.new(-(Config.ArenaRadius + 70), 1.5, 0))
+	buildBase("Evil", Vector3.new(Config.ArenaRadius + 70, 1.5, 0))
+
+	-- Front-left of the lobby spawn (players spawn facing the arena, -Z),
 	-- with its Front face (-Z) turned to look at the spawn.
-	local boardPos = spawnPos + Vector3.new(-20, 7.5, -12)
+	local boardPos = spawnPos + Vector3.new(-22, 9.5, -12)
 	local board = block({
 		Name = "HowToBoard",
-		Size = Vector3.new(26, 14, 1),
+		Size = Vector3.new(30, 18, 1),
 		CFrame = CFrame.lookAt(boardPos, Vector3.new(spawnPos.X, boardPos.Y, spawnPos.Z)),
 		Color = Color3.fromRGB(35, 30, 45),
 		Material = Enum.Material.SmoothPlastic,
@@ -2400,7 +3581,7 @@ local function buildSpawn()
 	text.BackgroundTransparency = 1
 	text.Size = UDim2.fromScale(1, 1)
 	text.Font = Enum.Font.GothamBold
-	text.TextSize = 34
+	text.TextSize = 30
 	text.TextColor3 = Color3.fromRGB(255, 235, 190)
 	text.TextXAlignment = Enum.TextXAlignment.Left
 	text.TextYAlignment = Enum.TextYAlignment.Top
@@ -2412,10 +3593,20 @@ local function buildSpawn()
 	padding.Parent = text
 end
 
+function World.inSafeZone(position: Vector3): boolean
+	for _, zone in ipairs(World.SafeZones) do
+		local dx, dz = position.X - zone.position.X, position.Z - zone.position.Z
+		if dx * dx + dz * dz <= zone.radius * zone.radius then
+			return true
+		end
+	end
+	return false
+end
+
 function World.build()
 	setupLighting()
 	buildArena()
-	buildSpawn()
+	buildSpawns()
 	local altars = buildAltars()
 	map.Parent = workspace
 	return altars
@@ -2427,19 +3618,310 @@ return World
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="14">
+  <Item class="StarterPlayer" referent="17">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="15">
+    <Item class="StarterPlayerScripts" referent="18">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="16">
+      <Item class="Folder" referent="19">
         <Properties>
           <string name="Name">AuraFarmClient</string>
         </Properties>
-        <Item class="ModuleScript" referent="17">
+        <Item class="ModuleScript" referent="20">
+          <Properties>
+            <string name="Name">ClassPicker</string>
+            <string name="Source"><![CDATA[-- The class picker: Heroes / Villains tabs, a grid of class cards, and a
+-- details panel with stats, the ultimate and a CHOOSE button.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Classes = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Classes"))
+
+local ClassPicker = {}
+
+local DARK = Color3.fromRGB(20, 16, 28)
+local WHITE = Color3.new(1, 1, 1)
+
+local function rgb(t: { number }): Color3
+	return Color3.fromRGB(t[1], t[2], t[3])
+end
+
+local function new(className: string, props, children: { Instance }?)
+	local instance = Instance.new(className)
+	for key, value in pairs(props) do
+		if key ~= "Parent" then
+			instance[key] = value
+		end
+	end
+	for _, child in ipairs(children or {}) do
+		child.Parent = instance
+	end
+	if props.Parent then
+		instance.Parent = props.Parent
+	end
+	return instance
+end
+
+local function corner(radius: number)
+	return new("UICorner", { CornerRadius = UDim.new(0, radius) })
+end
+
+local function label(props)
+	local defaults = {
+		BackgroundTransparency = 1,
+		Font = Enum.Font.GothamBold,
+		TextColor3 = WHITE,
+		TextSize = 14,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextWrapped = true,
+	}
+	for key, value in pairs(props) do
+		defaults[key] = value
+	end
+	return new("TextLabel", defaults)
+end
+
+local function percent(x: number): string
+	return string.format("%d%%", math.floor(x * 100 + 0.5))
+end
+
+-- One line of stats for the details panel.
+local function statLine(class): string
+	local parts = {
+		string.format("HP %d", class.MaxHealth),
+		string.format("Speed %d", class.WalkSpeed),
+		string.format("Damage %d", class.SlashDamage),
+		string.format("Reach %d", class.SlashRange),
+		string.format("Attack every %.2fs", class.SlashCooldown),
+		string.format("Dash every %.1fs", class.DashCooldown),
+	}
+	if class.Armor > 0 then
+		table.insert(parts, "Armor " .. percent(class.Armor))
+	end
+	if class.Lifesteal > 0 then
+		table.insert(parts, "Lifesteal " .. percent(class.Lifesteal))
+	end
+	if class.StyleGain > 1 then
+		table.insert(parts, "Style +" .. percent(class.StyleGain - 1))
+	end
+	return table.concat(parts, "   ")
+end
+
+function ClassPicker.new(playerGui: PlayerGui, onChoose: (string) -> ())
+	local self = {}
+
+	local screen = new("ScreenGui", {
+		Name = "AuraFarmClassPicker",
+		ResetOnSpawn = false,
+		DisplayOrder = 10,
+		Enabled = false,
+		Parent = playerGui,
+	})
+	local panel = new("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.5),
+		Size = UDim2.fromScale(0.94, 0.9),
+		BackgroundColor3 = DARK,
+		BackgroundTransparency = 0.05,
+		Parent = screen,
+	}, {
+		corner(14),
+		new("UISizeConstraint", { MaxSize = Vector2.new(960, 640) }),
+		new("UIStroke", { Color = Color3.fromRGB(255, 215, 110), Thickness = 2 }),
+	})
+
+	label({
+		Position = UDim2.fromOffset(20, 10),
+		Size = UDim2.new(1, -80, 0, 36),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 28,
+		Text = "CHOOSE YOUR PATH",
+		Parent = panel,
+	})
+	local closeButton = new("TextButton", {
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(1, -12, 0, 12),
+		Size = UDim2.fromOffset(36, 36),
+		BackgroundColor3 = Color3.fromRGB(60, 50, 70),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 18,
+		TextColor3 = WHITE,
+		Text = "X",
+		Parent = panel,
+	}, { corner(8) })
+
+	-- Side tabs
+	local tabs = {}
+	local function tab(side: string, x: number)
+		local info = Classes.Sides[side]
+		tabs[side] = new("TextButton", {
+			Position = UDim2.new(x, if x == 0 then 20 else 6, 0, 54),
+			Size = UDim2.new(0.5, -26, 0, 40),
+			BackgroundColor3 = rgb(info.Color),
+			Font = Enum.Font.GothamBlack,
+			TextSize = 18,
+			TextColor3 = DARK,
+			Text = string.format("%s  (%d)", string.upper(info.Name), #Classes[side]),
+			Parent = panel,
+		}, { corner(8) })
+	end
+	tab("Good", 0)
+	tab("Evil", 0.5)
+
+	-- Class grid
+	local grid = new("ScrollingFrame", {
+		Position = UDim2.fromOffset(20, 104),
+		Size = UDim2.new(1, -40, 1, -260),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ScrollBarThickness = 6,
+		AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		CanvasSize = UDim2.new(),
+		Parent = panel,
+	}, {
+		new("UIGridLayout", {
+			CellSize = UDim2.fromOffset(198, 70),
+			CellPadding = UDim2.fromOffset(8, 8),
+			SortOrder = Enum.SortOrder.LayoutOrder,
+		}),
+	})
+
+	-- Details panel
+	local details = new("Frame", {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 20, 1, -14),
+		Size = UDim2.new(1, -40, 0, 136),
+		BackgroundColor3 = Color3.fromRGB(38, 32, 50),
+		Parent = panel,
+	}, { corner(10) })
+	local nameLabel = label({ Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -200, 0, 28), Font = Enum.Font.GothamBlack, TextSize = 24, Text = "Pick a class", Parent = details })
+	local descLabel = label({ Position = UDim2.fromOffset(14, 38), Size = UDim2.new(1, -200, 0, 34), TextSize = 14, TextColor3 = Color3.fromRGB(220, 220, 220), Text = "", Parent = details })
+	local statsLabel = label({ Position = UDim2.fromOffset(14, 74), Size = UDim2.new(1, -200, 0, 18), TextSize = 12, TextColor3 = Color3.fromRGB(150, 220, 255), Text = "", Parent = details })
+	local ultLabel = label({ Position = UDim2.fromOffset(14, 96), Size = UDim2.new(1, -200, 0, 34), TextSize = 13, TextColor3 = Color3.fromRGB(255, 200, 120), Text = "", Parent = details })
+	local chooseButton = new("TextButton", {
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -14, 0.5, 0),
+		Size = UDim2.fromOffset(170, 56),
+		BackgroundColor3 = Color3.fromRGB(255, 215, 110),
+		Font = Enum.Font.GothamBlack,
+		TextSize = 20,
+		TextColor3 = DARK,
+		Text = "CHOOSE",
+		Visible = false,
+		Parent = details,
+	}, { corner(10) })
+
+	local selected = nil
+	local currentClassId: string? = nil
+	local canClose = false
+	local cards: { [string]: TextButton } = {}
+
+	local function selectClass(class)
+		selected = class
+		for id, card in pairs(cards) do
+			local stroke = card:FindFirstChildOfClass("UIStroke")
+			if stroke then
+				stroke.Thickness = if id == class.Id then 3 else 0
+			end
+		end
+		nameLabel.Text = string.format("%s  -  %s", class.Name, class.Role)
+		nameLabel.TextColor3 = rgb(class.Color)
+		descLabel.Text = class.Description
+		statsLabel.Text = statLine(class)
+		local kind = Classes.UltimateKinds[class.Ultimate.Kind]
+		ultLabel.Text = string.format("Ultimate: %s (%s). %s.", class.Ultimate.Name, class.Ultimate.Kind, kind.Description)
+		chooseButton.Visible = true
+		chooseButton.Text = if class.Id == currentClassId then "CURRENT" else "CHOOSE"
+	end
+
+	local function showSide(side: string)
+		for _, card in pairs(cards) do
+			card:Destroy()
+		end
+		table.clear(cards)
+		for name, button in pairs(tabs) do
+			button.BackgroundTransparency = if name == side then 0 else 0.6
+		end
+		for i, class in ipairs(Classes[side]) do
+			local card = new("TextButton", {
+				BackgroundColor3 = Color3.fromRGB(45, 38, 58),
+				AutoButtonColor = true,
+				Text = "",
+				LayoutOrder = i,
+				Parent = grid,
+			}, {
+				corner(8),
+				new("UIStroke", { Color = rgb(class.Color), Thickness = 0, ApplyStrokeMode = Enum.ApplyStrokeMode.Border }),
+				new("Frame", { Size = UDim2.new(0, 6, 1, 0), BackgroundColor3 = rgb(class.Color), BorderSizePixel = 0 }),
+			})
+			label({ Position = UDim2.fromOffset(14, 6), Size = UDim2.new(1, -20, 0, 20), Font = Enum.Font.GothamBlack, TextSize = 15, Text = class.Name, Parent = card })
+			label({ Position = UDim2.fromOffset(14, 26), Size = UDim2.new(1, -20, 0, 16), TextSize = 12, TextColor3 = Color3.fromRGB(190, 190, 200), Text = string.format("%s  -  HP %d", class.Role, class.MaxHealth), Parent = card })
+			label({ Position = UDim2.fromOffset(14, 44), Size = UDim2.new(1, -20, 0, 16), TextSize = 12, TextColor3 = Color3.fromRGB(255, 200, 120), Text = class.Ultimate.Name, Parent = card })
+			card.Activated:Connect(function()
+				selectClass(class)
+			end)
+			cards[class.Id] = card
+		end
+		grid.CanvasPosition = Vector2.zero
+	end
+
+	tabs.Good.Activated:Connect(function()
+		showSide("Good")
+	end)
+	tabs.Evil.Activated:Connect(function()
+		showSide("Evil")
+	end)
+	chooseButton.Activated:Connect(function()
+		if selected and selected.Id ~= currentClassId then
+			onChoose(selected.Id)
+		end
+	end)
+	closeButton.Activated:Connect(function()
+		if canClose then
+			screen.Enabled = false
+		end
+	end)
+
+	-- Opens on the player's current class (or the hero tab).
+	function self.open(classId: string?)
+		currentClassId = classId
+		canClose = classId ~= nil
+		closeButton.Visible = canClose
+		local class = Classes.get(classId)
+		showSide(if class then class.Side else "Good")
+		if class then
+			selectClass(class)
+		else
+			selected = nil
+			nameLabel.Text = "Pick a class"
+			nameLabel.TextColor3 = WHITE
+			descLabel.Text = "Heroes fight villains and villains fight heroes. Your own side can't hurt you."
+			statsLabel.Text = ""
+			ultLabel.Text = ""
+			chooseButton.Visible = false
+		end
+		screen.Enabled = true
+	end
+
+	function self.close()
+		screen.Enabled = false
+	end
+
+	function self.isOpen(): boolean
+		return screen.Enabled
+	end
+
+	return self
+end
+
+return ClassPicker
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="21">
           <Properties>
             <string name="Name">Hud</string>
             <string name="Source"><![CDATA[-- The on-screen UI, built in code: aura + rank panel, style meter, boss
@@ -2452,6 +3934,7 @@ local TweenService = game:GetService("TweenService")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
 local AuraMath = require(Shared:WaitForChild("AuraMath"))
+local HeroicLines = require(Shared:WaitForChild("HeroicLines"))
 
 local Hud = {}
 
@@ -2523,8 +4006,15 @@ local function fadeOut(root: GuiObject, delay: number, duration: number)
 	end)
 end
 
-function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onAction: (string) -> () })
+function Hud.new(
+	playerGui: PlayerGui,
+	callbacks: { onShout: (string) -> (), onAction: (string) -> (), onClassButton: () -> () }
+)
 	local self = {}
+	local side: string? = nil -- "Good" / "Evil" / nil (undecided)
+	local currentAura = 0
+	local currentStyle = 0
+	local ultimateName = ""
 
 	local screen = new("ScreenGui", {
 		Name = "AuraFarmHud",
@@ -2618,11 +4108,13 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	}, { corner(3) })
 
 	function self.setAura(aura: number)
+		currentAura = aura
 		local rank, _, nextRank = AuraMath.getRank(aura, Config.Ranks)
+		local name = AuraMath.rankName(rank, side)
 		auraLabel.Text = string.format("%d AURA", aura)
 		rankLabel.Text = if nextRank
-			then string.format("%s   (next: %s at %d)", rank.Name, nextRank.Name, nextRank.Min)
-			else rank.Name .. "   (max rank)"
+			then string.format("%s   (next: %s at %d)", name, AuraMath.rankName(nextRank, side), nextRank.Min)
+			else name .. "   (max rank)"
 		rankLabel.TextColor3 = rgb(rank.Color)
 		rankFill.BackgroundColor3 = rgb(rank.Color)
 		rankFill.Size = UDim2.fromScale(AuraMath.rankProgress(aura, Config.Ranks), 1)
@@ -2638,12 +4130,15 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	}
 
 	function self.setStyle(style: number)
+		currentStyle = style
 		local rank = AuraMath.getRank(style, Config.Style.Ranks)
 		styleLetter.Text = rank.Name
 		styleLetter.TextColor3 = STYLE_COLORS[rank.Name] or WHITE
 		styleFill.Size = UDim2.fromScale(style / Config.Style.Max, 1)
 		styleFill.BackgroundColor3 = STYLE_COLORS[rank.Name] or GOLD
-		ultReady.Text = if style >= Config.Combat.UltimateStyleCost then "ULTIMATE READY  [F]" else ""
+		ultReady.Text = if style >= Config.Combat.UltimateStyleCost and ultimateName ~= ""
+			then string.format("[F] %s READY", string.upper(ultimateName))
+			else ""
 	end
 
 	-------------------------------------------------------------------------
@@ -2878,7 +4373,7 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	local shoutFrame = new("Frame", {
 		AnchorPoint = Vector2.new(0, 0.5),
 		Position = UDim2.new(0, 12, 0.62, 0),
-		Size = UDim2.fromOffset(330, 40),
+		Size = UDim2.fromOffset(392, 40),
 		BackgroundColor3 = DARK,
 		BackgroundTransparency = 0.25,
 		Parent = screen,
@@ -2913,6 +4408,8 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	end
 	local shoutButton = button("SHOUT", UDim2.fromOffset(208, 5), UDim2.fromOffset(62, 30), GOLD, shoutFrame)
 	local linesButton = button("LINES", UDim2.fromOffset(274, 5), UDim2.fromOffset(50, 30), Color3.fromRGB(150, 220, 255), shoutFrame)
+	local classButton = button("CLASS", UDim2.fromOffset(328, 5), UDim2.fromOffset(58, 30), Color3.fromRGB(255, 140, 140), shoutFrame)
+	classButton.Activated:Connect(callbacks.onClassButton)
 
 	local function submit()
 		local message = box.Text
@@ -2929,16 +4426,17 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 	end)
 
 	local CONDITION_HINTS = {
-		BossLow = "boss under 25% HP",
+		FoeLow = "enemy under 25% HP",
 		LowHealth = "you under 30% HP",
 		AfterDodge = "right after a perfect dodge",
 		AfterHit = "right after taking a hit",
-		NoBoss = "before a fight",
+		AfterKill = "right after a takedown",
+		NoFight = "before a fight",
 	}
 	local list = new("ScrollingFrame", {
 		AnchorPoint = Vector2.new(0, 1),
 		Position = UDim2.fromOffset(0, -6),
-		Size = UDim2.fromOffset(330, 260),
+		Size = UDim2.fromOffset(392, 260),
 		BackgroundColor3 = DARK,
 		BackgroundTransparency = 0.15,
 		BorderSizePixel = 0,
@@ -2963,38 +4461,59 @@ function Hud.new(playerGui: PlayerGui, callbacks: { onShout: (string) -> (), onA
 		TextWrapped = true,
 		Font = Enum.Font.GothamBold,
 		TextColor3 = Color3.fromRGB(200, 200, 200),
-		Text = "Tap a line to load it. x2 during boss fights. Saying the same line twice in 30s costs aura!",
+		Text = "Tap a line to load it. x2 in a fight. Saying the same line twice in 30s costs aura!",
 		LayoutOrder = 0,
 		Parent = list,
 	})
-	for i, line in ipairs(Config.HeroicLines) do
-		local hint = if line.Condition
-			then string.format("  (x%s %s)", tostring(line.Bonus), CONDITION_HINTS[line.Condition] or "")
-			else ""
-		local entry = new("TextButton", {
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
-			BackgroundColor3 = Color3.fromRGB(45, 38, 58),
-			Font = Enum.Font.GothamBold,
-			TextSize = 13,
-			TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			TextColor3 = WHITE,
-			RichText = true,
-			Text = string.format('<font color="#FFD76E">+%d</font>  %s<font color="#96DCFF">%s</font>', line.Aura, line.Text, hint),
-			LayoutOrder = i,
-			Parent = list,
-		}, { corner(6), new("UIPadding", {
-			PaddingLeft = UDim.new(0, 6),
-			PaddingRight = UDim.new(0, 6),
-			PaddingTop = UDim.new(0, 4),
-			PaddingBottom = UDim.new(0, 4),
-		}) })
-		entry.Activated:Connect(function()
-			box.Text = line.Text
-			list.Visible = false
-		end)
+	local function buildLines()
+		for _, child in ipairs(list:GetChildren()) do
+			if child:IsA("TextButton") then
+				child:Destroy()
+			end
+		end
+		local lines = HeroicLines.forSide(Config, side)
+		local accent = if side == "Evil" then "#FF7878" else "#FFD76E"
+		for i, line in ipairs(lines) do
+			local hint = if line.Condition
+				then string.format("  (x%s %s)", tostring(line.Bonus), CONDITION_HINTS[line.Condition] or "")
+				else ""
+			local entry = new("TextButton", {
+				Size = UDim2.fromScale(1, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundColor3 = Color3.fromRGB(45, 38, 58),
+				Font = Enum.Font.GothamBold,
+				TextSize = 13,
+				TextWrapped = true,
+				TextXAlignment = Enum.TextXAlignment.Left,
+				TextColor3 = WHITE,
+				RichText = true,
+				Text = string.format('<font color="%s">+%d</font>  %s<font color="#96DCFF">%s</font>', accent, line.Aura, line.Text, hint),
+				LayoutOrder = i,
+				Parent = list,
+			}, { corner(6), new("UIPadding", {
+				PaddingLeft = UDim.new(0, 6),
+				PaddingRight = UDim.new(0, 6),
+				PaddingTop = UDim.new(0, 4),
+				PaddingBottom = UDim.new(0, 4),
+			}) })
+			entry.Activated:Connect(function()
+				box.Text = line.Text
+				list.Visible = false
+			end)
+		end
 	end
+	buildLines()
+
+	-- Switch rank names, line list and ultimate label to a class (nil = undecided).
+	function self.setClass(class)
+		side = if class then class.Side else nil
+		ultimateName = if class then class.Ultimate.Name else ""
+		box.PlaceholderText = if side == "Evil" then "Say something villainous..." else "Say something heroic..."
+		buildLines()
+		self.setAura(currentAura)
+		self.setStyle(currentStyle)
+	end
+
 	linesButton.Activated:Connect(function()
 		list.Visible = not list.Visible
 	end)
@@ -3056,7 +4575,7 @@ return Hud
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="18">
+        <Item class="LocalScript" referent="22">
           <Properties>
             <string name="Name">Main</string>
             <string name="Source"><![CDATA[-- Aura Farm client: input (slash / dash / ultimate), the dash movement,
@@ -3069,7 +4588,10 @@ local TextChatService = game:GetService("TextChatService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Config = require(Shared:WaitForChild("Config"))
+local Classes = require(Shared:WaitForChild("Classes"))
+local ClassPicker = require(script.Parent:WaitForChild("ClassPicker"))
 local Hud = require(script.Parent:WaitForChild("Hud"))
 
 local player = Players.LocalPlayer
@@ -3077,6 +4599,14 @@ local remotes = ReplicatedStorage:WaitForChild("AuraFarmRemotes")
 local ActionRemote = remotes:WaitForChild("Action") :: RemoteEvent
 local ShoutRemote = remotes:WaitForChild("Shout") :: RemoteEvent
 local NotifyRemote = remotes:WaitForChild("Notify") :: RemoteEvent
+local ChooseClassRemote = remotes:WaitForChild("ChooseClass") :: RemoteEvent
+
+-- A stat of the player's class (defaults while undecided). Cooldowns here
+-- only stop pointless requests; the server enforces the real ones.
+local function stat(key: string): number
+	local class = Classes.get(player:GetAttribute("ClassId"))
+	return if class then class[key] else Classes.Defaults[key]
+end
 
 local function rgb(t: { number }): Color3
 	return Color3.fromRGB(t[1], t[2], t[3])
@@ -3147,28 +4677,23 @@ end
 
 local function slash()
 	local now = os.clock()
-	if now - lastSlash < Config.Combat.SlashCooldown or not liveCharacter() then
+	local cooldown = stat("SlashCooldown")
+	if now - lastSlash < cooldown or not liveCharacter() then
 		return
 	end
 	lastSlash = now
 	ActionRemote:FireServer("Slash")
-	hud.cooldown("Slash", Config.Combat.SlashCooldown)
+	hud.cooldown("Slash", cooldown)
 end
 
-local function dash()
-	local now = os.clock()
-	if now - lastDash < Config.Combat.DashCooldown then
-		return
-	end
+-- Pushes the character forward for `duration` seconds at `speed`. With
+-- useFacing, it goes the way you're facing; otherwise the way you're moving.
+local function lunge(speed: number, duration: number, useFacing: boolean)
 	local _, humanoid, root = liveCharacter()
-	if not humanoid then
+	if not humanoid or not root then
 		return
 	end
-	lastDash = now
-	ActionRemote:FireServer("Dash")
-	hud.cooldown("Dash", Config.Combat.DashCooldown)
-
-	local direction = humanoid.MoveDirection
+	local direction = if useFacing then root.CFrame.LookVector else humanoid.MoveDirection
 	if direction.Magnitude < 0.1 then
 		direction = root.CFrame.LookVector
 	end
@@ -3179,13 +4704,12 @@ local function dash()
 	direction = direction.Unit
 	root.CFrame = CFrame.lookAt(root.Position, root.Position + direction)
 
-	local speed = Config.Combat.DashSpeed
 	local elapsed, sinceGhost = 0, 0
 	local connection
 	connection = RunService.Heartbeat:Connect(function(dt)
 		elapsed += dt
 		sinceGhost += dt
-		if elapsed >= Config.Combat.DashDuration or not root.Parent then
+		if elapsed >= duration or not root.Parent then
 			connection:Disconnect()
 			return
 		end
@@ -3196,6 +4720,18 @@ local function dash()
 			afterimage(root)
 		end
 	end)
+end
+
+local function dash()
+	local now = os.clock()
+	local cooldown = stat("DashCooldown")
+	if now - lastDash < cooldown or not liveCharacter() then
+		return
+	end
+	lastDash = now
+	ActionRemote:FireServer("Dash")
+	hud.cooldown("Dash", cooldown)
+	lunge(Config.Combat.DashSpeed, Config.Combat.DashDuration, false)
 end
 
 local function ultimate()
@@ -3210,7 +4746,15 @@ end
 
 local ACTIONS = { Slash = slash, Dash = dash, Ultimate = ultimate }
 
-hud = Hud.new(player:WaitForChild("PlayerGui") :: PlayerGui, {
+local playerGui = player:WaitForChild("PlayerGui") :: PlayerGui
+local picker = ClassPicker.new(playerGui, function(classId: string)
+	ChooseClassRemote:FireServer(classId)
+end)
+
+hud = Hud.new(playerGui, {
+	onClassButton = function()
+		picker.open(player:GetAttribute("ClassId"))
+	end,
 	onShout = shout,
 	onAction = function(name: string)
 		local action = ACTIONS[name]
@@ -3275,6 +4819,26 @@ task.spawn(function()
 	refresh()
 end)
 
+-- Class: update the HUD when it changes, and open the picker for new
+-- players once their save has loaded.
+local function onClassChanged()
+	local class = Classes.get(player:GetAttribute("ClassId"))
+	hud.setClass(class)
+	if class then
+		picker.close()
+	end
+end
+player:GetAttributeChangedSignal("ClassId"):Connect(onClassChanged)
+onClassChanged()
+
+local function onLoaded()
+	if player:GetAttribute("Loaded") and player:GetAttribute("ClassId") == nil and not picker.isOpen() then
+		picker.open(nil)
+	end
+end
+player:GetAttributeChangedSignal("Loaded"):Connect(onLoaded)
+onLoaded()
+
 NotifyRemote.OnClientEvent:Connect(function(payload)
 	if type(payload) ~= "table" then
 		return
@@ -3290,6 +4854,16 @@ NotifyRemote.OnClientEvent:Connect(function(payload)
 		hud.announce(payload.Text, Color3.fromRGB(255, 160, 160))
 	elseif payload.Kind == "Announce" then
 		hud.announce(payload.Text)
+	elseif payload.Kind == "PickClass" then
+		if not picker.isOpen() then
+			picker.open(player:GetAttribute("ClassId"))
+		end
+	elseif payload.Kind == "ClassChosen" then
+		picker.close()
+	elseif payload.Kind == "Rush" and type(payload.Distance) == "number" then
+		-- The Rush ultimate: carry the character along the line it hit.
+		local duration = 0.3
+		lunge(payload.Distance / duration, duration, true)
 	end
 end)
 ]]></string>

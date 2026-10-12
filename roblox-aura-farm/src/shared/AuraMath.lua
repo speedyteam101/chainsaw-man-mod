@@ -18,6 +18,14 @@ function AuraMath.getRank(value: number, ranks)
 	return ranks[index], index, ranks[index + 1]
 end
 
+-- A rank's display name for a side (villains get EvilName).
+function AuraMath.rankName(rank, side: string?): string
+	if side == "Evil" and rank.EvilName then
+		return rank.EvilName
+	end
+	return rank.Name
+end
+
 -- 0..1 progress from the current rank to the next (1 at the top rank).
 function AuraMath.rankProgress(value: number, ranks): number
 	local rank, _, nextRank = AuraMath.getRank(value, ranks)
@@ -69,6 +77,50 @@ function AuraMath.defeatReward(base: number, styleRank, flags, bonuses, assistFr
 	end
 
 	local total = math.floor(start * styleRank.Multiplier * (1 + bonusTotal) + 0.5)
+	return total, breakdown
+end
+
+--[[
+	Aura for defeating an enemy player.
+
+	killerRank / victimRank: aura rank indexes (1 = lowest).
+	flags = { Clutch = bool, CalledIt = bool, Finisher = bool, Revenge = bool }
+	repeats: how many times the killer already defeated this victim within
+	         the repeat window (0 for the first time).
+
+	reward = KillAura * style * (1 + bonuses) * RepeatFalloff^repeats
+	Returns total (integer) and a breakdown list of label strings.
+]]
+function AuraMath.pvpKillReward(pvp, pvpBonuses, defeatBonuses, killerRank: number, victimRank: number, styleRank, flags, repeats: number)
+	local breakdown = { string.format("Enemy defeated: %d", pvp.KillAura) }
+	local bonusTotal = 0
+
+	local ranksAbove = victimRank - killerRank
+	if ranksAbove > 0 then
+		local bonus = math.min(ranksAbove * pvp.GiantSlayerPerRank, pvp.GiantSlayerMax)
+		bonusTotal += bonus
+		table.insert(breakdown, string.format("%s  +%d%%", pvpBonuses.GiantSlayer, math.floor(bonus * 100 + 0.5)))
+	end
+	if flags.Revenge then
+		bonusTotal += pvp.RevengeBonus
+		table.insert(breakdown, string.format("%s  +%d%%", pvpBonuses.Revenge, math.floor(pvp.RevengeBonus * 100 + 0.5)))
+	end
+	for _, key in ipairs({ "Clutch", "CalledIt", "Finisher" }) do
+		if flags[key] then
+			bonusTotal += defeatBonuses[key].Bonus
+			table.insert(breakdown, string.format("%s  +%d%%", defeatBonuses[key].Label, math.floor(defeatBonuses[key].Bonus * 100 + 0.5)))
+		end
+	end
+	if styleRank.Multiplier ~= 1 then
+		table.insert(breakdown, string.format("STYLE %s  x%s", styleRank.Name, tostring(styleRank.Multiplier)))
+	end
+
+	local falloff = pvp.RepeatFalloff ^ repeats
+	if repeats > 0 then
+		table.insert(breakdown, string.format("Same target again  x%s", tostring(falloff)))
+	end
+
+	local total = math.floor(pvp.KillAura * styleRank.Multiplier * (1 + bonusTotal) * falloff + 0.5)
 	return total, breakdown
 end
 
