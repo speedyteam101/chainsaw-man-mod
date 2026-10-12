@@ -153,6 +153,11 @@ local function notify(player: Player, payload)
 end
 AuraService.notify = notify
 
+-- Sends a payload to every client.
+function AuraService.broadcast(payload)
+	Remotes.Notify:FireAllClients(payload)
+end
+
 -- Tells every player (except `except`, if given) about something.
 function AuraService.announce(text: string, except: Player?)
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -421,7 +426,12 @@ function AuraService.setupCharacter(player: Player, character: Model)
 	character:WaitForChild("HumanoidRootPart", 10)
 	Effects.buildOverhead(character)
 	local class = AuraService.classOf(player)
-	Effects.buildSword(character, if class then Effects.color(class.Color) else nil)
+	Effects.buildSword(
+		character,
+		if class then Effects.color(class.Color) else nil,
+		if class then class.Id else nil,
+		AuraService.sideOf(player)
+	)
 	AuraService.refreshVisuals(player)
 	local state = states[player]
 	if state then

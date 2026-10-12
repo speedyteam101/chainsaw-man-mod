@@ -8,6 +8,7 @@ local Config = require("Config")
 local HeroicLines = require("HeroicLines")
 local AuraMath = require("AuraMath")
 local Classes = require("Classes")
+local Animations = require("Animations")
 
 local passed, failed = 0, 0
 
@@ -226,6 +227,61 @@ test("classes are well formed", function()
 	end
 	eq(Classes.get("nope"), nil)
 	eq(Classes.get(42), nil)
+end)
+
+-- Animations ---------------------------------------------------------------
+
+test("animation config only uses known names and real classes", function()
+	local function check(layer, where)
+		for name, value in pairs(layer) do
+			local isList = Animations.Names[name]
+			assert(isList ~= nil, where .. " has unknown animation " .. tostring(name))
+			assert(type(value) == (if isList then "table" else "string"), where .. "." .. name .. " has the wrong type")
+		end
+	end
+	check(Animations.Default, "Default")
+	for side, layer in pairs(Animations.Sides) do
+		assert(side == "Good" or side == "Evil", "unknown side " .. tostring(side))
+		check(layer, side)
+	end
+	for classId, layer in pairs(Animations.Classes) do
+		assert(Classes.get(classId), "unknown class " .. tostring(classId))
+		check(layer, classId)
+	end
+end)
+
+test("animation ids normalize", function()
+	eq(Animations.normalize(""), nil)
+	eq(Animations.normalize("   "), nil)
+	eq(Animations.normalize("123"), "rbxassetid://123")
+	eq(Animations.normalize(" rbxassetid://456 "), "rbxassetid://456")
+	eq(Animations.normalize(789), "rbxassetid://789")
+	eq(Animations.normalize(nil), nil)
+end)
+
+test("animation lookup goes class, then side, then default", function()
+	local config = {
+		Default = { Walk = "1", Slash = { "", "" }, Ultimate = "" },
+		Sides = { Good = {}, Evil = { Walk = "2" } },
+		Classes = { DemonLord = { Walk = "3", Slash = { "4", "", "5" } } },
+	}
+	eq(Animations.get("Walk", nil, nil, config), "rbxassetid://1")
+	eq(Animations.get("Walk", nil, "Evil", config), "rbxassetid://2")
+	eq(Animations.get("Walk", "DemonLord", "Evil", config), "rbxassetid://3")
+	eq(Animations.get("Walk", "Paladin", "Good", config), "rbxassetid://1")
+	eq(Animations.get("Ultimate", "DemonLord", "Evil", config), nil)
+	-- Empty slots are skipped; an all-empty list counts as unset.
+	eq(Animations.get("Slash", nil, nil, config), nil)
+	local slashes = Animations.get("Slash", "DemonLord", "Evil", config)
+	eq(#slashes, 2)
+	eq(slashes[2], "rbxassetid://5")
+end)
+
+test("dash directions", function()
+	eq(Animations.dashDirection(0, -1), "Forward")
+	eq(Animations.dashDirection(0, 1), "Back")
+	eq(Animations.dashDirection(1, 0.2), "Right")
+	eq(Animations.dashDirection(-1, -0.5), "Left")
 end)
 
 -- AuraMath -----------------------------------------------------------------

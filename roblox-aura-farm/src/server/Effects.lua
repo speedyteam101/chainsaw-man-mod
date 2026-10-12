@@ -3,13 +3,24 @@
 -- overhead name tag.
 
 local Debris = game:GetService("Debris")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+
+local Assets = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"))
 
 local Effects = {}
 
 local folder = Instance.new("Folder")
 folder.Name = "AuraFarmEffects"
 folder.Parent = workspace
+
+-- Spawns your custom effect model `name` (see Assets.lua) if you've added
+-- one. Returns true if it did, so the caller can skip its built-in effect.
+-- options = { classId, side, color, radius }
+function Effects.custom(name: string, cframe: CFrame, options): boolean
+	options.parent = folder
+	return Assets.spawnEffect(name, cframe, options)
+end
 
 function Effects.color(rgb: { number }): Color3
 	return Color3.fromRGB(rgb[1], rgb[2], rgb[3])
@@ -128,7 +139,11 @@ function Effects.burst(position: Vector3, radius: number, color: Color3, duratio
 end
 
 -- A crescent-ish neon streak in front of the attacker.
-function Effects.slash(rootCFrame: CFrame, color: Color3)
+function Effects.slash(rootCFrame: CFrame, color: Color3, classId: string?, side: string?)
+	local at = rootCFrame * CFrame.new(0, 0.5, -4.5)
+	if Effects.custom("Slash", at, { classId = classId, side = side, color = color }) then
+		return
+	end
 	local roll = math.rad(math.random(-50, 50))
 	local streak = part({
 		Size = Vector3.new(9, 0.25, 1.4),
@@ -208,7 +223,72 @@ end
 -- The hero blade, welded to the right hand (R15) or right arm (R6).
 ---------------------------------------------------------------------------
 
-function Effects.buildSword(character: Model, bladeColor: Color3?)
+--[[
+	Your sword model (AuraFarmAssets/Sword, or a side / class override),
+	welded into the hand. Its grip point is the Attachment named "Grip"
+	inside the part named "Handle" (or the Handle's centre if there's no
+	Grip, or the first part if there's no Handle). The grip goes at the
+	bottom of the hand, and the sword points along the grip's front (-Z,
+	its LookVector), like the built-in one: rotate the Grip attachment to
+	change how it's held.
+]]
+local function attachCustomSword(character: Model, hand: BasePart, template: Instance, color: Color3?): boolean
+	local model: Model
+	if template:IsA("Model") then
+		model = template:Clone()
+	elseif template:IsA("BasePart") then
+		model = Instance.new("Model")
+		local single = template:Clone()
+		single.Name = "Handle"
+		single.Parent = model
+	else
+		return false
+	end
+	model.Name = "HeroBlade"
+
+	local parts = Assets.allParts(model)
+	local handle = model:FindFirstChild("Handle", true)
+	if not (handle and handle:IsA("BasePart")) then
+		handle = model.PrimaryPart or parts[1]
+	end
+	if not handle then
+		return false
+	end
+	for _, p in ipairs(parts) do
+		p.Anchored = false
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Massless = true
+	end
+
+	-- Move the whole sword so its grip sits at the bottom of the hand.
+	local grip = handle:FindFirstChild("Grip")
+	local gripWorld = if grip and grip:IsA("Attachment") then handle.CFrame * grip.CFrame else handle.CFrame
+	local target = hand.CFrame * CFrame.new(0, -hand.Size.Y / 2, 0)
+	model:PivotTo(target * gripWorld:Inverse() * model:GetPivot())
+
+	for _, p in ipairs(parts) do
+		if p ~= handle then
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = handle
+			weld.Part1 = p
+			weld.Parent = p
+		end
+	end
+	local handWeld = Instance.new("WeldConstraint")
+	handWeld.Part0 = hand
+	handWeld.Part1 = handle
+	handWeld.Parent = handle
+
+	if color then
+		Assets.recolor(model, color)
+	end
+	model.Parent = character
+	return true
+end
+
+function Effects.buildSword(character: Model, bladeColor: Color3?, classId: string?, side: string?)
 	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	if not hand or not hand:IsA("BasePart") then
 		return
@@ -216,6 +296,11 @@ function Effects.buildSword(character: Model, bladeColor: Color3?)
 	local old = character:FindFirstChild("HeroBlade")
 	if old then
 		old:Destroy()
+	end
+
+	local template = Assets.find({ "Sword" }, classId, side)
+	if template and attachCustomSword(character, hand, template, bladeColor) then
+		return
 	end
 
 	local model = Instance.new("Model")

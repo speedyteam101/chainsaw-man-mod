@@ -5,9 +5,442 @@
     </Properties>
     <Item class="Folder" referent="1">
       <Properties>
+        <string name="Name">AuraFarmAssets</string>
+      </Properties>
+      <Item class="Folder" referent="2">
+        <Properties>
+          <string name="Name">Classes</string>
+        </Properties>
+      </Item>
+      <Item class="Folder" referent="3">
+        <Properties>
+          <string name="Name">Effects</string>
+        </Properties>
+      </Item>
+      <Item class="Folder" referent="4">
+        <Properties>
+          <string name="Name">Sides</string>
+        </Properties>
+        <Item class="Folder" referent="5">
+          <Properties>
+            <string name="Name">Evil</string>
+          </Properties>
+        </Item>
+        <Item class="Folder" referent="6">
+          <Properties>
+            <string name="Name">Good</string>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="Model" referent="7">
+        <Properties>
+          <string name="Name">Sword</string>
+          <bool name="NeedsPivotMigration">false</bool>
+        </Properties>
+        <Item class="Part" referent="8">
+          <Properties>
+            <string name="Name">Handle</string>
+            <CoordinateFrame name="CFrame">
+              <X>0</X>
+              <Y>0</Y>
+              <Z>0</Z>
+              <R00>1</R00>
+              <R01>0</R01>
+              <R02>0</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>0</R20>
+              <R21>0</R21>
+              <R22>1</R22>
+            </CoordinateFrame>
+            <bool name="CastShadow">false</bool>
+            <Color3uint8 name="Color3uint8">2694943</Color3uint8>
+            <token name="Material">1312</token>
+            <Vector3 name="size">
+              <X>0.3</X>
+              <Y>0.3</Y>
+              <Z>1.1</Z>
+            </Vector3>
+          </Properties>
+          <Item class="Attachment" referent="9">
+            <Properties>
+              <string name="Name">Grip</string>
+            </Properties>
+          </Item>
+        </Item>
+        <Item class="Part" referent="10">
+          <Properties>
+            <string name="Name">Guard</string>
+            <CoordinateFrame name="CFrame">
+              <X>0</X>
+              <Y>0</Y>
+              <Z>-0.65</Z>
+              <R00>1</R00>
+              <R01>0</R01>
+              <R02>0</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>0</R20>
+              <R21>0</R21>
+              <R22>1</R22>
+            </CoordinateFrame>
+            <bool name="CastShadow">false</bool>
+            <Color3uint8 name="Color3uint8">15122237</Color3uint8>
+            <token name="Material">1088</token>
+            <Vector3 name="size">
+              <X>1.3</X>
+              <Y>0.25</Y>
+              <Z>0.25</Z>
+            </Vector3>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="11">
+          <Properties>
+            <string name="Name">Blade</string>
+            <BinaryString name="AttributesSerialize">AQAAAAoAAABDbGFzc0NvbG9yAwE=</BinaryString>
+            <CoordinateFrame name="CFrame">
+              <X>0</X>
+              <Y>0</Y>
+              <Z>-2.75</Z>
+              <R00>1</R00>
+              <R01>0</R01>
+              <R02>0</R02>
+              <R10>0</R10>
+              <R11>1</R11>
+              <R12>0</R12>
+              <R20>0</R20>
+              <R21>0</R21>
+              <R22>1</R22>
+            </CoordinateFrame>
+            <bool name="CastShadow">false</bool>
+            <Color3uint8 name="Color3uint8">13757439</Color3uint8>
+            <token name="Material">288</token>
+            <Vector3 name="size">
+              <X>0.35</X>
+              <Y>0.12</Y>
+              <Z>4</Z>
+            </Vector3>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+    <Item class="Folder" referent="12">
+      <Properties>
         <string name="Name">Shared</string>
       </Properties>
-      <Item class="ModuleScript" referent="2">
+      <Item class="ModuleScript" referent="13">
+        <Properties>
+          <string name="Name">Animations</string>
+          <string name="Source"><![CDATA[--[[
+	Your animations. Paste animation asset IDs here, either as
+	"rbxassetid://1234567890" or just the number. Leave a name empty ("") to
+	keep Roblox's default animation (for movement) or no animation (for
+	dashes and attacks).
+
+	Lookup order for each animation: the player's class, then their side,
+	then Default. So you can give every class its own slashes, give all
+	villains a creepier walk, and so on, and only fill in what you want.
+
+	Note: Roblox only plays animations that the game's owner (you, or your
+	group for a group game) is allowed to use, so upload them to the same
+	account or group that owns the game.
+
+	Pure Luau (no Roblox APIs) so it can be unit tested outside Roblox.
+]]
+
+local Animations = {}
+
+Animations.Default = {
+	-- Movement. These replace the animations in the character's "Animate"
+	-- script, so Roblox picks between walk and run by speed as usual.
+	Idle = "",
+	Walk = "",
+	Run = "",
+	Jump = "",
+	Fall = "",
+
+	-- Dashes, picked by which way you dash compared to where you're facing.
+	-- Missing directions fall back to DashForward.
+	DashForward = "",
+	DashBack = "",
+	DashLeft = "",
+	DashRight = "",
+
+	-- Attacks. Slash is a combo: each click plays the next one in the list,
+	-- and it goes back to the first after a pause. Add as many as you like.
+	Slash = { "", "", "" },
+	Ultimate = "",
+}
+
+-- Per side: { Good = { Walk = "rbxassetid://..." }, Evil = { ... } }
+Animations.Sides = {
+	Good = {},
+	Evil = {},
+}
+
+-- Per class, by class Id from Classes.lua. For example:
+-- Paladin = { Slash = { "rbxassetid://111", "rbxassetid://222" }, Ultimate = "rbxassetid://333" },
+Animations.Classes = {}
+
+Animations.Settings = {
+	FadeTime = 0.08, -- seconds to blend into and out of an animation
+	DashHold = 0.4, -- stop a dash animation after this long (if it loops)
+	ComboReset = 1.0, -- seconds without slashing before the combo restarts
+}
+
+-- The names that can be set, and whether each is a list.
+Animations.Names = {
+	Idle = false,
+	Walk = false,
+	Run = false,
+	Jump = false,
+	Fall = false,
+	DashForward = false,
+	DashBack = false,
+	DashLeft = false,
+	DashRight = false,
+	Slash = true,
+	Ultimate = false,
+}
+
+-- "123" / 123 / " rbxassetid://123 " -> "rbxassetid://123"; "" -> nil.
+function Animations.normalize(id: any): string?
+	if type(id) == "number" then
+		return "rbxassetid://" .. tostring(math.floor(id))
+	end
+	if type(id) ~= "string" then
+		return nil
+	end
+	local trimmed = string.match(id, "^%s*(.-)%s*$")
+	if trimmed == "" then
+		return nil
+	end
+	if string.match(trimmed, "^%d+$") then
+		return "rbxassetid://" .. trimmed
+	end
+	return trimmed
+end
+
+local function resolve(value: any): any
+	if type(value) == "table" then
+		local list = {}
+		for _, id in ipairs(value) do
+			local normalized = Animations.normalize(id)
+			if normalized then
+				table.insert(list, normalized)
+			end
+		end
+		return if #list > 0 then list else nil
+	end
+	return Animations.normalize(value)
+end
+
+--[[
+	The animation for `name` (a string ID, or a list of IDs for Slash), or
+	nil if none is set. classId and side may be nil.
+]]
+function Animations.get(name: string, classId: string?, side: string?, config: any?): any
+	local source = config or Animations
+	local layers = {
+		classId and source.Classes[classId],
+		side and source.Sides[side],
+		source.Default,
+	}
+	for i = 1, 3 do
+		local layer = layers[i]
+		if layer then
+			local found = resolve(layer[name])
+			if found then
+				return found
+			end
+		end
+	end
+	return nil
+end
+
+-- "Forward" / "Back" / "Left" / "Right" for a dash, from the dash direction
+-- in the character's own space (x = right, z = back, as Roblox's
+-- CFrame:VectorToObjectSpace gives it).
+function Animations.dashDirection(localX: number, localZ: number): string
+	if math.abs(localX) > math.abs(localZ) then
+		return if localX > 0 then "Right" else "Left"
+	end
+	return if localZ > 0 then "Back" else "Forward"
+end
+
+return Animations
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="14">
+        <Properties>
+          <string name="Name">Assets</string>
+          <string name="Source"><![CDATA[--[[
+	Finds your models in ReplicatedStorage.AuraFarmAssets (the `assets/`
+	folder in the Rojo project) and spawns effect models.
+
+	Layout (every entry is optional; anything missing uses the built-in look):
+		AuraFarmAssets/
+			Sword                  the sword everyone holds
+			Effects/<Name>         effect models, see Assets.EffectNames
+			Sides/Good/...         same layout, used by heroes
+			Sides/Evil/...         same layout, used by villains
+			Classes/<ClassId>/...  same layout, used by one class
+
+	A class's own entry wins over its side's, which wins over the shared one.
+
+	Recolouring: any part, ParticleEmitter, Trail, Beam or light with the
+	attribute ClassColor = true is painted in the class's colour (or the
+	effect's colour).
+
+	Effect attributes (set on the effect model itself, all optional):
+		Lifetime   number  seconds before it's removed (default 1.5)
+		BaseRadius number  the radius it was built at; it's scaled to fit
+		                   the real size (e.g. a Nova's blast radius)
+	ParticleEmitter attribute:
+		EmitCount  number  burst this many particles when it spawns
+]]
+
+local Debris = game:GetService("Debris")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Assets = {}
+
+-- Every effect the game looks for, and where it's placed.
+Assets.EffectNames = {
+	Slash = "In front of the attacker on each slash, facing the way they face",
+	Hit = "On whoever a slash hits",
+	Dash = "Where a dash starts, facing the dash direction",
+	UltimatePillar = "On the Pillar target",
+	UltimateNova = "Around the caster (scaled to the blast radius)",
+	UltimateRush = "At the start of the rush line, facing along it",
+	UltimateDrain = "Around the caster (scaled to the drain radius)",
+	UltimateMend = "Around the caster (scaled to the heal radius)",
+	UltimateFortify = "Around the caster (scaled to the shield radius)",
+}
+
+local function root(): Instance?
+	return ReplicatedStorage:FindFirstChild("AuraFarmAssets")
+end
+
+local function walk(from: Instance?, path: { string }): Instance?
+	local current = from
+	for _, name in ipairs(path) do
+		if not current then
+			return nil
+		end
+		current = current:FindFirstChild(name)
+	end
+	return current
+end
+
+-- The most specific asset at `path` for this class / side, or nil.
+function Assets.find(path: { string }, classId: string?, side: string?): Instance?
+	local base = root()
+	if not base then
+		return nil
+	end
+	if classId then
+		local found = walk(walk(base, { "Classes", classId }), path)
+		if found then
+			return found
+		end
+	end
+	if side then
+		local found = walk(walk(base, { "Sides", side }), path)
+		if found then
+			return found
+		end
+	end
+	return walk(base, path)
+end
+
+-- Paints everything marked ClassColor = true (including `instance` itself).
+function Assets.recolor(instance: Instance, color: Color3)
+	local items = instance:GetDescendants()
+	table.insert(items, instance)
+	for _, item in ipairs(items) do
+		if item:GetAttribute("ClassColor") == true then
+			if item:IsA("BasePart") or item:IsA("Light") then
+				item.Color = color
+			elseif item:IsA("ParticleEmitter") or item:IsA("Trail") or item:IsA("Beam") then
+				item.Color = ColorSequence.new(color)
+			end
+		end
+	end
+end
+
+local function allParts(instance: Instance): { BasePart }
+	local parts = {}
+	if instance:IsA("BasePart") then
+		table.insert(parts, instance)
+	end
+	for _, item in ipairs(instance:GetDescendants()) do
+		if item:IsA("BasePart") then
+			table.insert(parts, item)
+		end
+	end
+	return parts
+end
+Assets.allParts = allParts
+
+--[[
+	Spawns the effect model `name` at `cframe` if you've added one.
+	options = { classId, side, color, radius, parent }
+	Returns true if a custom effect was spawned (so the caller can skip its
+	built-in effect).
+]]
+function Assets.spawnEffect(name: string, cframe: CFrame, options): boolean
+	local template = Assets.find({ "Effects", name }, options.classId, options.side)
+	if not template or not (template:IsA("Model") or template:IsA("BasePart")) then
+		return false
+	end
+	local effect = template:Clone()
+	for _, part in ipairs(allParts(effect)) do
+		part.Anchored = true
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+	end
+
+	local baseRadius = effect:GetAttribute("BaseRadius")
+	local scale = if type(baseRadius) == "number" and baseRadius > 0 and options.radius
+		then options.radius / baseRadius
+		else 1
+
+	if effect:IsA("Model") then
+		if scale ~= 1 then
+			effect:ScaleTo(effect:GetScale() * scale)
+		end
+		effect:PivotTo(cframe)
+	elseif effect:IsA("BasePart") then
+		effect.Size *= scale
+		effect.CFrame = cframe
+	end
+
+	if options.color then
+		Assets.recolor(effect, options.color)
+	end
+	effect.Parent = options.parent or workspace
+
+	for _, item in ipairs(effect:GetDescendants()) do
+		local count = item:GetAttribute("EmitCount")
+		if item:IsA("ParticleEmitter") and type(count) == "number" then
+			item:Emit(count)
+		end
+	end
+	local lifetime = effect:GetAttribute("Lifetime")
+	Debris:AddItem(effect, if type(lifetime) == "number" then lifetime else 1.5)
+	return true
+end
+
+return Assets
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="15">
         <Properties>
           <string name="Name">AuraMath</string>
           <string name="Source"><![CDATA[--[[
@@ -179,7 +612,7 @@ return AuraMath
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="3">
+      <Item class="ModuleScript" referent="16">
         <Properties>
           <string name="Name">Classes</string>
           <string name="Source"><![CDATA[--[[
@@ -443,7 +876,7 @@ return Classes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="4">
+      <Item class="ModuleScript" referent="17">
         <Properties>
           <string name="Name">Config</string>
           <string name="Source"><![CDATA[--[[
@@ -751,7 +1184,7 @@ return Config
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="5">
+      <Item class="ModuleScript" referent="18">
         <Properties>
           <string name="Name">HeroicLines</string>
           <string name="Source"><![CDATA[--[[
@@ -960,15 +1393,15 @@ return HeroicLines
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="6">
+  <Item class="ServerScriptService" referent="19">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="7">
+    <Item class="Folder" referent="20">
       <Properties>
         <string name="Name">AuraFarmServer</string>
       </Properties>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="21">
         <Properties>
           <string name="Name">AuraService</string>
           <string name="Source"><![CDATA[-- Owns each player's aura (saved, with their class), style meter, combat
@@ -1125,6 +1558,11 @@ local function notify(player: Player, payload)
 	Remotes.Notify:FireClient(player, payload)
 end
 AuraService.notify = notify
+
+-- Sends a payload to every client.
+function AuraService.broadcast(payload)
+	Remotes.Notify:FireAllClients(payload)
+end
 
 -- Tells every player (except `except`, if given) about something.
 function AuraService.announce(text: string, except: Player?)
@@ -1394,7 +1832,12 @@ function AuraService.setupCharacter(player: Player, character: Model)
 	character:WaitForChild("HumanoidRootPart", 10)
 	Effects.buildOverhead(character)
 	local class = AuraService.classOf(player)
-	Effects.buildSword(character, if class then Effects.color(class.Color) else nil)
+	Effects.buildSword(
+		character,
+		if class then Effects.color(class.Color) else nil,
+		if class then class.Id else nil,
+		AuraService.sideOf(player)
+	)
 	AuraService.refreshVisuals(player)
 	local state = states[player]
 	if state then
@@ -1537,7 +1980,7 @@ return AuraService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="9">
+      <Item class="ModuleScript" referent="22">
         <Properties>
           <string name="Name">BossService</string>
           <string name="Source"><![CDATA[-- Summons, moves and fights the bosses, and pays out aura when one dies.
@@ -2144,7 +2587,7 @@ return BossService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="23">
         <Properties>
           <string name="Name">ClassService</string>
           <string name="Source"><![CDATA[-- Sides and classes: Roblox Teams for Heroes / Villains / Undecided, class
@@ -2272,7 +2715,7 @@ return ClassService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="11">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">Combat</string>
           <string name="Source"><![CDATA[-- Validates the player's Slash / Dash / Ultimate requests using their
@@ -2309,6 +2752,17 @@ local function classColor(player: Player): Color3
 	return if class then Effects.color(class.Color) else DEFAULT_COLOR
 end
 
+-- Options for your custom effect models (see Assets.lua).
+local function effectOptions(player: Player, color: Color3, radius: number?)
+	local class = AuraService.classOf(player)
+	return {
+		classId = if class then class.Id else nil,
+		side = AuraService.sideOf(player),
+		color = color,
+		radius = radius,
+	}
+end
+
 local function flat(v: Vector3): Vector3
 	return Vector3.new(v.X, 0, v.Z)
 end
@@ -2332,15 +2786,25 @@ local function slash(player: Player, root: BasePart, state)
 		return
 	end
 	state.lastSlash = now
-	Effects.slash(root.CFrame, classColor(player))
+	local color = classColor(player)
+	local options = effectOptions(player, color)
+	Effects.slash(root.CFrame, color, options.classId, options.side)
 
 	local damage = AuraService.stat(player, "SlashDamage")
 	local range = AuraService.stat(player, "SlashRange")
 	local landed = false
 
 	local distance = BossService.distanceTo(root.Position)
-	if distance and distance <= range then
-		landed = hitBoss(player, damage, "Slash") or landed
+	if distance and distance <= range and hitBoss(player, damage, "Slash") then
+		landed = true
+		local boss = BossService.getActive()
+		if boss then
+			-- On the boss's surface, on the attacker's side.
+			local centre = boss.model:GetPivot().Position
+			local toward = flat(root.Position - centre)
+			local at = centre + (if toward.Magnitude > 0.1 then toward.Unit * boss.radius else Vector3.zero)
+			Effects.custom("Hit", CFrame.lookAt(at, root.Position), effectOptions(player, color))
+		end
 	end
 
 	-- Enemy players roughly in front of you (or right on top of you).
@@ -2352,6 +2816,7 @@ local function slash(player: Player, root: BasePart, state)
 			local inFront = offset.Magnitude < 3 or look:Dot(offset.Unit) >= Config.Pvp.HitConeDot
 			if inFront and PvpService.damage(player, enemy, damage * Config.Pvp.HitPlayerDamageFactor, "Slash") > 0 then
 				landed = true
+				Effects.custom("Hit", CFrame.lookAt(enemyRoot.Position, root.Position), effectOptions(player, color))
 			end
 		end
 	end
@@ -2373,6 +2838,9 @@ local function dash(player: Player, root: BasePart, state)
 	state.lastDash = now
 	state.dashStartPos = root.Position
 	state.invulnerableUntil = math.max(state.invulnerableUntil, now + Config.Combat.DashInvulnerability)
+	-- Every client draws this player's avatar afterimages (and your custom
+	-- Dash effect, if any).
+	AuraService.broadcast({ Kind = "Dash", UserId = player.UserId })
 end
 
 ---------------------------------------------------------------------------
@@ -2428,19 +2896,33 @@ end
 
 local ULTIMATES = {}
 
+-- Your Ultimate<Kind> effect model if you've added one, otherwise the
+-- built-in visuals.
+local function ultimateVisual(player: Player, kindName: string, cframe: CFrame, radius: number?, color: Color3, builtIn: () -> ())
+	if not Effects.custom("Ultimate" .. kindName, cframe, effectOptions(player, color, radius)) then
+		builtIn()
+	end
+end
+
 function ULTIMATES.Pillar(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
 	local boss = BossService.getActive()
 	local distance = BossService.distanceTo(root.Position)
 	if boss and distance and distance <= kind.Range then
 		local target = boss.model:GetPivot().Position
-		Effects.pillar(Vector3.new(target.X, root.Position.Y - 3, target.Z), color)
+		local ground = Vector3.new(target.X, root.Position.Y - 3, target.Z)
+		ultimateVisual(player, "Pillar", CFrame.new(ground), nil, color, function()
+			Effects.pillar(ground, color)
+		end)
 		hitBoss(player, (boss.maxHealth * kind.BossFraction + kind.BossFlat) * power, "Ultimate")
 		return true
 	end
 	local enemy = nearestEnemy(player, root.Position, kind.Range)
 	local enemyRoot = enemy and aliveRoot(enemy)
 	if enemy and enemyRoot then
-		Effects.pillar(enemyRoot.Position - Vector3.new(0, 3, 0), color)
+		local ground = enemyRoot.Position - Vector3.new(0, 3, 0)
+		ultimateVisual(player, "Pillar", CFrame.new(ground), nil, color, function()
+			Effects.pillar(ground, color)
+		end)
 		PvpService.damage(player, enemy, kind.PlayerDamage * power, "Ultimate")
 		return true
 	end
@@ -2449,15 +2931,19 @@ function ULTIMATES.Pillar(player: Player, root: BasePart, kind, power: number, c
 end
 
 function ULTIMATES.Nova(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.burst(root.Position, kind.Radius, color, 0.5)
-	Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+	ultimateVisual(player, "Nova", root.CFrame, kind.Radius, color, function()
+		Effects.burst(root.Position, kind.Radius, color, 0.5)
+		Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+	end)
 	blast(player, root.Position, kind.Radius, kind, power)
 	return true
 end
 
 function ULTIMATES.Drain(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
-	Effects.dome(root.Position, kind.Radius, color)
+	ultimateVisual(player, "Drain", root.CFrame, kind.Radius, color, function()
+		Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+		Effects.dome(root.Position, kind.Radius, color)
+	end)
 	local dealt = blast(player, root.Position, kind.Radius, kind, power)
 	AuraService.heal(player, dealt * kind.HealFraction)
 	return true
@@ -2470,7 +2956,9 @@ function ULTIMATES.Rush(player: Player, root: BasePart, kind, power: number, col
 	end
 	direction = direction.Unit
 	local origin = root.Position
-	Effects.streak(origin, origin + direction * kind.Length, kind.Width, color)
+	ultimateVisual(player, "Rush", CFrame.lookAt(origin, origin + direction), nil, color, function()
+		Effects.streak(origin, origin + direction * kind.Length, kind.Width, color)
+	end)
 
 	local boss = BossService.getActive()
 	if boss and boss.alive then
@@ -2497,13 +2985,17 @@ function ULTIMATES.Rush(player: Player, root: BasePart, kind, power: number, col
 end
 
 function ULTIMATES.Mend(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.dome(root.Position, kind.Radius, color)
+	ultimateVisual(player, "Mend", root.CFrame, kind.Radius, color, function()
+		Effects.dome(root.Position, kind.Radius, color)
+	end)
 	supportAllies(player, root, kind, power, "HEALER", function() end)
 	return true
 end
 
 function ULTIMATES.Fortify(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.dome(root.Position, kind.Radius, color)
+	ultimateVisual(player, "Fortify", root.CFrame, kind.Radius, color, function()
+		Effects.dome(root.Position, kind.Radius, color)
+	end)
 	local untilTime = os.clock() + kind.Duration * power
 	supportAllies(player, root, kind, power, "PROTECTOR", function(ally)
 		local allyState = AuraService.get(ally)
@@ -2560,7 +3052,7 @@ return Combat
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="12">
+      <Item class="ModuleScript" referent="25">
         <Properties>
           <string name="Name">Effects</string>
           <string name="Source"><![CDATA[-- Visuals built from plain parts (no uploaded assets needed): attack
@@ -2568,13 +3060,24 @@ return Combat
 -- overhead name tag.
 
 local Debris = game:GetService("Debris")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
+
+local Assets = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Assets"))
 
 local Effects = {}
 
 local folder = Instance.new("Folder")
 folder.Name = "AuraFarmEffects"
 folder.Parent = workspace
+
+-- Spawns your custom effect model `name` (see Assets.lua) if you've added
+-- one. Returns true if it did, so the caller can skip its built-in effect.
+-- options = { classId, side, color, radius }
+function Effects.custom(name: string, cframe: CFrame, options): boolean
+	options.parent = folder
+	return Assets.spawnEffect(name, cframe, options)
+end
 
 function Effects.color(rgb: { number }): Color3
 	return Color3.fromRGB(rgb[1], rgb[2], rgb[3])
@@ -2693,7 +3196,11 @@ function Effects.burst(position: Vector3, radius: number, color: Color3, duratio
 end
 
 -- A crescent-ish neon streak in front of the attacker.
-function Effects.slash(rootCFrame: CFrame, color: Color3)
+function Effects.slash(rootCFrame: CFrame, color: Color3, classId: string?, side: string?)
+	local at = rootCFrame * CFrame.new(0, 0.5, -4.5)
+	if Effects.custom("Slash", at, { classId = classId, side = side, color = color }) then
+		return
+	end
 	local roll = math.rad(math.random(-50, 50))
 	local streak = part({
 		Size = Vector3.new(9, 0.25, 1.4),
@@ -2773,7 +3280,72 @@ end
 -- The hero blade, welded to the right hand (R15) or right arm (R6).
 ---------------------------------------------------------------------------
 
-function Effects.buildSword(character: Model, bladeColor: Color3?)
+--[[
+	Your sword model (AuraFarmAssets/Sword, or a side / class override),
+	welded into the hand. Its grip point is the Attachment named "Grip"
+	inside the part named "Handle" (or the Handle's centre if there's no
+	Grip, or the first part if there's no Handle). The grip goes at the
+	bottom of the hand, and the sword points along the grip's front (-Z,
+	its LookVector), like the built-in one: rotate the Grip attachment to
+	change how it's held.
+]]
+local function attachCustomSword(character: Model, hand: BasePart, template: Instance, color: Color3?): boolean
+	local model: Model
+	if template:IsA("Model") then
+		model = template:Clone()
+	elseif template:IsA("BasePart") then
+		model = Instance.new("Model")
+		local single = template:Clone()
+		single.Name = "Handle"
+		single.Parent = model
+	else
+		return false
+	end
+	model.Name = "HeroBlade"
+
+	local parts = Assets.allParts(model)
+	local handle = model:FindFirstChild("Handle", true)
+	if not (handle and handle:IsA("BasePart")) then
+		handle = model.PrimaryPart or parts[1]
+	end
+	if not handle then
+		return false
+	end
+	for _, p in ipairs(parts) do
+		p.Anchored = false
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Massless = true
+	end
+
+	-- Move the whole sword so its grip sits at the bottom of the hand.
+	local grip = handle:FindFirstChild("Grip")
+	local gripWorld = if grip and grip:IsA("Attachment") then handle.CFrame * grip.CFrame else handle.CFrame
+	local target = hand.CFrame * CFrame.new(0, -hand.Size.Y / 2, 0)
+	model:PivotTo(target * gripWorld:Inverse() * model:GetPivot())
+
+	for _, p in ipairs(parts) do
+		if p ~= handle then
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = handle
+			weld.Part1 = p
+			weld.Parent = p
+		end
+	end
+	local handWeld = Instance.new("WeldConstraint")
+	handWeld.Part0 = hand
+	handWeld.Part1 = handle
+	handWeld.Parent = handle
+
+	if color then
+		Assets.recolor(model, color)
+	end
+	model.Parent = character
+	return true
+end
+
+function Effects.buildSword(character: Model, bladeColor: Color3?, classId: string?, side: string?)
 	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
 	if not hand or not hand:IsA("BasePart") then
 		return
@@ -2781,6 +3353,11 @@ function Effects.buildSword(character: Model, bladeColor: Color3?)
 	local old = character:FindFirstChild("HeroBlade")
 	if old then
 		old:Destroy()
+	end
+
+	local template = Assets.find({ "Sword" }, classId, side)
+	if template and attachCustomSword(character, hand, template, bladeColor) then
+		return
 	end
 
 	local model = Instance.new("Model")
@@ -2944,7 +3521,7 @@ return Effects
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Script" referent="13">
+      <Item class="Script" referent="26">
         <Properties>
           <string name="Name">Main</string>
           <token name="RunContext">0</token>
@@ -3011,7 +3588,7 @@ Players.PlayerRemoving:Connect(AuraService.removePlayer)
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="27">
         <Properties>
           <string name="Name">PvpService</string>
           <string name="Source"><![CDATA[-- Good vs Evil PvP: who can hurt whom, kill credit, kill rewards and the
@@ -3238,7 +3815,7 @@ return PvpService
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="28">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[-- Creates the RemoteEvents the client and server talk through.
@@ -3272,7 +3849,7 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="16">
+      <Item class="ModuleScript" referent="29">
         <Properties>
           <string name="Name">World</string>
           <string name="Source"><![CDATA[-- Builds the map from code so the place works straight out of `rojo build`:
@@ -3618,19 +4195,244 @@ return World
       </Item>
     </Item>
   </Item>
-  <Item class="StarterPlayer" referent="17">
+  <Item class="StarterPlayer" referent="30">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="18">
+    <Item class="StarterPlayerScripts" referent="31">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="19">
+      <Item class="Folder" referent="32">
         <Properties>
           <string name="Name">AuraFarmClient</string>
         </Properties>
-        <Item class="ModuleScript" referent="20">
+        <Item class="ModuleScript" referent="33">
+          <Properties>
+            <string name="Name">Afterimages</string>
+            <string name="Source"><![CDATA[-- Dash afterimages made from a copy of the player's own avatar (body
+-- parts, accessories, face and clothing meshes), fading out behind them.
+-- Drawn by every client, for every player who dashes.
+
+local TweenService = game:GetService("TweenService")
+
+local Afterimages = {}
+
+local folder = Instance.new("Folder")
+folder.Name = "AuraFarmAfterimages"
+folder.Parent = workspace
+
+local function keepsLook(child: Instance): boolean
+	-- Meshes, the face and PBR textures; everything else (joints, welds,
+	-- attachments, sounds, scripts) is dropped from the copy.
+	return child:IsA("DataModelMesh") or child:IsA("Decal") or child:IsA("SurfaceAppearance")
+end
+
+-- One frozen, fading copy of the character where it stands right now.
+function Afterimages.snapshot(character: Model, duration: number)
+	local ghost = Instance.new("Model")
+	ghost.Name = "Afterimage"
+	local fadeInfo = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	for _, part in ipairs(character:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Transparency < 0.95 then
+			local copy = part:Clone() -- nil if the part isn't Archivable
+			if copy then
+				for _, child in ipairs(copy:GetChildren()) do
+					if not keepsLook(child) then
+						child:Destroy()
+					end
+				end
+				copy.Anchored = true
+				copy.CanCollide = false
+				copy.CanQuery = false
+				copy.CanTouch = false
+				copy.CastShadow = false
+				copy.Massless = true
+				copy.CFrame = part.CFrame
+				copy.Transparency = math.max(part.Transparency, 0.45)
+				copy.Parent = ghost
+				TweenService:Create(copy, fadeInfo, { Transparency = 1 }):Play()
+				for _, decal in ipairs(copy:GetChildren()) do
+					if decal:IsA("Decal") then
+						TweenService:Create(decal, fadeInfo, { Transparency = 1 }):Play()
+					end
+				end
+			end
+		end
+	end
+	ghost.Parent = folder
+	task.delay(duration + 0.05, function()
+		ghost:Destroy()
+	end)
+end
+
+-- A trail of snapshots over `length` seconds.
+function Afterimages.trail(character: Model, length: number)
+	task.spawn(function()
+		local elapsed = 0
+		while elapsed < length and character.Parent do
+			Afterimages.snapshot(character, 0.3)
+			task.wait(0.05)
+			elapsed += 0.05
+		end
+	end)
+end
+
+return Afterimages
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="34">
+          <Properties>
+            <string name="Name">AnimationPlayer</string>
+            <string name="Source"><![CDATA[-- Plays your animations from Animations.lua on the local player's
+-- character. Animations played on your own character replicate to everyone.
+--   Movement (Idle / Walk / Run / Jump / Fall): swapped into the
+--   character's "Animate" script, which keeps choosing between them.
+--   Dashes, slashes and the ultimate: played here when you use them.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Animations = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Animations"))
+
+local AnimationPlayer = {}
+
+local player = Players.LocalPlayer
+local settings = Animations.Settings
+
+local tracks: { [string]: AnimationTrack } = {}
+local tracksFor: Animator? = nil
+
+local function classAndSide(): (string?, string?)
+	return player:GetAttribute("ClassId"), player:GetAttribute("Side")
+end
+
+local function animatorOf(character: Model?): Animator?
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	return humanoid and humanoid:FindFirstChildOfClass("Animator")
+end
+
+-- A loaded (cached) track for an animation ID on the current character.
+local function trackFor(id: string): AnimationTrack?
+	local animator = animatorOf(player.Character)
+	if not animator then
+		return nil
+	end
+	if animator ~= tracksFor then
+		table.clear(tracks)
+		tracksFor = animator
+	end
+	local track = tracks[id]
+	if not track then
+		local animation = Instance.new("Animation")
+		animation.AnimationId = id
+		local ok, result = pcall(function()
+			return animator:LoadAnimation(animation)
+		end)
+		if not ok then
+			warn("[AuraFarm] Couldn't load animation", id, result)
+			return nil
+		end
+		track = result
+		track.Priority = Enum.AnimationPriority.Action
+		tracks[id] = track
+	end
+	return track
+end
+
+local function play(id: any): AnimationTrack?
+	if type(id) ~= "string" then
+		return nil
+	end
+	local track = trackFor(id)
+	if track then
+		track:Play(settings.FadeTime)
+	end
+	return track
+end
+
+-- The character's Animate script slot names for each movement animation.
+local ANIMATE_SLOTS = { Idle = "idle", Walk = "walk", Run = "run", Jump = "jump", Fall = "fall" }
+
+-- Swap your movement animations into the character's Animate script, then
+-- restart it so it uses them.
+function AnimationPlayer.applyMovement(character: Model)
+	local animate = character:WaitForChild("Animate", 10)
+	if not animate then
+		return
+	end
+	local classId, side = classAndSide()
+	local changed = false
+	for name, slot in pairs(ANIMATE_SLOTS) do
+		local id = Animations.get(name, classId, side)
+		local holder = animate:FindFirstChild(slot)
+		if type(id) == "string" and holder then
+			for _, child in ipairs(holder:GetChildren()) do
+				if child:IsA("Animation") then
+					child.AnimationId = id
+					changed = true
+				end
+			end
+		end
+	end
+	if changed and animate:IsA("BaseScript") then
+		local animator = animatorOf(character)
+		if animator then
+			for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+				track:Stop(0)
+			end
+		end
+		animate.Enabled = false
+		task.wait()
+		animate.Enabled = true
+	end
+end
+
+-- Dash animation for a dash going (localX, localZ) in the character's own
+-- space. Falls back to DashForward if that direction has none.
+function AnimationPlayer.playDash(localX: number, localZ: number)
+	local classId, side = classAndSide()
+	local direction = Animations.dashDirection(localX, localZ)
+	local id = Animations.get("Dash" .. direction, classId, side) or Animations.get("DashForward", classId, side)
+	local track = play(id)
+	if track then
+		task.delay(settings.DashHold, function()
+			if track.IsPlaying and track.Looped then
+				track:Stop(settings.FadeTime)
+			end
+		end)
+	end
+end
+
+local comboIndex, lastSlash = 0, -math.huge
+
+-- The next slash in your combo.
+function AnimationPlayer.playSlash()
+	local classId, side = classAndSide()
+	local list = Animations.get("Slash", classId, side)
+	if type(list) ~= "table" then
+		return
+	end
+	local now = os.clock()
+	if now - lastSlash > settings.ComboReset then
+		comboIndex = 0
+	end
+	lastSlash = now
+	comboIndex = comboIndex % #list + 1
+	play(list[comboIndex])
+end
+
+function AnimationPlayer.playUltimate()
+	local classId, side = classAndSide()
+	play(Animations.get("Ultimate", classId, side))
+end
+
+return AnimationPlayer
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">ClassPicker</string>
             <string name="Source"><![CDATA[-- The class picker: Heroes / Villains tabs, a grid of class cards, and a
@@ -3921,7 +4723,7 @@ return ClassPicker
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="21">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">Hud</string>
             <string name="Source"><![CDATA[-- The on-screen UI, built in code: aura + rank panel, style meter, boss
@@ -4575,22 +5377,25 @@ return Hud
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="22">
+        <Item class="LocalScript" referent="37">
           <Properties>
             <string name="Name">Main</string>
-            <string name="Source"><![CDATA[-- Aura Farm client: input (slash / dash / ultimate), the dash movement,
--- forwarding chat to the server, and feeding the HUD.
+            <string name="Source"><![CDATA[-- Aura Farm client: input (slash / dash / ultimate), dash movement,
+-- animations and afterimages, forwarding chat to the server, and feeding
+-- the HUD.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Assets = require(Shared:WaitForChild("Assets"))
 local Classes = require(Shared:WaitForChild("Classes"))
+local Afterimages = require(script.Parent:WaitForChild("Afterimages"))
+local AnimationPlayer = require(script.Parent:WaitForChild("AnimationPlayer"))
 local ClassPicker = require(script.Parent:WaitForChild("ClassPicker"))
 local Hud = require(script.Parent:WaitForChild("Hud"))
 
@@ -4656,23 +5461,14 @@ end)
 local hud
 local lastSlash, lastDash, lastUltimate = -math.huge, -math.huge, -math.huge
 
-local function afterimage(root: BasePart)
-	local ghost = Instance.new("Part")
-	ghost.Anchored = true
-	ghost.CanCollide = false
-	ghost.CanQuery = false
-	ghost.CanTouch = false
-	ghost.CastShadow = false
-	ghost.Material = Enum.Material.Neon
-	ghost.Color = Color3.fromRGB(150, 255, 190)
-	ghost.Transparency = 0.5
-	ghost.Size = Vector3.new(2, 4.5, 1)
-	ghost.CFrame = root.CFrame
-	ghost.Parent = workspace
-	TweenService:Create(ghost, TweenInfo.new(0.3), { Transparency = 1 }):Play()
-	task.delay(0.35, function()
-		ghost:Destroy()
-	end)
+-- Your custom Dash effect (Assets.lua) for a player dashing from `root`.
+local function dashEffect(dasher: Player, root: BasePart, direction: Vector3)
+	local class = Classes.get(dasher:GetAttribute("ClassId"))
+	Assets.spawnEffect("Dash", CFrame.lookAt(root.Position, root.Position + direction), {
+		classId = if class then class.Id else nil,
+		side = dasher:GetAttribute("Side"),
+		color = if class then rgb(class.Color) else nil,
+	})
 end
 
 local function slash()
@@ -4683,55 +5479,72 @@ local function slash()
 	end
 	lastSlash = now
 	ActionRemote:FireServer("Slash")
+	AnimationPlayer.playSlash()
 	hud.cooldown("Slash", cooldown)
 end
 
--- Pushes the character forward for `duration` seconds at `speed`. With
--- useFacing, it goes the way you're facing; otherwise the way you're moving.
-local function lunge(speed: number, duration: number, useFacing: boolean)
-	local _, humanoid, root = liveCharacter()
-	if not humanoid or not root then
-		return
-	end
-	local direction = if useFacing then root.CFrame.LookVector else humanoid.MoveDirection
-	if direction.Magnitude < 0.1 then
-		direction = root.CFrame.LookVector
-	end
-	direction = Vector3.new(direction.X, 0, direction.Z)
-	if direction.Magnitude < 0.1 then
-		return
-	end
-	direction = direction.Unit
-	root.CFrame = CFrame.lookAt(root.Position, root.Position + direction)
+-- Turning AutoRotate off during a lunge keeps the character facing the same
+-- way, so a back or side dash actually looks like one. Counted, so
+-- overlapping lunges (a dash into a Rush) restore it correctly.
+local rotateLocks = 0
+local savedAutoRotate = true
 
-	local elapsed, sinceGhost = 0, 0
+-- Pushes the character along `direction` (a flat unit vector) at `speed`
+-- for `duration` seconds, leaving avatar afterimages behind.
+local function lunge(direction: Vector3, speed: number, duration: number)
+	local character, humanoid, root = liveCharacter()
+	if not character or not humanoid or not root then
+		return
+	end
+	if rotateLocks == 0 then
+		savedAutoRotate = humanoid.AutoRotate
+	end
+	rotateLocks += 1
+	humanoid.AutoRotate = false
+	Afterimages.trail(character, duration + 0.05)
+
+	local elapsed = 0
 	local connection
 	connection = RunService.Heartbeat:Connect(function(dt)
 		elapsed += dt
-		sinceGhost += dt
 		if elapsed >= duration or not root.Parent then
 			connection:Disconnect()
+			rotateLocks -= 1
+			if rotateLocks == 0 and humanoid.Parent then
+				humanoid.AutoRotate = savedAutoRotate
+			end
 			return
 		end
 		local velocity = root.AssemblyLinearVelocity
 		root.AssemblyLinearVelocity = Vector3.new(direction.X * speed, math.max(velocity.Y, 0), direction.Z * speed)
-		if sinceGhost >= 0.04 then
-			sinceGhost = 0
-			afterimage(root)
-		end
 	end)
+end
+
+local function flatUnit(v: Vector3): Vector3?
+	local flat = Vector3.new(v.X, 0, v.Z)
+	return if flat.Magnitude > 0.1 then flat.Unit else nil
 end
 
 local function dash()
 	local now = os.clock()
 	local cooldown = stat("DashCooldown")
-	if now - lastDash < cooldown or not liveCharacter() then
+	local _, humanoid, root = liveCharacter()
+	if now - lastDash < cooldown or not humanoid or not root then
+		return
+	end
+	-- Dash the way you're moving (or forward if you're standing still).
+	local direction = flatUnit(humanoid.MoveDirection) or flatUnit(root.CFrame.LookVector)
+	if not direction then
 		return
 	end
 	lastDash = now
 	ActionRemote:FireServer("Dash")
 	hud.cooldown("Dash", cooldown)
-	lunge(Config.Combat.DashSpeed, Config.Combat.DashDuration, false)
+
+	local relative = root.CFrame:VectorToObjectSpace(direction)
+	AnimationPlayer.playDash(relative.X, relative.Z)
+	dashEffect(player, root, direction)
+	lunge(direction, Config.Combat.DashSpeed, Config.Combat.DashDuration)
 end
 
 local function ultimate()
@@ -4741,6 +5554,10 @@ local function ultimate()
 	end
 	lastUltimate = now
 	ActionRemote:FireServer("Ultimate")
+	-- Only animate if the server will accept it (it re-checks).
+	if Classes.get(player:GetAttribute("ClassId")) and (player:GetAttribute("Style") or 0) >= Config.Combat.UltimateStyleCost then
+		AnimationPlayer.playUltimate()
+	end
 	hud.cooldown("Ultimate", Config.Combat.UltimateCooldown)
 end
 
@@ -4819,6 +5636,14 @@ task.spawn(function()
 	refresh()
 end)
 
+-- Your movement animations, on every spawn.
+player.CharacterAdded:Connect(function(character)
+	AnimationPlayer.applyMovement(character)
+end)
+if player.Character then
+	task.spawn(AnimationPlayer.applyMovement, player.Character)
+end
+
 -- Class: update the HUD when it changes, and open the picker for new
 -- players once their save has loaded.
 local function onClassChanged()
@@ -4862,8 +5687,21 @@ NotifyRemote.OnClientEvent:Connect(function(payload)
 		picker.close()
 	elseif payload.Kind == "Rush" and type(payload.Distance) == "number" then
 		-- The Rush ultimate: carry the character along the line it hit.
-		local duration = 0.3
-		lunge(payload.Distance / duration, duration, true)
+		local _, _, root = liveCharacter()
+		local direction = root and flatUnit(root.CFrame.LookVector)
+		if direction then
+			local duration = 0.3
+			lunge(direction, payload.Distance / duration, duration)
+		end
+	elseif payload.Kind == "Dash" and payload.UserId ~= player.UserId then
+		-- Someone else dashed: draw their avatar afterimages here too.
+		local dasher = Players:GetPlayerByUserId(payload.UserId)
+		local character = dasher and dasher.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if dasher and character and root and root:IsA("BasePart") then
+			Afterimages.trail(character, Config.Combat.DashDuration + 0.1)
+			dashEffect(dasher, root, flatUnit(root.CFrame.LookVector) or Vector3.new(0, 0, -1))
+		end
 	end
 end)
 ]]></string>

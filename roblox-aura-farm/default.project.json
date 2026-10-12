@@ -5,6 +5,10 @@
     "ReplicatedStorage": {
       "Shared": {
         "$path": "src/shared"
+      },
+      "AuraFarmAssets": {
+        "$path": "assets",
+        "$ignoreUnknownInstances": true
       }
     },
     "ServerScriptService": {

@@ -188,6 +188,64 @@ Summon one at a time from the three altars in the arena. Every attack is telegra
 
 A boss leaves if nobody is in the arena for 12 seconds. Each altar has a cooldown after use.
 
+## Your own animations and models
+
+Players always keep their own Roblox avatar. Dash afterimages are copies of that avatar (body, clothes, accessories and face),
+so everyone's dash trail looks like them. Everything below is optional: anything you don't add keeps the built-in look.
+
+### Animations
+
+Paste animation IDs into [`src/shared/Animations.lua`](src/shared/Animations.lua) (in Studio: *ReplicatedStorage → Shared → Animations*),
+as `"rbxassetid://1234567890"` or just the number:
+
+| Name | When it plays |
+| --- | --- |
+| `Idle`, `Walk`, `Run`, `Jump`, `Fall` | Movement. These replace the animations in the character's `Animate` script, which still picks between them as usual |
+| `DashForward`, `DashBack`, `DashLeft`, `DashRight` | Dashing, picked by which way you dash compared to where you face (you keep facing the same way while dashing). Missing directions use `DashForward` |
+| `Slash` | A list: each attack plays the next one, and the combo restarts after a 1 s pause. Add as many as you like |
+| `Ultimate` | Using your ultimate |
+
+Set them in `Default` for everyone, in `Sides.Good` / `Sides.Evil` for one side, or in `Classes.<ClassId>` for one class
+(class Ids are in `Classes.lua`, e.g. `Paladin`, `DemonLord`). The most specific one wins.
+Roblox only plays animations the game's owner is allowed to use, so upload them from the same account or group that owns the game.
+
+### Models: the sword and effects
+
+Models go in **ReplicatedStorage → AuraFarmAssets** (the [`assets/`](assets) folder in the Rojo project). You can drop them in
+from Studio; the Rojo project is set up not to delete things you add there.
+
+```
+AuraFarmAssets/
+  Sword                    the sword everyone holds (an editable default is included)
+  Effects/<Name>           effect models (names below)
+  Sides/Good/...           same layout: hero-only versions
+  Sides/Evil/...           same layout: villain-only versions
+  Classes/<ClassId>/...    same layout: versions for one class
+```
+
+For example, `Classes/DemonLord/Sword` gives only the Demon Lord a different sword, and `Sides/Evil/Effects/Slash` changes every villain's slash.
+
+**Colouring:** give any part, ParticleEmitter, Trail, Beam or light the attribute **`ClassColor`** (boolean, ticked), and the game paints it in
+the class's colour. The included sword's `Blade` has it, which is how each class gets its own blade colour.
+
+**The sword:** a Model with a part named **`Handle`**. The Handle's Attachment named **`Grip`** goes at the bottom of the player's right hand,
+and the sword points along the Grip's front (its LookVector). Rotate or move the Grip to change how it's held. All the other parts are welded to the Handle for you.
+
+**Effects** (a Model or a single part):
+
+| Name | Where it appears |
+| --- | --- |
+| `Slash` | In front of the attacker on every slash, facing the way they face |
+| `Hit` | On whoever a slash hits |
+| `Dash` | Where a dash starts, facing the dash direction |
+| `UltimatePillar` | On the Pillar target |
+| `UltimateNova`, `UltimateDrain`, `UltimateMend`, `UltimateFortify` | Around the caster |
+| `UltimateRush` | At the start of the rush, facing along it |
+
+Optional attributes on an effect model: **`Lifetime`** (seconds before it's removed, default 1.5) and **`BaseRadius`** (the radius you built it at;
+the game scales it to the real size of a Nova, Drain, Mend or Fortify). On a ParticleEmitter, **`EmitCount`** bursts that many particles when the effect spawns.
+If you add an effect, it replaces the built-in one; boss attack warnings always stay built-in so they're readable.
+
 ## Tuning
 
 Every number (aura values, lines, bosses, cooldowns, ranks, PvP) is in [`src/shared/Config.lua`](src/shared/Config.lua). Add your own lines there.
@@ -199,6 +257,9 @@ Classes and ultimates are in [`src/shared/Classes.lua`](src/shared/Classes.lua).
 | --- | --- | --- |
 | `src/shared/Config.lua` | ReplicatedStorage.Shared | All tuning |
 | `src/shared/Classes.lua` | ReplicatedStorage.Shared | All 44 classes and the six ultimate types |
+| `src/shared/Animations.lua` | ReplicatedStorage.Shared | Your animation IDs |
+| `src/shared/Assets.lua` | ReplicatedStorage.Shared | Finds your models, recolours them, spawns effects |
+| `assets/` | ReplicatedStorage.AuraFarmAssets | Your sword and effect models |
 | `src/shared/HeroicLines.lua` | ReplicatedStorage.Shared | Matches chat to heroic / villain lines and scores them |
 | `src/shared/AuraMath.lua` | ReplicatedStorage.Shared | Ranks, style, boss and PvP rewards, attack-zone geometry |
 | `src/server/Main.server.lua` | ServerScriptService | Entry point |
@@ -212,6 +273,8 @@ Classes and ultimates are in [`src/shared/Classes.lua`](src/shared/Classes.lua).
 | `src/client/Main.client.lua` | StarterPlayerScripts | Input, dash movement, chat forwarding |
 | `src/client/Hud.lua` | | The on-screen UI |
 | `src/client/ClassPicker.lua` | | The class picker |
+| `src/client/AnimationPlayer.lua` | | Plays your movement, dash and attack animations |
+| `src/client/Afterimages.lua` | | Dash afterimages made from the player's avatar |
 
 ### How chat is read
 

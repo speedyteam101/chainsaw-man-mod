@@ -32,6 +32,17 @@ local function classColor(player: Player): Color3
 	return if class then Effects.color(class.Color) else DEFAULT_COLOR
 end
 
+-- Options for your custom effect models (see Assets.lua).
+local function effectOptions(player: Player, color: Color3, radius: number?)
+	local class = AuraService.classOf(player)
+	return {
+		classId = if class then class.Id else nil,
+		side = AuraService.sideOf(player),
+		color = color,
+		radius = radius,
+	}
+end
+
 local function flat(v: Vector3): Vector3
 	return Vector3.new(v.X, 0, v.Z)
 end
@@ -55,15 +66,25 @@ local function slash(player: Player, root: BasePart, state)
 		return
 	end
 	state.lastSlash = now
-	Effects.slash(root.CFrame, classColor(player))
+	local color = classColor(player)
+	local options = effectOptions(player, color)
+	Effects.slash(root.CFrame, color, options.classId, options.side)
 
 	local damage = AuraService.stat(player, "SlashDamage")
 	local range = AuraService.stat(player, "SlashRange")
 	local landed = false
 
 	local distance = BossService.distanceTo(root.Position)
-	if distance and distance <= range then
-		landed = hitBoss(player, damage, "Slash") or landed
+	if distance and distance <= range and hitBoss(player, damage, "Slash") then
+		landed = true
+		local boss = BossService.getActive()
+		if boss then
+			-- On the boss's surface, on the attacker's side.
+			local centre = boss.model:GetPivot().Position
+			local toward = flat(root.Position - centre)
+			local at = centre + (if toward.Magnitude > 0.1 then toward.Unit * boss.radius else Vector3.zero)
+			Effects.custom("Hit", CFrame.lookAt(at, root.Position), effectOptions(player, color))
+		end
 	end
 
 	-- Enemy players roughly in front of you (or right on top of you).
@@ -75,6 +96,7 @@ local function slash(player: Player, root: BasePart, state)
 			local inFront = offset.Magnitude < 3 or look:Dot(offset.Unit) >= Config.Pvp.HitConeDot
 			if inFront and PvpService.damage(player, enemy, damage * Config.Pvp.HitPlayerDamageFactor, "Slash") > 0 then
 				landed = true
+				Effects.custom("Hit", CFrame.lookAt(enemyRoot.Position, root.Position), effectOptions(player, color))
 			end
 		end
 	end
@@ -96,6 +118,9 @@ local function dash(player: Player, root: BasePart, state)
 	state.lastDash = now
 	state.dashStartPos = root.Position
 	state.invulnerableUntil = math.max(state.invulnerableUntil, now + Config.Combat.DashInvulnerability)
+	-- Every client draws this player's avatar afterimages (and your custom
+	-- Dash effect, if any).
+	AuraService.broadcast({ Kind = "Dash", UserId = player.UserId })
 end
 
 ---------------------------------------------------------------------------
@@ -151,19 +176,33 @@ end
 
 local ULTIMATES = {}
 
+-- Your Ultimate<Kind> effect model if you've added one, otherwise the
+-- built-in visuals.
+local function ultimateVisual(player: Player, kindName: string, cframe: CFrame, radius: number?, color: Color3, builtIn: () -> ())
+	if not Effects.custom("Ultimate" .. kindName, cframe, effectOptions(player, color, radius)) then
+		builtIn()
+	end
+end
+
 function ULTIMATES.Pillar(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
 	local boss = BossService.getActive()
 	local distance = BossService.distanceTo(root.Position)
 	if boss and distance and distance <= kind.Range then
 		local target = boss.model:GetPivot().Position
-		Effects.pillar(Vector3.new(target.X, root.Position.Y - 3, target.Z), color)
+		local ground = Vector3.new(target.X, root.Position.Y - 3, target.Z)
+		ultimateVisual(player, "Pillar", CFrame.new(ground), nil, color, function()
+			Effects.pillar(ground, color)
+		end)
 		hitBoss(player, (boss.maxHealth * kind.BossFraction + kind.BossFlat) * power, "Ultimate")
 		return true
 	end
 	local enemy = nearestEnemy(player, root.Position, kind.Range)
 	local enemyRoot = enemy and aliveRoot(enemy)
 	if enemy and enemyRoot then
-		Effects.pillar(enemyRoot.Position - Vector3.new(0, 3, 0), color)
+		local ground = enemyRoot.Position - Vector3.new(0, 3, 0)
+		ultimateVisual(player, "Pillar", CFrame.new(ground), nil, color, function()
+			Effects.pillar(ground, color)
+		end)
 		PvpService.damage(player, enemy, kind.PlayerDamage * power, "Ultimate")
 		return true
 	end
@@ -172,15 +211,19 @@ function ULTIMATES.Pillar(player: Player, root: BasePart, kind, power: number, c
 end
 
 function ULTIMATES.Nova(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.burst(root.Position, kind.Radius, color, 0.5)
-	Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+	ultimateVisual(player, "Nova", root.CFrame, kind.Radius, color, function()
+		Effects.burst(root.Position, kind.Radius, color, 0.5)
+		Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+	end)
 	blast(player, root.Position, kind.Radius, kind, power)
 	return true
 end
 
 function ULTIMATES.Drain(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
-	Effects.dome(root.Position, kind.Radius, color)
+	ultimateVisual(player, "Drain", root.CFrame, kind.Radius, color, function()
+		Effects.shockwave(root.Position - Vector3.new(0, 2.5, 0), kind.Radius, color)
+		Effects.dome(root.Position, kind.Radius, color)
+	end)
 	local dealt = blast(player, root.Position, kind.Radius, kind, power)
 	AuraService.heal(player, dealt * kind.HealFraction)
 	return true
@@ -193,7 +236,9 @@ function ULTIMATES.Rush(player: Player, root: BasePart, kind, power: number, col
 	end
 	direction = direction.Unit
 	local origin = root.Position
-	Effects.streak(origin, origin + direction * kind.Length, kind.Width, color)
+	ultimateVisual(player, "Rush", CFrame.lookAt(origin, origin + direction), nil, color, function()
+		Effects.streak(origin, origin + direction * kind.Length, kind.Width, color)
+	end)
 
 	local boss = BossService.getActive()
 	if boss and boss.alive then
@@ -220,13 +265,17 @@ function ULTIMATES.Rush(player: Player, root: BasePart, kind, power: number, col
 end
 
 function ULTIMATES.Mend(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.dome(root.Position, kind.Radius, color)
+	ultimateVisual(player, "Mend", root.CFrame, kind.Radius, color, function()
+		Effects.dome(root.Position, kind.Radius, color)
+	end)
 	supportAllies(player, root, kind, power, "HEALER", function() end)
 	return true
 end
 
 function ULTIMATES.Fortify(player: Player, root: BasePart, kind, power: number, color: Color3): boolean
-	Effects.dome(root.Position, kind.Radius, color)
+	ultimateVisual(player, "Fortify", root.CFrame, kind.Radius, color, function()
+		Effects.dome(root.Position, kind.Radius, color)
+	end)
 	local untilTime = os.clock() + kind.Duration * power
 	supportAllies(player, root, kind, power, "PROTECTOR", function(ally)
 		local allyState = AuraService.get(ally)

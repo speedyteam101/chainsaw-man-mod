@@ -1,16 +1,19 @@
--- Aura Farm client: input (slash / dash / ultimate), the dash movement,
--- forwarding chat to the server, and feeding the HUD.
+-- Aura Farm client: input (slash / dash / ultimate), dash movement,
+-- animations and afterimages, forwarding chat to the server, and feeding
+-- the HUD.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TextChatService = game:GetService("TextChatService")
-local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("Config"))
+local Assets = require(Shared:WaitForChild("Assets"))
 local Classes = require(Shared:WaitForChild("Classes"))
+local Afterimages = require(script.Parent:WaitForChild("Afterimages"))
+local AnimationPlayer = require(script.Parent:WaitForChild("AnimationPlayer"))
 local ClassPicker = require(script.Parent:WaitForChild("ClassPicker"))
 local Hud = require(script.Parent:WaitForChild("Hud"))
 
@@ -76,23 +79,14 @@ end)
 local hud
 local lastSlash, lastDash, lastUltimate = -math.huge, -math.huge, -math.huge
 
-local function afterimage(root: BasePart)
-	local ghost = Instance.new("Part")
-	ghost.Anchored = true
-	ghost.CanCollide = false
-	ghost.CanQuery = false
-	ghost.CanTouch = false
-	ghost.CastShadow = false
-	ghost.Material = Enum.Material.Neon
-	ghost.Color = Color3.fromRGB(150, 255, 190)
-	ghost.Transparency = 0.5
-	ghost.Size = Vector3.new(2, 4.5, 1)
-	ghost.CFrame = root.CFrame
-	ghost.Parent = workspace
-	TweenService:Create(ghost, TweenInfo.new(0.3), { Transparency = 1 }):Play()
-	task.delay(0.35, function()
-		ghost:Destroy()
-	end)
+-- Your custom Dash effect (Assets.lua) for a player dashing from `root`.
+local function dashEffect(dasher: Player, root: BasePart, direction: Vector3)
+	local class = Classes.get(dasher:GetAttribute("ClassId"))
+	Assets.spawnEffect("Dash", CFrame.lookAt(root.Position, root.Position + direction), {
+		classId = if class then class.Id else nil,
+		side = dasher:GetAttribute("Side"),
+		color = if class then rgb(class.Color) else nil,
+	})
 end
 
 local function slash()
@@ -103,55 +97,72 @@ local function slash()
 	end
 	lastSlash = now
 	ActionRemote:FireServer("Slash")
+	AnimationPlayer.playSlash()
 	hud.cooldown("Slash", cooldown)
 end
 
--- Pushes the character forward for `duration` seconds at `speed`. With
--- useFacing, it goes the way you're facing; otherwise the way you're moving.
-local function lunge(speed: number, duration: number, useFacing: boolean)
-	local _, humanoid, root = liveCharacter()
-	if not humanoid or not root then
-		return
-	end
-	local direction = if useFacing then root.CFrame.LookVector else humanoid.MoveDirection
-	if direction.Magnitude < 0.1 then
-		direction = root.CFrame.LookVector
-	end
-	direction = Vector3.new(direction.X, 0, direction.Z)
-	if direction.Magnitude < 0.1 then
-		return
-	end
-	direction = direction.Unit
-	root.CFrame = CFrame.lookAt(root.Position, root.Position + direction)
+-- Turning AutoRotate off during a lunge keeps the character facing the same
+-- way, so a back or side dash actually looks like one. Counted, so
+-- overlapping lunges (a dash into a Rush) restore it correctly.
+local rotateLocks = 0
+local savedAutoRotate = true
 
-	local elapsed, sinceGhost = 0, 0
+-- Pushes the character along `direction` (a flat unit vector) at `speed`
+-- for `duration` seconds, leaving avatar afterimages behind.
+local function lunge(direction: Vector3, speed: number, duration: number)
+	local character, humanoid, root = liveCharacter()
+	if not character or not humanoid or not root then
+		return
+	end
+	if rotateLocks == 0 then
+		savedAutoRotate = humanoid.AutoRotate
+	end
+	rotateLocks += 1
+	humanoid.AutoRotate = false
+	Afterimages.trail(character, duration + 0.05)
+
+	local elapsed = 0
 	local connection
 	connection = RunService.Heartbeat:Connect(function(dt)
 		elapsed += dt
-		sinceGhost += dt
 		if elapsed >= duration or not root.Parent then
 			connection:Disconnect()
+			rotateLocks -= 1
+			if rotateLocks == 0 and humanoid.Parent then
+				humanoid.AutoRotate = savedAutoRotate
+			end
 			return
 		end
 		local velocity = root.AssemblyLinearVelocity
 		root.AssemblyLinearVelocity = Vector3.new(direction.X * speed, math.max(velocity.Y, 0), direction.Z * speed)
-		if sinceGhost >= 0.04 then
-			sinceGhost = 0
-			afterimage(root)
-		end
 	end)
+end
+
+local function flatUnit(v: Vector3): Vector3?
+	local flat = Vector3.new(v.X, 0, v.Z)
+	return if flat.Magnitude > 0.1 then flat.Unit else nil
 end
 
 local function dash()
 	local now = os.clock()
 	local cooldown = stat("DashCooldown")
-	if now - lastDash < cooldown or not liveCharacter() then
+	local _, humanoid, root = liveCharacter()
+	if now - lastDash < cooldown or not humanoid or not root then
+		return
+	end
+	-- Dash the way you're moving (or forward if you're standing still).
+	local direction = flatUnit(humanoid.MoveDirection) or flatUnit(root.CFrame.LookVector)
+	if not direction then
 		return
 	end
 	lastDash = now
 	ActionRemote:FireServer("Dash")
 	hud.cooldown("Dash", cooldown)
-	lunge(Config.Combat.DashSpeed, Config.Combat.DashDuration, false)
+
+	local relative = root.CFrame:VectorToObjectSpace(direction)
+	AnimationPlayer.playDash(relative.X, relative.Z)
+	dashEffect(player, root, direction)
+	lunge(direction, Config.Combat.DashSpeed, Config.Combat.DashDuration)
 end
 
 local function ultimate()
@@ -161,6 +172,10 @@ local function ultimate()
 	end
 	lastUltimate = now
 	ActionRemote:FireServer("Ultimate")
+	-- Only animate if the server will accept it (it re-checks).
+	if Classes.get(player:GetAttribute("ClassId")) and (player:GetAttribute("Style") or 0) >= Config.Combat.UltimateStyleCost then
+		AnimationPlayer.playUltimate()
+	end
 	hud.cooldown("Ultimate", Config.Combat.UltimateCooldown)
 end
 
@@ -239,6 +254,14 @@ task.spawn(function()
 	refresh()
 end)
 
+-- Your movement animations, on every spawn.
+player.CharacterAdded:Connect(function(character)
+	AnimationPlayer.applyMovement(character)
+end)
+if player.Character then
+	task.spawn(AnimationPlayer.applyMovement, player.Character)
+end
+
 -- Class: update the HUD when it changes, and open the picker for new
 -- players once their save has loaded.
 local function onClassChanged()
@@ -282,7 +305,20 @@ NotifyRemote.OnClientEvent:Connect(function(payload)
 		picker.close()
 	elseif payload.Kind == "Rush" and type(payload.Distance) == "number" then
 		-- The Rush ultimate: carry the character along the line it hit.
-		local duration = 0.3
-		lunge(payload.Distance / duration, duration, true)
+		local _, _, root = liveCharacter()
+		local direction = root and flatUnit(root.CFrame.LookVector)
+		if direction then
+			local duration = 0.3
+			lunge(direction, payload.Distance / duration, duration)
+		end
+	elseif payload.Kind == "Dash" and payload.UserId ~= player.UserId then
+		-- Someone else dashed: draw their avatar afterimages here too.
+		local dasher = Players:GetPlayerByUserId(payload.UserId)
+		local character = dasher and dasher.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if dasher and character and root and root:IsA("BasePart") then
+			Afterimages.trail(character, Config.Combat.DashDuration + 0.1)
+			dashEffect(dasher, root, flatUnit(root.CFrame.LookVector) or Vector3.new(0, 0, -1))
+		end
 	end
 end)
