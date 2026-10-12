@@ -1,0 +1,23 @@
+{
+  "name": "AuraFarm",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "AuraFarmServer": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "AuraFarmClient": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}

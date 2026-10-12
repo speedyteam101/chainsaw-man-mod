@@ -4,6 +4,8 @@ An unofficial, fan-made Chainsaw Man mod for **tModLoader 1.4.4**.
 
 The wiki site lives in [`docs/`](docs/index.html) (plain HTML, ready for GitHub Pages).
 
+This repo also holds **Aura Farm**, a separate Roblox game (not part of the mod), in [`roblox-aura-farm/`](roblox-aura-farm/README.md).
+
 ## Content
 
 | Item | What it does | Recipe |
