@@ -14,6 +14,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # to publish the APKs on the Releases page
     defaults:
       run:
         working-directory: launcher-app
@@ -35,6 +37,28 @@ jobs:
 
       - name: Build APKs
         run: ./gradlew --no-daemon assembleDebug assembleRelease
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/silkie-build-$BUILD.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/silkie-build-$BUILD-debug.apk"
+          cat > notes.md <<NOTES
+          Silkie launcher, built from ${GITHUB_SHA::7} on \`${GITHUB_REF_NAME}\`.
+
+          **Install:** download \`silkie-build-$BUILD.apk\` on your Android device (Android 10 or newer), open it and allow installing from that source. Then press Home and choose Silkie.
+
+          The \`-debug\` APK is the same app with debugging turned on; most people want the other one. Both are signed with a test (debug) key, so they install directly but aren't meant for app stores.
+          NOTES
+          gh release create "silkie-build-$BUILD" dist/*.apk \
+            --target "$GITHUB_SHA" \
+            --title "Silkie launcher (build $BUILD)" \
+            --notes-file notes.md \
+            --latest
 
       - name: Upload APKs
         if: always()

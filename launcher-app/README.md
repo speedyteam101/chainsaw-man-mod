@@ -75,7 +75,9 @@ cd launcher-app
 ```
 
 The GitHub Actions workflow `.github/workflows/launcher-app.yml` builds the debug and release
-APKs on every push that touches `launcher-app/` and uploads them as the `silkie-apk` artifact.
+APKs on every push that touches `launcher-app/`, uploads them as the `silkie-apk` artifact and
+publishes them on the repository's **Releases** page as `silkie-build-<number>.apk`, which is the
+easiest place to download them from a phone.
 The release APK is signed with the debug key so it installs directly; set up your own signing
 key before publishing it anywhere.
 
